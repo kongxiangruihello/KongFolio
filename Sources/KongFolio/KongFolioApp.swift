@@ -1,0 +1,45 @@
+import SwiftUI
+import AppKit
+
+@main struct KongFolioApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    @StateObject private var workspace = Workspace()
+    var body: some Scene {
+        Window("KongFolio", id: "workspace") {
+            ContentView(workspace: workspace)
+                .frame(minWidth: 1060, minHeight: 720)
+                .onAppear { delegate.workspace = workspace; workspace.bootstrap(); DispatchQueue.main.async { NSApp.windows.first?.delegate = delegate } }
+                .onOpenURL { workspace.load([$0]) }
+        }
+        .commands {
+            CommandGroup(replacing: .newItem) { Button("打开…") { workspace.open() }.keyboardShortcut("o") }
+            CommandGroup(replacing: .saveItem) {
+                Button("保存项目…") { workspace.saveProject() }.keyboardShortcut("s").disabled(workspace.count == 0 || workspace.busy)
+                Button("项目另存为…") { workspace.saveProject(asNew: true) }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(workspace.count == 0 || workspace.busy)
+                Button("导出 PDF…") { workspace.exportPDF() }.keyboardShortcut("e").disabled(workspace.count == 0 || workspace.busy)
+            }
+            CommandGroup(replacing: .undoRedo) {
+                Button("撤销") { workspace.undo() }.keyboardShortcut("z").disabled(!workspace.canUndo || workspace.busy)
+                Button("重做") { workspace.redo() }.keyboardShortcut("z", modifiers: [.command, .shift]).disabled(!workspace.canRedo || workspace.busy)
+            }
+        }
+    }
+}
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    weak var workspace: Workspace?
+    private var closingApproved = false
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async { NSApp.windows.first?.delegate = self }
+    }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if closingApproved { return .terminateNow }
+        return workspace?.prepareToClose() == false ? .terminateCancel : .terminateNow
+    }
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard workspace?.prepareToClose() != false else { return false }
+        closingApproved = true
+        return true
+    }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+}
