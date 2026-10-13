@@ -5,10 +5,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   macos:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -17,17 +21,34 @@ jobs:
           swift --version
           xcodebuild -version || true
       - name: Build (debug)
-        run: swift build
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          swift build 2>&1 | tee ci-logs/build.log
       - name: XCTest
-        run: swift test 2>&1 | tee xctest.log
+        if: success() || failure()
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          swift test 2>&1 | tee ci-logs/xctest.log
       - name: Portable test script
-        run: ./scripts/test.sh
+        if: success() || failure()
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          ./scripts/test.sh 2>&1 | tee ci-logs/smoke.log
+      - name: Release build
+        if: success() || failure()
+        run: |
+          set -o pipefail
+          swift build -c release 2>&1 | tee ci-logs/release.log
+      - name: Report as annotations
+        if: always()
+        run: ./scripts/ci-annotate.sh ci-logs
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-logs
-          path: |
-            xctest.log
-            .build/smoke/*.txt
+          name: ci-logs
+          path: ci-logs
           if-no-files-found: ignore
