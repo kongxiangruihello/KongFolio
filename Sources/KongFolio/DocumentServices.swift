@@ -11,9 +11,11 @@ struct FolioError: LocalizedError {
     var errorDescription: String? { message }
 }
 struct RecognizedLine: Codable {
-    let text: String
-    let box: CGRect
+    var text: String
+    var box: CGRect
     var confidence: Float = 1
+    /// True when the box is a placeholder (vertical-text mode has no per-line geometry).
+    var approximate: Bool? = nil
 }
 struct ImageAdjustments: Equatable, Codable {
     var cropRect: CGRect?
@@ -92,16 +94,44 @@ enum DocumentServices {
         guard let rectangle = request.results?.first else { throw FolioError(message: "未找到清晰的纸张边缘，请使用框选裁剪或手动校正。") }
         return [rectangle.topLeft, rectangle.topRight, rectangle.bottomRight, rectangle.bottomLeft]
     }
-    static func recognize(_ image: CGImage) throws -> [RecognizedLine] {
+    static var supportedOCRLanguages: [String] {
+        (try? VNRecognizeTextRequest().supportedRecognitionLanguages()) ?? []
+    }
+
+    /// Pixel size for OCR rendering: the page's longest side at `dpi`, kept within Vision-friendly limits.
+    static func ocrPixelDimension(for page: PDFPage, dpi: Int) -> CGFloat {
+        let bounds = page.bounds(for: .cropBox)
+        return min(7000, max(1600, max(bounds.width, bounds.height) * CGFloat(dpi) / 72))
+    }
+
+    static func recognize(_ image: CGImage, languages: [String] = OCRSettings().languages) throws -> [RecognizedLine] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
-        request.recognitionLanguages = ["zh-Hans", "en-US"]
+        let supported = Set(supportedOCRLanguages)
+        let chosen = languages.filter { supported.isEmpty || supported.contains($0) }
+        request.recognitionLanguages = chosen.isEmpty ? OCRSettings().languages : chosen
         request.usesLanguageCorrection = true
         try VNImageRequestHandler(cgImage: image).perform([request])
         return (request.results ?? []).compactMap { observation in
             observation.topCandidates(1).first.map { RecognizedLine(text: $0.string, box: observation.boundingBox, confidence: $0.confidence) }
         }
     }
+
+    /// Vertical-text (竖排) recognition: columns are re-laid out as horizontal rows first. See VerticalText.swift.
+    static func recognizeVertical(_ image: CGImage, languages: [String]) throws -> [RecognizedLine] {
+        try VerticalText.recognize(image, languages: languages)
+    }
+
+    static func downscale(_ image: CGImage, maxDimension: CGFloat) throws -> CGImage {
+        let scale = min(1, maxDimension / CGFloat(max(image.width, image.height)))
+        guard scale < 1 else { return image }
+        let width = max(1, Int(CGFloat(image.width) * scale)), height = max(1, Int(CGFloat(image.height) * scale))
+        guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw FolioError(message: "无法创建预览图。") }
+        ctx.interpolationQuality = .medium
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return try ctx.makeImage().unwrap("无法创建预览图。")
+    }
+
     // Adds actual invisible PDF text, not a visible annotation pretending to be OCR.
     // Original page content is retained; annotations are flattened into the OCR result.
     static func searchablePage(_ page: PDFPage, lines: [RecognizedLine]) throws -> PDFPage {
@@ -112,7 +142,12 @@ enum DocumentServices {
         guard let consumer = CGDataConsumer(data: data), let ctx = CGContext(consumer: consumer, mediaBox: &rect, nil) else { throw FolioError(message: "无法创建 OCR 页面。") }
         ctx.beginPDFPage(nil)
         // Upright rendering makes Vision geometry and rotated/cropped PDF geometry identical.
-        guard let pageRef = page.pageRef else { throw FolioError(message: "无法读取 PDF 页面内容。") }
+        // `pageRef` does not see rotation or crop changes made in memory until the page is saved,
+        // so draw from a freshly serialized copy (verified on macOS 15 and 26 in CI).
+        let committed = DocumentServices.subset(page.document ?? PDFDocument(), indexes: page.document.map { [$0.index(for: page)] } ?? [])
+        if committed.pageCount == 0, let copy = page.copy() as? PDFPage { committed.insert(copy, at: 0) }
+        let holder = committed.dataRepresentation().flatMap { PDFDocument(data: $0) }
+        guard let pageRef = holder?.page(at: 0)?.pageRef ?? page.pageRef else { throw FolioError(message: "无法读取 PDF 页面内容。") }
         ctx.saveGState()
         ctx.concatenate(pageRef.getDrawingTransform(.cropBox, rect: rect, rotate: 0, preserveAspectRatio: true))
         ctx.drawPDFPage(pageRef)
@@ -134,6 +169,7 @@ enum DocumentServices {
             ctx.restoreGState()
         }
         ctx.endPDFPage(); ctx.closePDF()
+        withExtendedLifetime(holder) {}
         guard let result = PDFDocument(data: data as Data)?.page(at: 0) else { throw FolioError(message: "OCR PDF 生成失败。") }
         return result
     }

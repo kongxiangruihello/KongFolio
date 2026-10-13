@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Info.plist is the single source of the version number (the app reads it at runtime too).
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/Info.plist")"
 export CLANG_MODULE_CACHE_PATH="$ROOT/.build/clang-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$ROOT/.build/swift-cache"
 swift build --build-system native --disable-sandbox --package-path "$ROOT" -c release
@@ -18,5 +20,5 @@ codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 ditto --norsrc --noextattr "$APP" "$ROOT/../KongFolio.app"
 xattr -d com.apple.FinderInfo "$ROOT/../KongFolio.app" 2>/dev/null || true
-ditto -c -k --norsrc --noextattr --keepParent "$APP" "$ROOT/../KongFolio-0.3-macOS.zip"
-printf 'Built and verified: %s\n' "$ROOT/../KongFolio-0.3-macOS.zip"
+ditto -c -k --norsrc --noextattr --keepParent "$APP" "$ROOT/../KongFolio-$VERSION-macOS.zip"
+printf 'Built and verified: %s\n' "$ROOT/../KongFolio-$VERSION-macOS.zip"

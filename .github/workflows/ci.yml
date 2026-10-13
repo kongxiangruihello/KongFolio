@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          sw_vers
+          swift --version
+          xcodebuild -version || true
+      - name: Build (debug)
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          swift build 2>&1 | tee ci-logs/build.log
+      - name: XCTest
+        if: success() || failure()
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          swift test 2>&1 | tee ci-logs/xctest.log
+      - name: Portable test script
+        if: success() || failure()
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          ./scripts/test.sh 2>&1 | tee ci-logs/smoke.log
+      - name: Release build
+        if: success() || failure()
+        run: |
+          set -o pipefail
+          swift build -c release 2>&1 | tee ci-logs/release.log
+      - name: Icon preview
+        if: success() || failure()
+        run: |
+          swift scripts/Icon.swift "$RUNNER_TEMP/iconset"
+          if [ "${{ matrix.os }}" = "macos-15" ]; then base64 -i "$RUNNER_TEMP/iconset/icon_128x128@2x.png" | tr -d '\n' | fold -w 3800 | nl -nln | while read -r n chunk || [ -n "$chunk" ]; do echo "::notice title=icon part $n::$chunk"; done; fi
+      - name: Report as annotations
+        if: always()
+        run: ./scripts/ci-annotate.sh ci-logs ${{ matrix.os }}
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs-${{ matrix.os }}
+          path: ci-logs
+          if-no-files-found: ignore

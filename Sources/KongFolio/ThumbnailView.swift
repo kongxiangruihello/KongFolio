@@ -19,8 +19,9 @@ struct ThumbnailView: View {
             if let image = state.image { Image(nsImage: image).resizable().scaledToFit() }
             else { Rectangle().fill(.quaternary).overlay(Image(systemName: "doc").foregroundStyle(.secondary)) }
         }.frame(height: 140).shadow(color: .black.opacity(0.1), radius: 3)
-        .task(id: "\(workspace.revision)-\(index)") {
-            let key = "\(workspace.revision)-\(index)"
+        .task(id: workspace.thumbnailKey(index)) {
+            // Keyed per page: an annotation edit re-renders only its own page's thumbnail.
+            let key = workspace.thumbnailKey(index)
             if let cached = workspace.thumbnails.image(for: key) { state.image = cached; return }
             state.image = nil
             guard let data = DocumentServices.subset(workspace.document, indexes: [index]).dataRepresentation() else { return }

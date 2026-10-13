@@ -4,11 +4,13 @@ import AppKit
 @main struct KongFolioApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var workspace = Workspace()
+
     var body: some Scene {
         Window("KongFolio", id: "workspace") {
             ContentView(workspace: workspace)
                 .frame(minWidth: 1060, minHeight: 720)
-                .onAppear { delegate.workspace = workspace; workspace.bootstrap(); DispatchQueue.main.async { NSApp.windows.first?.delegate = delegate } }
+                .background(WindowAccessor { window in delegate.attach(window) })
+                .onAppear { delegate.workspace = workspace; workspace.bootstrap() }
                 .onOpenURL { workspace.load([$0]) }
         }
         .commands {
@@ -25,21 +27,49 @@ import AppKit
         }
     }
 }
+
+/// Hands the hosting NSWindow to a callback, so the close guard attaches to this window
+/// rather than to whichever window happens to be first in `NSApp.windows`.
+struct WindowAccessor: NSViewRepresentable {
+    let onWindow: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { if let window = view.window { onWindow(window) } }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { if let window = view.window { onWindow(window) } }
+    }
+}
+
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     weak var workspace: Workspace?
+    private weak var window: NSWindow?
     private var closingApproved = false
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
-        DispatchQueue.main.async { NSApp.windows.first?.delegate = self }
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
     }
+
+    func attach(_ window: NSWindow) {
+        guard self.window !== window || window.delegate !== self else { return }
+        self.window = window
+        window.delegate = self
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if closingApproved { return .terminateNow }
         return workspace?.prepareToClose() == false ? .terminateCancel : .terminateNow
     }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard workspace?.prepareToClose() != false else { return false }
         closingApproved = true
         return true
     }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }

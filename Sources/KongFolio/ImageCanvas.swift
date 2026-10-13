@@ -9,7 +9,7 @@ struct ImageCanvas: View {
     @StateObject private var drag = CropDrag()
     private var image: NSImage? {
         if workspace.showOriginal { return workspace.originalPreview }
-        return workspace.preview ?? workspace.page?.thumbnail(of: CGSize(width: 1800, height: 1800), for: .cropBox)
+        return workspace.preview ?? workspace.pageDisplayImage(maxDimension: 1800)
     }
     var body: some View {
         VStack(spacing: 8) {
@@ -32,7 +32,7 @@ struct ImageCanvas: View {
                         if workspace.cropMode, let box = drag.box {
                             let rect = CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height)
                             Path { path in path.addRect(CGRect(origin: .zero, size: size)); path.addRect(rect) }.fill(Color.black.opacity(0.38), style: FillStyle(eoFill: true)).allowsHitTesting(false)
-                            Rectangle().fill(Color.teal.opacity(0.08)).overlay(Rectangle().stroke(Color.teal, style: StrokeStyle(lineWidth: 2, dash: [6])))
+                            Rectangle().fill(Brand.accent.opacity(0.08)).overlay(Rectangle().stroke(Brand.accent, style: StrokeStyle(lineWidth: 2, dash: [6])))
                                 .frame(width: rect.width, height: rect.height).offset(x: rect.minX, y: rect.minY)
                                 .gesture(DragGesture(coordinateSpace: .named("cropCanvas")).onChanged { value in
                                     if drag.interactionBox == nil { drag.interactionBox = box }
@@ -49,7 +49,7 @@ struct ImageCanvas: View {
                     if let box = drag.box, let image { Text("预览选区：\(Int(image.size.width * box.width)) × \(Int(image.size.height * box.height)) px").font(.caption).foregroundStyle(.secondary) }
                     Spacer()
                     Button("取消裁剪") { workspace.cropMode = false }
-                    Button("确认裁剪") { if let box = drag.box { workspace.setCrop(CropGeometry.imageCoordinates(box)) } }.buttonStyle(.borderedProminent).tint(.teal).disabled(drag.box == nil)
+                    Button("确认裁剪") { if let box = drag.box { workspace.setCrop(CropGeometry.imageCoordinates(box)) } }.buttonStyle(.borderedProminent).disabled(drag.box == nil)
                 }.padding(12)
             }
         }.background(Color.black.opacity(0.04))
@@ -60,7 +60,7 @@ struct ImageCanvas: View {
         let anchors = [(-1,-1),(0,-1),(1,-1),(1,0),(1,1),(0,1),(-1,1),(-1,0)]
         let (x,y) = anchors[index]
         let point = CGPoint(x: (x < 0 ? box.minX : x > 0 ? box.maxX : box.midX) * size.width, y: (y < 0 ? box.minY : y > 0 ? box.maxY : box.midY) * size.height)
-        return Circle().fill(.white).overlay(Circle().stroke(Color.teal, lineWidth: 2)).frame(width: 15, height: 15).padding(6).contentShape(Rectangle()).position(point)
+        return Circle().fill(.white).overlay(Circle().stroke(Brand.accent, lineWidth: 2)).frame(width: 15, height: 15).padding(6).contentShape(Rectangle()).position(point)
             .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("cropCanvas")).onChanged { value in
                 if drag.interactionBox == nil { drag.interactionBox = box }
                 drag.box = CropGeometry.resize(drag.interactionBox!, anchorX: x, anchorY: y, dx: value.translation.width / size.width, dy: value.translation.height / size.height)
