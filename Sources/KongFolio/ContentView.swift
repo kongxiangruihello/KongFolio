@@ -235,7 +235,7 @@ struct ContentView: View {
             }
             Toggle("竖排（实验）", isOn: $workspace.ocrSettings.vertical)
             if workspace.ocrSettings.vertical {
-                Text("使用系统“实况文本”识别竖排；页面可被搜索，但搜索高亮的位置是近似的。").font(.caption).foregroundStyle(.secondary)
+                Text("按列从右到左切分，每列转成横行后识别，再逐字放回原位。适合字距清楚的刻本、排印本；夹注、双行小字和插图可能识别不全，请用“检查当前页区域”核对。").font(.caption).foregroundStyle(.secondary)
             }
             HStack {
                 Button("识别全部") { workspace.ocr() }

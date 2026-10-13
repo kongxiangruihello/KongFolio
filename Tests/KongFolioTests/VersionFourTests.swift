@@ -91,15 +91,44 @@ final class VersionFourTests: XCTestCase {
         XCTAssertEqual(Double(DocumentServices.ocrPixelDimension(for: page, dpi: 200)), 1600, accuracy: 0.01)
     }
 
-    // P2: informational probe of vertical text; prints what each recognizer reads without failing the suite.
-    func testVerticalTextProbe() throws {
-        let text = "學而時習之不亦說乎"
-        let image = textImage(text, width: 360, height: 1400, size: 110, vertical: true)
+    func verticalPage(_ columns: [String], size: CGFloat = 90) -> CGImage {
+        let width = Int(size * 1.8) * columns.count + 160, height = Int(size * 1.25) * (columns.map(\.count).max() ?? 1) + 160
+        let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(gray: 0.97, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let attributes = [NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Songti TC" as CFString, size, nil)]
+        for (index, column) in columns.enumerated() {
+            let x = CGFloat(width) - 80 - CGFloat(index + 1) * size * 1.8 + size * 0.4
+            for (row, character) in column.enumerated() {
+                ctx.textPosition = CGPoint(x: x, y: CGFloat(height) - 80 - size * 1.25 * CGFloat(row + 1) + size * 0.2)
+                CTLineDraw(CTLineCreateWithAttributedString(NSAttributedString(string: String(character), attributes: attributes)), ctx)
+            }
+        }
+        return ctx.makeImage()!
+    }
+
+    // P2: vertical columns are read right to left and each character is placed in its own cell.
+    func testVerticalTextColumns() throws {
+        let columns = ["學而時習之", "不亦說乎有", "朋自遠方來"]
+        let image = verticalPage(columns)
         let horizontal = (try? DocumentServices.recognize(image, languages: ["zh-Hant"]))?.map(\.text).joined() ?? "error"
-        let vertical: String
-        do { vertical = try DocumentServices.recognizeVertical(image, languages: ["zh-Hant"]).map(\.text).joined() }
-        catch { vertical = "error: \(error.localizedDescription)" }
-        print("probe: vertical column \(text) — VNRecognizeTextRequest [\(horizontal)] · ImageAnalyzer [\(vertical)]")
+        let layout = VerticalText.layout(try VerticalText.Gray(image))
+        print("probe: vertical layout columns=\(layout.count) cells=\(layout.map(\.cells.count))")
+        let lines = try DocumentServices.recognizeVertical(image, languages: ["zh-Hant", "zh-Hans"])
+        let text = lines.map(\.text).joined()
+        let exact = lines.filter { $0.approximate != true }.count
+        print("probe: vertical page \(columns.joined(separator: "|")) — VNRecognizeTextRequest alone [\(horizontal)] · column method [\(text)] exact cells \(exact)/\(columns.joined().count)")
+        XCTAssertEqual(layout.count, 3)
+        XCTAssertTrue(text.contains("學而時習之"), "column method read: \(text)")
+        // The first character of the rightmost column sits in the top-right of the page.
+        if let first = lines.first, first.approximate != true { XCTAssertTrue(first.box.minX > 0.6 && first.box.minY > 0.6, "first box \(first.box)") }
+        // The text layer built from these lines is searchable, including across column breaks.
+        let page = PDFPage(image: NSImage(cgImage: image, size: NSSize(width: image.width / 2, height: image.height / 2)))!
+        let searchable = try DocumentServices.searchablePage(page, lines: lines)
+        let doc = PDFDocument(); doc.insert(searchable, at: 0)
+        let reloaded = PDFDocument(data: doc.dataRepresentation()!)!
+        print("probe: vertical text layer string = [\((reloaded.page(at: 0)!.string ?? "").replacingOccurrences(of: "\n", with: "⏎"))]")
+        let hits = try ReadingServices.search(reloaded.dataRepresentation()!, query: "时习")
+        XCTAssertEqual(hits.count, 1)
     }
 
     // P2: a page with a stray stamp of text is still OCR'd; real text pages are skipped.
@@ -209,5 +238,47 @@ final class VersionFourTests: XCTestCase {
         w.selectedPages = [2]; w.selection = 2; w.movePages(before: 0, dragged: 2)
         XCTAssertTrue(w.ocrRegions[0] != nil); XCTAssertTrue(w.imageDrafts[1] != nil); XCTAssertEqual(w.pageMeta.count, 3)
         w.remove(); XCTAssertEqual(w.pageMeta.count, 2); XCTAssertTrue(w.ocrRegions.isEmpty)
+    }
+
+    // Diagnostic: how the OCR page rebuild behaves for in-memory rotation/crop on this macOS version.
+    func testProbeRotatedCropRendering() throws {
+        func rgba(_ cg: CGImage) -> [UInt8] {
+            let ctx = CGContext(data: nil, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: cg.width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+            return Array(UnsafeBufferPointer(start: ctx.data!.assumingMemoryBound(to: UInt8.self), count: cg.width * cg.height * 4))
+        }
+        func diff(_ a: CGImage, _ b: CGImage) -> String {
+            guard a.width == b.width, a.height == b.height else { return "size \(a.width)x\(a.height) vs \(b.width)x\(b.height)" }
+            let x = rgba(a), y = rgba(b)
+            return String(format: "%.2f", zip(x, y).reduce(0.0) { $0 + abs(Double($1.0) - Double($1.1)) } / Double(x.count))
+        }
+        func viaPageDraw(_ page: PDFPage) -> PDFPage {
+            let b = page.bounds(for: .cropBox), quarter = abs(page.rotation % 180) == 90
+            var rect = CGRect(origin: .zero, size: quarter ? CGSize(width: b.height, height: b.width) : b.size)
+            let data = NSMutableData(); let ctx = CGContext(consumer: CGDataConsumer(data: data)!, mediaBox: &rect, nil)!
+            ctx.beginPDFPage(nil); ctx.saveGState(); page.transform(ctx, for: .cropBox); page.draw(with: .cropBox, to: ctx); ctx.restoreGState(); ctx.endPDFPage(); ctx.closePDF()
+            return PDFDocument(data: data as Data)!.page(at: 0)!
+        }
+        var report: [String] = []
+        for rotation in [0, 90, 180, 270] {
+            let source = fixture(); let original = source.page(at: 0)!
+            original.rotation = rotation; original.setBounds(CGRect(x: 10, y: 20, width: 240, height: 300), for: .cropBox)
+            let before = try DocumentServices.render(original, maxDimension: 300)
+            let current = try DocumentServices.searchablePage(original, lines: [])
+            let pageDraw = viaPageDraw(original)
+            let reparsed = PDFDocument(data: source.dataRepresentation()!)!.page(at: 0)!
+            let afterReparse = try DocumentServices.searchablePage(reparsed, lines: [])
+            report.append("r\(rotation): pageRef=\(diff(before, try DocumentServices.render(current, maxDimension: 300))) pageDraw=\(diff(before, try DocumentServices.render(pageDraw, maxDimension: 300))) reparsed+pageRef=\(diff(before, try DocumentServices.render(afterReparse, maxDimension: 300)))")
+        }
+        // Does PDFPage.draw(with:to:) include annotations?
+        let doc = fixture(); let page = doc.page(at: 0)!
+        let ink = PDFAnnotation(bounds: CGRect(x: 150, y: 250, width: 120, height: 120), forType: .ink, withProperties: nil)
+        let path = NSBezierPath(); path.move(to: CGPoint(x: 5, y: 5)); path.line(to: CGPoint(x: 110, y: 110)); ink.add(path)
+        let border = PDFBorder(); border.lineWidth = 12; ink.border = border; ink.color = .black; page.addAnnotation(ink)
+        let drawn = try DocumentServices.render(viaPageDraw(page), maxDimension: 400)
+        let pixels = rgba(drawn); var dark = 0
+        for y in 0..<drawn.height { for x in 0..<drawn.width { let i = (y * drawn.width + x) * 4; if x > drawn.width / 2 && y < drawn.height / 3 && pixels[i] < 80 { dark += 1 } } }
+        report.append("pageDraw annotations dark pixels=\(dark)")
+        print("probe: rendering " + report.joined(separator: " · "))
     }
 }

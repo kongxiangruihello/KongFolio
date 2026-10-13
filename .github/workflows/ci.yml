@@ -11,7 +11,11 @@ defaults:
 
 jobs:
   macos:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
@@ -46,14 +50,14 @@ jobs:
         if: success() || failure()
         run: |
           swift scripts/Icon.swift "$RUNNER_TEMP/iconset"
-          echo "::notice title=icon256 base64::$(base64 -i "$RUNNER_TEMP/iconset/icon_256x256.png" | tr -d '\n')"
+          [ "${{ matrix.os }}" = "macos-15" ] && echo "::notice title=icon256 base64::$(base64 -i "$RUNNER_TEMP/iconset/icon_256x256.png" | tr -d '\n')" || true
       - name: Report as annotations
         if: always()
-        run: ./scripts/ci-annotate.sh ci-logs
+        run: ./scripts/ci-annotate.sh ci-logs ${{ matrix.os }}
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ci-logs
+          name: ci-logs-${{ matrix.os }}
           path: ci-logs
           if-no-files-found: ignore

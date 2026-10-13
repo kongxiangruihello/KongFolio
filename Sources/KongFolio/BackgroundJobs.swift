@@ -105,7 +105,8 @@ enum BackgroundJobs {
         try Task.checkCancellation()
         switch spec.operation {
         case .ocr:
-            let note = spec.ocr.vertical ? "（竖排实验模式：文字可搜索，高亮位置为近似）" : ""
+            let approximate = regions.values.flatMap { $0 }.contains { $0.approximate == true }
+            let note = spec.ocr.vertical ? (approximate ? "（竖排模式：部分列未能逐字对位，这些列的高亮位置为整列近似）" : "（竖排模式）") : ""
             return JobResult(pdf: try doc.dataRepresentation().unwrap("OCR 保存失败"), text: doc.string ?? "", message: "OCR 完成，识别 \(recognizedCount) 页，跳过 \(skipped) 个已有文字的页面\(note)", regions: regions, originals: originals)
         case .inspectOCR:
             return JobResult(message: "识别区域检查完成，未修改页面文字", regions: regions)

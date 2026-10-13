@@ -5,7 +5,6 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import CoreText
 import UniformTypeIdentifiers
-import VisionKit
 
 struct FolioError: LocalizedError {
     let message: String
@@ -118,35 +117,9 @@ enum DocumentServices {
         }
     }
 
-    /// Experimental vertical-text (竖排) recognition through VisionKit's Live Text analyzer,
-    /// which reads columns that VNRecognizeTextRequest skips. It returns text without line
-    /// geometry, so each line gets an approximate box: the page becomes searchable, but
-    /// search highlights do not sit exactly on the characters.
+    /// Vertical-text (竖排) recognition: columns are re-laid out as horizontal rows first. See VerticalText.swift.
     static func recognizeVertical(_ image: CGImage, languages: [String]) throws -> [RecognizedLine] {
-        guard ImageAnalyzer.isSupported else { throw FolioError(message: "这台 Mac 不支持实况文本分析，无法使用竖排识别。") }
-        final class Box: @unchecked Sendable { var transcript: String?; var error: Error? }
-        let box = Box(), done = DispatchSemaphore(value: 0)
-        let supported = Set(ImageAnalyzer.supportedTextRecognitionLanguages)
-        let locales = languages.filter { supported.isEmpty || supported.contains($0) }
-        Task.detached {
-            do {
-                var configuration = ImageAnalyzer.Configuration([.text])
-                if !locales.isEmpty { configuration.locales = locales }
-                box.transcript = try await ImageAnalyzer().analyze(image, orientation: .up, configuration: configuration).transcript
-            } catch {
-                box.error = error
-            }
-            done.signal()
-        }
-        // Never block forever if the analyzer needs a run loop that is not available.
-        guard done.wait(timeout: .now() + 90) == .success else { throw FolioError(message: "竖排识别超时。") }
-        if let error = box.error { throw error }
-        let lines = (box.transcript ?? "").components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        guard !lines.isEmpty else { return [] }
-        let height = min(0.04, 0.9 / CGFloat(lines.count))
-        return lines.enumerated().map { index, text in
-            RecognizedLine(text: text, box: CGRect(x: 0.05, y: 0.95 - CGFloat(index + 1) * height, width: 0.9, height: height), confidence: 0, approximate: true)
-        }
+        try VerticalText.recognize(image, languages: languages)
     }
 
     static func downscale(_ image: CGImage, maxDimension: CGFloat) throws -> CGImage {
