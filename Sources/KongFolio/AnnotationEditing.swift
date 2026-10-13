@@ -9,20 +9,29 @@ extension Workspace {
             note = annotation.contents ?? ""; annotationColor = Color(nsColor: annotation.fontColor ?? annotation.color)
         }
     }
+    // Annotation edits record only the touched annotation for undo; the PDF is not re-serialized.
     func updateAnnotation() {
         guard let annotation = selectedAnnotation else { return }
-        checkpoint(); annotation.contents = note
+        let edit = beginAnnotationEdit([annotation])
+        annotation.contents = note
         if annotation.type == "FreeText" { annotation.fontColor = NSColor(annotationColor) }
         else { annotation.color = NSColor(annotationColor).withAlphaComponent(annotation.type == "Highlight" ? 0.4 : 1) }
-        edited()
+        commitAnnotationEdit(edit)
+        selectedAnnotation = annotation
     }
     func deleteAnnotation() {
         guard let annotation = selectedAnnotation, let page = annotation.page else { return }
-        checkpoint(); page.removeAnnotation(annotation); selectedAnnotation = nil; edited()
+        let edit = beginAnnotationEdit([annotation])
+        page.removeAnnotation(annotation)
+        selectedAnnotation = nil
+        commitAnnotationEdit(edit)
     }
     func resizeAnnotation(_ factor: CGFloat) {
         guard let annotation = selectedAnnotation else { return }
-        checkpoint(); AnnotationGeometry.scale(annotation, by: factor); edited()
+        let edit = beginAnnotationEdit([annotation])
+        AnnotationGeometry.scale(annotation, by: factor)
+        commitAnnotationEdit(edit)
+        selectedAnnotation = annotation
     }
     func saveSignature() {
         guard let page else { return }
@@ -46,14 +55,16 @@ extension Workspace {
         let union = strokes.reduce(CGRect.null) { $0.union($1.bounds) }
         let target = page.bounds(for: .cropBox)
         let factor = min(1, target.width * 0.4 / max(1, union.width))
-        checkpoint()
+        var added: [PDFAnnotation] = []
         for stroke in strokes {
             guard let copy = stroke.copy() as? PDFAnnotation else { continue }
+            copy.setValue("", forAnnotationKey: AnnotationIdentity.key)
             AnnotationGeometry.scale(copy, by: factor)
             copy.bounds.origin = CGPoint(x: target.midX - union.width * factor / 2 + (stroke.bounds.minX - union.minX) * factor, y: target.midY + (stroke.bounds.minY - union.minY) * factor)
             page.addAnnotation(copy)
+            added.append(copy)
         }
-        edited(); status = "签名已插入页面中央，可用编辑标注工具移动"
+        recordAnnotationsAdded(added); status = "签名已插入页面中央，可用编辑标注工具移动"
     }
     func removeSignature(_ id: UUID) {
         report {

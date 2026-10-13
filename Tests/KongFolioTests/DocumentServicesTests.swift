@@ -70,7 +70,8 @@ final class DocumentServicesTests: XCTestCase {
         let ink = PDFAnnotation(bounds: page.bounds(for: .mediaBox), forType: .ink, withProperties: nil)
         let path = NSBezierPath(); path.move(to: CGPoint(x: 20, y: 20)); path.line(to: CGPoint(x: 90, y: 90)); ink.add(path); page.addAnnotation(ink)
         let roundtrip = PDFDocument(data: doc.dataRepresentation()!)!
-        XCTAssertEqual(roundtrip.page(at: 0)!.annotations.count, 2)
+        // Newer macOS versions add a Popup annotation for text notes on save; it is not user content.
+        XCTAssertEqual(Workspace.visibleAnnotations(on: roundtrip.page(at: 0)!).count, 2)
         XCTAssertTrue(roundtrip.page(at: 0)!.annotations.contains { $0.contents == "Review note" })
     }
     func testInvalidImportFails() {

@@ -26,7 +26,7 @@ final class VersionThreeTests: XCTestCase {
         XCTAssertEqual(flipped, CGRect(x: 0.1, y: 0.5, width: 0.5, height: 0.3))
     }
     @MainActor func testComposedCropAndUndo() throws {
-        let w = Workspace(); w.document = DocumentServicesTests().fixture(); w.mode = "Image"
+        let w = Workspace(); w.document = DocumentServicesTests().fixture(); w.mode = .image
         w.adjustments.crop = 0.1; w.updatePreview(); let before = w.preview!.size
         w.setCrop(CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))
         XCTAssertEqual(w.adjustments.crop, 0)
@@ -39,10 +39,10 @@ final class VersionThreeTests: XCTestCase {
     }
     @MainActor func testProjectMigrationAndReadingRemapping() throws {
         let w = Workspace(); w.document = try fixture(); w.bookmarks = [PageBookmark(page: 2, label: "Later")]; w.outlineEntries = ReadingServices.outline(w.document)
-        w.readingLayout = "双页"; w.readingPoint = CGPoint(x: 20, y: 200); w.readingScale = 1.2
+        w.readingLayout = .twoUp; w.readingPoint = CGPoint(x: 20, y: 200); w.readingScale = 1.2
         let archive = try w.snapshot(), data = try JSONEncoder().encode(archive)
         let restored = Workspace(); try restored.restore(JSONDecoder().decode(ProjectArchive.self, from: data))
-        XCTAssertEqual(restored.bookmarks, w.bookmarks); XCTAssertEqual(restored.readingLayout, "双页"); XCTAssertEqual(restored.readingPoint, w.readingPoint)
+        XCTAssertEqual(restored.bookmarks, w.bookmarks); XCTAssertEqual(restored.readingLayout, .twoUp); XCTAssertEqual(restored.readingPoint, w.readingPoint)
         var json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
         json["version"] = 2; json.removeValue(forKey: "reading"); json.removeValue(forKey: "ocrOriginals"); json.removeValue(forKey: "ocrRegions")
         let old = try JSONDecoder().decode(ProjectArchive.self, from: JSONSerialization.data(withJSONObject: json)); try old.validate()
@@ -69,7 +69,7 @@ final class VersionThreeTests: XCTestCase {
     func testConfiguredExportDimensionsAndMetadata() throws {
         let folder = try VersionTwoTests().temporary(); defer { try? FileManager.default.removeItem(at: folder) }
         let doc = try fixture(); doc.page(at: 0)!.rotation = 90
-        var options = ExportOptions(); options.format = "PNG"; options.dpi = 150
+        var options = ExportOptions(); options.format = .png; options.dpi = 150
         let cg = try ExportServices.render(doc.page(at: 0)!, dpi: 150)
         XCTAssertEqual(cg.width, 834); XCTAssertEqual(cg.height, 625)
         let encoded = try ExportServices.encode(cg, options: options)
@@ -81,7 +81,7 @@ final class VersionThreeTests: XCTestCase {
         let target = folder.appendingPathComponent("test.png")
         _ = try ExportServices.run(JobSpec(operation: .configured, source: source, pages: [0], destination: target, revision: UUID(), exportOptions: options)) { _ in }
         XCTAssertEqual(try Data(contentsOf: target).count, estimate.bytes)
-        options.format = "PDF"; options.rasterPDF = true; options.dpi = 72
+        options.format = .pdf; options.rasterPDF = true; options.dpi = 72
         let pdfURL = folder.appendingPathComponent("raster.pdf")
         _ = try ExportServices.run(JobSpec(operation: .configured, source: source, pages: [0], destination: pdfURL, revision: UUID(), exportOptions: options)) { _ in }
         let raster = PDFDocument(url: pdfURL)!
@@ -92,7 +92,7 @@ final class VersionThreeTests: XCTestCase {
     }
     func testConfiguredBatchCancellation() async throws {
         let folder = try VersionTwoTests().temporary(); defer { try? FileManager.default.removeItem(at: folder) }
-        var options = ExportOptions(); options.format = "PNG"; options.dpi = 72
+        var options = ExportOptions(); options.format = .png; options.dpi = 72
         let spec = JobSpec(operation: .configured, source: try fixture().dataRepresentation()!, pages: [0, 1, 2], destination: folder, revision: UUID(), exportOptions: options)
         let gate = TestGate(), box = TestTaskBox()
         let task = Task.detached { () throws -> JobResult in await gate.wait(); return try ExportServices.run(spec) { _ in box.cancel() } }

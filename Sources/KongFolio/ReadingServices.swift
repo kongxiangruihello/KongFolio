@@ -16,15 +16,18 @@ struct OutlineEntry: Codable, Identifiable, Equatable {
 struct ReadingState: Codable {
     var bookmarks: [PageBookmark] = []
     var outline: [OutlineEntry] = []
-    var layout = "连续"
+    var layout = ReadingLayout.continuous
     var point: CGPoint?
     var scale: Double?
+    var bibliography: Bibliography? = nil
 }
 struct SearchHit: Identifiable {
     var id = UUID()
     var page: Int
     var range: NSRange
     var snippet: String
+    /// The PDF page label (usually the printed page number) when it differs from the physical position.
+    var label: String? = nil
 }
 struct AnnotationNote: Identifiable {
     var id: String { "\(page)-\(index)" }
@@ -33,6 +36,65 @@ struct AnnotationNote: Identifiable {
     var kind: String
     var quote: String
     var note: String
+    var label: String? = nil
+    /// "第 3 页" or "第 3 页（印刷页码 15）".
+    var pageDescription: String { label.map { "第 \(page + 1) 页（印刷页码 \($0)）" } ?? "第 \(page + 1) 页" }
+}
+
+/// Text normalized for searching: line breaks inside CJK text are removed, other whitespace runs
+/// become one space, case is folded and (optionally) traditional characters are mapped to simplified.
+/// `origins` maps every UTF-16 unit of `text` back to a range in the original string.
+struct FoldedText {
+    var text: NSString
+    var origins: [NSRange]
+
+    static func isCJK(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x2E80...0x2FDF, 0x3005...0x3007, 0x3021...0x3029, 0x3040...0x30FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x323AF: return true
+        default: return false
+        }
+    }
+
+    init(_ original: String, simplify: Bool, cache: inout [String: String]) {
+        let source = original as NSString
+        var units: [unichar] = []
+        var origins: [NSRange] = []
+        var pendingSpace: NSRange?
+        var previousCJK = false
+        var location = 0
+        while location < source.length {
+            let range = source.rangeOfComposedCharacterSequence(at: location)
+            location = NSMaxRange(range)
+            let piece = source.substring(with: range)
+            if piece.unicodeScalars.allSatisfy({ CharacterSet.whitespacesAndNewlines.contains($0) }) {
+                if !units.isEmpty, pendingSpace == nil { pendingSpace = range }
+                continue
+            }
+            let cjk = piece.unicodeScalars.first.map(FoldedText.isCJK) ?? false
+            if let space = pendingSpace {
+                if !(previousCJK && cjk) { units.append(0x20); origins.append(space) }
+                pendingSpace = nil
+            }
+            var folded = piece.lowercased()
+            if simplify && cjk {
+                if let cached = cache[piece] { folded = cached }
+                else {
+                    let converted = piece.applyingTransform(StringTransform(rawValue: "Hant-Hans"), reverse: false) ?? piece
+                    folded = converted
+                    cache[piece] = converted
+                }
+            }
+            for unit in folded.utf16 { units.append(unit); origins.append(range) }
+            previousCJK = cjk
+        }
+        text = NSString(characters: units, length: units.count)
+        self.origins = origins
+    }
+
+    func originalRange(of folded: NSRange) -> NSRange {
+        let first = origins[folded.location], last = origins[NSMaxRange(folded) - 1]
+        return NSRange(location: first.location, length: NSMaxRange(last) - first.location)
+    }
 }
 enum ReadingServices {
     static let quoteKey = PDFAnnotationKey(rawValue: "KongFolioQuote")
@@ -62,25 +124,57 @@ enum ReadingServices {
         }
         doc.outlineRoot = root
     }
-    static func search(_ data: Data, query: String, limit: Int = 1000) throws -> [SearchHit] {
-        guard !query.isEmpty, let doc = PDFDocument(data: data) else { return [] }
+    /// Finds `query` in `text`, ignoring line breaks inside CJK text, case and (optionally) 繁简 differences.
+    /// Returned ranges refer to the original text, so PDFKit selections land on the right characters.
+    static func matches(in text: String, query: String, simplify: Bool = true, cache: inout [String: String]) -> [NSRange] {
+        let needle = FoldedText(query, simplify: simplify, cache: &cache).text
+        guard needle.length > 0 else { return [] }
+        let haystack = FoldedText(text, simplify: simplify, cache: &cache)
+        var result: [NSRange] = []
+        var start = 0
+        while start < haystack.text.length {
+            let found = haystack.text.range(of: needle as String, options: [.literal], range: NSRange(location: start, length: haystack.text.length - start))
+            guard found.location != NSNotFound, found.length > 0 else { break }
+            result.append(haystack.originalRange(of: found))
+            start = NSMaxRange(found)
+        }
+        return result
+    }
+
+    static func search(_ data: Data, query: String, limit: Int = 1000, simplify: Bool = true) throws -> [SearchHit] {
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let doc = PDFDocument(data: data) else { return [] }
         var hits: [SearchHit] = []
+        var cache: [String: String] = [:]
         for i in 0..<doc.pageCount {
             try Task.checkCancellation()
-            let text = (doc.page(at: i)?.string ?? "") as NSString
-            var start = 0
-            while start < text.length {
-                let found = text.range(of: query, options: [.caseInsensitive], range: NSRange(location: start, length: text.length - start))
-                guard found.location != NSNotFound else { break }
+            guard let page = doc.page(at: i) else { continue }
+            let string = page.string ?? ""
+            let text = string as NSString
+            let label = pageLabel(page, index: i)
+            for found in matches(in: string, query: query, simplify: simplify, cache: &cache) {
                 let lower = max(0, found.location - 32), upper = min(text.length, NSMaxRange(found) + 64)
                 let excerpt = text.substring(with: text.rangeOfComposedCharacterSequences(for: NSRange(location: lower, length: upper - lower))).replacingOccurrences(of: "\n", with: " ")
-                hits.append(SearchHit(page: i, range: found, snippet: excerpt))
+                hits.append(SearchHit(page: i, range: found, snippet: excerpt, label: label))
                 if hits.count >= limit { return hits }
-                start = NSMaxRange(found)
             }
         }
         return hits
     }
+
+    /// The page label when it carries information beyond the physical position (e.g. "xii" or "15" on page 27).
+    static func pageLabel(_ page: PDFPage, index: Int) -> String? {
+        guard let label = page.label?.trimmingCharacters(in: .whitespaces), !label.isEmpty, label != String(index + 1) else { return nil }
+        return label
+    }
+
+    static func bibliography(from document: PDFDocument) -> Bibliography {
+        var result = Bibliography()
+        let attributes = document.documentAttributes ?? [:]
+        if let title = attributes[PDFDocumentAttribute.titleAttribute] as? String { result.title = title.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if let author = attributes[PDFDocumentAttribute.authorAttribute] as? String { result.author = author.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return result
+    }
+
     static func notes(_ doc: PDFDocument) -> [AnnotationNote] {
         var notes: [AnnotationNote] = []
         for i in 0..<doc.pageCount {
@@ -88,24 +182,41 @@ enum ReadingServices {
             for (index, annotation) in page.annotations.enumerated() {
                 guard !["Link", "Widget", "Popup"].contains(annotation.type ?? "") else { continue }
                 let kind: String
-                switch annotation.type { case "Highlight": kind = "高亮"; case "Text": kind = "批注"; case "FreeText": kind = "文字框"; case "Ink": kind = "手写"; case "Line": kind = "箭头/线条"; default: kind = annotation.type ?? "标注" }
-                let quote = annotation.value(forAnnotationKey: quoteKey) as? String ?? (annotation.type == "Highlight" ? page.selection(for: annotation.bounds)?.string ?? "" : "")
-                notes.append(AnnotationNote(page: i, index: index, kind: kind, quote: quote, note: annotation.contents ?? ""))
+                switch annotation.type {
+                case "Highlight": kind = "高亮"
+                case "Underline": kind = "下划线"
+                case "StrikeOut": kind = "删除线"
+                case "Text": kind = "批注"
+                case "FreeText": kind = "文字框"
+                case "Ink": kind = "手写"
+                case "Line": kind = "箭头/线条"
+                default: kind = annotation.type ?? "标注"
+                }
+                let markup = ["Highlight", "Underline", "StrikeOut"].contains(annotation.type ?? "")
+                let quote = annotation.value(forAnnotationKey: quoteKey) as? String ?? (markup ? page.selection(for: annotation.bounds)?.string ?? "" : "")
+                notes.append(AnnotationNote(page: i, index: index, kind: kind, quote: quote, note: annotation.contents ?? "", label: pageLabel(page, index: i)))
             }
         }
         return notes
     }
-    static func markdown(title: String, notes: [AnnotationNote]) -> String {
+    static func markdown(title: String, notes: [AnnotationNote], bibliography: Bibliography? = nil) -> String {
         let title = title.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ")
-        var text = "# \(title) — 批注摘要\n\n来源文档：\(title)  \n页码按文档当前物理页序编号。\n"
+        var text = "# \(title) — 批注摘要\n\n"
+        if let bibliography, !bibliography.isEmpty { text += "书目：\(bibliography.citation)  \n" }
+        text += "来源文档：\(title)  \n"
+        text += notes.contains { $0.label != nil }
+            ? "“第 N 页”为文档中的物理页序；括号内为 PDF 页码标签，通常即书上的印刷页码，引用时请以印刷页码为准。\n"
+            : "页码按文档当前物理页序编号（此 PDF 未提供不同的印刷页码标签）。\n"
         var current = -1
         for entry in notes.sorted(by: { ($0.page, $0.index) < ($1.page, $1.index) }) {
-            if entry.page != current { current = entry.page; text += "\n## 第 \(current + 1) 页\n" }
+            if entry.page != current { current = entry.page; text += "\n## \(entry.pageDescription)\n" }
             text += "\n### \(entry.kind)\n\n"
             if !entry.quote.isEmpty { text += entry.quote.components(separatedBy: .newlines).map { "> " + $0 }.joined(separator: "\n") + "\n\n" }
             if !entry.note.isEmpty { text += "笔记：\n\n" + entry.note + "\n" }
             if entry.quote.isEmpty && entry.note.isEmpty { text += "（图形标注，无文本）\n" }
-            text += "\n来源页：\(entry.page + 1)\n"
+            let cited = entry.label ?? String(entry.page + 1)
+            if let bibliography, !bibliography.isEmpty { text += "\n引用：\(bibliography.citation(page: cited))\n" }
+            else { text += "\n来源页：\(entry.pageDescription.replacingOccurrences(of: "第 ", with: "").replacingOccurrences(of: " 页", with: ""))\n" }
         }
         return text
     }
@@ -114,9 +225,9 @@ extension Workspace {
     func addBookmark() {
         guard count > 0 else { return }; checkpoint()
         bookmarks.append(PageBookmark(page: selection, label: bookmarkName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "第 \(selection + 1) 页" : bookmarkName))
-        bookmarkName = ""; edited(); sidebarTab = "书签"
+        bookmarkName = ""; edited(pdfChanged: false); sidebarTab = .bookmarks
     }
-    func deleteBookmark(_ id: UUID) { checkpoint(); bookmarks.removeAll { $0.id == id }; edited() }
+    func deleteBookmark(_ id: UUID) { checkpoint(); bookmarks.removeAll { $0.id == id }; edited(pdfChanged: false) }
     func openOutline(_ entry: OutlineEntry) { selectPage(entry.page); readingPoint = entry.point; navigationToken = UUID() }
     func captureReadingPosition() {
         guard let view = pdfView, view.document === document, let destination = view.currentDestination, let page = destination.page, document.index(for: page) == selection else { return }
@@ -128,10 +239,10 @@ extension Workspace {
     func startSearch() {
         searchTask?.cancel(); searchResults = []; searchMessage = ""
         guard !search.isEmpty, let data = try? pdfData() else { return }
-        let query = search, version = revision; searchMessage = "正在搜索…"; sidebarTab = "搜索"
+        let query = search, version = revision; searchMessage = "正在搜索…"; sidebarTab = .search
         let job = Task.detached { try ReadingServices.search(data, query: query) }; searchTask = job
         Task {
-            do { let hits = try await job.value; guard revision == version, query == search else { return }; searchResults = hits; searchMessage = hits.count == 1000 ? "显示前 1000 处匹配，请缩小搜索范围" : "找到 \(hits.count) 处匹配" }
+            do { let hits = try await job.value; guard revision == version, query == search else { return }; searchResults = hits; searchMessage = hits.count == 1000 ? "显示前 1000 处匹配，请缩小搜索范围" : "找到 \(hits.count) 处匹配（忽略换行，简繁通查）" }
             catch is CancellationError {} catch { self.error = error.localizedDescription }
         }
     }
@@ -151,11 +262,11 @@ extension Workspace {
     func goToNote(_ entry: AnnotationNote) {
         selectPage(entry.page); guard let page, entry.index < page.annotations.count else { return }
         readingPoint = CGPoint(x: page.annotations[entry.index].bounds.minX, y: page.annotations[entry.index].bounds.maxY + 20)
-        selectAnnotation(page.annotations[entry.index]); tool = "编辑标注"; pdfView?.go(to: page.annotations[entry.index].bounds, on: page)
+        selectAnnotation(page.annotations[entry.index]); tool = .edit; pdfView?.go(to: page.annotations[entry.index].bounds, on: page)
     }
     func exportNotes() {
         guard let url = saveURL(type: .init(filenameExtension: "md") ?? .plainText, suffix: "md", name: title + "-notes") else { return }
-        report { try ReadingServices.markdown(title: title, notes: ReadingServices.notes(document)).write(to: url, atomically: true, encoding: .utf8); status = "已导出带页码和原文的批注摘要" }
+        report { try ReadingServices.markdown(title: title, notes: ReadingServices.notes(document), bibliography: bibliography).write(to: url, atomically: true, encoding: .utf8); status = "已导出带页码和原文的批注摘要" }
     }
 }
 

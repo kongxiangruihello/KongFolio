@@ -5,15 +5,18 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import CoreText
 import UniformTypeIdentifiers
+import VisionKit
 
 struct FolioError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
 }
 struct RecognizedLine: Codable {
-    let text: String
-    let box: CGRect
+    var text: String
+    var box: CGRect
     var confidence: Float = 1
+    /// True when the box is a placeholder (vertical-text mode has no per-line geometry).
+    var approximate: Bool? = nil
 }
 struct ImageAdjustments: Equatable, Codable {
     var cropRect: CGRect?
@@ -92,16 +95,70 @@ enum DocumentServices {
         guard let rectangle = request.results?.first else { throw FolioError(message: "未找到清晰的纸张边缘，请使用框选裁剪或手动校正。") }
         return [rectangle.topLeft, rectangle.topRight, rectangle.bottomRight, rectangle.bottomLeft]
     }
-    static func recognize(_ image: CGImage) throws -> [RecognizedLine] {
+    static var supportedOCRLanguages: [String] {
+        (try? VNRecognizeTextRequest().supportedRecognitionLanguages()) ?? []
+    }
+
+    /// Pixel size for OCR rendering: the page's longest side at `dpi`, kept within Vision-friendly limits.
+    static func ocrPixelDimension(for page: PDFPage, dpi: Int) -> CGFloat {
+        let bounds = page.bounds(for: .cropBox)
+        return min(7000, max(1600, max(bounds.width, bounds.height) * CGFloat(dpi) / 72))
+    }
+
+    static func recognize(_ image: CGImage, languages: [String] = OCRSettings().languages) throws -> [RecognizedLine] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
-        request.recognitionLanguages = ["zh-Hans", "en-US"]
+        let supported = Set(supportedOCRLanguages)
+        let chosen = languages.filter { supported.isEmpty || supported.contains($0) }
+        request.recognitionLanguages = chosen.isEmpty ? OCRSettings().languages : chosen
         request.usesLanguageCorrection = true
         try VNImageRequestHandler(cgImage: image).perform([request])
         return (request.results ?? []).compactMap { observation in
             observation.topCandidates(1).first.map { RecognizedLine(text: $0.string, box: observation.boundingBox, confidence: $0.confidence) }
         }
     }
+
+    /// Experimental vertical-text (竖排) recognition through VisionKit's Live Text analyzer,
+    /// which reads columns that VNRecognizeTextRequest skips. It returns text without line
+    /// geometry, so each line gets an approximate box: the page becomes searchable, but
+    /// search highlights do not sit exactly on the characters.
+    static func recognizeVertical(_ image: CGImage, languages: [String]) throws -> [RecognizedLine] {
+        guard ImageAnalyzer.isSupported else { throw FolioError(message: "这台 Mac 不支持实况文本分析，无法使用竖排识别。") }
+        final class Box: @unchecked Sendable { var transcript: String?; var error: Error? }
+        let box = Box(), done = DispatchSemaphore(value: 0)
+        let supported = Set(ImageAnalyzer.supportedTextRecognitionLanguages)
+        let locales = languages.filter { supported.isEmpty || supported.contains($0) }
+        Task.detached {
+            do {
+                var configuration = ImageAnalyzer.Configuration([.text])
+                if !locales.isEmpty { configuration.locales = locales }
+                box.transcript = try await ImageAnalyzer().analyze(image, orientation: .up, configuration: configuration).transcript
+            } catch {
+                box.error = error
+            }
+            done.signal()
+        }
+        // Never block forever if the analyzer needs a run loop that is not available.
+        guard done.wait(timeout: .now() + 90) == .success else { throw FolioError(message: "竖排识别超时。") }
+        if let error = box.error { throw error }
+        let lines = (box.transcript ?? "").components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard !lines.isEmpty else { return [] }
+        let height = min(0.04, 0.9 / CGFloat(lines.count))
+        return lines.enumerated().map { index, text in
+            RecognizedLine(text: text, box: CGRect(x: 0.05, y: 0.95 - CGFloat(index + 1) * height, width: 0.9, height: height), confidence: 0, approximate: true)
+        }
+    }
+
+    static func downscale(_ image: CGImage, maxDimension: CGFloat) throws -> CGImage {
+        let scale = min(1, maxDimension / CGFloat(max(image.width, image.height)))
+        guard scale < 1 else { return image }
+        let width = max(1, Int(CGFloat(image.width) * scale)), height = max(1, Int(CGFloat(image.height) * scale))
+        guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw FolioError(message: "无法创建预览图。") }
+        ctx.interpolationQuality = .medium
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return try ctx.makeImage().unwrap("无法创建预览图。")
+    }
+
     // Adds actual invisible PDF text, not a visible annotation pretending to be OCR.
     // Original page content is retained; annotations are flattened into the OCR result.
     static func searchablePage(_ page: PDFPage, lines: [RecognizedLine]) throws -> PDFPage {

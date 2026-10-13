@@ -42,6 +42,11 @@ jobs:
         run: |
           set -o pipefail
           swift build -c release 2>&1 | tee ci-logs/release.log
+      - name: Icon preview
+        if: success() || failure()
+        run: |
+          swift scripts/Icon.swift "$RUNNER_TEMP/iconset"
+          echo "::notice title=icon256 base64::$(base64 -i "$RUNNER_TEMP/iconset/icon_256x256.png" | tr -d '\n')"
       - name: Report as annotations
         if: always()
         run: ./scripts/ci-annotate.sh ci-logs

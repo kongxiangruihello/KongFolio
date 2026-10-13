@@ -26,7 +26,7 @@ final class VersionTwoTests: XCTestCase {
     }
     @MainActor func testProjectRoundTripAndRecovery() throws {
         let folder = try temporary(); defer { try? FileManager.default.removeItem(at: folder) }
-        let w = Workspace(storage: folder); w.document = fixture(); w.selectPage(2); w.mode = "Image"; w.title = "恢复测试"
+        let w = Workspace(storage: folder); w.document = fixture(); w.selectPage(2); w.mode = .image; w.title = "恢复测试"
         var adjustments = ImageAdjustments(); adjustments.brightness = 0.25; adjustments.cropRect = CGRect(x: 0.1, y: 0.2, width: 0.6, height: 0.5)
         w.imageDrafts[2] = adjustments; w.dirty = true
         let archive = try w.snapshot(); let file = folder.appendingPathComponent("test.kongfolio"); try archive.write(file)
@@ -102,7 +102,8 @@ final class VersionTwoTests: XCTestCase {
             XCTAssertEqual(before.width, after.width); XCTAssertEqual(before.height, after.height)
             let a = rgba(before), b = rgba(after)
             let difference = zip(a, b).reduce(0.0) { $0 + abs(Double($1.0) - Double($1.1)) } / Double(a.count)
-            XCTAssertTrue(difference < 3)
+            print("probe: OCR visual difference rotation \(rotation) = \(difference)")
+            XCTAssertTrue(difference < 3, "rotation \(rotation): mean difference \(difference)")
         }
     }
     private func rgba(_ cg: CGImage) -> [UInt8] {
