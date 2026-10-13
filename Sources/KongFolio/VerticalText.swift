@@ -167,12 +167,12 @@ enum VerticalText {
                 // One recognized character per cell: exact placement, so search highlights land on the characters.
                 for (character, cell) in zip(characters, column.cells) {
                     let box = CGRect(x: CGFloat(column.x0) / width, y: (height - CGFloat(cell.upperBound + 1)) / height, width: CGFloat(column.x1 - column.x0 + 1) / width, height: CGFloat(cell.count) / height)
-                    lines.append(RecognizedLine(text: String(character), box: box, confidence: confidence))
+                    lines.append(RecognizedLine(text: String(character), box: box, confidence: confidence, column: row))
                 }
             } else {
                 let top = column.cells.first!.lowerBound, bottom = column.cells.last!.upperBound
                 let box = CGRect(x: CGFloat(column.x0) / width, y: (height - CGFloat(bottom + 1)) / height, width: CGFloat(column.x1 - column.x0 + 1) / width, height: CGFloat(bottom - top + 1) / height)
-                lines.append(RecognizedLine(text: text, box: box, confidence: confidence, approximate: true))
+                lines.append(RecognizedLine(text: text, box: box, confidence: confidence, approximate: true, column: row))
             }
         }
         return lines
