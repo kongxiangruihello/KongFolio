@@ -251,4 +251,36 @@ final class VersionFourTests: XCTestCase {
         XCTAssertEqual(try ReadingServices.search(data, query: "学而").count, 1)
         XCTAssertEqual(try ReadingServices.search(data, query: "自远方").count, 1)
     }
+
+    // Measures what an annotation costs on a large scanned-style document, old path vs new path.
+    @MainActor func testLargeDocumentAnnotationTiming() throws {
+        // 60 pages of incompressible scan-like images (distinct per page, so nothing is shared).
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 595, height: 842)
+        let ctx = CGContext(consumer: CGDataConsumer(data: data)!, mediaBox: &box, nil)!
+        for _ in 0..<60 {
+            var pixels = [UInt8](repeating: 0, count: 640 * 480 * 4)
+            arc4random_buf(&pixels, pixels.count)
+            let image = CGImage(width: 640, height: 480, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: 640 * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue), provider: CGDataProvider(data: Data(pixels) as CFData)!, decode: nil, shouldInterpolate: true, intent: .defaultIntent)!
+            ctx.beginPDFPage(nil); ctx.draw(image, in: box); ctx.endPDFPage()
+        }
+        ctx.closePDF()
+        let w = Workspace(); w.document = PDFDocument(data: data as Data)!
+        let size = try w.pdfData().count
+        func ink() -> PDFAnnotation {
+            let annotation = PDFAnnotation(bounds: CGRect(x: 40, y: 40, width: 120, height: 60), forType: .ink, withProperties: nil)
+            let path = NSBezierPath(); path.move(to: .zero); path.line(to: CGPoint(x: 100, y: 50)); annotation.add(path)
+            return annotation
+        }
+        // 0.3 path: every stroke began with checkpoint(), which serializes the whole document after any edit.
+        var start = Date()
+        for _ in 0..<5 { w.checkpoint(); let a = ink(); w.page!.addAnnotation(a); w.edited() }
+        let old = Date().timeIntervalSince(start) / 5
+        // 0.4 path: the stroke records only the new annotation.
+        start = Date()
+        for _ in 0..<5 { let a = ink(); w.page!.addAnnotation(a); w.recordAnnotationsAdded([a]) }
+        let new = Date().timeIntervalSince(start) / 5
+        print(String(format: "probe: 60-page document %.1f MB — per stroke: snapshot path %.3f s, annotation record %.4f s; undo entries kept: %d", Double(size) / 1_048_576, old, new, w.history.count))
+        XCTAssertTrue(new < old)
+    }
 }
