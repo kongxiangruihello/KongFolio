@@ -142,7 +142,12 @@ enum DocumentServices {
         guard let consumer = CGDataConsumer(data: data), let ctx = CGContext(consumer: consumer, mediaBox: &rect, nil) else { throw FolioError(message: "无法创建 OCR 页面。") }
         ctx.beginPDFPage(nil)
         // Upright rendering makes Vision geometry and rotated/cropped PDF geometry identical.
-        guard let pageRef = page.pageRef else { throw FolioError(message: "无法读取 PDF 页面内容。") }
+        // `pageRef` does not see rotation or crop changes made in memory until the page is saved,
+        // so draw from a freshly serialized copy (verified on macOS 15 and 26 in CI).
+        let committed = DocumentServices.subset(page.document ?? PDFDocument(), indexes: page.document.map { [$0.index(for: page)] } ?? [])
+        if committed.pageCount == 0, let copy = page.copy() as? PDFPage { committed.insert(copy, at: 0) }
+        let holder = committed.dataRepresentation().flatMap { PDFDocument(data: $0) }
+        guard let pageRef = holder?.page(at: 0)?.pageRef ?? page.pageRef else { throw FolioError(message: "无法读取 PDF 页面内容。") }
         ctx.saveGState()
         ctx.concatenate(pageRef.getDrawingTransform(.cropBox, rect: rect, rotate: 0, preserveAspectRatio: true))
         ctx.drawPDFPage(pageRef)
@@ -164,6 +169,7 @@ enum DocumentServices {
             ctx.restoreGState()
         }
         ctx.endPDFPage(); ctx.closePDF()
+        withExtendedLifetime(holder) {}
         guard let result = PDFDocument(data: data as Data)?.page(at: 0) else { throw FolioError(message: "OCR PDF 生成失败。") }
         return result
     }

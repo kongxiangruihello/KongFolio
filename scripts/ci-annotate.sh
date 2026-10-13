@@ -3,7 +3,7 @@
 set -uo pipefail
 dir="${1:-ci-logs}"
 label="${2:-}"
-encode() { python3 -c 'import sys; s=sys.stdin.read()[-6000:]; print(s.replace("%","%25").replace("\r","%0D").replace("\n","%0A"), end="")'; }
+encode() { python3 -c 'import sys; s=sys.stdin.read()[-3800:]; print(s.replace("%","%25").replace("\r","%0D").replace("\n","%0A"), end="")'; }
 for log in "$dir"/*.log; do
   [ -f "$log" ] || continue
   name="$(basename "$log" .log)"

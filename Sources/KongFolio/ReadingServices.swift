@@ -70,16 +70,17 @@ struct FoldedText {
                 if !units.isEmpty, pendingSpace == nil { pendingSpace = range }
                 continue
             }
-            let cjk = piece.unicodeScalars.first.map(FoldedText.isCJK) ?? false
+            let cjk = piece.precomposedStringWithCompatibilityMapping.unicodeScalars.first.map(FoldedText.isCJK) ?? false
             if let space = pendingSpace {
                 if !(previousCJK && cjk) { units.append(0x20); origins.append(space) }
                 pendingSpace = nil
             }
-            var folded = piece.lowercased()
+            // NFKC folds Kangxi radicals (⾃ → 自) that PDF text extraction sometimes returns, and full-width forms.
+            var folded = piece.precomposedStringWithCompatibilityMapping.lowercased()
             if simplify && cjk {
                 if let cached = cache[piece] { folded = cached }
                 else {
-                    let converted = piece.applyingTransform(StringTransform(rawValue: "Hant-Hans"), reverse: false) ?? piece
+                    let converted = folded.applyingTransform(StringTransform(rawValue: "Hant-Hans"), reverse: false) ?? folded
                     folded = converted
                     cache[piece] = converted
                 }
@@ -154,11 +155,25 @@ enum ReadingServices {
             for found in matches(in: string, query: query, simplify: simplify, cache: &cache) {
                 let lower = max(0, found.location - 32), upper = min(text.length, NSMaxRange(found) + 64)
                 let excerpt = text.substring(with: text.rangeOfComposedCharacterSequences(for: NSRange(location: lower, length: upper - lower))).replacingOccurrences(of: "\n", with: " ")
-                hits.append(SearchHit(page: i, range: found, snippet: excerpt, label: label))
+                hits.append(SearchHit(page: i, range: found, snippet: repairIdeographs(excerpt), label: label))
                 if hits.count >= limit { return hits }
             }
         }
         return hits
+    }
+
+    /// Text extracted from PDF text layers can contain Kangxi radicals (U+2F00…) or CJK radical
+    /// supplements instead of the ordinary ideographs; map only those back, leaving full-width punctuation alone.
+    static func repairIdeographs(_ text: String) -> String {
+        var output = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            if (0x2E80...0x2FDF).contains(scalar.value), let mapped = String(scalar).precomposedStringWithCompatibilityMapping.unicodeScalars.first, mapped != scalar {
+                output.append(mapped)
+            } else {
+                output.append(scalar)
+            }
+        }
+        return String(output)
     }
 
     /// The page label when it carries information beyond the physical position (e.g. "xii" or "15" on page 27).
@@ -194,7 +209,7 @@ enum ReadingServices {
                 }
                 let markup = ["Highlight", "Underline", "StrikeOut"].contains(annotation.type ?? "")
                 let quote = annotation.value(forAnnotationKey: quoteKey) as? String ?? (markup ? page.selection(for: annotation.bounds)?.string ?? "" : "")
-                notes.append(AnnotationNote(page: i, index: index, kind: kind, quote: quote, note: annotation.contents ?? "", label: pageLabel(page, index: i)))
+                notes.append(AnnotationNote(page: i, index: index, kind: kind, quote: repairIdeographs(quote), note: annotation.contents ?? "", label: pageLabel(page, index: i)))
             }
         }
         return notes

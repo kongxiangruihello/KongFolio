@@ -875,7 +875,7 @@ import UniformTypeIdentifiers
 
     func exportText(markdown: Bool) {
         guard checkDraftsForExport() else { return }
-        let text = (0..<count).map { index in (markdown ? "## 第 \(index + 1) 页\n\n" : "") + (document.page(at: index)?.string ?? "") }.joined(separator: "\n\n")
+        let text = (0..<count).map { index in (markdown ? "## 第 \(index + 1) 页\n\n" : "") + ReadingServices.repairIdeographs(document.page(at: index)?.string ?? "") }.joined(separator: "\n\n")
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { error = "未发现文本，请先运行 OCR。"; return }
         guard let url = saveURL(type: markdown ? (UTType(filenameExtension: "md") ?? .plainText) : .plainText, suffix: markdown ? "md" : "txt") else { return }
         report { try text.write(to: url, atomically: true, encoding: .utf8); status = "已导出文本" }

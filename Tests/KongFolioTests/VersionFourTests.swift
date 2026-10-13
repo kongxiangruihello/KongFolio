@@ -240,45 +240,15 @@ final class VersionFourTests: XCTestCase {
         w.remove(); XCTAssertEqual(w.pageMeta.count, 2); XCTAssertTrue(w.ocrRegions.isEmpty)
     }
 
-    // Diagnostic: how the OCR page rebuild behaves for in-memory rotation/crop on this macOS version.
-    func testProbeRotatedCropRendering() throws {
-        func rgba(_ cg: CGImage) -> [UInt8] {
-            let ctx = CGContext(data: nil, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: cg.width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
-            return Array(UnsafeBufferPointer(start: ctx.data!.assumingMemoryBound(to: UInt8.self), count: cg.width * cg.height * 4))
-        }
-        func diff(_ a: CGImage, _ b: CGImage) -> String {
-            guard a.width == b.width, a.height == b.height else { return "size \(a.width)x\(a.height) vs \(b.width)x\(b.height)" }
-            let x = rgba(a), y = rgba(b)
-            return String(format: "%.2f", zip(x, y).reduce(0.0) { $0 + abs(Double($1.0) - Double($1.1)) } / Double(x.count))
-        }
-        func viaPageDraw(_ page: PDFPage) -> PDFPage {
-            let b = page.bounds(for: .cropBox), quarter = abs(page.rotation % 180) == 90
-            var rect = CGRect(origin: .zero, size: quarter ? CGSize(width: b.height, height: b.width) : b.size)
-            let data = NSMutableData(); let ctx = CGContext(consumer: CGDataConsumer(data: data)!, mediaBox: &rect, nil)!
-            ctx.beginPDFPage(nil); ctx.saveGState(); page.transform(ctx, for: .cropBox); page.draw(with: .cropBox, to: ctx); ctx.restoreGState(); ctx.endPDFPage(); ctx.closePDF()
-            return PDFDocument(data: data as Data)!.page(at: 0)!
-        }
-        var report: [String] = []
-        for rotation in [0, 90, 180, 270] {
-            let source = fixture(); let original = source.page(at: 0)!
-            original.rotation = rotation; original.setBounds(CGRect(x: 10, y: 20, width: 240, height: 300), for: .cropBox)
-            let before = try DocumentServices.render(original, maxDimension: 300)
-            let current = try DocumentServices.searchablePage(original, lines: [])
-            let pageDraw = viaPageDraw(original)
-            let reparsed = PDFDocument(data: source.dataRepresentation()!)!.page(at: 0)!
-            let afterReparse = try DocumentServices.searchablePage(reparsed, lines: [])
-            report.append("r\(rotation): pageRef=\(diff(before, try DocumentServices.render(current, maxDimension: 300))) pageDraw=\(diff(before, try DocumentServices.render(pageDraw, maxDimension: 300))) reparsed+pageRef=\(diff(before, try DocumentServices.render(afterReparse, maxDimension: 300)))")
-        }
-        // Does PDFPage.draw(with:to:) include annotations?
-        let doc = fixture(); let page = doc.page(at: 0)!
-        let ink = PDFAnnotation(bounds: CGRect(x: 150, y: 250, width: 120, height: 120), forType: .ink, withProperties: nil)
-        let path = NSBezierPath(); path.move(to: CGPoint(x: 5, y: 5)); path.line(to: CGPoint(x: 110, y: 110)); ink.add(path)
-        let border = PDFBorder(); border.lineWidth = 12; ink.border = border; ink.color = .black; page.addAnnotation(ink)
-        let drawn = try DocumentServices.render(viaPageDraw(page), maxDimension: 400)
-        let pixels = rgba(drawn); var dark = 0
-        for y in 0..<drawn.height { for x in 0..<drawn.width { let i = (y * drawn.width + x) * 4; if x > drawn.width / 2 && y < drawn.height / 3 && pixels[i] < 80 { dark += 1 } } }
-        report.append("pageDraw annotations dark pixels=\(dark)")
-        print("probe: rendering " + report.joined(separator: " · "))
+    // OCR text layers can extract as Kangxi radicals (⾃, ⽽); search and export map them back.
+    func testCompatibilityIdeographsInTextLayer() throws {
+        XCTAssertEqual(ReadingServices.repairIdeographs("⾃⽽⽅，"), "自而方，")
+        let page = fixture().page(at: 0)!
+        let searchable = try DocumentServices.searchablePage(page, lines: [RecognizedLine(text: "學而時習之自遠方來", box: CGRect(x: 0.05, y: 0.5, width: 0.9, height: 0.08))])
+        let doc = PDFDocument(); doc.insert(searchable, at: 0)
+        let data = doc.dataRepresentation()!
+        print("probe: horizontal text layer string = [\(PDFDocument(data: data)!.string ?? "")]")
+        XCTAssertEqual(try ReadingServices.search(data, query: "学而").count, 1)
+        XCTAssertEqual(try ReadingServices.search(data, query: "自远方").count, 1)
     }
 }
