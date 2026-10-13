@@ -16,6 +16,8 @@ struct RecognizedLine: Codable {
     var confidence: Float = 1
     /// True when the box is a placeholder (vertical-text mode has no per-line geometry).
     var approximate: Bool? = nil
+    /// Column index (0 = rightmost) for vertical-text results; nil for horizontal lines.
+    var column: Int? = nil
 }
 struct ImageAdjustments: Equatable, Codable {
     var cropRect: CGRect?
