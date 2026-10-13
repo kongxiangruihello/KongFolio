@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          sw_vers
+          swift --version
+          xcodebuild -version || true
+      - name: Build (debug)
+        run: swift build
+      - name: XCTest
+        run: swift test 2>&1 | tee xctest.log
+      - name: Portable test script
+        run: ./scripts/test.sh
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: |
+            xctest.log
+            .build/smoke/*.txt
+          if-no-files-found: ignore
