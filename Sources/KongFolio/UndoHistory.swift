@@ -119,25 +119,41 @@ extension Workspace {
         edited(pages: Set(changes.map(\.page)))
     }
 
+    /// Serializes the current state for the opposite undo stack. A failure used to be swallowed with `try?`,
+    /// which silently dropped the redo step; now the undo/redo is refused and the user is told why.
+    private func snapshotForHistory(_ action: String) -> ProjectArchive? {
+        do { return try snapshot() }
+        catch {
+            self.error = "无法\(action)：当前文档无法序列化，操作已取消，文档保持不变。\(error.localizedDescription)"
+            return nil
+        }
+    }
+
     func undo() {
-        guard let entry = history.popLast() else { return }
+        guard let entry = history.last else { return }
         switch entry {
         case .snapshot(let archive):
-            if let current = try? snapshot() { future.append(.snapshot(current)) }
+            guard let current = snapshotForHistory("撤销") else { return }
+            history.removeLast()
+            future.append(.snapshot(current))
             report { try restore(archive, keepProjectURL: true); dirty = true; scheduleRecovery() }
         case .annotations(let changes):
+            history.removeLast()
             applyAnnotationChanges(changes, restoringBefore: true)
             future.append(entry)
         }
     }
 
     func redo() {
-        guard let entry = future.popLast() else { return }
+        guard let entry = future.last else { return }
         switch entry {
         case .snapshot(let archive):
-            if let current = try? snapshot() { history.append(.snapshot(current)) }
+            guard let current = snapshotForHistory("重做") else { return }
+            future.removeLast()
+            history.append(.snapshot(current))
             report { try restore(archive, keepProjectURL: true); dirty = true; scheduleRecovery() }
         case .annotations(let changes):
+            future.removeLast()
             applyAnnotationChanges(changes, restoringBefore: false)
             history.append(entry)
         }
