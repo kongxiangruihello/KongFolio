@@ -58,7 +58,7 @@ Vision 的 `VNRecognizeTextRequest` 只读横行文字，竖排的一列字往�
   - PDF（三种类型）、PNG、JPG、TIFF，可选全部、当前或选中页面；
   - 72–600 DPI，可估算体积；
   - TXT 和 Markdown 全文。
-- **保存与恢复**：⌘S 保存 `.kongfolio` 项目，⇧⌘S 另存，⌘E 导出 PDF。自动恢复副本与最近文件存放在 `~/Library/Application Support/KongFolio/`。保存时会把被覆盖的上一版项目留在其中的 `Backups/` 文件夹（文件名为"路径摘要-原文件名"，每个项目只保留一版，可手动改名后用 KongFolio 打开）。
+- **保存与恢复**：⌘S 保存 `.kongfolio` 项目，⇧⌘S 另存，⌘E 导出 PDF。自动恢复副本与最近文件存放在 `~/Library/Application Support/KongFolio/`。保存时会把被覆盖的上一版项目留在其中的 `Backups/` 文件夹（文件名为"路径摘要-原文件名"，每个项目只保留一版，扩展名仍是 `.kongfolio`，可直接用 KongFolio 打开）。
 
 ## 当前边界
 
