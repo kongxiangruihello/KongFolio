@@ -525,6 +525,7 @@ import UniformTypeIdentifiers
                 return
             }
             guard case .documents(let data) = prepared else { throw FolioError(message: "文档读取失败") }
+            var openedBytes: Data?
             let loaded = try data.map { try PDFDocument(data: $0).unwrap("文档读取失败") }
             guard insert || confirmReplace() else { return }
             if insert {
@@ -574,6 +575,7 @@ import UniformTypeIdentifiers
                 future.removeAll()
                 projectURL = nil
                 mode = urls.count == 1 && urls[0].pathExtension.lowercased() != "pdf" && !TextImport.handles(urls[0]) ? .image : .document
+                if loaded.count == 1 { openedBytes = data.first }
             }
             readingPoint = nil
             readingScale = nil
@@ -581,6 +583,9 @@ import UniformTypeIdentifiers
             discarded = false
             recognizedText = ""
             changed()
+            // The opened bytes are the document. Without this, the first autosave (and the first search)
+            // serialized the whole file on the main thread. `changed()` clears the cache, so set it afterwards.
+            if let openedBytes { cachedPDF = openedBytes }
             if scanAfter {
                 mode = .image
                 adjustments.scan = true
