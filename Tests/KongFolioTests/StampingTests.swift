@@ -3,8 +3,11 @@ import PDFKit
 @testable import KongFolio
 
 final class StampingTests: XCTestCase {
-    /// PDFKit's text extraction does not keep spacing around CJK and digits reliably, so compare without spaces.
-    func compact(_ text: String?) -> String { (text ?? "").replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "\n", with: "") }
+    /// Compares extracted text the way the app's own search does. PDFKit does not keep spacing around CJK and digits
+    /// reliably, and a redrawn page is extracted with Kangxi radical forms (⾏ for 行), which the app folds back.
+    func compact(_ text: String?) -> String {
+        ReadingServices.repairIdeographs(text ?? "").replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "\n", with: "")
+    }
 
     func longText() throws -> PDFDocument {
         try TextImport.render((1...400).map { "第\($0)行：用于检验页码的一行文字。" }.joined(separator: "\n"), markdown: false)
