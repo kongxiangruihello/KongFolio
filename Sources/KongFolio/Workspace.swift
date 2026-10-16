@@ -301,7 +301,11 @@ import UniformTypeIdentifiers
     /// Records a full snapshot for undo. Annotation edits use the cheaper entries in UndoHistory.swift.
     func checkpoint() {
         do { pushUndo(.snapshot(try snapshot())) }
-        catch { future.removeAll(); dirty = true }
+        catch {
+            // The chain of undo steps is broken from here on; keeping older steps would skip this edit.
+            history.removeAll(); future.removeAll(); dirty = true
+            self.error = "无法记录撤销步骤，此操作之前的撤销历史已清除，此操作不能撤销：\(error.localizedDescription)"
+        }
     }
 
     /// Call after any change. `pdfChanged: false` for metadata such as bookmarks;
@@ -350,6 +354,13 @@ import UniformTypeIdentifiers
 
     // MARK: Saving
 
+    /// The previous version of a project is kept here when a save overwrites it (one version per project).
+    var backupFolder: URL { storage.appendingPathComponent("Backups", isDirectory: true) }
+
+    nonisolated static func savedStatus(_ backupError: Error?) -> String {
+        backupError.map { "项目已保存，但未能备份上一版：\($0.localizedDescription)" } ?? "项目已保存"
+    }
+
     @discardableResult func saveProject(asNew: Bool = false, background: Bool = true) -> Bool {
         guard count > 0 else { return false }
         let url: URL
@@ -371,27 +382,33 @@ import UniformTypeIdentifiers
                 progress = 0
                 taskLabel = "保存项目…"
                 let captured = archive
+                let backups = backupFolder
                 Task {
                     defer { busy = false }
                     do {
-                        try await Task.detached { try captured.write(url) }.value
+                        let backupError = try await Task.detached { () -> Error? in
+                            let failure = ProjectBackup.preserve(url, in: backups)
+                            try captured.write(url)
+                            return failure
+                        }.value
                         projectURL = url
                         dirty = false
                         remember([url])
                         scheduleRecovery()
-                        status = "项目已保存"
+                        status = Workspace.savedStatus(backupError)
                     } catch {
                         self.error = error.localizedDescription
                     }
                 }
                 return true
             }
+            let backupError = ProjectBackup.preserve(url, in: backupFolder)
             try archive.write(url)
             projectURL = url
             dirty = false
             remember([url])
             scheduleRecovery()
-            status = "项目已保存"
+            status = Workspace.savedStatus(backupError)
             return true
         } catch {
             self.error = error.localizedDescription

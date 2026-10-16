@@ -147,6 +147,35 @@ enum ProjectContainer {
     }
 }
 
+/// Keeps the version of a project file that a save is about to overwrite, so a bad save (wrong edit, full disk,
+/// crash mid-write) can be rolled back by hand. One previous version is kept per project path.
+enum ProjectBackup {
+    static func location(for url: URL, in folder: URL) -> URL {
+        let digest = SHA256.hash(data: Data(url.standardizedFileURL.path.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
+        return folder.appendingPathComponent("\(digest)-\(url.lastPathComponent)")
+    }
+
+    /// Copies `url` into `folder` if it is a readable KongFolio project. A file that does not look like a project
+    /// (for example a damaged one) is never allowed to replace a good backup. Returns the failure, if any;
+    /// a failed backup must not stop the save itself.
+    static func preserve(_ url: URL, in folder: URL) -> Error? {
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: url.path), let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        let head = (try? handle.read(upToCount: ProjectContainer.magic.count)) ?? Data()
+        try? handle.close()
+        guard head == ProjectContainer.magic || head.first == UInt8(ascii: "{") else { return nil }
+        do {
+            try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+            let backup = location(for: url, in: folder)
+            if manager.fileExists(atPath: backup.path) { try manager.removeItem(at: backup) }
+            try manager.copyItem(at: url, to: backup)
+            return nil
+        } catch {
+            return error
+        }
+    }
+}
+
 /// Recovery copy stored as a directory of content-addressed blobs plus a small manifest.
 /// Unchanged originals (image recipes, pre-OCR pages) are written once and reused by later
 /// autosaves; only the current PDF and the manifest are rewritten after each edit.
