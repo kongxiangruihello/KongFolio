@@ -3,27 +3,34 @@ import AppKit
 
 @main struct KongFolioApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    @StateObject private var workspace = Workspace()
+    @StateObject private var store = WorkspaceStore()
 
     var body: some Scene {
         Window("KongFolio", id: "workspace") {
-            ContentView(workspace: workspace)
+            RootView(store: store)
                 .frame(minWidth: 1060, minHeight: 720)
                 .background(WindowAccessor { window in delegate.attach(window) })
-                .onAppear { delegate.workspace = workspace; workspace.bootstrap() }
-                .onOpenURL { workspace.load([$0]) }
+                .onAppear { delegate.store = store; store.bootstrap() }
+                .onOpenURL { url in
+                    if TextImport.markdownExtensions.contains(url.pathExtension.lowercased()) { store.openNote(url) }
+                    else { store.openInNewTab([url]) }
+                }
         }
         .commands {
-            CommandGroup(replacing: .newItem) { Button("打开…") { workspace.open() }.keyboardShortcut("o") }
+            CommandGroup(replacing: .newItem) {
+                Button("打开…") { store.open() }.keyboardShortcut("o")
+                Button("新建 Markdown 笔记") { store.newNote() }.keyboardShortcut("n")
+                Button("编辑 Markdown 文件…") { store.editMarkdownFile() }.keyboardShortcut("o", modifiers: [.command, .shift])
+            }
             CommandGroup(replacing: .saveItem) {
-                Button("保存项目…") { workspace.saveProject() }.keyboardShortcut("s").disabled(workspace.count == 0 || workspace.busy)
-                Button("项目另存为…") { workspace.saveProject(asNew: true) }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(workspace.count == 0 || workspace.busy)
-                Button("导出 PDF…") { workspace.exportPDF() }.keyboardShortcut("e").disabled(workspace.count == 0 || workspace.busy)
-                Button("关闭文档或图片") { workspace.closeDocument() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(workspace.count == 0 || workspace.busy)
+                Button("保存") { store.saveActive() }.keyboardShortcut("s").disabled(!store.canSave)
+                Button("另存为…") { store.saveActive(asNew: true) }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(!store.canSave)
+                Button("导出 PDF…") { store.exportActive() }.keyboardShortcut("e").disabled(!store.canSave)
+                Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
             CommandGroup(replacing: .undoRedo) {
-                Button("撤销") { workspace.undo() }.keyboardShortcut("z").disabled(!workspace.canUndo || workspace.busy)
-                Button("重做") { workspace.redo() }.keyboardShortcut("z", modifiers: [.command, .shift]).disabled(!workspace.canRedo || workspace.busy)
+                Button("撤销") { store.undoActive() }.keyboardShortcut("z").disabled(!store.canUndo)
+                Button("重做") { store.redoActive() }.keyboardShortcut("z", modifiers: [.command, .shift]).disabled(!store.canRedo)
             }
         }
     }
@@ -46,7 +53,7 @@ struct WindowAccessor: NSViewRepresentable {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    weak var workspace: Workspace?
+    weak var store: WorkspaceStore?
     private weak var window: NSWindow?
     private var closingApproved = false
 
@@ -63,11 +70,11 @@ struct WindowAccessor: NSViewRepresentable {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if closingApproved { return .terminateNow }
-        return workspace?.prepareToClose() == false ? .terminateCancel : .terminateNow
+        return store?.prepareToClose() == false ? .terminateCancel : .terminateNow
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard workspace?.prepareToClose() != false else { return false }
+        guard store?.prepareToClose() != false else { return false }
         closingApproved = true
         return true
     }

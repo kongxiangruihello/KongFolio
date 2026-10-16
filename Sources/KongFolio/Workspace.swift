@@ -94,14 +94,19 @@ import UniformTypeIdentifiers
     private var discarded = false
     private let writer = RecoveryWriter()
     let storage: URL
+    let id = UUID()
+    /// Each tab keeps its own recovery copy. The first tab uses the empty slot, which is the file name earlier versions used.
+    let slot: String
+    weak var store: WorkspaceStore?
 
-    init(storage: URL? = nil) {
+    init(storage: URL? = nil, slot: String = "") {
         self.storage = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
+        self.slot = slot
     }
 
-    var recoveryURL: URL { storage.appendingPathComponent("Recovery.kfrecovery", isDirectory: true) }
-    /// 0.2/0.3 kept the recovery copy as one JSON file.
-    var legacyRecoveryURL: URL { storage.appendingPathComponent("Recovery.kongfolio") }
+    var recoveryURL: URL { storage.appendingPathComponent(slot.isEmpty ? "Recovery.kfrecovery" : "Recovery-\(slot).kfrecovery", isDirectory: true) }
+    /// 0.2/0.3 kept the recovery copy as one JSON file (first tab only).
+    var legacyRecoveryURL: URL { storage.appendingPathComponent(slot.isEmpty ? "Recovery.kongfolio" : "Recovery-\(slot).legacy-unused") }
     var count: Int { document.pageCount }
     var page: PDFPage? { document.page(at: selection) }
     var effectivePages: [Int] {
@@ -251,6 +256,10 @@ import UniformTypeIdentifiers
     }
 
     func remember(_ urls: [URL]) {
+        // Other tabs may have added files since this tab loaded the list; start from what is on disk.
+        if let stored = try? JSONDecoder().decode([String].self, from: Data(contentsOf: storage.appendingPathComponent("Recent.json"))) {
+            recentFiles = stored
+        }
         for url in urls.reversed() {
             recentFiles.removeAll { $0 == url.path }
             recentFiles.insert(url.path, at: 0)
@@ -455,6 +464,11 @@ import UniformTypeIdentifiers
         return count == 0 ? true : flushRecovery()
     }
 
+    /// Closes this tab (or, when it is the only one, returns it to the start screen).
+    func closeTab() {
+        if let store { store.close(id) } else { closeDocument() }
+    }
+
     /// Closes the current document or image and returns to the start screen. Unsaved work is confirmed first.
     /// The recovery copy is removed too, otherwise the closed document would be restored on the next launch.
     @discardableResult func closeDocument() -> Bool {
@@ -553,6 +567,12 @@ import UniformTypeIdentifiers
 
     func load(_ urls: [URL], insert: Bool = false, scanAfter: Bool = false, prepared: ImportPayload? = nil) {
         guard !urls.isEmpty else { return }
+        // A document that is already open stays open: new files go to a new tab. Inserting pages and the
+        // prepared (already read) payload of a tab's own import are not routed.
+        if !insert, prepared == nil, count > 0, let store {
+            store.openInNewTab(urls, scanAfter: scanAfter)
+            return
+        }
         if busy {
             // Opening from Finder while a task runs used to be dropped silently; queue it instead.
             deferredOpen = (urls, insert)

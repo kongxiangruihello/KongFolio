@@ -111,7 +111,7 @@ struct ContentView: View {
                 }
             } label: { Label("打开", systemImage: "folder") }
             Button("保存") { workspace.saveProject() }.disabled(workspace.count == 0).help("保存 KongFolio 项目（⌘S）")
-            Button("关闭") { workspace.closeDocument() }.disabled(workspace.count == 0 || workspace.busy).help("关闭当前文档或图片（⇧⌘W）")
+            Button("关闭") { workspace.closeTab() }.disabled(workspace.count == 0 || workspace.busy).help("关闭当前文档或图片（⇧⌘W）")
             Menu {
                 Button("PDF · 全部页面") { workspace.exportPDF() }
                 Button("PDF · 提取选中页") { workspace.exportPDF(currentOnly: true) }
