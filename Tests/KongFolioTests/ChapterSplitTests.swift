@@ -30,7 +30,7 @@ final class ChapterSplitTests: XCTestCase {
 
     func testFileNamesAreOrderedAndSafe() {
         let name = ChapterSplit.fileName(index: 3, total: 12, title: "第1/2章: 绪论?\n")
-        XCTAssertEqual(name, "03-第1_2章_ 绪论_.pdf")
+        XCTAssertEqual(name, "03-第1_2章_ 绪论__.pdf")
         XCTAssertTrue(ChapterSplit.fileName(index: 7, total: 120, title: "x").hasPrefix("007-"))
         XCTAssertEqual(ChapterSplit.fileName(index: 1, total: 5, title: "  ... "), "01-章节.pdf")
         XCTAssertTrue(ChapterSplit.fileName(index: 1, total: 5, title: String(repeating: "长", count: 200)).count <= 3 + 60 + 4)
