@@ -39,6 +39,7 @@ enum DocumentServices {
             }
             return document
         }
+        if TextImport.handles(url) { return try TextImport.document(from: url) }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { throw FolioError(message: "不支持或无法读取：\(url.lastPathComponent)") }
         let doc = PDFDocument()
         for i in 0..<CGImageSourceGetCount(source) {
