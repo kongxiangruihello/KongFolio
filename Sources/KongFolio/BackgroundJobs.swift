@@ -2,7 +2,7 @@ import AppKit
 import PDFKit
 import UniformTypeIdentifiers
 
-enum JobOperation { case ocr, compress, split, images, configured, inspectOCR }
+enum JobOperation { case ocr, compress, split, images, configured, inspectOCR, chapters }
 
 struct JobSpec {
     var operation: JobOperation
@@ -14,6 +14,7 @@ struct JobSpec {
     var forceOCR = false
     var ocrSources: [Int: Data] = [:]
     var ocr = OCRSettings()
+    var chapters: [ChapterPart] = []
 }
 
 struct JobResult {
@@ -41,6 +42,7 @@ enum BackgroundJobs {
         try Task.checkCancellation()
         if spec.operation == .configured { return try ExportServices.run(spec, progress: progress) }
         guard let doc = PDFDocument(data: spec.source), !spec.pages.isEmpty, spec.pages.allSatisfy({ (0..<doc.pageCount).contains($0) }) else { throw FolioError(message: "任务页面范围无效。") }
+        if spec.operation == .chapters { return try splitChapters(spec, doc: doc, progress: progress) }
         let output = PDFDocument()
         var regions: [Int: [RecognizedLine]] = [:], originals: [Int: Data] = [:]
         var recognizedCount = 0, skipped = 0
@@ -82,7 +84,7 @@ enum BackgroundJobs {
                     }
                 case .inspectOCR:
                     regions[index] = try recognize(page, settings: spec.ocr)
-                case .configured:
+                case .configured, .chapters:
                     break
                 case .compress:
                     let cg = try DocumentServices.render(page, maxDimension: 1400)
@@ -110,7 +112,7 @@ enum BackgroundJobs {
             return JobResult(pdf: try doc.dataRepresentation().unwrap("OCR 保存失败"), text: doc.string ?? "", message: "OCR 完成，识别 \(recognizedCount) 页，跳过 \(skipped) 个已有文字的页面\(note)", regions: regions, originals: originals)
         case .inspectOCR:
             return JobResult(message: "识别区域检查完成，未修改页面文字", regions: regions)
-        case .configured:
+        case .configured, .chapters:
             throw FolioError(message: "导出任务未执行")
         case .compress:
             let data = try output.dataRepresentation().unwrap("压缩保存失败")
@@ -133,6 +135,7 @@ extension Workspace {
         case .ocr: taskLabel = "识别文本"
         case .compress: taskLabel = "压缩 PDF"
         case .split: taskLabel = "拆分 PDF"
+        case .chapters: taskLabel = "按章节拆分"
         case .images: taskLabel = "导出图片"
         case .configured: taskLabel = "按设置导出"
         case .inspectOCR: taskLabel = "检查 OCR 区域"
