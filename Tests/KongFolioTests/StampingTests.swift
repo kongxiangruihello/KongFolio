@@ -31,8 +31,8 @@ final class StampingTests: XCTestCase {
         let output = try Stamping.apply(stamp, to: source, pages: [0])
         XCTAssertEqual(output.pageCount, 1)
         let text = compact(output.string)
-        XCTAssertTrue(text.contains("第1行："))
-        XCTAssertTrue(text.contains("第1页"), text.suffix(120).description)
+        XCTAssertTrue(text.contains("第1行："), "extracted: [\(text.prefix(160))]")
+        XCTAssertTrue(text.contains("第1页"), "extracted tail: [\(text.suffix(120))]")
         XCTAssertTrue(text.contains("页眉文字"))
         XCTAssertTrue(text.contains("页脚文字"))
     }
