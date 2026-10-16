@@ -3,6 +3,9 @@ import PDFKit
 @testable import KongFolio
 
 final class StampingTests: XCTestCase {
+    /// PDFKit's text extraction does not keep spacing around CJK and digits reliably, so compare without spaces.
+    func compact(_ text: String?) -> String { (text ?? "").replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "\n", with: "") }
+
     func longText() throws -> PDFDocument {
         try TextImport.render((1...400).map { "第\($0)行：用于检验页码的一行文字。" }.joined(separator: "\n"), markdown: false)
     }
@@ -27,16 +30,16 @@ final class StampingTests: XCTestCase {
         let stamp = StampOptions(numberFormat: .chinese, header: "页眉文字", footer: "页脚文字")
         let output = try Stamping.apply(stamp, to: source, pages: [0])
         XCTAssertEqual(output.pageCount, 1)
-        let text = output.string ?? ""
+        let text = compact(output.string)
         XCTAssertTrue(text.contains("第1行："))
-        XCTAssertTrue(text.contains("第 1 页"))
+        XCTAssertTrue(text.contains("第1页"), text.suffix(120).description)
         XCTAssertTrue(text.contains("页眉文字"))
         XCTAssertTrue(text.contains("页脚文字"))
     }
 
     func testWatermarkIsDrawn() throws {
         let output = try Stamping.apply(StampOptions(watermark: "内部资料"), to: try longText(), pages: [0])
-        XCTAssertTrue((output.string ?? "").contains("内部资料"))
+        XCTAssertTrue(compact(output.string).contains("内部资料"))
     }
 
     func testNumbersFollowStartAndSelection() throws {
@@ -44,8 +47,8 @@ final class StampingTests: XCTestCase {
         XCTAssertTrue(source.pageCount >= 7)
         let output = try Stamping.apply(StampOptions(numberFormat: .ofTotal, startNumber: 5), to: source, pages: [2, 3, 4])
         XCTAssertEqual(output.pageCount, 3)
-        XCTAssertTrue((output.page(at: 0)?.string ?? "").contains("5 / 7"))
-        XCTAssertTrue((output.page(at: 2)?.string ?? "").contains("7 / 7"))
+        XCTAssertTrue(compact(output.page(at: 0)?.string).contains("5/7"))
+        XCTAssertTrue(compact(output.page(at: 2)?.string).contains("7/7"))
     }
 
     func testPageSizeAndRotationAreKept() throws {
@@ -77,8 +80,8 @@ final class StampingTests: XCTestCase {
         let spec = JobSpec(operation: .configured, source: source, pages: [0, 1, 2], destination: target, revision: UUID(), exportOptions: options)
         let result = try BackgroundJobs.run(spec) { _ in }
         XCTAssertTrue(result.message.contains("页码"))
-        let text = PDFDocument(url: target)?.string ?? ""
-        XCTAssertTrue(text.contains("第 1 页")); XCTAssertTrue(text.contains("第 3 页"))
+        let text = compact(PDFDocument(url: target)?.string)
+        XCTAssertTrue(text.contains("第1页")); XCTAssertTrue(text.contains("第3页"))
         let estimate = try ExportServices.estimate(data: source, pages: [0, 1, 2], options: options)
         XCTAssertTrue(estimate.bytes > 0)
     }
