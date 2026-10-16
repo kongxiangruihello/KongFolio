@@ -442,7 +442,9 @@ import UniformTypeIdentifiers
 
     func pickFiles() -> [URL] {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.pdf, .jpeg, .png, .heic, .tiff, UTType(exportedAs: "com.kongfolio.project")]
+        var types: [UTType] = [.pdf, .jpeg, .png, .heic, .tiff, .plainText, UTType(exportedAs: "com.kongfolio.project")]
+        types += TextImport.markdownExtensions.compactMap { UTType(filenameExtension: $0) }
+        panel.allowedContentTypes = types
         panel.allowsMultipleSelection = true
         return panel.runModal() == .OK ? panel.urls : []
     }
@@ -466,8 +468,8 @@ import UniformTypeIdentifiers
 
     /// Files dropped on the window: open them, or insert after the current page when a document is open.
     func openDropped(_ urls: [URL]) {
-        let files = urls.filter { $0.isFileURL && ["pdf", "jpg", "jpeg", "png", "heic", "tif", "tiff", "kongfolio"].contains($0.pathExtension.lowercased()) }
-        guard !files.isEmpty else { error = "只能拖入 PDF、图片或 KongFolio 项目。"; return }
+        let files = urls.filter { $0.isFileURL && (["pdf", "jpg", "jpeg", "png", "heic", "tif", "tiff", "kongfolio"].contains($0.pathExtension.lowercased()) || TextImport.handles($0)) }
+        guard !files.isEmpty else { error = "只能拖入 PDF、图片、Markdown、TXT 或 KongFolio 项目。"; return }
         let isProject = files.contains { $0.pathExtension.lowercased() == "kongfolio" }
         var insert = false
         if count > 0, !isProject, NSApp != nil {
@@ -523,6 +525,7 @@ import UniformTypeIdentifiers
                 return
             }
             guard case .documents(let data) = prepared else { throw FolioError(message: "文档读取失败") }
+            var openedBytes: Data?
             let loaded = try data.map { try PDFDocument(data: $0).unwrap("文档读取失败") }
             guard insert || confirmReplace() else { return }
             if insert {
@@ -571,7 +574,8 @@ import UniformTypeIdentifiers
                 history.removeAll()
                 future.removeAll()
                 projectURL = nil
-                mode = urls.count == 1 && urls[0].pathExtension.lowercased() != "pdf" ? .image : .document
+                mode = urls.count == 1 && urls[0].pathExtension.lowercased() != "pdf" && !TextImport.handles(urls[0]) ? .image : .document
+                if loaded.count == 1 { openedBytes = data.first }
             }
             readingPoint = nil
             readingScale = nil
@@ -579,6 +583,9 @@ import UniformTypeIdentifiers
             discarded = false
             recognizedText = ""
             changed()
+            // The opened bytes are the document. Without this, the first autosave (and the first search)
+            // serialized the whole file on the main thread. `changed()` clears the cache, so set it afterwards.
+            if let openedBytes { cachedPDF = openedBytes }
             if scanAfter {
                 mode = .image
                 adjustments.scan = true

@@ -192,7 +192,7 @@ struct ContentView: View {
             VStack(spacing: 20) {
                 Image(systemName: "doc.richtext").font(.system(size: 64, weight: .ultraLight)).foregroundStyle(Brand.accent)
                 Text("每一页，都井井有条。").font(.system(size: 28, weight: .medium))
-                Text("PDF、图片与扫描文档的个人工作台").foregroundStyle(.secondary)
+                Text("PDF、图片、Markdown 与扫描文档的个人工作台").foregroundStyle(.secondary)
                 Button("打开文档或图片…") { workspace.open() }.buttonStyle(.borderedProminent).controlSize(.large)
                 Text("PDF · JPG · PNG · HEIC · TIFF · 也可以直接拖入窗口").font(.caption).foregroundStyle(.tertiary)
             }

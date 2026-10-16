@@ -38,7 +38,7 @@ Vision 的 `VNRecognizeTextRequest` 只读横行文字，竖排的一列字往�
 
 ## 功能概览
 
-- **打开与合并**：PDF、JPG、PNG、HEIC、TIFF（含多帧），也可以拖入窗口。多文件可先调整合并顺序；任务进行中打开的文件会排队。
+- **打开与合并**：PDF、JPG、PNG、HEIC、TIFF（含多帧），以及 Markdown / 纯文本（排版为 A4 PDF，见 `TextImport.swift`），也可以拖入窗口。多文件可先调整合并顺序；任务进行中打开的文件会排队。
 - **页面管理**：⌘ 多选、⇧ 连选，或输入 `1–3, 5, 8–10`。可拖动排序，以及复制、旋转、删除、提取、逐页拆分。文档至少保留一页。
 - **阅读**：
   - 连续、单页、双页布局，记住阅读位置；
@@ -84,6 +84,7 @@ Vision 的 `VNRecognizeTextRequest` 只读横行文字，竖排的一列字往�
 | ContentView / ImageCanvas / CropGeometry | 三栏界面、快捷工具、鼠标裁剪 |
 | ReadingServices / ReadingSidebar | 目录、书签、搜索折叠、页码标签、摘录与引用 |
 | ExportServices / ExportSheet | 三种 PDF 模式、DPI、范围、估算、后台导出 |
+| TextImport | Markdown / 纯文本解码、排版并分页为 A4 PDF |
 | ImportServices / ThumbnailView | 后台读取、按页缓存的缩略图 |
 | OCRReview | 识别区域、文本与置信度对照 |
 
