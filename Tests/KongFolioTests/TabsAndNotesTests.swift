@@ -89,7 +89,7 @@ final class TabsAndNotesTests: XCTestCase {
     @MainActor func testNewNoteTabAndClose() throws {
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
         let store = WorkspaceStore(storage: directory); store.bootstrap()
-        let first = try XCTUnwrap(store.activeWorkspace)
+        let first = try store.activeWorkspace.unwrap("没有标签页")
         let note = store.newNote()
         XCTAssertEqual(store.tabs.count, 2); XCTAssertEqual(store.selectedID, note.id)
         XCTAssertTrue(store.canSave)
@@ -106,23 +106,28 @@ final class TabsAndNotesTests: XCTestCase {
         let url = directory.appendingPathComponent("b.pdf")
         try DocumentServicesTests().fixture().dataRepresentation()!.write(to: url)
         let store = WorkspaceStore(storage: directory); store.bootstrap()
-        let first = try XCTUnwrap(store.activeWorkspace)
+        let first = try store.activeWorkspace.unwrap("没有标签页")
         first.document = DocumentServicesTests().fixture()
         first.load([url])
         XCTAssertEqual(store.tabs.count, 2)
         XCTAssertTrue(store.selectedID != first.id)
         XCTAssertEqual(first.count, 3)
-        // An empty active tab is reused instead of opening yet another one.
-        let second = try XCTUnwrap(store.activeWorkspace)
-        store.select(second.id)
+    }
+
+    // An empty tab is reused instead of opening yet another one.
+    @MainActor func testEmptyTabIsReused() throws {
+        let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("c.pdf")
+        try DocumentServicesTests().fixture().dataRepresentation()!.write(to: url)
+        let store = WorkspaceStore(storage: directory); store.bootstrap()
         store.openInNewTab([url])
-        XCTAssertEqual(store.tabs.count, 2)
+        XCTAssertEqual(store.tabs.count, 1)
     }
 
     @MainActor func testSessionRestoresEveryDocumentTab() throws {
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
         let store = WorkspaceStore(storage: directory); store.bootstrap()
-        let first = try XCTUnwrap(store.activeWorkspace)
+        let first = try store.activeWorkspace.unwrap("没有标签页")
         first.document = DocumentServicesTests().fixture()
         let second = store.addWorkspace()
         second.document = DocumentServicesTests().fixture()
@@ -138,7 +143,7 @@ final class TabsAndNotesTests: XCTestCase {
     @MainActor func testClosedDocumentIsNotRestored() throws {
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
         let store = WorkspaceStore(storage: directory); store.bootstrap()
-        let first = try XCTUnwrap(store.activeWorkspace)
+        let first = try store.activeWorkspace.unwrap("没有标签页")
         first.document = DocumentServicesTests().fixture()
         XCTAssertTrue(first.flushRecovery())
         let second = store.addWorkspace()
