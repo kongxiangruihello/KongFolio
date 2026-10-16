@@ -84,7 +84,7 @@ struct MarkdownTextView: NSViewRepresentable {
         if view.string != note.text { view.string = note.text }
     }
 
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
         let note: MarkdownNote
         init(note: MarkdownNote) { self.note = note }
 
