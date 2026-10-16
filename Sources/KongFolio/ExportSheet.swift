@@ -3,6 +3,31 @@ import SwiftUI
 struct ExportSheet: View {
     @ObservedObject var workspace: Workspace
 
+    private var stampControls: some View {
+        DisclosureGroup("页码、页眉页脚与水印") {
+            VStack(alignment: .leading, spacing: 10) {
+                Picker("页码", selection: $workspace.exportOptions.stamp.numberFormat) {
+                    ForEach(PageNumberFormat.allCases) { Text($0.rawValue).tag($0) }
+                }
+                if workspace.exportOptions.stamp.numberFormat != .none {
+                    Picker("位置", selection: $workspace.exportOptions.stamp.numberPosition) {
+                        ForEach(PageNumberPosition.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    Stepper("起始页码：\(workspace.exportOptions.stamp.startNumber)", value: $workspace.exportOptions.stamp.startNumber, in: 0...9999)
+                }
+                TextField("页眉（左上）", text: $workspace.exportOptions.stamp.header)
+                TextField("页脚（左下）", text: $workspace.exportOptions.stamp.footer)
+                TextField("水印文字（斜向居中）", text: $workspace.exportOptions.stamp.watermark)
+                Stepper("字号：\(Int(workspace.exportOptions.stamp.fontSize)) pt", value: $workspace.exportOptions.stamp.fontSize, in: 6...24)
+                if workspace.exportOptions.stamp.isActive {
+                    Text("叠加后页面会被重新绘制：文字保持可搜索，目录保留；标注固化到页面，链接不再可点。已有的页码会和新页码重叠，请先确认原文件没有页码。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.top, 6)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("导出设置").font(.title2.bold())
@@ -20,6 +45,7 @@ struct ExportSheet: View {
                 Text(workspace.exportOptions.pdfMode.detail + (workspace.exportOptions.pdfMode == .preserve ? "已有图片调整造成的栅格化不会逆转。" : ""))
                     .font(.caption).foregroundStyle(.secondary)
             }
+            if workspace.exportOptions.format == .pdf { stampControls }
             if workspace.exportOptions.rendersPixels {
                 Picker("分辨率", selection: $workspace.exportOptions.dpi) {
                     ForEach([72, 150, 300, 600], id: \.self) { Text("\($0) DPI").tag($0) }
