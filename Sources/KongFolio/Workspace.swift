@@ -455,6 +455,40 @@ import UniformTypeIdentifiers
         return count == 0 ? true : flushRecovery()
     }
 
+    /// Closes the current document or image and returns to the start screen. Unsaved work is confirmed first.
+    /// The recovery copy is removed too, otherwise the closed document would be restored on the next launch.
+    @discardableResult func closeDocument() -> Bool {
+        guard count > 0 else { return false }
+        guard !busy else { status = "请等待任务完成或点击取消任务"; return false }
+        if dirty { guard confirmReplace() else { return false } }
+        autoTask?.cancel()
+        do {
+            try writer.flush(nil, to: recoveryURL)
+            try? FileManager.default.removeItem(at: legacyRecoveryURL)
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+        let closed = title
+        searchTask?.cancel(); previewTask?.cancel(); estimateTask?.cancel()
+        document = PDFDocument(); cachedPDF = nil
+        pageMeta = []; selection = 0; selectedPages = [0]; rangeText = ""
+        title = "未命名文档"; mode = .document; tool = .select; note = ""
+        bookmarks = []; bookmarkName = ""; outlineEntries = []; bibliography = Bibliography()
+        search = ""; searchResults = []; searchMessage = ""; annotationNotes = []
+        readingPoint = nil; readingScale = nil
+        selectedAnnotation = nil; comparison = nil; recognizedText = ""
+        showOCRReview = false; reviewSelection = -1; exportEstimate = nil
+        history.removeAll(); future.removeAll(); lastJob = nil
+        projectURL = nil; dirty = false; discarded = false
+        thumbnails.clear(); pageVersions = [:]
+        layoutRevision = UUID(); navigationToken = UUID(); revision = UUID()
+        resetImage()
+        recoveryStatus = ""
+        status = "已关闭“\(closed)”"
+        return true
+    }
+
     // MARK: Opening
 
     func pickFiles() -> [URL] {
@@ -602,7 +636,12 @@ import UniformTypeIdentifiers
             changed()
             // The opened bytes are the document. Without this, the first autosave (and the first search)
             // serialized the whole file on the main thread. `changed()` clears the cache, so set it afterwards.
-            if let openedBytes { cachedPDF = openedBytes }
+            if let openedBytes {
+                cachedPDF = openedBytes
+                // Opening one file changes nothing yet: the file on disk is the original. Without this every
+                // opened document counted as unsaved work and closing it asked whether to save.
+                dirty = false
+            }
             if scanAfter {
                 mode = .image
                 adjustments.scan = true

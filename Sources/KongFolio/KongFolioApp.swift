@@ -19,6 +19,7 @@ import AppKit
                 Button("保存项目…") { workspace.saveProject() }.keyboardShortcut("s").disabled(workspace.count == 0 || workspace.busy)
                 Button("项目另存为…") { workspace.saveProject(asNew: true) }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(workspace.count == 0 || workspace.busy)
                 Button("导出 PDF…") { workspace.exportPDF() }.keyboardShortcut("e").disabled(workspace.count == 0 || workspace.busy)
+                Button("关闭文档或图片") { workspace.closeDocument() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(workspace.count == 0 || workspace.busy)
             }
             CommandGroup(replacing: .undoRedo) {
                 Button("撤销") { workspace.undo() }.keyboardShortcut("z").disabled(!workspace.canUndo || workspace.busy)
