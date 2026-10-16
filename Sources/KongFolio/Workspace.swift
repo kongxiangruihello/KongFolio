@@ -92,7 +92,7 @@ import UniformTypeIdentifiers
     private var previewTask: Task<Void, Never>?
     private var started = false
     private var discarded = false
-    private let writer = RecoveryWriter()
+    private let writer = RecoveryWriter.shared
     let storage: URL
     let id = UUID()
     /// Each tab keeps its own recovery copy. The first tab uses the empty slot, which is the file name earlier versions used.
@@ -274,6 +274,14 @@ import UniformTypeIdentifiers
     func scheduleRecovery() {
         guard started, count > 0 else { return }
         autoTask?.cancel()
+        guard dirty else {
+            // Nothing to protect: the opened file or saved project is this very document. Copying it into the
+            // recovery folder only cost disk time (a hash and a full write per opened PDF), and an older copy must
+            // not be restored over what is on disk. Quitting still writes a copy so the session comes back.
+            writer.discard(recoveryURL)
+            recoveryStatus = ""
+            return
+        }
         recoveryStatus = "等待自动保存"
         let delay = recoveryDelay
         autoTask = Task { [weak self] in

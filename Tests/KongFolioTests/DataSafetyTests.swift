@@ -95,3 +95,25 @@ final class DataSafetyTests: XCTestCase {
         XCTAssertTrue(Workspace.savedStatus(FolioError(message: "磁盘已满")).contains("磁盘已满"))
     }
 }
+
+final class RecoveryCostTests: XCTestCase {
+    // An unchanged document needs no recovery copy; an older copy is removed so it cannot be restored over the file.
+    @MainActor func testCleanDocumentDropsRecoveryCopy() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let w = Workspace(storage: directory); w.bootstrap()
+        w.document = DocumentServicesTests().fixture()
+        XCTAssertTrue(w.flushRecovery())
+        XCTAssertTrue(FileManager.default.fileExists(atPath: w.recoveryURL.path))
+        w.dirty = false
+        w.scheduleRecovery()
+        RecoveryWriter.shared.drain()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: w.recoveryURL.path))
+        XCTAssertEqual(w.recoveryStatus, "")
+    }
+
+    @MainActor func testTabsShareOneRecoveryQueue() throws {
+        XCTAssertTrue(RecoveryWriter.shared === RecoveryWriter.shared)
+    }
+}

@@ -227,7 +227,18 @@ enum RecoveryStore {
 
 // Serial writes prevent an older debounced snapshot from replacing a newer one.
 final class RecoveryWriter: @unchecked Sendable {
+    /// One queue for every tab: recovery copies of several large documents are written one after another
+    /// instead of competing with each other (and with file loading) for the disk.
+    static let shared = RecoveryWriter()
     private let queue = DispatchQueue(label: "com.kongfolio.recovery", qos: .utility)
+
+    /// Removes a recovery copy after any write already queued for it.
+    func discard(_ url: URL) {
+        queue.async { try? FileManager.default.removeItem(at: url) }
+    }
+
+    /// Returns once everything queued so far has finished.
+    func drain() { queue.sync {} }
 
     func write(_ archive: ProjectArchive, to url: URL, completion: @escaping (Error?) -> Void) {
         queue.async {
