@@ -125,3 +125,24 @@ final class FlattenedExportTests: XCTestCase {
         XCTAssertFalse(try JSONDecoder().decode(ExportOptions.self, from: stripped).appendsNotes)
     }
 }
+
+final class FlattenDiagnosticTests: XCTestCase {
+    /// Temporary: shows on CI what the flattened page's text looks like.
+    func testWhatTheFlattenedTextLooksLike() throws {
+        let book = try FlattenedExportTests().annotatedBook()
+        let page = try book.page(at: 0).unwrap("无页面")
+        func compact(_ text: String?) -> String { String((text ?? "").filter { !$0.isWhitespace }) }
+        let bare = try DocumentServices.searchablePage(page, lines: [])
+        let lines = ExportServices.textLines(of: page)
+        let final = try ExportServices.flattenedPage(page)
+        XCTAssertEqual(-1, compact(page.string).count)
+        XCTAssertEqual(-2, compact(bare.string).count)
+        XCTAssertEqual(-3, lines.count)
+        XCTAssertEqual(-4, compact(final.string).count)
+        XCTAssertEqual("原", String(compact(page.string).prefix(10)))
+        XCTAssertEqual("平", String(compact(bare.string).prefix(10)))
+        XCTAssertEqual("终", String(compact(final.string).prefix(10)))
+        XCTAssertEqual(-5, page.rotation)
+        XCTAssertEqual(-6, Int(page.bounds(for: .cropBox).width))
+    }
+}
