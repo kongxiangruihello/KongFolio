@@ -52,6 +52,17 @@ enum PageCrop {
                            top: Double((height - shown.maxY) / height), bottom: Double(shown.minY / height)).clamped
     }
 
+    /// A rectangle given as fractions of the visible area under the `old` cut, as fractions under the `new` cut
+    /// (both origin bottom-left, like Vision's boxes), so recognised regions stay on their characters.
+    static func remap(_ box: CGRect, from old: CropMargins, to new: CropMargins) -> CGRect {
+        let oldWidth = 1 - old.left - old.right, oldHeight = 1 - old.top - old.bottom
+        let newWidth = 1 - new.left - new.right, newHeight = 1 - new.top - new.bottom
+        guard oldWidth > 0, oldHeight > 0, newWidth > 0, newHeight > 0 else { return box }
+        let x = (old.left + Double(box.minX) * oldWidth - new.left) / newWidth
+        let y = (old.bottom + Double(box.minY) * oldHeight - new.bottom) / newHeight
+        return CGRect(x: x, y: y, width: Double(box.width) * oldWidth / newWidth, height: Double(box.height) * oldHeight / newHeight)
+    }
+
     /// Whether the page at `index` counts as an odd page of the book (the first page is page 1).
     static func isOddPage(_ index: Int) -> Bool { index % 2 == 0 }
 }
@@ -147,9 +158,11 @@ extension Workspace {
         checkpoint()
         for index in targets {
             guard let page = document.page(at: index) else { continue }
-            let margins = cropSeparate && !PageCrop.isOddPage(index) ? cropEven : cropOdd
-            page.setBounds(PageCrop.cropBox(mediaBox: page.bounds(for: .mediaBox), rotation: page.rotation, margins: margins), for: .cropBox)
-            updateMeta(index) { $0.ocrRegions = nil }
+            let margins = (cropSeparate && !PageCrop.isOddPage(index) ? cropEven : cropOdd).clamped
+            let media = page.bounds(for: .mediaBox)
+            let before = PageCrop.margins(of: page.bounds(for: .cropBox), mediaBox: media, rotation: page.rotation)
+            page.setBounds(PageCrop.cropBox(mediaBox: media, rotation: page.rotation, margins: margins), for: .cropBox)
+            moveRegions(of: index, from: before, to: margins)
         }
         changed()
         showCrop = false
@@ -163,12 +176,26 @@ extension Workspace {
         checkpoint()
         for index in targets {
             guard let page = document.page(at: index) else { continue }
-            page.setBounds(page.bounds(for: .mediaBox), for: .cropBox)
-            updateMeta(index) { $0.ocrRegions = nil }
+            let media = page.bounds(for: .mediaBox)
+            let before = PageCrop.margins(of: page.bounds(for: .cropBox), mediaBox: media, rotation: page.rotation)
+            page.setBounds(media, for: .cropBox)
+            moveRegions(of: index, from: before, to: .zero)
         }
         changed()
         showCrop = false
         status = "已恢复 \(targets.count) 页的完整页面"
+    }
+
+    /// Keeps the recognised regions of a page on their characters when the visible area changes.
+    private func moveRegions(of index: Int, from old: CropMargins, to new: CropMargins) {
+        guard old != new else { return }
+        updateMeta(index) { meta in
+            meta.ocrRegions = meta.ocrRegions?.map { line in
+                var moved = line
+                moved.box = PageCrop.remap(line.box, from: old, to: new)
+                return moved
+            }
+        }
     }
 
     /// Looks at the pages to cut and proposes margins (one setting for odd pages, one for even pages).

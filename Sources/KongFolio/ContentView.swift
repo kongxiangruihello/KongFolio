@@ -29,6 +29,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showCompress) { CompressSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showCrop) { CropSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showWordExport) { WordExportSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showOCRQuality) { OCRQualitySheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRReview) { OCRReview(workspace: workspace) }
         .sheet(isPresented: $workspace.showTools) { quickTools }
         .sheet(isPresented: $workspace.showImportOrder) { importOrder }
@@ -387,6 +388,7 @@ struct ContentView: View {
             Text("文字少于 \(workspace.ocrSettings.minimumTextCharacters) 个字符的页面会被识别；原有标注会被固化，执行前会提示。").font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button("检查当前页区域") { workspace.inspectOCR() }
+                Button("OCR 质量检查…") { workspace.openOCRQuality() }
                 if workspace.meta(workspace.selection).ocrRegions != nil {
                     Button("查看") { workspace.reviewSelection = -1; workspace.showOCRReview = true }
                 }
