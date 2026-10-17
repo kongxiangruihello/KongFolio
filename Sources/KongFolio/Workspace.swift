@@ -126,7 +126,7 @@ import UniformTypeIdentifiers
     var previewIsProxy = false
     /// Tests and scripts replace this to answer confirmation dialogs.
     static var confirmationHandler: ((_ title: String, _ detail: String) -> Bool)?
-    private var cachedPDF: Data?
+    var cachedPDF: Data?
     private var imageBase: CGImage?
     private var proxyBase: CGImage?
     private var displayCache: (key: String, image: NSImage)?

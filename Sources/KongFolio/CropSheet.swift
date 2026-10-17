@@ -52,6 +52,13 @@ struct CropSheet: View {
         .frame(width: 600)
     }
 
+    /// The part of a preview of the given size that stays after the cut (the top-left origin of SwiftUI).
+    private static func keptArea(_ margins: CropMargins, in size: CGSize) -> CGRect {
+        let left = CGFloat(margins.left) * size.width, right = CGFloat(margins.right) * size.width
+        let top = CGFloat(margins.top) * size.height, bottom = CGFloat(margins.bottom) * size.height
+        return CGRect(x: left, y: top, width: size.width - left - right, height: size.height - top - bottom)
+    }
+
     private func slider(_ title: String, _ key: WritableKeyPath<CropMargins, Double>) -> some View {
         HStack {
             Text(title).frame(width: 18)
@@ -73,15 +80,15 @@ struct CropSheet: View {
             if let image {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
                     .overlay(GeometryReader { proxy in
-                        let w = proxy.size.width, h = proxy.size.height
+                        let kept = Self.keptArea(m, in: proxy.size)
                         Path { path in
-                            path.addRect(CGRect(x: 0, y: 0, width: w, height: h))
-                            path.addRect(CGRect(x: m.left * w, y: m.top * h, width: w * (1 - m.left - m.right), height: h * (1 - m.top - m.bottom)))
+                            path.addRect(CGRect(origin: .zero, size: proxy.size))
+                            path.addRect(kept)
                         }
                         .fill(Color.black.opacity(0.45), style: FillStyle(eoFill: true))
                         Rectangle().stroke(Color.accentColor, lineWidth: 1.5)
-                            .frame(width: w * (1 - m.left - m.right), height: h * (1 - m.top - m.bottom))
-                            .position(x: m.left * w + w * (1 - m.left - m.right) / 2, y: m.top * h + h * (1 - m.top - m.bottom) / 2)
+                            .frame(width: kept.width, height: kept.height)
+                            .position(x: kept.midX, y: kept.midY)
                     })
             } else {
                 Rectangle().fill(Color.secondary.opacity(0.1))
