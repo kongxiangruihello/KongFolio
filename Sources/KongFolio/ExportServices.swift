@@ -100,8 +100,11 @@ enum ExportServices {
     /// the text is put back as invisible lines at the places it had (pages that are not rotated).
     static func flattenedPage(_ page: PDFPage) throws -> PDFPage {
         let flat = try DocumentServices.searchablePage(page, lines: [])
-        let original = BackgroundJobs.textCharacterCount(page)
-        guard original > 0, BackgroundJobs.textCharacterCount(flat) * 2 < original, page.rotation % 360 == 0 else { return flat }
+        func compact(_ text: String?) -> String { String((text ?? "").filter { !$0.isWhitespace }) }
+        let original = compact(page.string)
+        // The start of the page's text must still be there; a page that kept text of the same length but unreadable
+        // (characters lost their mapping) counts as lost too.
+        guard !original.isEmpty, !compact(flat.string).contains(original.prefix(8)), page.rotation % 360 == 0 else { return flat }
         let lines = textLines(of: page)
         return lines.isEmpty ? flat : try DocumentServices.searchablePage(page, lines: lines)
     }
