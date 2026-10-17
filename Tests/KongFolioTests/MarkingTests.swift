@@ -67,12 +67,13 @@ final class AnnotationDigestTests: XCTestCase {
     }
 
     func testColourNames() {
-        XCTAssertEqual(MarkupColor.nearest(to: .systemYellow), .yellow)
-        XCTAssertEqual(MarkupColor.nearest(to: .systemGreen), .green)
-        XCTAssertEqual(MarkupColor.nearest(to: .systemBlue), .blue)
-        XCTAssertEqual(MarkupColor.nearest(to: .systemPink), .pink)
-        XCTAssertNil(MarkupColor.nearest(to: .black))
-        XCTAssertNil(MarkupColor.nearest(to: .gray))
+        func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> NSColor { NSColor(srgbRed: r, green: g, blue: b, alpha: 1) }
+        XCTAssertEqual(MarkupColor.nearest(to: rgb(1, 0.8, 0)), .yellow)
+        XCTAssertEqual(MarkupColor.nearest(to: rgb(0.2, 0.78, 0.35)), .green)
+        XCTAssertEqual(MarkupColor.nearest(to: rgb(0, 0.48, 1)), .blue)
+        XCTAssertEqual(MarkupColor.nearest(to: rgb(1, 0.18, 0.33)), .pink)
+        XCTAssertNil(MarkupColor.nearest(to: rgb(0, 0, 0)))
+        XCTAssertNil(MarkupColor.nearest(to: rgb(0.5, 0.5, 0.5)))
     }
 
     func testMarkdownNamesTheColour() {
