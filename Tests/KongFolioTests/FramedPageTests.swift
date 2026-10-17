@@ -93,7 +93,7 @@ final class FramedPageDetailTests: XCTestCase {
         XCTAssertTrue(parts[0].upperBound >= 79 && parts[0].upperBound <= 90)
         XCTAssertTrue(parts[1].lowerBound >= 80 && parts[1].lowerBound <= 91)
         XCTAssertEqual(VerticalText.splitWide(20...80, ink: ink, typical: 60).count, 1)          // an ordinary column is not cut
-        XCTAssertTrue(VerticalText.splitWide(0...399, ink: [Int](repeating: 100, count: 400), typical: 60).isEmpty)      // a blob is dropped
+        XCTAssertTrue(VerticalText.splitWide(0...699, ink: [Int](repeating: 100, count: 700), typical: 60).isEmpty)      // a blob (nine columns wide) is dropped
     }
 
     func testFragmentsOfTheFrameAtTheHeadOfAColumnAreRemoved() {
