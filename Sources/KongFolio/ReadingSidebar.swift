@@ -2,6 +2,10 @@ import SwiftUI
 
 struct ReadingSidebar: View {
     @ObservedObject var workspace: Workspace
+    @State private var outlineTitle = ""
+    @State private var outlineDepth = 0
+    @State private var editingOutline: UUID?
+    @State private var editedTitle = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -17,11 +21,24 @@ struct ReadingSidebar: View {
         .onChange(of: workspace.sidebarTab) { _, tab in if tab == .notes { workspace.refreshNotes() } }
     }
 
+    private func addOutline() {
+        workspace.addOutlineEntry(title: outlineTitle, depth: outlineDepth)
+        outlineTitle = ""
+    }
+
     private var outline: some View {
         Group {
-            if workspace.outlineEntries.isEmpty {
-                Text("此文档没有内嵌目录。可添加自己的书签。").font(.caption).foregroundStyle(.secondary).padding()
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("目录条目名称（可选）", text: $outlineTitle).onSubmit(addOutline)
+                HStack {
+                    Picker("级别", selection: $outlineDepth) { ForEach(0..<4) { Text("第 \($0 + 1) 级").tag($0) } }.labelsHidden().frame(width: 90)
+                    Button("把当前页加入目录", action: addOutline).disabled(workspace.count == 0)
+                }
+                if workspace.outlineEntries.isEmpty {
+                    Text("此文档没有目录。给章节的起始页加入目录后，导出或另存为 PDF 时会写进文件，也可用来按章节拆分。").font(.caption).foregroundStyle(.secondary)
+                }
             }
+            .padding(.horizontal, 8)
             if !workspace.outlineEntries.isEmpty {
                 Menu("按章节拆分为多个 PDF…") {
                     ForEach(ChapterSplit.depths(workspace.outlineEntries, pageCount: workspace.count), id: \.self) { depth in
@@ -34,16 +51,30 @@ struct ReadingSidebar: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 6) {
                     ForEach(workspace.outlineEntries) { entry in
-                        Button { workspace.openOutline(entry) } label: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(entry.label).lineLimit(3)
-                                Text(pageText(entry.page)).font(.caption).foregroundStyle(.secondary)
+                        if editingOutline == entry.id {
+                            TextField("名称", text: $editedTitle)
+                                .onSubmit { workspace.renameOutlineEntry(entry.id, to: editedTitle); editingOutline = nil }
+                                .padding(.leading, CGFloat(min(4, entry.depth)) * 10 + 6)
+                        } else {
+                            Button { workspace.openOutline(entry) } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(entry.label).lineLimit(3)
+                                    Text(pageText(entry.page)).font(.caption).foregroundStyle(.secondary)
+                                }
+                                .padding(.leading, CGFloat(min(4, entry.depth)) * 10)
+                                .padding(6)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .padding(.leading, CGFloat(min(4, entry.depth)) * 10)
-                            .padding(6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("重命名…") { editedTitle = entry.label; editingOutline = entry.id }
+                                Button("降一级（缩进）") { workspace.indentOutlineEntry(entry.id, by: 1) }
+                                Button("升一级") { workspace.indentOutlineEntry(entry.id, by: -1) }
+                                Divider()
+                                Button("删除这一条", role: .destructive) { workspace.deleteOutlineEntry(entry.id) }
+                                Button("清除整个目录", role: .destructive) { workspace.clearOutline() }
+                            }
                         }
-                        .buttonStyle(.plain)
                     }
                 }
                 .padding(8)
