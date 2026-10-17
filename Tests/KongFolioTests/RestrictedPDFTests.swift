@@ -69,4 +69,15 @@ final class RestrictedPDFTests: XCTestCase {
         XCTAssertFalse(again.isLocked)
         XCTAssertEqual(again.pageCount, 1)
     }
+
+    /// The way the app opens a PDF: the file's own bytes become the document.
+    @MainActor func testAnAnnotationSurvivesWhenTheFileIsOpenedFromItsBytes() throws {
+        let candidates = [
+            URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/framed-vertical-page.pdf"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Tests/KongFolioTests/Fixtures/framed-vertical-page.pdf"),
+        ]
+        guard let url = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else { return }
+        let document = try PDFDocument(data: Data(contentsOf: url)).unwrap("无法读取")
+        XCTAssertEqual(try squaresAfterSaving(document), 1)
+    }
 }

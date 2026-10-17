@@ -118,3 +118,94 @@ final class BatchRecipeTests: XCTestCase {
         XCTAssertTrue(queue.summary.contains("跳过 2 个"))
     }
 }
+
+final class PageRangeTests: XCTestCase {
+    func testRangesAreReadAsPeopleWriteThem() {
+        XCTAssertEqual(PageRange.parse("", pageCount: 5) ?? [], [0, 1, 2, 3, 4])
+        XCTAssertEqual(PageRange.parse("1-3, 5", pageCount: 10) ?? [], [0, 1, 2, 4])
+        XCTAssertEqual(PageRange.parse("8-", pageCount: 10) ?? [], [7, 8, 9])
+        XCTAssertEqual(PageRange.parse("-2", pageCount: 10) ?? [], [0, 1])
+        XCTAssertEqual(PageRange.parse("３，５－６", pageCount: 3) == nil, true)
+        XCTAssertEqual(PageRange.parse("2，4－5", pageCount: 10) ?? [], [1, 3, 4])
+        XCTAssertEqual(PageRange.parse("9-20", pageCount: 10) ?? [], [8, 9])
+        XCTAssertEqual(PageRange.parse("50", pageCount: 10) ?? [-1], [])
+    }
+
+    func testNonsenseIsRejected() {
+        XCTAssertTrue(PageRange.parse("abc", pageCount: 10) == nil)
+        XCTAssertTrue(PageRange.parse("5-2", pageCount: 10) == nil)
+        XCTAssertTrue(PageRange.parse("0", pageCount: 10) == nil)
+        XCTAssertTrue(PageRange.parse("1-2-3", pageCount: 10) == nil)
+    }
+
+    func testRecipesSavedByVersion013StillLoad() throws {
+        let old = #"[{"id":"5B1F2A5E-0000-4000-8000-000000000001","name":"旧配方","autoCrop":true,"writePDF":true,"useReplacementRules":true}]"#
+        let loaded = try JSONDecoder().decode([WorkRecipe].self, from: Data(old.utf8))
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].name, "旧配方")
+        XCTAssertTrue(loaded[0].autoCrop)
+        XCTAssertEqual(loaded[0].pageRange, "")
+        XCTAssertFalse(loaded[0].splitChapters)
+    }
+}
+
+final class BatchChapterTests: XCTestCase {
+    func picture(pages: Int) throws -> (data: Data, document: PDFDocument) {
+        let data = try ScaleTests().picturePDF(pages: pages)
+        return (data, try PDFDocument(data: data).unwrap("无法读取"))
+    }
+
+    func testThePageRangeKeepsOnlyThosePagesAndTheOutlineFollows() throws {
+        let book = try picture(pages: 10)
+        ReadingServices.applyOutline([OutlineEntry(page: 0, label: "封面", depth: 0), OutlineEntry(page: 4, label: "第一卷", depth: 0), OutlineEntry(page: 8, label: "第二卷", depth: 0)], to: book.document)
+        let data = try book.document.dataRepresentation().unwrap("无法序列化")
+        var recipe = WorkRecipe(name: "章节")
+        recipe.pageRange = "3-10"
+        recipe.splitChapters = true
+        let result = try BatchPipeline.process(data, recipe: recipe, replacements: [], wordURL: nil)
+        XCTAssertEqual(result.pages, 8)
+        XCTAssertEqual(try PDFDocument(data: result.pdf.unwrap("没有输出")).unwrap("无法读取").pageCount, 8)
+        // 封面 (page 1) was left out, so the book starts with the front-matter part, then 第一卷 (new page 3) and 第二卷 (new page 7).
+        XCTAssertEqual(result.chapters.count, 3)
+        XCTAssertEqual(try PDFDocument(data: result.chapters[0].data).unwrap("无法读取").pageCount, 2)
+        XCTAssertEqual(try PDFDocument(data: result.chapters[1].data).unwrap("无法读取").pageCount, 4)
+        XCTAssertEqual(try PDFDocument(data: result.chapters[2].data).unwrap("无法读取").pageCount, 2)
+        XCTAssertTrue(result.chapters[1].name.contains("第一卷"))
+    }
+
+    func testARangeOutsideTheFileIsAnError() throws {
+        var recipe = WorkRecipe(name: "越界")
+        recipe.pageRange = "50-60"
+        var message = ""
+        do { _ = try BatchPipeline.process(picture(pages: 3).data, recipe: recipe, replacements: [], wordURL: nil) } catch { message = error.localizedDescription }
+        XCTAssertTrue(message.contains("超出"))
+        recipe.pageRange = "x"
+        do { _ = try BatchPipeline.process(picture(pages: 3).data, recipe: recipe, replacements: [], wordURL: nil) } catch { message = error.localizedDescription }
+        XCTAssertTrue(message.contains("无法理解"))
+    }
+
+    @MainActor func testTheQueueWritesAChapterFolderAndSkipsItNextTime() async throws {
+        let input = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-ch-" + UUID().uuidString, isDirectory: true)
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-ch-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: input, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: input); try? FileManager.default.removeItem(at: output) }
+        let book = try picture(pages: 6)
+        ReadingServices.applyOutline([OutlineEntry(page: 0, label: "卷一", depth: 0), OutlineEntry(page: 3, label: "卷二", depth: 0)], to: book.document)
+        try book.document.dataRepresentation().unwrap("无法序列化").write(to: input.appendingPathComponent("书.pdf"))
+        var recipe = WorkRecipe(name: "章节")
+        recipe.splitChapters = true
+        recipe.writePDF = false
+        let queue = BatchQueue()
+        queue.load(input)
+        queue.start(recipe: recipe, output: output, replacements: [])
+        while queue.running { try await Task.sleep(nanoseconds: 50_000_000) }
+        let folder = output.appendingPathComponent("书-章节", isDirectory: true)
+        let names = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
+        XCTAssertEqual(names.count, 2)
+        XCTAssertTrue(names[0].hasPrefix("01-卷一"))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: output.path).filter { $0.hasPrefix(".") }.count, 0)
+        queue.start(recipe: recipe, output: output, replacements: [])
+        while queue.running { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertTrue(queue.summary.contains("跳过 1 个"))
+    }
+}

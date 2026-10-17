@@ -144,6 +144,8 @@ import UniformTypeIdentifiers
     var activeJob: Task<JobResult, Error>?
     var lastJob: JobSpec?
     var ocrChain: OCRChain?
+    /// Pages per OCR job (a test makes it small).
+    var ocrChunk = Workspace.ocrChunkSize
     /// How long the last full PDF serialization took; autosave backs off on large documents.
     var lastSerializationSeconds = 0.0
     var previewIsProxy = false

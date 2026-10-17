@@ -11,6 +11,8 @@ struct JobSpec {
     var destination: URL?
     var revision: UUID
     var exportOptions: ExportOptions? = nil
+    /// For an `ocr` job whose `source` holds only some pages of the open document: where each of them belongs.
+    var pageMap: [Int] = []
     var forceOCR = false
     var ocrSources: [Int: Data] = [:]
     var ocr = OCRSettings()
@@ -169,9 +171,44 @@ struct OCRChain {
     var done = 0
     var recognized = 0
     var skipped = 0
+    var text = ""
 }
 
 extension Workspace {
+    /// Puts a chunk's results into the open document: only the pages that gained a text layer are swapped, the
+    /// rest of the book is not touched or re-saved.
+    func applyChunk(_ result: JobResult, _ spec: JobSpec) {
+        for (local, data) in result.originals where spec.pageMap.indices.contains(local) { updateMeta(spec.pageMap[local]) { $0.ocrOriginal = data } }
+        for (local, lines) in result.regions where spec.pageMap.indices.contains(local) { updateMeta(spec.pageMap[local]) { $0.ocrRegions = lines } }
+        var replaced = Set<Int>()
+        if let pdf = result.pdf, let done = PDFDocument(data: pdf) {
+            for (local, lines) in result.regions where !lines.isEmpty && spec.pageMap.indices.contains(local) {
+                let global = spec.pageMap[local]
+                guard global < document.pageCount, let page = done.page(at: local)?.copy() as? PDFPage else { continue }
+                document.removePage(at: global)
+                document.insert(page, at: global)
+                replaced.insert(global)
+            }
+        }
+        ReadingServices.applyOutline(outlineEntries, to: document)
+        selectedAnnotation = nil
+        if replaced.isEmpty { edited(pdfChanged: false) } else { edited(pages: replaced) }
+        if showLowConfidence { refreshConfidenceMarks() }
+    }
+
+    /// The job for one run of pages: a small PDF holding just those pages, so a long book is not saved again for every chunk.
+    func ocrChunkSpec(_ chunk: [Int], like template: JobSpec) -> JobSpec? {
+        let subset = DocumentServices.subset(document, indexes: chunk)
+        guard subset.pageCount == chunk.count, let source = subset.dataRepresentation() else { return nil }
+        var spec = template
+        spec.source = source
+        spec.pages = Array(0..<chunk.count)
+        spec.pageMap = chunk
+        spec.revision = revision
+        spec.ocrSources = Dictionary(uniqueKeysWithValues: chunk.enumerated().compactMap { offset, global in ocrOriginals[global].map { (offset, $0) } })
+        return spec
+    }
+
     func runJob(_ spec: JobSpec) {
         guard !busy else { return }
         busy = true
@@ -200,15 +237,19 @@ extension Workspace {
             do {
                 let result = try await worker.value
                 if (result.pdf != nil && !spec.continuation) || spec.operation == .inspectOCR { checkpoint() }
-                for (index, data) in result.originals { updateMeta(index) { $0.ocrOriginal = data } }
-                for (index, lines) in result.regions { updateMeta(index) { $0.ocrRegions = lines } }
-                if spec.operation == .cleanup { for index in spec.pages { updateMeta(index) { $0 = PageMeta() } } }
-                if let pdf = result.pdf, let updated = PDFDocument(data: pdf) {
-                    document = updated
-                    ReadingServices.applyOutline(outlineEntries, to: document)
-                    recognizedText = result.text
-                    changed()
-                    if showLowConfidence { refreshConfidenceMarks() }
+                if !spec.pageMap.isEmpty {
+                    applyChunk(result, spec)
+                } else {
+                    for (index, data) in result.originals { updateMeta(index) { $0.ocrOriginal = data } }
+                    for (index, lines) in result.regions { updateMeta(index) { $0.ocrRegions = lines } }
+                    if spec.operation == .cleanup { for index in spec.pages { updateMeta(index) { $0 = PageMeta() } } }
+                    if let pdf = result.pdf, let updated = PDFDocument(data: pdf) {
+                        document = updated
+                        ReadingServices.applyOutline(outlineEntries, to: document)
+                        recognizedText = result.text
+                        changed()
+                        if showLowConfidence { refreshConfidenceMarks() }
+                    }
                 }
                 if spec.operation == .inspectOCR {
                     edited(pdfChanged: false)
@@ -219,6 +260,7 @@ extension Workspace {
                     chain.recognized += result.recognized
                     chain.skipped += result.skipped
                     chain.done += spec.pages.count
+                    chain.text += result.text
                     ocrChain = chain
                     if let next = chain.remaining.first {
                         ocrChain?.remaining.removeFirst()
@@ -229,6 +271,7 @@ extension Workspace {
                         return
                     }
                     ocrChain = nil
+                    if !spec.pageMap.isEmpty { recognizedText = chain.text }
                     status = "OCR 完成，识别 \(chain.recognized) 页，跳过 \(chain.skipped) 个已有文字的页面" + (spec.ocr.vertical ? "（竖排模式）" : "")
                 } else {
                     status = result.message
@@ -279,19 +322,14 @@ extension Workspace {
     }
 
     func continueOCR(pages: [Int], like previous: JobSpec) {
-        guard let source = try? pdfData() else { ocrChain = nil; return }
-        var spec = previous
-        spec.source = source
-        spec.pages = pages
-        spec.revision = revision
-        spec.ocrSources = ocrOriginals
+        guard var spec = ocrChunkSpec(pages, like: previous) else { ocrChain = nil; error = "无法准备下一批页面。"; return }
         spec.continuation = true
         runJob(spec)
     }
 
     /// `resume` leaves out pages that already carry recognition records, for picking up an interrupted run.
     func ocr(selectedOnly: Bool = false, force: Bool = false, resume: Bool = false) {
-        guard count > 0, !busy, checkDraftsForExport(), let source = try? pdfData() else { return }
+        guard count > 0, !busy, checkDraftsForExport() else { return }
         var pages = selectedOnly ? effectivePages : Array(0..<count)
         if resume { pages = pages.filter { !(meta($0).ocrRegions.map { !$0.isEmpty } ?? false) } }
         guard !pages.isEmpty else { status = "所有页面都已识别"; return }
@@ -309,10 +347,12 @@ extension Workspace {
                 guard confirm("OCR 会把 \(flattened) 个标注固化到页面中", "固化后的高亮、笔记和手写不能再编辑或移动，也不会出现在摘录列表里。建议先 OCR、再批注。操作可撤销。", action: "继续识别") else { return }
             }
         }
-        var parts = Workspace.chunks(pages)
+        var parts = Workspace.chunks(pages, size: ocrChunk)
         let first = parts.removeFirst()
+        let template = JobSpec(operation: .ocr, source: Data(), pages: first, revision: revision, forceOCR: force, ocr: ocrSettings)
+        guard let spec = ocrChunkSpec(first, like: template) else { error = "无法准备要识别的页面。"; return }
         ocrChain = OCRChain(total: pages.count, remaining: parts)
-        runJob(JobSpec(operation: .ocr, source: source, pages: first, revision: revision, forceOCR: force, ocrSources: ocrOriginals, ocr: ocrSettings))
+        runJob(spec)
     }
 
     func inspectOCR() {
