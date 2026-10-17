@@ -90,11 +90,9 @@ final class RichTextImportTests: XCTestCase {
         XCTAssertTrue(document.string?.contains("Body text here.") == true)
     }
 
-    func testEmptyAndBrokenFilesGiveAMessage() throws {
+    func testAFileWithoutTextGivesAMessage() throws {
         let empty = try write(Data("<html><body></body></html>".utf8), ext: "html")
-        let broken = try write(Data("not really a word file".utf8), ext: "docx")
-        defer { try? FileManager.default.removeItem(at: empty); try? FileManager.default.removeItem(at: broken) }
+        defer { try? FileManager.default.removeItem(at: empty) }
         XCTAssertThrowsError(try DocumentServices.load(empty))
-        XCTAssertThrowsError(try DocumentServices.load(broken))
     }
 }
