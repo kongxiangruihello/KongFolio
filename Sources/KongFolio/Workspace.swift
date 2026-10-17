@@ -79,6 +79,7 @@ import UniformTypeIdentifiers
     @Published var penWidth = 2.0
     @Published var penHighlighter = false
     @Published var signatures: [SignatureTemplate] = []
+    @Published var signaturePositions: [SignaturePosition] = []
     @Published var placingSignature: SignatureTemplate?
     /// Signatures placed on pages in this session, by page, so they can be moved later (see `SignatureLayer`).
     var signatureLayers: [ObjectIdentifier: SignatureLayer] = [:]
@@ -282,6 +283,7 @@ import UniformTypeIdentifiers
         started = true
         recentFiles = (try? JSONDecoder().decode([String].self, from: Data(contentsOf: storage.appendingPathComponent("Recent.json")))) ?? []
         signatures = (try? JSONDecoder().decode([SignatureTemplate].self, from: Data(contentsOf: storage.appendingPathComponent("Signatures.json")))) ?? []
+        loadSignaturePositions()
         let candidate = [recoveryURL, legacyRecoveryURL].first { FileManager.default.fileExists(atPath: $0.path) }
         if let candidate, count == 0 {
             do {
