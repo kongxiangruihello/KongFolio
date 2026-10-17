@@ -7,6 +7,7 @@ struct ContentView: View {
     @StateObject private var comparisonSync = ComparisonSync()
     @AppStorage(LayoutKeys.sidebar) private var showSidebar = true
     @AppStorage(LayoutKeys.inspector) private var showInspector = true
+    @AppStorage(LayoutKeys.board) private var showBoard = false
 
     var body: some View {
         GeometryReader { proxy in layout(width: proxy.size.width) }
@@ -31,6 +32,10 @@ struct ContentView: View {
         .onChange(of: workspace.mode) { _, _ in workspace.resetImage(); workspace.scheduleRecovery() }
     }
 
+    private func boardShown(width: CGFloat) -> Bool {
+        workspace.store != nil && LayoutMetrics.showsBoard(preferred: showBoard, width: width)
+    }
+
     /// The window can be any size: panels and top bar controls adapt to the width (see `LayoutMetrics`).
     private func layout(width: CGFloat) -> some View {
         VStack(spacing: 0) {
@@ -39,7 +44,8 @@ struct ContentView: View {
             HSplitView {
                 if LayoutMetrics.showsSidebar(preferred: showSidebar, width: width) { sidebar.frame(minWidth: 140, idealWidth: 180, maxWidth: 230) }
                 canvas.frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
-                if LayoutMetrics.showsInspector(preferred: showInspector, width: width) { inspector.frame(minWidth: 220, idealWidth: 290, maxWidth: 340) }
+                if boardShown(width: width), let board = workspace.store?.board { BoardView(board: board, workspace: workspace).frame(minWidth: 280, idealWidth: 380, maxWidth: .infinity) }
+                if LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width)) { inspector.frame(minWidth: 220, idealWidth: 290, maxWidth: 340) }
             }
             Divider()
             statusBar(width: width)
@@ -97,7 +103,8 @@ struct ContentView: View {
     private func topBar(width: CGFloat) -> some View {
         let style = LayoutMetrics.topBarStyle(width: width)
         let sidebarShown = LayoutMetrics.showsSidebar(preferred: showSidebar, width: width)
-        let inspectorShown = LayoutMetrics.showsInspector(preferred: showInspector, width: width)
+        let inspectorShown = LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width))
+        let boardIsShown = boardShown(width: width)
         return HStack(spacing: style == .full ? 16 : 10) {
             Button { showSidebar.toggle() } label: { Image(systemName: "sidebar.left") }
                 .buttonStyle(.borderless)
@@ -142,6 +149,10 @@ struct ContentView: View {
                 .frame(width: 32)
                 .help("更多操作")
             }
+            Button { showBoard.toggle() } label: { Image(systemName: "rectangle.3.group") }
+                .buttonStyle(.borderless)
+                .foregroundStyle(showBoard && !boardIsShown ? .tertiary : .primary)
+                .help(boardIsShown ? "隐藏工作区（⌥⌘4）" : (showBoard ? "窗口太窄，放宽后显示工作区" : "显示工作区（⌥⌘4）：摘录、笔记和连线"))
             Button { showInspector.toggle() } label: { Image(systemName: "sidebar.right") }
                 .buttonStyle(.borderless)
                 .foregroundStyle(showInspector && !inspectorShown ? .tertiary : .primary)

@@ -21,6 +21,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
     case pen = "画笔"
     case arrow = "箭头"
     case signature = "签名"
+    case region = "区域摘录"
     var id: String { rawValue }
     var title: String { rawValue }
     var draws: Bool { self == .pen || self == .arrow || self == .signature }

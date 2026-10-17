@@ -24,6 +24,19 @@ final class LayoutMetricsTests: XCTestCase {
         XCTAssertTrue(LayoutMetrics.showsPreview(preferred: true, width: 900))
     }
 
+    // The workspace pane needs room of its own, and pushes the properties panel out first.
+    func testBoardAndInspectorShareTheWidth() {
+        XCTAssertFalse(LayoutMetrics.showsBoard(preferred: true, width: LayoutMetrics.boardMinimum - 1))
+        XCTAssertTrue(LayoutMetrics.showsBoard(preferred: true, width: LayoutMetrics.boardMinimum))
+        XCTAssertFalse(LayoutMetrics.showsBoard(preferred: false, width: 3000))
+        XCTAssertTrue(LayoutMetrics.showsInspector(preferred: true, width: 1000))
+        XCTAssertFalse(LayoutMetrics.showsInspector(preferred: true, width: 1000, boardShown: true))
+        XCTAssertTrue(LayoutMetrics.showsInspector(preferred: true, width: LayoutMetrics.inspectorWithBoardMinimum, boardShown: true))
+        let sidebar: CGFloat = 140, canvas: CGFloat = 240, board: CGFloat = 280, inspector: CGFloat = 220
+        XCTAssertTrue(LayoutMetrics.boardMinimum >= sidebar + canvas + board)
+        XCTAssertTrue(LayoutMetrics.inspectorWithBoardMinimum >= sidebar + canvas + board + inspector)
+    }
+
     // The widest layout a window can need must fit inside the width at which its panels are shown.
     func testPanelsLeaveRoomForTheCanvas() {
         let canvasMinimum: CGFloat = 240, sidebarMinimum: CGFloat = 140, inspectorMinimum: CGFloat = 220

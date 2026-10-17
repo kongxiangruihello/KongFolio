@@ -62,6 +62,46 @@ final class DrawingPDFView: PDFView {
     private var moveStart = CGPoint.zero
     private var originalOrigin = CGPoint.zero
     private var didMove = false
+    /// Rubber band of the region excerpt tool.
+    private var regionStart: CGPoint?
+    private lazy var regionView: NSView = {
+        let view = NSView()
+        view.wantsLayer = true
+        view.layer?.borderWidth = 1.5
+        view.layer?.borderColor = NSColor.systemBlue.cgColor
+        view.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.12).cgColor
+        view.isHidden = true
+        return view
+    }()
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if regionView.superview == nil { addSubview(regionView) }
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        if let text = currentSelection?.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let item = NSMenuItem(title: "摘录到工作区", action: #selector(excerptToBoard), keyEquivalent: "")
+            item.target = self
+            menu.insertItem(item, at: 0)
+            menu.insertItem(.separator(), at: 1)
+        }
+        return menu
+    }
+
+    @objc private func excerptToBoard() { workspace?.excerptSelection() }
+
+    /// Captures what is on screen inside the dragged rectangle and sends it to the workspace.
+    private func captureRegion(_ rect: CGRect) {
+        guard let workspace, rect.width > 8, rect.height > 8,
+              let page = page(for: CGPoint(x: rect.midX, y: rect.midY), nearest: true),
+              let rep = bitmapImageRepForCachingDisplay(in: rect) else { return }
+        cacheDisplay(in: rect, to: rep)
+        guard let png = rep.representation(using: .png, properties: [:]) else { return }
+        workspace.excerptRegion(imageData: png, size: rect.size, page: page, pageRect: convert(rect, to: page))
+        workspace.tool = .select
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard let workspace, !workspace.busy else { super.mouseDown(with: event); return }
@@ -100,10 +140,19 @@ final class DrawingPDFView: PDFView {
             drawingPage = page
             points = [point]
             provisional = nil
+        case .region:
+            regionStart = location
+            regionView.frame = CGRect(origin: location, size: .zero)
+            regionView.isHidden = false
         }
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let start = regionStart {
+            let current = convert(event.locationInWindow, from: nil)
+            regionView.frame = CGRect(x: min(start.x, current.x), y: min(start.y, current.y), width: abs(current.x - start.x), height: abs(current.y - start.y))
+            return
+        }
         if let moving, let page = drawingPage, let workspace {
             if !didMove { pendingMove = workspace.beginAnnotationEdit([moving]); didMove = true }
             let point = convert(convert(event.locationInWindow, from: nil), to: page)
@@ -142,6 +191,14 @@ final class DrawingPDFView: PDFView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if regionStart != nil {
+            let rect = regionView.frame
+            regionStart = nil
+            regionView.isHidden = true
+            regionView.frame = .zero
+            captureRegion(rect)
+            return
+        }
         if moving != nil {
             if didMove { workspace?.commitAnnotationEdit(pendingMove) }
             moving = nil

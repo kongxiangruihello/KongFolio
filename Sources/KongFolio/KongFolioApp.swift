@@ -6,6 +6,7 @@ import AppKit
     @StateObject private var store = WorkspaceStore()
     @AppStorage(LayoutKeys.sidebar) private var showSidebar = true
     @AppStorage(LayoutKeys.inspector) private var showInspector = true
+    @AppStorage(LayoutKeys.board) private var showBoard = false
 
     var body: some Scene {
         Window("KongFolio", id: "workspace") {
@@ -40,6 +41,11 @@ import AppKit
                     let show = !showSidebar && !showInspector
                     showSidebar = show; showInspector = show
                 }.keyboardShortcut("3", modifiers: [.command, .option])
+            }
+            CommandMenu("工作区") {
+                Button("摘录选中文字到工作区") { store.activeWorkspace?.excerptSelection() }
+                    .keyboardShortcut("e", modifiers: [.command, .option]).disabled((store.activeWorkspace?.count ?? 0) == 0)
+                Button(showBoard ? "隐藏工作区" : "显示工作区") { showBoard.toggle() }.keyboardShortcut("4", modifiers: [.command, .option])
             }
             CommandMenu("标签页") {
                 Button("下一个标签页") { store.selectNext() }.keyboardShortcut("]", modifiers: [.command, .shift])

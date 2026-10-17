@@ -31,10 +31,14 @@ import UniformTypeIdentifiers
     @Published private(set) var tabs: [OpenTab] = []
     @Published private(set) var selectedID: UUID?
     let storage: URL
+    /// The workspace shared by every tab: excerpts from any open document gather here.
+    let board: Board
     private var forwarding: AnyCancellable?
 
     init(storage: URL? = nil) {
-        self.storage = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
+        let folder = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
+        self.storage = folder
+        self.board = Board(storage: folder)
     }
 
     var activeTab: OpenTab? { tabs.first { $0.id == selectedID } }
@@ -91,6 +95,13 @@ import UniformTypeIdentifiers
             if entry.slot == session.selected { selectedTab = workspace.id }
         }
         for note in MarkdownNote.restoreBackups(storage: storage) { tabs.append(.note(note)) }
+        if let backup = Board.restoreBackup(storage: storage) {
+            board.load(backup.file, from: nil)
+            board.dirty = true
+            board.status = backup.status
+            backup.removeBackup()
+            try? board.writeBackup()
+        }
         if tabs.isEmpty { addWorkspace() }
         if let target = selectedTab ?? tabs.first?.id { select(target) }
     }
@@ -216,7 +227,7 @@ import UniformTypeIdentifiers
         panel.urls.forEach(openNote)
     }
 
-    private func present(_ error: Error) {
+    func present(_ error: Error) {
         guard NSApp != nil else { return }
         NSAlert(error: error).runModal()
     }
@@ -246,6 +257,7 @@ import UniformTypeIdentifiers
 
     /// Called when the window closes or the app quits. Walks through every tab; any cancel stops the quit.
     func prepareToClose() -> Bool {
+        if board.dirty, board.hasContent, !board.confirmClose() { return false }
         for tab in tabs {
             switch tab {
             case .document(let workspace):
