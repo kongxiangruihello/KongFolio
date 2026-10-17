@@ -87,13 +87,34 @@ enum ExportServices {
             try Task.checkCancellation()
             try autoreleasepool {
                 let page = try doc.page(at: index).unwrap("页面读取失败")
-                output.insert(try DocumentServices.searchablePage(page, lines: []), at: output.pageCount)
+                output.insert(try flattenedPage(page), at: output.pageCount)
             }
             progress(Double(offset + 1) / Double(max(pages.count, 1)))
         }
         let outlines = ReadingServices.outline(doc).compactMap { entry -> OutlineEntry? in guard let index = pages.firstIndex(of: entry.page) else { return nil }; var copy = entry; copy.page = index; return copy }
         ReadingServices.applyOutline(outlines, to: output)
         return try output.dataRepresentation().unwrap("PDF 保存失败")
+    }
+
+    /// The page with its annotations drawn in. Redrawing a page can leave its text unreadable to PDFKit; when that happens
+    /// the text is put back as invisible lines at the places it had (pages that are not rotated).
+    static func flattenedPage(_ page: PDFPage) throws -> PDFPage {
+        let flat = try DocumentServices.searchablePage(page, lines: [])
+        let original = BackgroundJobs.textCharacterCount(page)
+        guard original > 0, BackgroundJobs.textCharacterCount(flat) * 2 < original, page.rotation % 360 == 0 else { return flat }
+        let lines = textLines(of: page)
+        return lines.isEmpty ? flat : try DocumentServices.searchablePage(page, lines: lines)
+    }
+
+    /// The lines of a page's text with their places, as fractions of the visible page.
+    static func textLines(of page: PDFPage) -> [RecognizedLine] {
+        let crop = page.bounds(for: .cropBox)
+        guard crop.width > 0, crop.height > 0, let selection = page.selection(for: crop) else { return [] }
+        return selection.selectionsByLine().compactMap { line in
+            guard let text = line.string?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            let b = line.bounds(for: page)
+            return RecognizedLine(text: text, box: CGRect(x: (b.minX - crop.minX) / crop.width, y: (b.minY - crop.minY) / crop.height, width: b.width / crop.width, height: b.height / crop.height))
+        }
     }
 
     /// `doc` followed by pages that list its annotations.
