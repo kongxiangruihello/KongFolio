@@ -18,7 +18,7 @@ final class ExcerptPolishTests: XCTestCase {
         return (store, tab, match)
     }
 
-    func highlights(_ tab: Workspace) -> [PDFAnnotation] {
+    @MainActor func highlights(_ tab: Workspace) -> [PDFAnnotation] {
         (0..<tab.count).flatMap { tab.document.page(at: $0)?.annotations ?? [] }.filter { $0.type == "Highlight" }
     }
 
