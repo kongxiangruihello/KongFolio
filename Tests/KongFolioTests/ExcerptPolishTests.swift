@@ -10,7 +10,7 @@ final class ExcerptPolishTests: XCTestCase {
     }
 
     /// A store whose first tab holds a text document, and a selection of its first words.
-    @MainActor func setUp(_ directory: URL, text: String = "学而时习之，不亦说乎？\n有朋自远方来，不亦乐乎？") throws -> (store: WorkspaceStore, tab: Workspace, selection: PDFSelection) {
+    @MainActor func makeStore(_ directory: URL, text: String = "学而时习之，不亦说乎？\n有朋自远方来，不亦乐乎？") throws -> (store: WorkspaceStore, tab: Workspace, selection: PDFSelection) {
         let store = WorkspaceStore(storage: directory); store.bootstrap()
         let tab = try store.activeWorkspace.unwrap("没有标签页")
         tab.document = try TextImport.render(text, markdown: false)
@@ -22,17 +22,17 @@ final class ExcerptPolishTests: XCTestCase {
         (0..<tab.count).flatMap { tab.document.page(at: $0)?.annotations ?? [] }.filter { $0.type == "Highlight" }
     }
 
-    override func tearDown() {
+    func resetDefaults() {
         UserDefaults.standard.removeObject(forKey: LayoutKeys.tintSources)
         UserDefaults.standard.removeObject(forKey: LayoutKeys.board)
-        super.tearDown()
     }
 
     // MARK: Colouring the source
 
     @MainActor func testExcerptColoursTheSourceAndCanBeUndone() throws {
+        defer { resetDefaults() }
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
-        let (store, tab, selection) = try setUp(directory); defer { store.board.removeBackup() }
+        let (store, tab, selection) = try makeStore(directory); defer { store.board.removeBackup() }
         tab.excerpt(selection: selection)
         let card = try store.board.cards.first.unwrap("没有卡片")
         let marks = highlights(tab)
@@ -48,8 +48,9 @@ final class ExcerptPolishTests: XCTestCase {
     }
 
     @MainActor func testSelectingTheSameWordsTwiceDoesNotDuplicate() throws {
+        defer { resetDefaults() }
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
-        let (store, tab, selection) = try setUp(directory); defer { store.board.removeBackup() }
+        let (store, tab, selection) = try makeStore(directory); defer { store.board.removeBackup() }
         tab.excerpt(selection: selection)
         let before = highlights(tab).count
         tab.excerpt(selection: selection)
@@ -59,8 +60,9 @@ final class ExcerptPolishTests: XCTestCase {
     }
 
     @MainActor func testColouringCanBeSwitchedOff() throws {
+        defer { resetDefaults() }
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
-        let (store, tab, selection) = try setUp(directory); defer { store.board.removeBackup() }
+        let (store, tab, selection) = try makeStore(directory); defer { store.board.removeBackup() }
         Workspace.tintsSources = false
         tab.excerpt(selection: selection)
         XCTAssertEqual(store.board.cards.count, 1)
@@ -69,8 +71,9 @@ final class ExcerptPolishTests: XCTestCase {
     }
 
     @MainActor func testDeletingTheCardTakesTheColourOffAndRecolouringFollows() throws {
+        defer { resetDefaults() }
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
-        let (store, tab, selection) = try setUp(directory); defer { store.board.removeBackup() }
+        let (store, tab, selection) = try makeStore(directory); defer { store.board.removeBackup() }
         tab.excerpt(selection: selection)
         let id = try store.board.cards.first.unwrap("没有卡片").id
         let yellow = try highlights(tab).first.unwrap("没有高亮").color.usingColorSpace(.deviceRGB).unwrap("颜色")
@@ -85,8 +88,9 @@ final class ExcerptPolishTests: XCTestCase {
     }
 
     @MainActor func testRegionExcerptIsColouredToo() throws {
+        defer { resetDefaults() }
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
-        let (store, tab, _) = try setUp(directory); defer { store.board.removeBackup() }
+        let (store, tab, _) = try makeStore(directory); defer { store.board.removeBackup() }
         let page = try tab.document.page(at: 0).unwrap("没有页面")
         tab.excerptRegion(imageData: Data([1, 2, 3]), size: CGSize(width: 100, height: 60), page: page, pageRect: CGRect(x: 80, y: 600, width: 100, height: 60))
         let card = try store.board.cards.first.unwrap("没有卡片")
@@ -98,8 +102,9 @@ final class ExcerptPolishTests: XCTestCase {
     // MARK: From the document back to the card
 
     @MainActor func testClickingTheColourShowsTheCard() throws {
+        defer { resetDefaults() }
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
-        let (store, tab, selection) = try setUp(directory); defer { store.board.removeBackup() }
+        let (store, tab, selection) = try makeStore(directory); defer { store.board.removeBackup() }
         tab.excerpt(selection: selection)
         let id = try store.board.cards.first.unwrap("没有卡片").id
         store.board.focusedID = nil
@@ -115,9 +120,10 @@ final class ExcerptPolishTests: XCTestCase {
     // MARK: From the card back to the document
 
     @MainActor func testExcerptIsFoundAgainWhenPagesHaveMoved() throws {
+        defer { resetDefaults() }
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
         let text = (1...400).map { "第\($0)行：用于检验摘录定位的一行文字。" }.joined(separator: "\n")
-        let (store, tab, _) = try setUp(directory, text: text); defer { store.board.removeBackup() }
+        let (store, tab, _) = try makeStore(directory, text: text); defer { store.board.removeBackup() }
         let match = try tab.document.findString("第200行：", withOptions: []).first.unwrap("没有找到文字")
         let truePage = tab.document.index(for: try match.pages.first.unwrap("没有页面"))
         XCTAssertTrue(truePage > 2)
@@ -134,6 +140,7 @@ final class ExcerptPolishTests: XCTestCase {
     }
 
     @MainActor func testRevealCarriesTheAnchorToAWaitingTab() throws {
+        defer { resetDefaults() }
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("书.pdf")
         try DocumentServicesTests().fixture().dataRepresentation()!.write(to: url)
@@ -148,6 +155,7 @@ final class ExcerptPolishTests: XCTestCase {
     // MARK: Arranging
 
     @MainActor func testArrangeBySourceMakesAColumnPerDocument() throws {
+        defer { resetDefaults() }
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
         let board = Board(storage: directory); defer { board.removeBackup() }
         func ref(_ name: String, _ page: Int, top: CGFloat) -> SourceRef {
@@ -173,6 +181,7 @@ final class ExcerptPolishTests: XCTestCase {
     }
 
     @MainActor func testMovingACardForgetsTheArrangementUndo() throws {
+        defer { resetDefaults() }
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
         let board = Board(storage: directory); defer { board.removeBackup() }
         let a = board.addNote(text: "甲"); board.addNote(text: "乙")
@@ -183,6 +192,7 @@ final class ExcerptPolishTests: XCTestCase {
     }
 
     @MainActor func testFocusClearsItself() async throws {
+        defer { resetDefaults() }
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
         let board = Board(storage: directory); defer { board.removeBackup() }
         let id = board.addNote(text: "甲")

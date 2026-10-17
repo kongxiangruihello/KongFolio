@@ -220,13 +220,18 @@ extension WorkspaceStore {
     }
 
     /// Wires the workspace to the documents: deleting or recolouring a card follows in the document's highlight.
+    /// Every loaded document is asked, because a document that is not a file (a merged one) cannot be found by path;
+    /// a document without that card's colour simply does nothing.
     func connectBoardToDocuments() {
-        board.onRemove = { [weak self] card in self?.workspaceShowing(card)?.removeTint(cardID: card.id) }
-        board.onColorChange = { [weak self] card in self?.workspaceShowing(card)?.recolorTint(cardID: card.id, color: card.color) }
+        board.onRemove = { [weak self] card in
+            guard card.kind != .note else { return }
+            self?.loadedWorkspaces.forEach { $0.removeTint(cardID: card.id) }
+        }
+        board.onColorChange = { [weak self] card in
+            guard card.kind != .note else { return }
+            self?.loadedWorkspaces.forEach { $0.recolorTint(cardID: card.id, color: card.color) }
+        }
     }
 
-    private func workspaceShowing(_ card: BoardCard) -> Workspace? {
-        guard let source = card.source, card.kind != .note else { return nil }
-        return tabs.compactMap(\.workspace).first { $0.count > 0 && $0.matches(path: source.path) }
-    }
+    private var loadedWorkspaces: [Workspace] { tabs.compactMap(\.workspace).filter { $0.count > 0 } }
 }
