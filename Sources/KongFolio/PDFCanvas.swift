@@ -52,7 +52,7 @@ struct PDFCanvas: NSViewRepresentable {
         deinit { if let observer { NotificationCenter.default.removeObserver(observer) }; if let scrollObserver { NotificationCenter.default.removeObserver(scrollObserver) } }
     }
 }
-final class DrawingPDFView: PDFView {
+final class DrawingPDFView: PDFView, SignaturePlacing {
     weak var workspace: Workspace?
     private var points: [CGPoint] = []
     private weak var drawingPage: PDFPage?
@@ -80,6 +80,47 @@ final class DrawingPDFView: PDFView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if regionView.superview == nil { addSubview(regionView) }
+    }
+
+    // MARK: Signature placement
+    private var placement: SignaturePlacementView?
+
+    func beginSignaturePlacement(_ image: CGImage, widthFraction: Double) {
+        endSignaturePlacement()
+        let overlay = SignaturePlacementView(image: image)
+        let width = max(40, bounds.width * widthFraction)
+        overlay.frame = SignatureStamp.fit(aspect: overlay.aspect, width: width, center: CGPoint(x: bounds.midX, y: bounds.midY), in: bounds)
+        addSubview(overlay)
+        placement = overlay
+        window?.makeFirstResponder(self)
+    }
+
+    func resizeSignaturePlacement(widthFraction: Double) {
+        guard let overlay = placement else { return }
+        let center = CGPoint(x: overlay.frame.midX, y: overlay.frame.midY)
+        overlay.frame = SignatureStamp.fit(aspect: overlay.aspect, width: max(40, bounds.width * widthFraction), center: center, in: bounds)
+    }
+
+    func signaturePlacement() -> (page: PDFPage, rect: CGRect)? {
+        guard let overlay = placement,
+              let page = page(for: CGPoint(x: overlay.frame.midX, y: overlay.frame.midY), nearest: true) else { return nil }
+        return (page, convert(overlay.frame, to: page))
+    }
+
+    func endSignaturePlacement() {
+        placement?.removeFromSuperview()
+        placement = nil
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if placement != nil, let workspace {
+            switch event.keyCode {
+            case 36, 76: workspace.confirmSignaturePlacement(); return
+            case 53: workspace.cancelSignaturePlacement(); return
+            default: break
+            }
+        }
+        super.keyDown(with: event)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -264,5 +305,71 @@ struct ComparisonCanvas: NSViewRepresentable {
     final class Coordinator {
         var observer: NSObjectProtocol?
         deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
+    }
+}
+
+
+/// The signature as it will be stamped: drag to move, drag the corner to resize (the aspect ratio is kept).
+final class SignaturePlacementView: NSView {
+    let aspect: CGFloat
+    private let image: CGImage
+    private var dragging = false
+    private var resizing = false
+    private var lastPoint = CGPoint.zero
+
+    init(image: CGImage) {
+        self.image = image
+        aspect = CGFloat(image.width) / max(1, CGFloat(image.height))
+        super.init(frame: .zero)
+        wantsLayer = true
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    private var handle: CGRect { CGRect(x: bounds.maxX - 18, y: 0, width: 18, height: 18) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.setFillColor(NSColor.systemBlue.withAlphaComponent(0.08).cgColor)
+        context.fill(bounds)
+        context.interpolationQuality = .high
+        context.draw(image, in: bounds)
+        context.setStrokeColor(NSColor.systemBlue.cgColor)
+        context.setLineWidth(1.5)
+        context.setLineDash(phase: 0, lengths: [5, 3])
+        context.stroke(bounds.insetBy(dx: 0.75, dy: 0.75))
+        context.setLineDash(phase: 0, lengths: [])
+        context.setFillColor(NSColor.systemBlue.cgColor)
+        context.fill(handle)
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(handle, cursor: .crosshair)
+        addCursorRect(bounds, cursor: .openHand)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let local = convert(event.locationInWindow, from: nil)
+        resizing = handle.contains(local)
+        dragging = !resizing
+        lastPoint = superview?.convert(event.locationInWindow, from: nil) ?? .zero
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let superview else { return }
+        let point = superview.convert(event.locationInWindow, from: nil)
+        if resizing {
+            let width = min(max(40, point.x - frame.minX), superview.bounds.width)
+            let height = width / aspect
+            frame = CGRect(x: frame.minX, y: frame.maxY - height, width: width, height: height)
+        } else if dragging {
+            frame = frame.offsetBy(dx: point.x - lastPoint.x, dy: point.y - lastPoint.y)
+        }
+        lastPoint = point
+        window?.invalidateCursorRects(for: self)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragging = false; resizing = false
+        if event.clickCount == 2, let pdfView = superview as? DrawingPDFView { pdfView.workspace?.confirmSignaturePlacement() }
     }
 }

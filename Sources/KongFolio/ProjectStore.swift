@@ -276,4 +276,6 @@ struct SignatureTemplate: Codable, Identifiable {
     var id = UUID()
     var name: String
     var pdf: Data
+    /// A processed picture (PNG with transparency) for signatures imported from a photo or scan; `pdf` is empty then.
+    var image: Data? = nil
 }

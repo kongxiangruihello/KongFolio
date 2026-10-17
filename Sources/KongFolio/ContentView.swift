@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @ObservedObject var workspace: Workspace
     @StateObject private var comparisonSync = ComparisonSync()
+    @State private var showSignatureImport = false
     @AppStorage(LayoutKeys.sidebar) private var showSidebar = true
     @AppStorage(LayoutKeys.inspector) private var showInspector = true
     @AppStorage(LayoutKeys.board) private var showBoard = false
@@ -431,14 +432,32 @@ struct ContentView: View {
                 }
             }
             DisclosureGroup("本地签名库") {
+                Button("导入图片签名…") { showSignatureImport = true }
                 Button("保存本页手写签名") { workspace.saveSignature() }
                 ForEach(workspace.signatures) { template in
                     HStack {
-                        Button(template.name) { workspace.insertSignature(template) }
+                        SignatureThumbnail(template: template)
+                        Button(template.name) { workspace.beginPlacing(template) }.buttonStyle(.plain).lineLimit(1)
                         Spacer()
                         Button { workspace.removeSignature(template.id) } label: { Image(systemName: "trash") }
                     }
                 }
+            }
+            if workspace.placingSignature != nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("正在放置签名").font(.headline)
+                    HStack {
+                        Text("大小")
+                        Slider(value: Binding(get: { workspace.signatureWidth }, set: { workspace.setSignatureWidth($0) }), in: 0.08...0.8)
+                    }
+                    HStack {
+                        Button("放置到页面") { workspace.confirmSignaturePlacement() }
+                        Button("取消") { workspace.cancelSignaturePlacement() }
+                    }
+                    Text("拖动移动，拖蓝色角调整大小；双击或回车确认。放置后可用撤销。").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.1)))
             }
             Text("点击放置标注，拖动绘制；使用“编辑标注”选中并拖动位置，也可在列表中选择。").font(.caption).foregroundStyle(.secondary)
             HStack {
@@ -447,6 +466,7 @@ struct ContentView: View {
                 Button("+") { workspace.pdfView?.zoomIn(nil); workspace.captureReadingPosition() }
             }
         }
+        .sheet(isPresented: $showSignatureImport) { SignatureImportSheet(workspace: workspace) }
     }
 
     private var imageControls: some View {

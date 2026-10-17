@@ -64,6 +64,8 @@ import UniformTypeIdentifiers
     @Published var selectedAnnotation: PDFAnnotation?
     @Published var annotationColor = Color.blue
     @Published var signatures: [SignatureTemplate] = []
+    @Published var placingSignature: SignatureTemplate?
+    @Published var signatureWidth = 0.28
     @Published var projectURL: URL?
     /// The PDF, image or text file this document was opened from; nil for merged documents and projects.
     @Published var sourceURL: URL?
