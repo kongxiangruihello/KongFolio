@@ -62,3 +62,54 @@ final class FramedPageTests: XCTestCase {
         XCTAssertTrue(again.ignoresTextLayer)
     }
 }
+
+/// What a real page needed beyond the simple cases (see RealPageTests): frames made of broken rules, columns that touch,
+/// and fragments of the frame at the head of a column.
+final class FramedPageDetailTests: XCTestCase {
+    func blank(_ width: Int, _ height: Int) -> [UInt8] { [UInt8](repeating: 240, count: width * height) }
+
+    func testABrokenRuleIsClearedByItsRunsAndASolidOneByItsRows() {
+        let width = 600, height = 400
+        var pixels = blank(width, height)
+        // A rule made of three long pieces with small gaps between them.
+        for row in 50...53 { for x in 20..<190 { pixels[row * width + x] = 20 }; for x in 195..<390 { pixels[row * width + x] = 20 }; for x in 395..<580 { pixels[row * width + x] = 20 } }
+        // A character-sized block that must survive.
+        for row in 150..<190 { for x in 100..<140 { pixels[row * width + x] = 20 } }
+        let gray = VerticalText.Gray(width: width, height: height, pixels: pixels)
+        let cleared = VerticalText.clearingLongRuns(gray, level: 128)
+        XCTAssertEqual(cleared[100, 51], 255)
+        XCTAssertEqual(cleared[300, 52], 255)
+        XCTAssertEqual(cleared[120, 170], 20)
+    }
+
+    func testWideRunsAreCutWhereTheInkIsThinnest() {
+        // Two columns of width 60 that touch with a thin bridge: one run of 130.
+        var ink = [Int](repeating: 0, count: 200)
+        for x in 20..<80 { ink[x] = 400 }
+        for x in 80..<90 { ink[x] = 5 }
+        for x in 90..<150 { ink[x] = 400 }
+        let parts = VerticalText.splitWide(20...149, ink: ink, typical: 60)
+        XCTAssertEqual(parts.count, 2)
+        XCTAssertTrue(parts[0].upperBound >= 79 && parts[0].upperBound <= 90)
+        XCTAssertTrue(parts[1].lowerBound >= 80 && parts[1].lowerBound <= 91)
+        XCTAssertEqual(VerticalText.splitWide(20...80, ink: ink, typical: 60).count, 1)          // an ordinary column is not cut
+        XCTAssertTrue(VerticalText.splitWide(0...399, ink: [Int](repeating: 100, count: 400), typical: 60).isEmpty)      // a blob is dropped
+    }
+
+    func testFragmentsOfTheFrameAtTheHeadOfAColumnAreRemoved() {
+        func column(_ x: Int, thinAt: Int?) -> VerticalText.Column {
+            var cells: [ClosedRange<Int>] = []
+            if let thinAt { cells.append(thinAt...(thinAt + 3)) }                  // a thin cell: 4 px tall in a 60 px column
+            for index in 0..<10 { cells.append((200 + index * 70)...(200 + index * 70 + 55)) }
+            return VerticalText.Column(x0: x, x1: x + 59, cells: cells)
+        }
+        // Rule pieces at the same height in many columns, and one alone far above its column's text.
+        let columns = [column(500, thinAt: 100), column(400, thinAt: 102), column(300, thinAt: 99), column(200, thinAt: nil), column(100, thinAt: 40)]
+        let cleaned = VerticalText.removingRuleFragments(columns)
+        XCTAssertEqual(cleaned.map(\.cells.count), [10, 10, 10, 10, 10])
+        // A real 一 right at the head of a column, close to the next character, stays.
+        var real = column(100, thinAt: nil)
+        real.cells.insert(190...193, at: 0)
+        XCTAssertEqual(VerticalText.removingRuleFragments([real, column(200, thinAt: nil)]).first?.cells.count, 11)
+    }
+}
