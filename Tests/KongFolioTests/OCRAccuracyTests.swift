@@ -36,6 +36,10 @@ final class OCRAccuracyTests: XCTestCase {
         let image = try DocumentServices.withoutRedMarks(DocumentServices.render(page, maxDimension: 3000))
         let lines = try VerticalText.recognize(image, languages: ["zh-Hant", "en-US"])
         let result = OCRAccuracy.compare(reference: reference, recognized: OCRAccuracy.readingText(of: lines))
-        XCTAssertEqual(-1, Int((result.accuracy * 100).rounded()), "准确率 \(result.accuracy) 编辑距离 \(result.edits) 参考 \(result.referenceCount) 识别 \(result.recognizedCount)")
+        // Deliberately failing until a floor is chosen: each line shows one measured number.
+        XCTAssertEqual(-1, Int((result.accuracy * 100).rounded()))
+        XCTAssertEqual(-2, result.edits)
+        XCTAssertEqual(-3, result.referenceCount)
+        XCTAssertEqual(-4, result.recognizedCount)
     }
 }

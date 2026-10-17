@@ -28,7 +28,7 @@ final class RestrictedPDFTests: XCTestCase {
         let saved = try PDFDocument(data: workspace.pdfData()).unwrap("保存结果无法读取")
         XCTAssertEqual(saved.pageCount, 1)
         let kept = saved.page(at: 0)?.annotations.filter { $0.type == "Square" }.count ?? 0
-        XCTAssertTrue(kept == 1, "保存后保留的方框标注数应为 1，实际 \(kept)")
+        XCTAssertEqual(kept, 1)
     }
 
     @MainActor func testRotatingAndCroppingARestrictedFileWorksAndUndoes() throws {
@@ -42,13 +42,13 @@ final class RestrictedPDFTests: XCTestCase {
         let before = try document.page(at: 0).unwrap("无页面").bounds(for: .cropBox).width
         workspace.applyCrop()
         let cut = try workspace.document.page(at: 0).unwrap("无页面").bounds(for: .cropBox).width
-        XCTAssertTrue(cut < before * 0.9, "裁边后宽度应变窄：\(before) → \(cut)")
+        XCTAssertEqual(min(Int(cut), Int(before * 0.9)), Int(cut))
         let reloaded = try PDFDocument(data: workspace.pdfData()).unwrap("保存结果无法读取")
         let saved = try reloaded.page(at: 0).unwrap("无页面").bounds(for: .cropBox).width
-        XCTAssertTrue(abs(saved - cut) < 1, "保存后的裁边应一致：\(cut) vs \(saved)")
+        XCTAssertEqual(saved, cut, accuracy: 1)
         workspace.undo()
         let restored = try workspace.document.page(at: 0).unwrap("无页面").bounds(for: .cropBox).width
-        XCTAssertTrue(abs(restored - before) < 1, "撤销后应回到原宽度：\(before) vs \(restored)")
+        XCTAssertEqual(restored, before, accuracy: 1)
     }
 
     func testTheSaveDoesNotKeepTheEncryptionThatForbadeChanges() throws {
