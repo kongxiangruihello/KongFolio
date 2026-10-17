@@ -124,7 +124,8 @@ final class ExcerptPolishTests: XCTestCase {
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
         let text = (1...400).map { "第\($0)行：用于检验摘录定位的一行文字。" }.joined(separator: "\n")
         let (store, tab, _) = try makeStore(directory, text: text); defer { store.board.removeBackup() }
-        let match = try tab.document.findString("第200行：", withOptions: []).first.unwrap("没有找到文字")
+        // "第200" only occurs in line 200; searching for 行 would miss, because PDFKit reads it as the radical form ⾏.
+        let match = try tab.document.findString("第200", withOptions: []).first.unwrap("没有找到文字")
         let truePage = tab.document.index(for: try match.pages.first.unwrap("没有页面"))
         XCTAssertTrue(truePage > 2)
         let anchor = try match.string.unwrap("没有文字")

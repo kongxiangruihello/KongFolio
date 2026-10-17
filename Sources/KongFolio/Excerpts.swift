@@ -28,6 +28,7 @@ extension Workspace {
 
     /// Sends the selected text to the workspace as a card that remembers its page and position.
     func excerptSelection() {
+        guard store != nil else { error = "工作区不可用。"; return }
         guard let selected = pdfView?.currentSelection else { error = "请先在 PDF 中选中文字。扫描页需先 OCR。"; return }
         excerpt(selection: selected)
     }
