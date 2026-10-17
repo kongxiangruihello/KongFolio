@@ -52,7 +52,7 @@ struct CompressReport: Equatable {
             if !viaPDFKit && rebuilt == 0 { return "没有找到可以压缩的大图片页面，未生成压缩文件" }
             return "此文件没有变小（\(sizes)），未生成压缩文件"
         }
-        let saved = before > 0 ? Int((1 - Double(after) / Double(before)) * 100) : 0
+        let saved = before > 0 ? Int(((1 - Double(after) / Double(before)) * 100).rounded()) : 0
         return "已压缩，减少 \(saved)%：\(sizes)" + (rebuilt + kept > 0 && rebuilt > 0 ? "（重绘 \(rebuilt) 页，原样保留 \(kept) 页）" : "")
     }
 }

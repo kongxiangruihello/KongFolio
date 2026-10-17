@@ -57,17 +57,19 @@ final class SplitReadingTests: XCTestCase {
             try DocumentServicesTests().fixture().dataRepresentation()!.write(to: file)
             return file
         }
-        let store = WorkspaceStore(storage: directory); store.bootstrap()
-        store.maxLoadedTabs = 2
+        let store = WorkspaceStore(storage: directory); store.bootstrap(); store.maxLoadedTabs = 100
         let a = tab(store, "a"), b = tab(store, "b"), c = tab(store, "c")
         a.sourceURL = try url("a.pdf"); b.sourceURL = try url("b.pdf"); c.sourceURL = try url("c.pdf")
+        for workspace in [a, b, c] { store.select(workspace.id) }   // visit in order: a is the oldest, c the newest
         store.select(a.id)
         store.openSplit(with: b.id)
+        XCTAssertEqual([a, b, c].map(\.count), [3, 3, 3])
         // b is the least recently used, but it is on screen beside a, so the other tab is the one to go.
         b.lastActive = Date(timeIntervalSince1970: 0)
         c.lastActive = Date()
+        store.maxLoadedTabs = 2
         store.select(a.id)
-        XCTAssertTrue(b.count > 0)
+        XCTAssertEqual(b.count, 3)
         XCTAssertEqual(c.count, 0)
     }
 

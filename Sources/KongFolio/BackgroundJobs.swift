@@ -53,7 +53,6 @@ enum BackgroundJobs {
             try result.data.write(to: target, options: .atomic)
             return JobResult(destination: nil, message: result.report.summary)
         }
-        let output = PDFDocument()
         var regions: [Int: [RecognizedLine]] = [:], originals: [Int: Data] = [:]
         var recognizedCount = 0, skipped = 0
         var staging: URL?
