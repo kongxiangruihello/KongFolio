@@ -98,6 +98,8 @@ struct WordExportOptions: Equatable {
     var pageMarks = true
     /// Vertical (竖排) pages: one line per column of the original (otherwise the page is one running paragraph).
     var keepColumns = false
+    /// Corrections applied to every paragraph of text.
+    var replacements: [ReplacementRule] = []
 }
 
 struct WordExportReport: Equatable {
@@ -221,7 +223,7 @@ enum WordExport {
                     }
                     if options.content != .imagesOnly {
                         let found = OrderedText.paragraphs(regions: regions[index], pageText: page.string ?? "", mergeLines: options.mergeLines, keepColumns: options.keepColumns)
-                        for paragraph in found {
+                        for paragraph in found.map({ ReplacementRules.apply(options.replacements, to: $0) }) {
                             body += textParagraph(paragraph)
                             report.characters += paragraph.filter { !$0.isWhitespace }.count
                         }

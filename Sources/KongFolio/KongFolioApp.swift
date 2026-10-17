@@ -42,6 +42,10 @@ import AppKit
                     showSidebar = show; showInspector = show
                 }.keyboardShortcut("3", modifiers: [.command, .option])
             }
+            CommandGroup(after: .pasteboard) {
+                Button("复制（竖排按列从右到左）") { store.commandWorkspace?.copyInReadingOrder() }
+                    .keyboardShortcut("c", modifiers: [.command, .option]).disabled((store.commandWorkspace?.count ?? 0) == 0)
+            }
             CommandMenu("标注") {
                 Button("高亮选中文字") { if let w = store.commandWorkspace { w.mark(style: .highlight, color: w.markupColor) } }
                     .keyboardShortcut("h", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)

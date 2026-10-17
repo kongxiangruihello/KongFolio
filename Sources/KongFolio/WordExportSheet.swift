@@ -21,6 +21,10 @@ struct WordExportSheet: View {
                 Text("做过竖排 OCR 的页面按“列从右到左、字从上到下”排成横排文字，繁体字原样保留；关闭时整页连成一段。没有识别记录的页面按文字层顺序。")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+            HStack {
+                Toggle("应用替换规则（\(ReplacementRules.parse(workspace.replacementText).count) 条）", isOn: $workspace.applyReplacements)
+                Button("编辑规则…") { workspace.showReplacementRules = true }
+            }
             Toggle("标出页码（“—— 第 N 页 ——”）", isOn: $workspace.wordOptions.pageMarks)
             Text("文字来自页面的文字层，扫描页需要先 OCR；目录条目会成为 Word 的标题，可在导航窗格里跳转。页面图片是当前显示的范围（裁边后的样子）。版式、脚注位置不会还原。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -52,8 +56,10 @@ extension Workspace {
             }
         }
         showWordExport = false
+        var exportOptions = wordOptions
+        exportOptions.replacements = applyReplacements ? ReplacementRules.parse(replacementText) : []
         guard let destination = saveURL(type: UTType(filenameExtension: "docx") ?? .data, suffix: "docx") else { return }
-        runJob(JobSpec(operation: .word, source: data, pages: pages, destination: destination, revision: revision, word: wordOptions, outline: outlineEntries,
+        runJob(JobSpec(operation: .word, source: data, pages: pages, destination: destination, revision: revision, word: exportOptions, outline: outlineEntries,
                          regions: Dictionary(uniqueKeysWithValues: pages.compactMap { index in meta(index).ocrRegions.map { (index, $0) } })))
     }
 }

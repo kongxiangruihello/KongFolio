@@ -28,6 +28,9 @@ struct SearchHit: Identifiable {
     var snippet: String
     /// The PDF page label (usually the printed page number) when it differs from the physical position.
     var label: String? = nil
+    /// For a hit on a vertical page that is read from its recognition record: one box per column the match covers,
+    /// as fractions of the page. `range` means nothing then.
+    var strips: [CGRect]? = nil
 }
 struct AnnotationNote: Identifiable {
     var id: String { "\(page)-\(index)" }
@@ -145,16 +148,39 @@ enum ReadingServices {
         return result
     }
 
-    static func search(_ data: Data, query: String, limit: Int = 1000, simplify: Bool = true) throws -> [SearchHit] {
+    static func search(_ data: Data, query: String, limit: Int = 1000, simplify: Bool = true, records: [Int: [RecognizedLine]] = [:]) throws -> [SearchHit] {
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let doc = PDFDocument(data: data) else { return [] }
         var hits: [SearchHit] = []
         var cache: [String: String] = [:]
         for i in 0..<doc.pageCount {
             try Task.checkCancellation()
             guard let page = doc.page(at: i) else { continue }
+            let label = pageLabel(page, index: i)
+            // A vertical page that was recognised here is searched in reading order, so a phrase that runs from
+            // the foot of one column to the head of the next is found (PDFKit would read the columns left to right).
+            if let lines = records[i], let characters = OrderedText.characters(lines), !characters.isEmpty {
+                let joined = characters.map(\.text).joined()
+                var starts: [Int] = []
+                var offset = 0
+                for character in characters { starts.append(offset); offset += character.text.utf16.count }
+                for found in matches(in: joined, query: query, simplify: simplify, cache: &cache) {
+                    guard let first = starts.firstIndex(of: found.location) else { continue }
+                    let last = (starts.lastIndex { $0 < NSMaxRange(found) }) ?? first
+                    var strips: [CGRect] = []
+                    var current: Int?
+                    for character in characters[first...max(first, last)] {
+                        if character.column == current, let tail = strips.last { strips[strips.count - 1] = tail.union(character.box) }
+                        else { strips.append(character.box); current = character.column }
+                    }
+                    let from = max(0, first - 8), to = min(characters.count, last + 16)
+                    let snippet = characters[from..<to].map(\.text).joined()
+                    hits.append(SearchHit(page: i, range: NSRange(location: 0, length: 0), snippet: repairIdeographs(snippet), label: label, strips: strips))
+                    if hits.count >= limit { return hits }
+                }
+                continue
+            }
             let string = page.string ?? ""
             let text = string as NSString
-            let label = pageLabel(page, index: i)
             for found in matches(in: string, query: query, simplify: simplify, cache: &cache) {
                 let lower = max(0, found.location - 32), upper = min(text.length, NSMaxRange(found) + 64)
                 let excerpt = text.substring(with: text.rangeOfComposedCharacterSequences(for: NSRange(location: lower, length: upper - lower))).replacingOccurrences(of: "\n", with: " ")
@@ -262,11 +288,26 @@ extension Workspace {
         readingPoint = point; readingScale = scale
         scheduleRecovery()
     }
+    /// What to select on the page for a search hit.
+    func searchSelection(for hit: SearchHit) -> PDFSelection? {
+        guard let page else { return nil }
+        guard let strips = hit.strips else { return page.selection(for: hit.range) }
+        let crop = page.bounds(for: .cropBox)
+        var combined: PDFSelection?
+        for strip in strips {
+            guard let part = page.selection(for: OrderedText.pageRect(forFraction: strip, cropBox: crop, rotation: page.rotation)) else { continue }
+            if let existing = combined { existing.add(part) } else { combined = part }
+        }
+        return combined
+    }
+
     func startSearch() {
         searchTask?.cancel(); searchResults = []; searchMessage = ""
         guard !search.isEmpty, let data = try? pdfData() else { return }
         let query = search, version = revision; searchMessage = "正在搜索…"; sidebarTab = .search
-        let job = Task.detached { try ReadingServices.search(data, query: query) }; searchTask = job
+        var records: [Int: [RecognizedLine]] = [:]
+        for index in 0..<count { if let lines = meta(index).ocrRegions, OrderedText.isVertical(lines) { records[index] = lines } }
+        let job = Task.detached { [records] in try ReadingServices.search(data, query: query, records: records) }; searchTask = job
         Task {
             do { let hits = try await job.value; guard revision == version, query == search else { return }; searchResults = hits; searchMessage = hits.count == 1000 ? "显示前 1000 处匹配，请缩小搜索范围" : "找到 \(hits.count) 处匹配（忽略换行，简繁通查）" }
             catch is CancellationError {} catch { self.error = error.localizedDescription }
@@ -274,10 +315,47 @@ extension Workspace {
     }
     func goToSearch(_ hit: SearchHit) {
         selectPage(hit.page)
-        guard let selection = page?.selection(for: hit.range) else { return }
+        guard let selection = searchSelection(for: hit) else { return }
         if let page { let bounds = selection.bounds(for: page); readingPoint = CGPoint(x: bounds.minX, y: bounds.maxY + 20) }
         pdfView?.setCurrentSelection(selection, animate: true); pdfView?.go(to: selection)
     }
+    /// Copies the selected text (or the page being read, when nothing is selected) in reading order. On a vertical page
+    /// that was recognised here that means a line per column, right to left; PDFKit's own copy would read the columns
+    /// left to right. Other selections are copied as PDFKit gives them.
+    func copyInReadingOrder() {
+        guard count > 0 else { return }
+        func put(_ text: String, _ note: String) {
+            guard !text.isEmpty else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            status = note
+        }
+        guard let chosen = pdfView?.currentSelection, !(chosen.string ?? "").isEmpty else {
+            if let columns = OrderedText.verticalColumns(meta(selection).ocrRegions ?? []) {
+                put(columns.map { ReadingServices.repairIdeographs($0) }.joined(separator: "\n"), "已复制本页文字（竖排，按列从右到左）")
+            } else {
+                put(ReadingServices.repairIdeographs(page?.string ?? ""), "已复制本页文字")
+            }
+            return
+        }
+        var parts: [String] = []
+        for page in chosen.pages.sorted(by: { document.index(for: $0) < document.index(for: $1) }) {
+            let index = document.index(for: page)
+            guard index != NSNotFound, let glyphs = OrderedText.characters(meta(index).ocrRegions ?? []) else {
+                put(ReadingServices.repairIdeographs(chosen.string ?? ""), "已复制（所选页没有竖排识别记录，按文字层顺序）")
+                return
+            }
+            let ranges = (0..<chosen.numberOfTextRanges(on: page)).map { chosen.range(at: $0, on: page) }
+            let crop = page.bounds(for: .cropBox)
+            parts.append(OrderedText.text(of: glyphs) { glyph in
+                let rect = OrderedText.pageRect(forFraction: glyph.box, cropBox: crop, rotation: page.rotation)
+                let position = page.characterIndex(at: CGPoint(x: rect.midX, y: rect.midY))
+                return position >= 0 && ranges.contains { NSLocationInRange(position, $0) }
+            })
+        }
+        put(ReadingServices.repairIdeographs(parts.filter { !$0.isEmpty }.joined(separator: "\n\n")), "已复制（竖排，按列从右到左）")
+    }
+
     func refreshNotes() {
         guard let data = try? pdfData() else { return }; let version = revision
         Task {
