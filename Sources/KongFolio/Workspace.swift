@@ -63,6 +63,8 @@ import UniformTypeIdentifiers
     @Published var showImportOrder = false
     @Published var selectedAnnotation: PDFAnnotation?
     @Published var annotationColor = Color.blue
+    @Published var showCompress = false
+    @Published var compressLevel = CompressLevel.standard
     /// Pen and arrow line width in points; the highlighter draws a wide translucent stroke instead.
     @Published var penWidth = 2.0
     @Published var penHighlighter = false

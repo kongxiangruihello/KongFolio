@@ -26,6 +26,7 @@ struct ContentView: View {
             Button("好") { workspace.error = nil }
         } message: { Text(workspace.error ?? "") }
         .sheet(isPresented: $workspace.showExport) { ExportSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showCompress) { CompressSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRReview) { OCRReview(workspace: workspace) }
         .sheet(isPresented: $workspace.showTools) { quickTools }
         .sheet(isPresented: $workspace.showImportOrder) { importOrder }
@@ -205,7 +206,7 @@ struct ContentView: View {
     @ViewBuilder private var exportItems: some View {
         Button("PDF · 全部页面") { workspace.exportPDF() }
         Button("PDF · 提取选中页") { workspace.exportPDF(currentOnly: true) }
-        Button("PDF · 压缩图片（保留文字）") { workspace.compress() }
+        Button("PDF · 压缩体积…") { workspace.compress() }
         Divider()
         Button("JPG · 当前页") { workspace.exportImage(.jpg) }
         Button("PNG · 当前页") { workspace.exportImage(.png) }

@@ -15,6 +15,7 @@ struct JobSpec {
     var ocrSources: [Int: Data] = [:]
     var ocr = OCRSettings()
     var chapters: [ChapterPart] = []
+    var compress = CompressLevel.standard
 }
 
 struct JobResult {
@@ -43,6 +44,15 @@ enum BackgroundJobs {
         if spec.operation == .configured { return try ExportServices.run(spec, progress: progress) }
         guard let doc = PDFDocument(data: spec.source), !spec.pages.isEmpty, spec.pages.allSatisfy({ (0..<doc.pageCount).contains($0) }) else { throw FolioError(message: "任务页面范围无效。") }
         if spec.operation == .chapters { return try splitChapters(spec, doc: doc, progress: progress) }
+        if spec.operation == .compress {
+            let target = try spec.destination.unwrap("没有导出位置")
+            let result = try PDFCompressor.compress(doc, level: spec.compress, original: spec.source.count, progress: progress)
+            try Task.checkCancellation()
+            // A file that did not get smaller is not written: the original is the better copy.
+            guard result.report.smaller else { return JobResult(message: result.report.summary) }
+            try result.data.write(to: target, options: .atomic)
+            return JobResult(destination: nil, message: result.report.summary)
+        }
         let output = PDFDocument()
         var regions: [Int: [RecognizedLine]] = [:], originals: [Int: Data] = [:]
         var recognizedCount = 0, skipped = 0
@@ -84,16 +94,8 @@ enum BackgroundJobs {
                     }
                 case .inspectOCR:
                     regions[index] = try recognize(page, settings: spec.ocr)
-                case .configured, .chapters:
+                case .configured, .chapters, .compress:
                     break
-                case .compress:
-                    let cg = try DocumentServices.render(page, maxDimension: 1400)
-                    let rep = NSBitmapImageRep(cgImage: cg)
-                    let jpeg = try rep.representation(using: .jpeg, properties: [.compressionFactor: 0.65]).unwrap("压缩页面失败")
-                    let image = try NSImage(data: jpeg).unwrap("压缩图片读取失败")
-                    let b = page.bounds(for: .cropBox)
-                    image.size = abs(page.rotation % 180) == 90 ? CGSize(width: b.height, height: b.width) : b.size
-                    output.insert(try PDFPage(image: image).unwrap("压缩 PDF 页面创建失败"), at: output.pageCount)
                 case .split:
                     let url = staging!.appendingPathComponent(String(format: "page-%04d.pdf", index + 1))
                     try DocumentServices.subset(doc, indexes: [index]).dataRepresentation().unwrap("拆分失败").write(to: url, options: .atomic)
@@ -112,12 +114,8 @@ enum BackgroundJobs {
             return JobResult(pdf: try doc.dataRepresentation().unwrap("OCR 保存失败"), text: doc.string ?? "", message: "OCR 完成，识别 \(recognizedCount) 页，跳过 \(skipped) 个已有文字的页面\(note)", regions: regions, originals: originals)
         case .inspectOCR:
             return JobResult(message: "识别区域检查完成，未修改页面文字", regions: regions)
-        case .configured, .chapters:
+        case .configured, .chapters, .compress:
             throw FolioError(message: "导出任务未执行")
-        case .compress:
-            let data = try output.dataRepresentation().unwrap("压缩保存失败")
-            try data.write(to: spec.destination.unwrap("没有导出位置"), options: .atomic)
-            return JobResult(message: "压缩副本已导出：\(data.count / 1024) KB")
         case .split, .images:
             try FileManager.default.moveItem(at: staging!, to: finalFolder!)
             return JobResult(destination: finalFolder, message: "已导出 \(spec.pages.count) 个文件")
@@ -217,7 +215,18 @@ extension Workspace {
     }
 
     /// Compress now keeps text: PDFKit re-encodes embedded images instead of rasterizing every page.
-    func compress() { openExport(format: .pdf, scope: .all, pdfMode: .optimized) }
+    func compress() {
+        guard count > 0 else { return }
+        showCompress = true
+    }
+
+    /// Writes a smaller copy next to wherever the reader chooses; the open document is not changed.
+    func startCompress() {
+        guard count > 0, !busy, checkDraftsForExport(), let data = try? pdfData() else { return }
+        showCompress = false
+        guard let destination = saveURL(type: .pdf, suffix: "pdf", name: title + "-compressed") else { return }
+        runJob(JobSpec(operation: .compress, source: data, pages: Array(0..<count), destination: destination, revision: revision, compress: compressLevel))
+    }
 
     func exportBatch(split: Bool, selectedOnly: Bool = false) {
         if !split { openExport(format: .png, scope: selectedOnly ? .selected : .all); return }
