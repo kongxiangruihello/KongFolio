@@ -137,7 +137,8 @@ enum BatchPipeline {
             let picked = DocumentServices.subset(document, indexes: keep)
             document = picked
         }
-        let newIndex = Dictionary(uniqueKeysWithValues: keep.enumerated().map { ($0.element, $0.offset) })
+        var newIndex: [Int: Int] = [:]
+        for (offset, page) in keep.enumerated() { newIndex[page] = offset }
         let count = document.pageCount
         var output = BatchOutput(pages: count)
         var regions: [Int: [RecognizedLine]] = [:]
