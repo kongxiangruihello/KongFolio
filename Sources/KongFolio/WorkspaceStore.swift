@@ -48,6 +48,17 @@ import UniformTypeIdentifiers
     /// With two documents side by side, the one the reader last clicked in; nil or the active tab otherwise.
     @Published private(set) var focusedID: UUID?
 
+    /// The quick tab switcher (⌘P) is open.
+    @Published var showSwitcher = false
+
+    /// Tabs whose names match `query`, best match first; with nothing typed, the most recently used first.
+    func switcherResults(for query: String) -> [OpenTab] {
+        let ordered = tabs.enumerated().sorted { lhs, rhs in
+            lhs.element.lastUsed != rhs.element.lastUsed ? lhs.element.lastUsed > rhs.element.lastUsed : lhs.offset < rhs.offset
+        }.map(\.element)
+        return TabSearch.rank(ordered.map(\.switcherTitle), query: query).map { ordered[$0] }
+    }
+
     /// The document that marking, excerpting and undo commands act on: the clicked pane when reading side by side.
     var commandWorkspace: Workspace? {
         guard let active = activeWorkspace else { return nil }
@@ -149,6 +160,7 @@ import UniformTypeIdentifiers
         focusedID = id
         forwarding = tab.changes.sink { [weak self] _ in self?.objectWillChange.send() }
         tab.workspace?.lastActive = Date()
+        tab.note?.lastActive = Date()
         tab.workspace?.ensureLoaded()
         trimLoadedTabs()
     }
@@ -329,5 +341,38 @@ import UniformTypeIdentifiers
     func redoActive() {
         if let workspace = commandWorkspace { workspace.redo() }
         else { activeNote?.textView?.undoManager?.redo() }
+    }
+}
+
+extension OpenTab {
+    /// The name the tab shows.
+    var switcherTitle: String {
+        switch self {
+        case .document(let workspace):
+            return workspace.count == 0 && workspace.sourceURL == nil && workspace.projectURL == nil ? "新标签页" : workspace.displayName
+        case .note(let note): return note.title
+        }
+    }
+
+    /// The folder of the file, or a short description.
+    var switcherDetail: String? {
+        switch self {
+        case .document(let workspace): return workspace.displayPath.map { ($0 as NSString).deletingLastPathComponent }
+        case .note(let note): return note.fileURL.map { $0.deletingLastPathComponent().path } ?? "Markdown 笔记（未保存）"
+        }
+    }
+
+    var switcherIcon: String {
+        switch self {
+        case .document(let workspace): return workspace.mode == .image ? "photo" : "doc.richtext"
+        case .note: return "square.and.pencil"
+        }
+    }
+
+    var lastUsed: Date {
+        switch self {
+        case .document(let workspace): return workspace.lastActive
+        case .note(let note): return note.lastActive
+        }
     }
 }

@@ -28,6 +28,7 @@ struct TextEdit: Equatable {
     @Published var preview: PDFDocument?
     @Published var error: String?
     @Published var status = ""
+    var lastActive = Date()
     weak var textView: NSTextView?
     private var previewTask: Task<Void, Never>?
     private var backupTask: Task<Void, Never>?

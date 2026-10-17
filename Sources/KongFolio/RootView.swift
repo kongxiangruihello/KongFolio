@@ -17,6 +17,7 @@ struct RootView: View {
                 Color.clear
             }
         }
+        .sheet(isPresented: $store.showSwitcher) { TabSwitcherView(store: store) }
     }
 }
 

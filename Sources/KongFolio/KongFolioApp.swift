@@ -58,6 +58,8 @@ import AppKit
                 Button(showBoard ? "隐藏工作区" : "显示工作区") { showBoard.toggle() }.keyboardShortcut("4", modifiers: [.command, .option])
             }
             CommandMenu("标签页") {
+                Button("快速切换标签页…") { store.showSwitcher = true }.keyboardShortcut("p")
+                Divider()
                 Button("下一个标签页") { store.selectNext() }.keyboardShortcut("]", modifiers: [.command, .shift])
                 Button("上一个标签页") { store.selectPrevious() }.keyboardShortcut("[", modifiers: [.command, .shift])
             }
