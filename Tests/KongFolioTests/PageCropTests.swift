@@ -193,3 +193,33 @@ final class ScanCleanupTests: XCTestCase {
         XCTAssertEqual(workspace.batchAdjustments, ImageAdjustments())
     }
 }
+
+extension PageCropTests {
+    @MainActor func testSinglePageTuningCutsOnePageAndLoadsEachPagesOwnCut() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let workspace = Workspace(storage: directory)
+        workspace.document = try book(pages: 3)
+        workspace.setCropSingle(true)
+        XCTAssertTrue(workspace.cropPage.isZero)
+        workspace.cropPage = CropMargins(left: 0.1, right: 0.1, top: 0.1, bottom: 0.1)
+        workspace.applyCropToCurrentPage()
+        XCTAssertEqual(try workspace.document.page(at: 0).unwrap("无页面").bounds(for: .cropBox).width, 160, accuracy: 0.5)
+        XCTAssertEqual(try workspace.document.page(at: 1).unwrap("无页面").bounds(for: .cropBox).width, 200, accuracy: 0.5)
+
+        workspace.stepCropPage(1)
+        XCTAssertEqual(workspace.selection, 1)
+        XCTAssertTrue(workspace.cropPage.isZero)
+        workspace.cropPage = CropMargins(left: 0.2, right: 0, top: 0, bottom: 0)
+        workspace.applyCropToCurrentPage()
+        XCTAssertEqual(try workspace.document.page(at: 1).unwrap("无页面").bounds(for: .cropBox).width, 160, accuracy: 0.5)
+        workspace.stepCropPage(-1)
+        XCTAssertEqual(workspace.cropPage.left, 0.1, accuracy: 0.01)
+        workspace.stepCropPage(-1)
+        XCTAssertEqual(workspace.selection, 0)
+
+        workspace.undo()
+        XCTAssertEqual(try workspace.document.page(at: 1).unwrap("无页面").bounds(for: .cropBox).width, 200, accuracy: 0.5)
+        XCTAssertEqual(try workspace.document.page(at: 0).unwrap("无页面").bounds(for: .cropBox).width, 160, accuracy: 0.5)
+    }
+}

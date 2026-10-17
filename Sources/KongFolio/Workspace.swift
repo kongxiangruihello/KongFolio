@@ -90,6 +90,9 @@ import UniformTypeIdentifiers
     @Published var cropScope = CropScope.all
     @Published var cropDetecting = false
     @Published var cropMessage = ""
+    /// Fine-tuning one page at a time: the sliders then edit `cropPage` instead of the odd/even settings.
+    @Published var cropSingle = false
+    @Published var cropPage = CropMargins()
     /// The other document shown beside this one (side-by-side reading), with the page offset kept while syncing.
     @Published var splitPartner: Workspace?
     @Published var splitSync = false
