@@ -64,6 +64,16 @@ import UniformTypeIdentifiers
     @Published var selectedAnnotation: PDFAnnotation?
     @Published var annotationColor = Color.blue
     @Published var showCompress = false
+    @Published var showCrop = false
+    @Published var showWordExport = false
+    @Published var wordOptions = WordExportOptions()
+    @Published var wordScope = CropScope.all
+    @Published var cropOdd = CropMargins()
+    @Published var cropEven = CropMargins()
+    @Published var cropSeparate = false
+    @Published var cropScope = CropScope.all
+    @Published var cropDetecting = false
+    @Published var cropMessage = ""
     /// The other document shown beside this one (side-by-side reading), with the page offset kept while syncing.
     @Published var splitPartner: Workspace?
     @Published var splitSync = false
@@ -116,7 +126,7 @@ import UniformTypeIdentifiers
     var previewIsProxy = false
     /// Tests and scripts replace this to answer confirmation dialogs.
     static var confirmationHandler: ((_ title: String, _ detail: String) -> Bool)?
-    private var cachedPDF: Data?
+    var cachedPDF: Data?
     private var imageBase: CGImage?
     private var proxyBase: CGImage?
     private var displayCache: (key: String, image: NSImage)?
@@ -630,7 +640,7 @@ import UniformTypeIdentifiers
     func pickFiles() -> [URL] {
         let panel = NSOpenPanel()
         var types: [UTType] = [.pdf, .jpeg, .png, .heic, .tiff, .plainText, UTType(exportedAs: "com.kongfolio.project")]
-        types += TextImport.markdownExtensions.union(RichTextImport.extensions).compactMap { UTType(filenameExtension: $0) }
+        types += TextImport.markdownExtensions.compactMap { UTType(filenameExtension: $0) }
         panel.allowedContentTypes = types
         panel.allowsMultipleSelection = true
         return panel.runModal() == .OK ? panel.urls : []
@@ -661,8 +671,8 @@ import UniformTypeIdentifiers
 
     /// Files dropped on the window: open them, or insert after the current page when a document is open.
     func openDropped(_ urls: [URL]) {
-        let files = urls.filter { $0.isFileURL && (["pdf", "jpg", "jpeg", "png", "heic", "tif", "tiff", "kongfolio"].contains($0.pathExtension.lowercased()) || TextImport.handles($0) || RichTextImport.handles($0)) }
-        guard !files.isEmpty else { error = "只能拖入 PDF、图片、Word、RTF、HTML、Markdown、TXT 或 KongFolio 项目。"; return }
+        let files = urls.filter { $0.isFileURL && (["pdf", "jpg", "jpeg", "png", "heic", "tif", "tiff", "kongfolio"].contains($0.pathExtension.lowercased()) || TextImport.handles($0)) }
+        guard !files.isEmpty else { error = "只能拖入 PDF、图片、Markdown、TXT 或 KongFolio 项目。"; return }
         let isProject = files.contains { $0.pathExtension.lowercased() == "kongfolio" }
         var insert = false
         if count > 0, !isProject, AppEnvironment.isInteractive {
@@ -776,7 +786,7 @@ import UniformTypeIdentifiers
                 history.removeAll()
                 future.removeAll()
                 projectURL = nil
-                mode = urls.count == 1 && urls[0].pathExtension.lowercased() != "pdf" && !TextImport.handles(urls[0]) && !RichTextImport.handles(urls[0]) ? .image : .document
+                mode = urls.count == 1 && urls[0].pathExtension.lowercased() != "pdf" && !TextImport.handles(urls[0]) ? .image : .document
                 if loaded.count == 1 { openedBytes = data.first }
                 sourceURL = loaded.count == 1 ? urls[0] : nil
             }

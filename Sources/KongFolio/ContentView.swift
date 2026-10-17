@@ -27,6 +27,8 @@ struct ContentView: View {
         } message: { Text(workspace.error ?? "") }
         .sheet(isPresented: $workspace.showExport) { ExportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showCompress) { CompressSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showCrop) { CropSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showWordExport) { WordExportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRReview) { OCRReview(workspace: workspace) }
         .sheet(isPresented: $workspace.showTools) { quickTools }
         .sheet(isPresented: $workspace.showImportOrder) { importOrder }
@@ -243,6 +245,7 @@ struct ContentView: View {
         Button("TIFF · 当前页") { workspace.exportImage(.tiff) }
         Button("PNG · 全部页面") { workspace.exportBatch(split: false) }
         Divider()
+        Button("Word（.docx）· 文字与页面图片…") { workspace.openWordExport() }
         Button("TXT") { workspace.exportText(markdown: false) }
         Button("Markdown · 全文") { workspace.exportText(markdown: true) }
         Button("Markdown · 摘录与笔记") { workspace.exportNotes() }
@@ -426,6 +429,7 @@ struct ContentView: View {
                 Button("旋转 90°") { workspace.rotate() }
                 Button("删除页面", role: .destructive) { workspace.remove() }.disabled(workspace.effectivePages.count >= workspace.count)
             }
+            Button("裁边…") { workspace.openCrop() }
             Button("插入 PDF / 图片…") { workspace.open(insert: true) }
             HStack {
                 Button("提取选中页") { workspace.exportPDF(currentOnly: true) }
@@ -554,6 +558,13 @@ struct ContentView: View {
             Button("自动识别纸张与透视校正") { workspace.detectPaper() }
             Toggle("扫描增强", isOn: $workspace.adjustments.scan).onChange(of: workspace.adjustments.scan) { _, _ in workspace.updatePreview() }
             Button("黑白") { workspace.adjustments.saturation = 0; workspace.updatePreview() }
+            Divider()
+            Text("批量应用").font(.subheadline.bold())
+            Text("用上面的亮度、对比度、饱和度、锐化、倾斜、扫描增强和旋转处理多页。裁剪与透视因页而异，不会带入；裁边请用页面管理里的“裁边”。").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("应用到选中页") { workspace.cleanPages(scope: .selected) }
+                Button("应用到全部页") { workspace.cleanPages(scope: .all) }
+            }
             Divider()
             Text("项目保留原始页面和调整参数。应用会把页面转为图片（含文字的页面会先提示）；导出前请先应用。").font(.caption).foregroundStyle(.secondary)
             HStack {
