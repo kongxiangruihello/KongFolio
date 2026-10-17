@@ -249,7 +249,7 @@ import UniformTypeIdentifiers
     }
 
     func present(_ error: Error) {
-        guard NSApp != nil else { return }
+        guard AppEnvironment.isInteractive else { return }
         NSAlert(error: error).runModal()
     }
 

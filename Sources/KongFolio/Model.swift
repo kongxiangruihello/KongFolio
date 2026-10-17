@@ -206,3 +206,15 @@ enum Brand {
 enum AppInfo {
     static var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev" }
 }
+
+/// Whether a person is there to answer dialogs. Test runs have no one to ask, and creating a view in a test can make
+/// `NSApp` exist, so the presence of `NSApp` alone is not enough: a modal alert there would wait forever.
+enum AppEnvironment {
+    static let isTestRun: Bool = {
+        let environment = ProcessInfo.processInfo.environment
+        return environment["XCTestConfigurationFilePath"] != nil || environment["XCTestBundlePath"] != nil
+            || NSClassFromString("XCTestCase") != nil || ProcessInfo.processInfo.processName == "KongFolioTests"
+    }()
+
+    @MainActor static var isInteractive: Bool { NSApp != nil && !isTestRun }
+}
