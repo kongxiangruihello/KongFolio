@@ -66,6 +66,8 @@ enum ContentBounds {
         let pageWidth = quarterTurn ? box.height : box.width, pageHeight = quarterTurn ? box.width : box.height
         guard pageWidth > 0, pageHeight > 0 else { return nil }
         let height = max(8, Int((CGFloat(width) * pageHeight / pageWidth).rounded()))
+        // PDFKit's own thumbnail draws the page upright, whatever its rotation or boxes.
+        guard let picture = page.thumbnail(of: CGSize(width: width, height: height), for: .mediaBox).cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         var pixels = [UInt8](repeating: 255, count: width * height)
         let drawn = pixels.withUnsafeMutableBytes { raw -> Bool in
             guard let context = CGContext(data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
@@ -73,8 +75,7 @@ enum ContentBounds {
             context.setFillColor(gray: 1, alpha: 1)
             context.fill(CGRect(x: 0, y: 0, width: width, height: height))
             context.interpolationQuality = .medium
-            context.concatenate(reference.getDrawingTransform(.mediaBox, rect: CGRect(x: 0, y: 0, width: width, height: height), rotate: 0, preserveAspectRatio: true))
-            context.drawPDFPage(reference)
+            context.draw(picture, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
         return drawn ? (pixels, width, height) : nil
@@ -94,14 +95,15 @@ enum ContentBounds {
             if seen * 10 >= width * height * 9 { paper = level; break }
         }
         let threshold = max(paper - 60, 0)
+        func dark(_ x: Int, _ y: Int) -> Bool { Int(pixels[y * width + x]) < threshold }
         var rowInk = [Int](repeating: 0, count: height), columnInk = [Int](repeating: 0, count: width)
-        for y in 0..<height {
-            for x in 0..<width where Int(pixels[y * width + x]) < threshold {
-                rowInk[y] += 1
-                columnInk[x] += 1
-            }
-        }
-        func contentful(_ count: Int, span: Int) -> Bool { count >= max(2, span / 250) && count * 100 <= span * 85 }
+        for y in 0..<height { for x in 0..<width where dark(x, y) { rowInk[y] += 1; columnInk[x] += 1 } }
+        // Rows and columns that are dark almost all the way across are scanner edges or binding shadows, not print.
+        let edgeRows = rowInk.map { $0 * 100 > width * 85 }, edgeColumns = columnInk.map { $0 * 100 > height * 85 }
+        rowInk = [Int](repeating: 0, count: height)
+        columnInk = [Int](repeating: 0, count: width)
+        for y in 0..<height where !edgeRows[y] { for x in 0..<width where !edgeColumns[x] && dark(x, y) { rowInk[y] += 1; columnInk[x] += 1 } }
+        func contentful(_ count: Int, span: Int) -> Bool { count >= max(2, span / 250) }
         guard let top = (0..<height).first(where: { contentful(rowInk[$0], span: width) }),
               let bottom = (0..<height).last(where: { contentful(rowInk[$0], span: width) }),
               let left = (0..<width).first(where: { contentful(columnInk[$0], span: height) }),
