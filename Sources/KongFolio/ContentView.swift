@@ -376,6 +376,7 @@ struct ContentView: View {
             Picker("渲染精度", selection: $workspace.ocrSettings.dpi) {
                 ForEach(OCRSettings.dpiChoices, id: \.self) { Text("\($0) DPI").tag($0) }
             }
+            Toggle("忽略红色印章和朱批", isOn: Binding(get: { workspace.ocrSettings.ignoresRedMarks }, set: { workspace.ocrSettings.ignoresRedMarks = $0 }))
             Toggle("忽略已有的文字层，整页重新识别", isOn: Binding(get: { workspace.ocrSettings.ignoresTextLayer }, set: { workspace.ocrSettings.ignoresTextLayer = $0 }))
             Text("有些扫描件（如汉王 OCR 处理过的）文字层里只有标题，程序会当作“已有文字”而跳过。遇到这种书请打开此项。原有的少量文字会留在页面里，导出时不受影响。").font(.caption).foregroundStyle(.secondary)
             Toggle("竖排（实验）", isOn: $workspace.ocrSettings.vertical)

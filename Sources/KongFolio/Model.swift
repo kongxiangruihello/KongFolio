@@ -154,6 +154,13 @@ struct OCRSettings: Codable, Equatable {
         get { ignoreTextLayer ?? false }
         set { ignoreTextLayer = newValue ? true : nil }
     }
+    /// Treat red seals and vermilion marks as paper when recognising. On unless switched off; optional so settings
+    /// saved before this existed still load.
+    var keepRedMarks: Bool? = nil
+    var ignoresRedMarks: Bool {
+        get { !(keepRedMarks ?? false) }
+        set { keepRedMarks = newValue ? nil : true }
+    }
 
     static let presets: [OCRLanguagePreset] = [
         OCRLanguagePreset(id: "hans", title: "简体中文 + 英文", languages: ["zh-Hans", "en-US"]),

@@ -43,7 +43,8 @@ enum BackgroundJobs {
     }
 
     static func recognize(_ page: PDFPage, settings: OCRSettings) throws -> [RecognizedLine] {
-        let image = try DocumentServices.render(page, maxDimension: DocumentServices.ocrPixelDimension(for: page, dpi: settings.dpi))
+        var image = try DocumentServices.render(page, maxDimension: DocumentServices.ocrPixelDimension(for: page, dpi: settings.dpi))
+        if settings.ignoresRedMarks { image = try DocumentServices.withoutRedMarks(image) }
         return settings.vertical
             ? try DocumentServices.recognizeVertical(image, languages: settings.languages)
             : try DocumentServices.recognize(image, languages: settings.languages)
