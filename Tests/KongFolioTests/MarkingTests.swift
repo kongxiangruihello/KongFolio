@@ -14,7 +14,7 @@ final class MarkingTests: XCTestCase {
         return (workspace, view, directory)
     }
 
-    func marks(_ workspace: Workspace, _ type: String) -> [PDFAnnotation] {
+    @MainActor func marks(_ workspace: Workspace, _ type: String) -> [PDFAnnotation] {
         (0..<workspace.count).flatMap { workspace.document.page(at: $0)?.annotations ?? [] }.filter { $0.type == type }
     }
 

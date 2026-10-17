@@ -43,13 +43,13 @@ import AppKit
                 }.keyboardShortcut("3", modifiers: [.command, .option])
             }
             CommandMenu("标注") {
-                Button("高亮选中文字") { store.activeWorkspace.map { $0.mark(style: .highlight, color: $0.markupColor) } }
+                Button("高亮选中文字") { if let w = store.activeWorkspace { w.mark(style: .highlight, color: w.markupColor) } }
                     .keyboardShortcut("h", modifiers: [.command, .shift]).disabled((store.activeWorkspace?.count ?? 0) == 0)
-                Button("下划线") { store.activeWorkspace.map { $0.mark(style: .underline, color: $0.markupColor) } }
+                Button("下划线") { if let w = store.activeWorkspace { w.mark(style: .underline, color: w.markupColor) } }
                     .keyboardShortcut("u", modifiers: [.command, .shift]).disabled((store.activeWorkspace?.count ?? 0) == 0)
-                Button("删除线") { store.activeWorkspace.map { $0.mark(style: .strikeOut, color: $0.markupColor) } }
+                Button("删除线") { if let w = store.activeWorkspace { w.mark(style: .strikeOut, color: w.markupColor) } }
                     .keyboardShortcut("d", modifiers: [.command, .shift]).disabled((store.activeWorkspace?.count ?? 0) == 0)
-                Button("高亮并添加批注") { store.activeWorkspace.map { $0.mark(style: .highlight, color: $0.markupColor, annotate: true) } }
+                Button("高亮并添加批注") { if let w = store.activeWorkspace { w.mark(style: .highlight, color: w.markupColor, annotate: true) } }
                     .keyboardShortcut("n", modifiers: [.command, .shift]).disabled((store.activeWorkspace?.count ?? 0) == 0)
             }
             CommandMenu("工作区") {
