@@ -87,8 +87,10 @@ final class FlattenedExportTests: XCTestCase {
         // PDFKit reads some characters of a redrawn page back as radicals (⽽ for 而); the app's repair maps them back.
         let text = ReadingServices.repairIdeographs(flat.page(at: 0)?.string ?? "")
         XCTAssertTrue(text.contains("学而时习之"))
-        // The text is there once, not twice.
-        XCTAssertEqual(text.components(separatedBy: "学而时习之").count - 1, 40)
+        // The text is there once, not twice: as often as on the original page (which holds only the first lines).
+        let before = ReadingServices.repairIdeographs(book.page(at: 0)?.string ?? "")
+        XCTAssertTrue(before.components(separatedBy: "学而时习之").count > 5)
+        XCTAssertEqual(text.components(separatedBy: "学而时习之").count, before.components(separatedBy: "学而时习之").count)
     }
 
     func testTheSummaryPagesAreAppendedAfterTheBook() throws {
