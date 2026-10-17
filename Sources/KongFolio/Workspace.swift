@@ -112,6 +112,12 @@ import UniformTypeIdentifiers
     /// Pen and arrow line width in points; the highlighter draws a wide translucent stroke instead.
     @Published var penWidth = 2.0
     @Published var penHighlighter = false
+    /// Rectangles and ellipses get a translucent fill.
+    @Published var shapeFill = false
+    /// The drawing tools floating over the page (shown unless the reader closes them).
+    @Published var showAnnotationBar = UserDefaults.standard.object(forKey: "KongFolio.annotationBar") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showAnnotationBar, forKey: "KongFolio.annotationBar") }
+    }
     @Published var signatures: [SignatureTemplate] = []
     @Published var signaturePositions: [SignaturePosition] = []
     @Published var placingSignature: SignatureTemplate?

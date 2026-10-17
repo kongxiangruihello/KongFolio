@@ -19,12 +19,15 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
     case note = "批注"
     case textBox = "文字框"
     case pen = "画笔"
+    case line = "直线"
     case arrow = "箭头"
+    case rectangle = "矩形"
+    case ellipse = "椭圆"
     case signature = "签名"
     case region = "区域摘录"
     var id: String { rawValue }
     var title: String { rawValue }
-    var draws: Bool { self == .pen || self == .arrow || self == .signature }
+    var draws: Bool { [.pen, .line, .arrow, .rectangle, .ellipse, .signature].contains(self) }
 }
 
 /// How a pen or arrow stroke looks, from the width and highlighter settings.

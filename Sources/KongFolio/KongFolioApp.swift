@@ -47,6 +47,10 @@ import AppKit
                     .keyboardShortcut("c", modifiers: [.command, .option]).disabled((store.commandWorkspace?.count ?? 0) == 0)
             }
             CommandMenu("标注") {
+                Button((store.commandWorkspace?.showAnnotationBar ?? true) ? "隐藏标注工具栏" : "显示标注工具栏") {
+                    if let w = store.commandWorkspace { w.showAnnotationBar.toggle() }
+                }.keyboardShortcut("a", modifiers: [.command, .option]).disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Divider()
                 Button("高亮选中文字") { if let w = store.commandWorkspace { w.mark(style: .highlight, color: w.markupColor) } }
                     .keyboardShortcut("h", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Button("下划线") { if let w = store.commandWorkspace { w.mark(style: .underline, color: w.markupColor) } }

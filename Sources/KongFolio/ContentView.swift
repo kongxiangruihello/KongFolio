@@ -349,6 +349,9 @@ struct ContentView: View {
             ImageCanvas(workspace: workspace)
         } else {
             PDFCanvas(workspace: workspace)
+                .overlay(alignment: .top) {
+                    if workspace.showAnnotationBar { AnnotationBar(workspace: workspace).padding(.top, 10) }
+                }
         }
     }
 
@@ -459,7 +462,8 @@ struct ContentView: View {
             Picker("工具", selection: $workspace.tool) { ForEach(AnnotationTool.allCases) { Text($0.title).tag($0) } }.labelsHidden()
             TextField("批注 / 文字框 / 笔记内容", text: $workspace.note, axis: .vertical).lineLimit(3...5)
             ColorPicker("标注颜色", selection: $workspace.annotationColor, supportsOpacity: false)
-            if workspace.tool == .pen || workspace.tool == .arrow {
+            Toggle("在页面上方显示标注工具栏", isOn: $workspace.showAnnotationBar).font(.caption)
+            if [.pen, .line, .arrow, .rectangle, .ellipse].contains(workspace.tool) {
                 HStack {
                     Text("线宽 \(workspace.penWidth, format: .number.precision(.fractionLength(1)))")
                     Slider(value: $workspace.penWidth, in: 0.5...12)
