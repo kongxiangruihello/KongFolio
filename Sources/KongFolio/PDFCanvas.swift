@@ -125,6 +125,17 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event) ?? NSMenu()
+        let location = convert(event.locationInWindow, from: nil)
+        if let page = page(for: location, nearest: false), let workspace {
+            let point = convert(location, to: page)
+            if let hit = Workspace.visibleAnnotations(on: page).reversed().first(where: { $0.bounds.contains(point) && workspace.cardID(of: $0) == nil }) {
+                workspace.selectAnnotation(hit)
+                let item = NSMenuItem(title: "删除此标注", action: #selector(deleteHitAnnotation), keyEquivalent: "")
+                item.target = self
+                menu.insertItem(item, at: 0)
+                menu.insertItem(.separator(), at: 1)
+            }
+        }
         if let text = currentSelection?.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let item = NSMenuItem(title: "摘录到工作区", action: #selector(excerptToBoard), keyEquivalent: "")
             item.target = self
@@ -135,6 +146,55 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
     }
 
     @objc private func excerptToBoard() { workspace?.excerptSelection() }
+    @objc private func deleteHitAnnotation() { workspace?.deleteAnnotation() }
+
+    // MARK: Floating toolbar over a text selection
+    private var selectionBar: NSView?
+
+    func hideSelectionToolbar() { selectionBar?.removeFromSuperview(); selectionBar = nil }
+
+    /// Shows the marking buttons next to the selected text once the mouse is released.
+    private func showSelectionToolbar() {
+        hideSelectionToolbar()
+        guard let workspace, workspace.tool == .select, let selected = currentSelection,
+              !(selected.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let page = selected.pages.last else { return }
+        let area = convert(selected.bounds(for: page), from: page)
+        var buttons: [NSView] = MarkupColor.allCases.map { color in
+            ActionButton(image: Self.dot(color.nsColor), tip: "高亮（\(color.rawValue)）") { [weak self] in
+                workspace.markupColor = color
+                workspace.mark(style: .highlight, color: color); self?.hideSelectionToolbar()
+            }
+        }
+        buttons += [
+            ActionButton(symbol: "underline", tip: "下划线") { [weak self] in workspace.mark(style: .underline, color: workspace.markupColor); self?.hideSelectionToolbar() },
+            ActionButton(symbol: "strikethrough", tip: "删除线") { [weak self] in workspace.mark(style: .strikeOut, color: workspace.markupColor); self?.hideSelectionToolbar() },
+            ActionButton(symbol: "text.bubble", tip: "高亮并加批注") { [weak self] in workspace.mark(style: .highlight, color: workspace.markupColor, annotate: true); self?.hideSelectionToolbar() },
+            ActionButton(symbol: "square.and.arrow.down.on.square", tip: "摘录到工作区") { [weak self] in workspace.excerptSelection(); self?.hideSelectionToolbar() },
+        ]
+        let stack = NSStackView(views: buttons)
+        stack.spacing = 4
+        stack.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+        stack.wantsLayer = true
+        stack.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor
+        stack.layer?.cornerRadius = 8
+        stack.layer?.borderWidth = 0.5
+        stack.layer?.borderColor = NSColor.separatorColor.cgColor
+        stack.frame.size = stack.fittingSize
+        var origin = CGPoint(x: area.midX - stack.frame.width / 2, y: area.maxY + 6)
+        if origin.y + stack.frame.height > bounds.maxY { origin.y = area.minY - stack.frame.height - 6 }
+        origin.x = min(max(4, origin.x), max(4, bounds.maxX - stack.frame.width - 4))
+        origin.y = min(max(4, origin.y), max(4, bounds.maxY - stack.frame.height - 4))
+        stack.frame.origin = origin
+        addSubview(stack)
+        selectionBar = stack
+    }
+
+    private static func dot(_ color: NSColor) -> NSImage {
+        NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
+            color.setFill(); NSBezierPath(ovalIn: rect.insetBy(dx: 2, dy: 2)).fill(); return true
+        }
+    }
 
     /// Captures what is on screen inside the dragged rectangle and sends it to the workspace.
     private func captureRegion(_ rect: CGRect) {
@@ -148,6 +208,7 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
     }
 
     override func mouseDown(with event: NSEvent) {
+        hideSelectionToolbar()
         guard let workspace, !workspace.busy else { super.mouseDown(with: event); return }
         let location = convert(event.locationInWindow, from: nil)
         guard let page = page(for: location, nearest: false) else { return }
@@ -237,6 +298,8 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
     }
 
     override func mouseUp(with event: NSEvent) {
+        // The selection is final only after PDFView has handled the release.
+        defer { DispatchQueue.main.async { [weak self] in self?.showSelectionToolbar() } }
         if let id = pressedCard {
             pressedCard = nil
             super.mouseUp(with: event)
@@ -372,4 +435,29 @@ final class SignaturePlacementView: NSView {
         dragging = false; resizing = false
         if event.clickCount == 2, let pdfView = superview as? DrawingPDFView { pdfView.workspace?.confirmSignaturePlacement() }
     }
+}
+
+
+/// A small borderless button that runs a closure; used by the floating selection toolbar.
+final class ActionButton: NSButton {
+    private let handler: () -> Void
+
+    init(image: NSImage, tip: String, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(frame: NSRect(x: 0, y: 0, width: 26, height: 24))
+        self.image = image
+        toolTip = tip
+        isBordered = false
+        imagePosition = .imageOnly
+        target = self
+        action = #selector(run)
+    }
+
+    convenience init(symbol: String, tip: String, handler: @escaping () -> Void) {
+        self.init(image: NSImage(systemSymbolName: symbol, accessibilityDescription: tip) ?? NSImage(), tip: tip, handler: handler)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func run() { handler() }
 }

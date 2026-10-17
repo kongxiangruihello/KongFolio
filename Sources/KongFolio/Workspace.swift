@@ -1080,19 +1080,33 @@ import UniformTypeIdentifiers
 
     /// Marks the selected text with the chosen style and color, attaching the note text.
     func highlight() {
-        guard let selected = pdfView?.currentSelection else { error = "请先在 PDF 中选中文字。扫描页需先 OCR。"; return }
+        guard pdfView?.currentSelection != nil else { error = "请先在 PDF 中选中文字。扫描页需先 OCR。"; return }
+        mark(style: markupStyle, color: markupColor, note: note)
+    }
+
+    /// Marks the current selection (floating toolbar, menu, shortcuts) and clears the selection.
+    /// With `annotate`, the new mark is selected so its note can be typed in the inspector.
+    @discardableResult
+    func mark(style: MarkupStyle, color: MarkupColor, note text: String = "", annotate: Bool = false) -> [PDFAnnotation] {
+        guard let selected = pdfView?.currentSelection, !(selected.string ?? "").isEmpty else { error = "请先在 PDF 中选中文字。扫描页需先 OCR。"; return [] }
         var added: [PDFAnnotation] = []
         for line in selected.selectionsByLine() {
             for page in line.pages {
-                let annotation = PDFAnnotation(bounds: line.bounds(for: page), forType: markupStyle.subtype, withProperties: nil)
-                annotation.color = markupStyle == .highlight ? markupColor.nsColor.withAlphaComponent(0.4) : markupColor.nsColor
-                annotation.contents = note
+                let annotation = PDFAnnotation(bounds: line.bounds(for: page), forType: style.subtype, withProperties: nil)
+                annotation.color = style == .highlight ? color.nsColor.withAlphaComponent(0.4) : color.nsColor
+                annotation.contents = text
                 annotation.setValue(line.string ?? "", forAnnotationKey: ReadingServices.quoteKey)
                 page.addAnnotation(annotation)
                 added.append(annotation)
             }
         }
         recordAnnotationsAdded(added)
+        pdfView?.clearSelection()
+        if annotate, let first = added.first {
+            selectAnnotation(first)
+            status = "已标记，可在右侧输入批注"
+        }
+        return added
     }
 
     func compare() {

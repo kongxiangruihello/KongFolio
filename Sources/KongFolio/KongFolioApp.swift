@@ -42,6 +42,16 @@ import AppKit
                     showSidebar = show; showInspector = show
                 }.keyboardShortcut("3", modifiers: [.command, .option])
             }
+            CommandMenu("标注") {
+                Button("高亮选中文字") { store.activeWorkspace.map { $0.mark(style: .highlight, color: $0.markupColor) } }
+                    .keyboardShortcut("h", modifiers: [.command, .shift]).disabled((store.activeWorkspace?.count ?? 0) == 0)
+                Button("下划线") { store.activeWorkspace.map { $0.mark(style: .underline, color: $0.markupColor) } }
+                    .keyboardShortcut("u", modifiers: [.command, .shift]).disabled((store.activeWorkspace?.count ?? 0) == 0)
+                Button("删除线") { store.activeWorkspace.map { $0.mark(style: .strikeOut, color: $0.markupColor) } }
+                    .keyboardShortcut("d", modifiers: [.command, .shift]).disabled((store.activeWorkspace?.count ?? 0) == 0)
+                Button("高亮并添加批注") { store.activeWorkspace.map { $0.mark(style: .highlight, color: $0.markupColor, annotate: true) } }
+                    .keyboardShortcut("n", modifiers: [.command, .shift]).disabled((store.activeWorkspace?.count ?? 0) == 0)
+            }
             CommandMenu("工作区") {
                 Button("摘录选中文字到工作区") { store.activeWorkspace?.excerptSelection() }
                     .keyboardShortcut("e", modifiers: [.command, .option]).disabled((store.activeWorkspace?.count ?? 0) == 0)
