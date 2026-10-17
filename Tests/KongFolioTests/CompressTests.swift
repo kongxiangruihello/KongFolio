@@ -79,9 +79,13 @@ final class CompressTests: XCTestCase {
     }
 
     func testReportWordsAFileThatDidNotShrink() {
-        let same = CompressReport(before: 1000, after: 1200, rebuilt: 0, kept: 3)
+        let same = CompressReport(before: 1000, after: 1200, rebuilt: 2, kept: 1)
         XCTAssertFalse(same.smaller)
         XCTAssertTrue(same.summary.contains("没有变小"))
+        let nothing = CompressReport(before: 1000, after: 1000, rebuilt: 0, kept: 3)
+        XCTAssertTrue(nothing.summary.contains("没有找到可以压缩的大图片页面"))
+        let light = CompressReport(before: 1000, after: 1000, rebuilt: 0, kept: 3, viaPDFKit: true)
+        XCTAssertTrue(light.summary.contains("没有变小"))
         let better = CompressReport(before: 1_000_000, after: 400_000, rebuilt: 2, kept: 1)
         XCTAssertTrue(better.summary.contains("减少 60%"))
         XCTAssertTrue(better.summary.contains("重绘 2 页"))
