@@ -96,15 +96,14 @@ enum ExportServices {
         return try output.dataRepresentation().unwrap("PDF 保存失败")
     }
 
-    /// The page with its annotations drawn in. Redrawing a page can leave its text unreadable to PDFKit; when that happens
-    /// the text is put back as invisible lines at the places it had (pages that are not rotated).
+    /// The page with its annotations drawn in. The text survives the redrawing (PDFKit reads some of its characters
+    /// back as look-alike radicals, which `ReadingServices.repairIdeographs` maps to the real ones); only if it is truly
+    /// gone is it put back as invisible lines at the places it had (pages that are not rotated).
     static func flattenedPage(_ page: PDFPage) throws -> PDFPage {
         let flat = try DocumentServices.searchablePage(page, lines: [])
-        func compact(_ text: String?) -> String { String((text ?? "").filter { !$0.isWhitespace }) }
-        let original = compact(page.string)
-        // The start of the page's text must still be there; a page that kept text of the same length but unreadable
-        // (characters lost their mapping) counts as lost too.
-        guard !original.isEmpty, !compact(flat.string).contains(original.prefix(8)), page.rotation % 360 == 0 else { return flat }
+        func count(_ text: String?) -> Int { ReadingServices.repairIdeographs(text ?? "").filter { !$0.isWhitespace }.count }
+        let original = count(page.string)
+        guard original > 0, count(flat.string) * 2 < original, page.rotation % 360 == 0 else { return flat }
         let lines = textLines(of: page)
         return lines.isEmpty ? flat : try DocumentServices.searchablePage(page, lines: lines)
     }

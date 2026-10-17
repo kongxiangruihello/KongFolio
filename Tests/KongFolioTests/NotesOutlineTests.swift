@@ -84,7 +84,11 @@ final class FlattenedExportTests: XCTestCase {
         let flat = try PDFDocument(data: data).unwrap("无法读取")
         XCTAssertEqual(flat.pageCount, book.pageCount)
         XCTAssertEqual(flat.page(at: 0)?.annotations.filter { ["Square", "Text"].contains($0.type ?? "") }.count, 0)
-        XCTAssertTrue((flat.page(at: 0)?.string ?? "").contains("学而时习之"))
+        // PDFKit reads some characters of a redrawn page back as radicals (⽽ for 而); the app's repair maps them back.
+        let text = ReadingServices.repairIdeographs(flat.page(at: 0)?.string ?? "")
+        XCTAssertTrue(text.contains("学而时习之"))
+        // The text is there once, not twice.
+        XCTAssertEqual(text.components(separatedBy: "学而时习之").count - 1, 40)
     }
 
     func testTheSummaryPagesAreAppendedAfterTheBook() throws {
@@ -123,26 +127,5 @@ final class FlattenedExportTests: XCTestCase {
         object["appendNotes"] = nil
         let stripped = try JSONSerialization.data(withJSONObject: object)
         XCTAssertFalse(try JSONDecoder().decode(ExportOptions.self, from: stripped).appendsNotes)
-    }
-}
-
-final class FlattenDiagnosticTests: XCTestCase {
-    /// Temporary: shows on CI what the flattened page's text looks like.
-    func testWhatTheFlattenedTextLooksLike() throws {
-        let book = try FlattenedExportTests().annotatedBook()
-        let page = try book.page(at: 0).unwrap("无页面")
-        func compact(_ text: String?) -> String { String((text ?? "").filter { !$0.isWhitespace }) }
-        let bare = try DocumentServices.searchablePage(page, lines: [])
-        let lines = ExportServices.textLines(of: page)
-        let final = try ExportServices.flattenedPage(page)
-        XCTAssertEqual(-1, compact(page.string).count)
-        XCTAssertEqual(-2, compact(bare.string).count)
-        XCTAssertEqual(-3, lines.count)
-        XCTAssertEqual(-4, compact(final.string).count)
-        XCTAssertEqual("原", String(compact(page.string).prefix(10)))
-        XCTAssertEqual("平", String(compact(bare.string).prefix(10)))
-        XCTAssertEqual("终", String(compact(final.string).prefix(10)))
-        XCTAssertEqual(-5, page.rotation)
-        XCTAssertEqual(-6, Int(page.bounds(for: .cropBox).width))
     }
 }
