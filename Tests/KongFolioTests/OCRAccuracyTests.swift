@@ -36,10 +36,9 @@ final class OCRAccuracyTests: XCTestCase {
         let image = try DocumentServices.withoutRedMarks(DocumentServices.render(page, maxDimension: 3000))
         let lines = try VerticalText.recognize(image, languages: ["zh-Hant", "en-US"])
         let result = OCRAccuracy.compare(reference: reference, recognized: OCRAccuracy.readingText(of: lines))
-        // Deliberately failing until a floor is chosen: each line shows one measured number.
-        XCTAssertEqual(-1, Int((result.accuracy * 100).rounded()))
-        XCTAssertEqual(-2, result.edits)
-        XCTAssertEqual(-3, result.referenceCount)
-        XCTAssertEqual(-4, result.recognizedCount)
+        // Measured on CI (macOS 15 and 26): 62-63 %, 143-145 edits of 384 characters, 377-378 recognised.
+        // A floor with some room, so a real regression shows but small Vision updates do not.
+        XCTAssertEqual(min(Int((result.accuracy * 100).rounded()), 55), 55)
+        XCTAssertEqual(min(result.recognizedCount, 330), 330)
     }
 }
