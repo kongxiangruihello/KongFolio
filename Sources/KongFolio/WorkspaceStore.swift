@@ -55,34 +55,51 @@ import UniformTypeIdentifiers
 
     private var sessionURL: URL { storage.appendingPathComponent("Session.json") }
 
-    /// Restores the tabs of the last session: documents from their recovery copies, notes from their unsaved text.
+    /// Restores the tabs of the last session. Tabs with unsaved changes come back from their recovery copies; unchanged ones
+    /// are only remembered by path and are read when selected, so many open files cost nothing at launch.
     func bootstrap() {
         guard tabs.isEmpty else { return }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: storage.path)) ?? []
         func recoveryExists(_ slot: String) -> Bool {
             slot.isEmpty ? (names.contains("Recovery.kfrecovery") || names.contains("Recovery.kongfolio")) : names.contains("Recovery-\(slot).kfrecovery")
         }
-        var slots = ((try? JSONDecoder().decode([String].self, from: Data(contentsOf: sessionURL))) ?? []).filter(recoveryExists)
+        let session = (try? Data(contentsOf: sessionURL)).flatMap(Session.decode) ?? Session()
+        var entries = session.entries
+        // A recovery copy that the session file does not mention comes from a crash; bring it back too.
         for name in names.sorted() where name.hasPrefix("Recovery-") && name.hasSuffix(".kfrecovery") {
             let slot = String(name.dropFirst("Recovery-".count).dropLast(".kfrecovery".count))
-            if !slots.contains(slot) { slots.append(slot) }
+            if !entries.contains(where: { $0.slot == slot }) { entries.append(SessionEntry(slot: slot, kind: .recovery)) }
         }
-        if recoveryExists(""), !slots.contains("") { slots.insert("", at: 0) }
-        for slot in slots {
-            let workspace = Workspace(storage: storage, slot: slot)
+        if recoveryExists(""), !entries.contains(where: { $0.slot.isEmpty }) { entries.insert(SessionEntry(slot: "", kind: .recovery), at: 0) }
+        var selectedTab: UUID?
+        for entry in entries {
+            let workspace = Workspace(storage: storage, slot: entry.slot)
             workspace.store = self
+            // Unsaved changes win: a recovery copy exists, so the tab was not clean when the app ended.
+            if entry.kind == .recovery || recoveryExists(entry.slot) {
+                guard recoveryExists(entry.slot) else { continue }
+            } else if let path = entry.path, FileManager.default.fileExists(atPath: path) {
+                let url = URL(fileURLWithPath: path)
+                if entry.kind == .project { workspace.projectURL = url } else { workspace.sourceURL = url }
+                workspace.pendingView = entry.position
+                workspace.needsLoad = true
+            } else {
+                continue
+            }
             workspace.bootstrap()
             tabs.append(.document(workspace))
+            if entry.slot == session.selected { selectedTab = workspace.id }
         }
         for note in MarkdownNote.restoreBackups(storage: storage) { tabs.append(.note(note)) }
         if tabs.isEmpty { addWorkspace() }
-        if let first = tabs.first { select(first.id) }
+        if let target = selectedTab ?? tabs.first?.id { select(target) }
     }
 
     func saveSession() {
-        let slots = tabs.compactMap(\.workspace).filter { $0.count > 0 }.map(\.slot)
+        let entries = tabs.compactMap { $0.workspace?.sessionEntry }
+        let session = Session(entries: entries, selected: activeWorkspace?.slot)
         try? FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
-        try? JSONEncoder().encode(slots).write(to: sessionURL, options: .atomic)
+        try? JSONEncoder().encode(session).write(to: sessionURL, options: .atomic)
     }
 
     // MARK: Tabs
@@ -104,6 +121,35 @@ import UniformTypeIdentifiers
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
         selectedID = id
         forwarding = tab.changes.sink { [weak self] _ in self?.objectWillChange.send() }
+        tab.workspace?.lastActive = Date()
+        tab.workspace?.ensureLoaded()
+        trimLoadedTabs()
+    }
+
+    func selectNext() { step(1) }
+    func selectPrevious() { step(-1) }
+
+    private func step(_ offset: Int) {
+        guard tabs.count > 1, let current = tabs.firstIndex(where: { $0.id == selectedID }) else { return }
+        select(tabs[(current + offset + tabs.count) % tabs.count].id)
+    }
+
+    // MARK: Memory
+
+    /// How many documents stay in memory. Beyond this, the ones used longest ago are released if nothing would be lost
+    /// (no unsaved changes, no undo history, not busy); they are read again when selected.
+    var maxLoadedTabs = 8
+
+    func loadedTabsChanged() { trimLoadedTabs() }
+
+    private func trimLoadedTabs() {
+        let loaded = tabs.compactMap(\.workspace).filter { $0.count > 0 }
+        guard loaded.count > maxLoadedTabs else { return }
+        var excess = loaded.count - maxLoadedTabs
+        for workspace in loaded.filter({ $0.id != selectedID && $0.canUnload }).sorted(by: { $0.lastActive < $1.lastActive }) where excess > 0 {
+            workspace.unload()
+            excess -= 1
+        }
     }
 
     /// Opens files in the current tab when it is empty, otherwise in a new tab.
@@ -114,28 +160,19 @@ import UniformTypeIdentifiers
         target.load(urls, scanAfter: scanAfter)
     }
 
-    /// Opens every file in its own tab, one after another so large files do not compete for the disk.
-    /// The tabs appear at once with their file names; the first one is brought to the front.
+    /// Opens every file in its own tab. The tabs appear at once with their file names; the first one is read and brought
+    /// to the front, the others are read when selected, so opening dozens of files is instant and uses no extra memory.
     func openEach(_ urls: [URL]) {
-        var jobs: [(Workspace, URL)] = []
+        var first: Workspace?
         for url in urls {
-            let claimed = Set(jobs.map { $0.0.id })
             let target: Workspace
-            if let current = activeWorkspace, current.count == 0, !current.busy, !claimed.contains(current.id) { target = current }
-            else { target = addWorkspace() }
+            if first == nil, let current = activeWorkspace, current.count == 0, !current.busy { target = current } else { target = addWorkspace() }
             target.sourceURL = url
-            jobs.append((target, url))
+            if first == nil { first = target } else { target.needsLoad = true }
         }
-        if let first = jobs.first { select(first.0.id) }
-        let queued = jobs
-        Task { [weak self] in
-            for (workspace, url) in queued {
-                // A tab closed while it waited is not loaded.
-                guard let self, self.tabs.contains(where: { $0.id == workspace.id }) else { continue }
-                workspace.load([url])
-                while workspace.busy { try? await Task.sleep(nanoseconds: 50_000_000) }
-            }
-        }
+        guard let first else { return }
+        select(first.id)
+        first.load([urls[0]])
     }
 
     /// The "open" command: shows the file panel for an empty document tab, creating one when a note is in front.
@@ -193,7 +230,7 @@ import UniformTypeIdentifiers
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         switch tabs[index] {
         case .document(let workspace):
-            if workspace.count > 0, !workspace.closeDocument() { return }
+            if workspace.count > 0 { if !workspace.closeDocument() { return } } else { workspace.forgetSource() }
             if tabs.count == 1 { return }
         case .note(let note):
             guard note.confirmClose() else { return }

@@ -25,14 +25,33 @@ struct TabBar: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
-                    ForEach(store.tabs) { tab in
-                        TabItem(store: store, tab: tab, selected: tab.id == store.selectedID)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(store.tabs) { tab in
+                            TabItem(store: store, tab: tab, selected: tab.id == store.selectedID, compact: store.tabs.count > 8)
+                                .id(tab.id)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                }
+                // With dozens of tabs the selected one may be off screen (keyboard switching, the list menu, a new tab).
+                .onChange(of: store.selectedID) { _, id in
+                    guard let id else { return }
+                    withAnimation { proxy.scrollTo(id, anchor: .center) }
+                }
+            }
+            Menu {
+                ForEach(store.tabs) { tab in
+                    Button { store.select(tab.id) } label: {
+                        if tab.id == store.selectedID { Label(tabName(tab), systemImage: "checkmark") } else { Text(tabName(tab)) }
                     }
                 }
-                .padding(.horizontal, 8)
-            }
+            } label: { Image(systemName: "list.bullet") }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 28)
+            .help("所有已打开的文件（共 \(store.tabs.count) 个）")
             Menu {
                 Button("打开文档或图片…") { store.open() }
                 Divider()
@@ -48,17 +67,25 @@ struct TabBar: View {
         .frame(height: 32)
         .background(.bar)
     }
+
+    private func tabName(_ tab: OpenTab) -> String {
+        switch tab {
+        case .document(let workspace): return workspace.count == 0 && workspace.sourceURL == nil && workspace.projectURL == nil ? "新标签页" : workspace.displayName
+        case .note(let note): return note.title
+        }
+    }
 }
 
 private struct TabItem: View {
     @ObservedObject var store: WorkspaceStore
     let tab: OpenTab
     let selected: Bool
+    let compact: Bool
 
     var body: some View {
         switch tab {
-        case .document(let workspace): DocumentTab(store: store, workspace: workspace, selected: selected)
-        case .note(let note): NoteTab(store: store, note: note, selected: selected)
+        case .document(let workspace): DocumentTab(store: store, workspace: workspace, selected: selected, compact: compact)
+        case .note(let note): NoteTab(store: store, note: note, selected: selected, compact: compact)
         }
     }
 }
@@ -67,13 +94,16 @@ private struct DocumentTab: View {
     @ObservedObject var store: WorkspaceStore
     @ObservedObject var workspace: Workspace
     let selected: Bool
+    let compact: Bool
 
     var body: some View {
-        let loading = workspace.count == 0 && workspace.sourceURL != nil
-        TabChip(icon: loading ? "arrow.down.circle" : (workspace.count == 0 ? "tray" : (workspace.mode == .image ? "photo" : "doc.richtext")),
-                title: workspace.count == 0 && !loading ? "新标签页" : workspace.displayName,
+        let known = workspace.sourceURL != nil || workspace.projectURL != nil
+        let loading = workspace.count == 0 && workspace.busy
+        TabChip(icon: loading ? "arrow.down.circle" : (workspace.count == 0 ? (known ? "doc" : "tray") : (workspace.mode == .image ? "photo" : "doc.richtext")),
+                title: workspace.count == 0 && !known ? "新标签页" : workspace.displayName,
                 tooltip: workspace.displayPath ?? "",
-                dirty: workspace.dirty && workspace.count > 0, selected: selected,
+                dirty: workspace.dirty && workspace.count > 0, selected: selected, compact: compact,
+                dimmed: workspace.count == 0 && known && !loading,
                 select: { store.select(workspace.id) }, close: { store.close(workspace.id) })
     }
 }
@@ -82,9 +112,10 @@ private struct NoteTab: View {
     @ObservedObject var store: WorkspaceStore
     @ObservedObject var note: MarkdownNote
     let selected: Bool
+    let compact: Bool
 
     var body: some View {
-        TabChip(icon: "square.and.pencil", title: note.title, tooltip: note.fileURL?.path ?? "尚未保存到文件", dirty: note.dirty, selected: selected,
+        TabChip(icon: "square.and.pencil", title: note.title, tooltip: note.fileURL?.path ?? "尚未保存到文件", dirty: note.dirty, selected: selected, compact: compact, dimmed: false,
                 select: { store.select(note.id) }, close: { store.close(note.id) })
     }
 }
@@ -95,13 +126,16 @@ private struct TabChip: View {
     let tooltip: String
     let dirty: Bool
     let selected: Bool
+    let compact: Bool
+    let dimmed: Bool
     let select: () -> Void
     let close: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: icon).foregroundStyle(.secondary)
-            Text(title + (dirty ? " •" : "")).lineLimit(1).truncationMode(.middle).frame(maxWidth: 200, alignment: .leading)
+            Text(title + (dirty ? " •" : "")).lineLimit(1).truncationMode(.middle).frame(maxWidth: compact ? 130 : 200, alignment: .leading)
+                .foregroundStyle(dimmed ? .secondary : .primary)
             Button(action: close) { Image(systemName: "xmark").font(.caption2) }
                 .buttonStyle(.plain)
                 .help("关闭此标签页")

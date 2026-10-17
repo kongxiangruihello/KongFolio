@@ -38,6 +38,10 @@ import AppKit
                     showSidebar = show; showInspector = show
                 }.keyboardShortcut("3", modifiers: [.command, .option])
             }
+            CommandMenu("标签页") {
+                Button("下一个标签页") { store.selectNext() }.keyboardShortcut("]", modifiers: [.command, .shift])
+                Button("上一个标签页") { store.selectPrevious() }.keyboardShortcut("[", modifiers: [.command, .shift])
+            }
             CommandGroup(replacing: .undoRedo) {
                 Button("撤销") { store.undoActive() }.keyboardShortcut("z").disabled(!store.canUndo)
                 Button("重做") { store.redoActive() }.keyboardShortcut("z", modifiers: [.command, .shift]).disabled(!store.canRedo)

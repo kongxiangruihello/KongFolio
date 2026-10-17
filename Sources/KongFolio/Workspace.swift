@@ -67,6 +67,11 @@ import UniformTypeIdentifiers
     @Published var projectURL: URL?
     /// The PDF, image or text file this document was opened from; nil for merged documents and projects.
     @Published var sourceURL: URL?
+    /// The tab exists but its file has not been read yet: it was opened together with many others, restored from the last
+    /// session, or unloaded to free memory. Selecting the tab loads it (`ensureLoaded`).
+    @Published var needsLoad = false
+    var pendingView: ViewPosition?
+    var lastActive = Date()
     weak var pdfView: PDFView?
 
     // MARK: Internal state
@@ -118,6 +123,10 @@ import UniformTypeIdentifiers
     /// What the tab and the title bar show: the project file, else the opened file, else the document title.
     var displayName: String { projectURL?.lastPathComponent ?? sourceURL?.lastPathComponent ?? title }
     var displayPath: String? { (projectURL ?? sourceURL)?.path }
+    /// Unchanged since it was opened or saved, so the file on disk is the document and no recovery copy is needed.
+    var canRestoreFromFile: Bool { !dirty && (projectURL != nil || sourceURL != nil) }
+    /// A loaded tab that can be dropped from memory and read again later without losing anything.
+    var canUnload: Bool { count > 0 && !busy && canRestoreFromFile && history.isEmpty && future.isEmpty }
     var canUndo: Bool { !history.isEmpty }
     var canRedo: Bool { !future.isEmpty }
     var canRetry: Bool { lastJob != nil && !busy }
@@ -475,7 +484,87 @@ import UniformTypeIdentifiers
             // A discarded recovery file must not be recreated during termination.
             if discarded { return true }
         }
-        return count == 0 ? true : flushRecovery()
+        if count == 0 { return true }
+        if canRestoreFromFile {
+            // The file (or saved project) is this document; the session file remembers where to find it.
+            autoTask?.cancel()
+            try? writer.flush(nil, to: recoveryURL)
+            return true
+        }
+        return flushRecovery()
+    }
+
+    /// Empties the workspace. With `keepingSource` the file it came from stays known, so the tab can load it again.
+    private func clearDocument(keepingSource: Bool) {
+        searchTask?.cancel(); previewTask?.cancel(); estimateTask?.cancel()
+        document = PDFDocument(); cachedPDF = nil
+        pageMeta = []; selection = 0; selectedPages = [0]; rangeText = ""
+        title = "未命名文档"; mode = .document; tool = .select; note = ""
+        bookmarks = []; bookmarkName = ""; outlineEntries = []; bibliography = Bibliography()
+        search = ""; searchResults = []; searchMessage = ""; annotationNotes = []
+        readingPoint = nil; readingScale = nil
+        selectedAnnotation = nil; comparison = nil; recognizedText = ""
+        showOCRReview = false; reviewSelection = -1; exportEstimate = nil
+        history.removeAll(); future.removeAll(); lastJob = nil
+        if !keepingSource { projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil }
+        dirty = false; discarded = false
+        thumbnails.clear(); pageVersions = [:]
+        layoutRevision = UUID(); navigationToken = UUID(); revision = UUID()
+        resetImage()
+        recoveryStatus = ""
+    }
+
+    func currentViewPosition() -> ViewPosition {
+        captureReadingPosition()
+        return ViewPosition(selection: selection, x: readingPoint.map { Double($0.x) }, y: readingPoint.map { Double($0.y) }, scale: readingScale)
+    }
+
+    /// Frees the memory of an unchanged document; the tab stays and reads the file again when it is selected.
+    func unload() {
+        guard canUnload else { return }
+        pendingView = currentViewPosition()
+        autoTask?.cancel()
+        writer.discard(recoveryURL)
+        clearDocument(keepingSource: true)
+        needsLoad = true
+        status = "已释放内存：再次选中此标签页时重新读取"
+    }
+
+    /// Reads the file of a tab that was waiting (see `needsLoad`).
+    func ensureLoaded() {
+        guard needsLoad, count == 0, !busy, let url = projectURL ?? sourceURL else { return }
+        needsLoad = false
+        load([url])
+    }
+
+    /// Drops what a waiting tab was going to load (closing it, or giving up on a file that cannot be read).
+    func forgetSource() {
+        projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil
+    }
+
+    private func applyPendingView() {
+        guard let position = pendingView else { return }
+        pendingView = nil
+        selection = max(0, min(position.selection, count - 1))
+        selectedPages = [selection]
+        readingPoint = position.point
+        readingScale = position.scale
+        navigationToken = UUID()
+    }
+
+    /// How this tab is written to the session file; nil for a tab with nothing to restore.
+    var sessionEntry: SessionEntry? {
+        if count > 0 {
+            guard canRestoreFromFile else { return SessionEntry(slot: slot, kind: .recovery) }
+            return fileEntry(position: currentViewPosition())
+        }
+        return needsLoad ? fileEntry(position: pendingView) : nil
+    }
+
+    private func fileEntry(position: ViewPosition?) -> SessionEntry? {
+        if let url = projectURL { return SessionEntry(slot: slot, kind: .project, path: url.path, position: position) }
+        if let url = sourceURL { return SessionEntry(slot: slot, kind: .file, path: url.path, position: position) }
+        return nil
     }
 
     /// Closes this tab (or, when it is the only one, returns it to the start screen).
@@ -498,21 +587,7 @@ import UniformTypeIdentifiers
             return false
         }
         let closed = title
-        searchTask?.cancel(); previewTask?.cancel(); estimateTask?.cancel()
-        document = PDFDocument(); cachedPDF = nil
-        pageMeta = []; selection = 0; selectedPages = [0]; rangeText = ""
-        title = "未命名文档"; mode = .document; tool = .select; note = ""
-        bookmarks = []; bookmarkName = ""; outlineEntries = []; bibliography = Bibliography()
-        search = ""; searchResults = []; searchMessage = ""; annotationNotes = []
-        readingPoint = nil; readingScale = nil
-        selectedAnnotation = nil; comparison = nil; recognizedText = ""
-        showOCRReview = false; reviewSelection = -1; exportEstimate = nil
-        history.removeAll(); future.removeAll(); lastJob = nil
-        projectURL = nil; sourceURL = nil; dirty = false; discarded = false
-        thumbnails.clear(); pageVersions = [:]
-        layoutRevision = UUID(); navigationToken = UUID(); revision = UUID()
-        resetImage()
-        recoveryStatus = ""
+        clearDocument(keepingSource: false)
         status = "已关闭“\(closed)”"
         return true
     }
@@ -613,7 +688,9 @@ import UniformTypeIdentifiers
                 future.removeAll()
                 remember(urls)
                 scheduleRecovery()
+                applyPendingView()
                 status = "项目已打开"
+                store?.loadedTabsChanged()
                 return
             }
             guard case .documents(let data) = prepared else { throw FolioError(message: "文档读取失败") }
@@ -684,6 +761,7 @@ import UniformTypeIdentifiers
                 // opened document counted as unsaved work and closing it asked whether to save.
                 dirty = false
             }
+            applyPendingView()
             if scanAfter {
                 mode = .image
                 adjustments.scan = true
@@ -691,6 +769,7 @@ import UniformTypeIdentifiers
             }
             remember(urls)
             status = "已载入 \(count) 页"
+            store?.loadedTabsChanged()
         }
     }
 

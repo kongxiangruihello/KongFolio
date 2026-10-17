@@ -199,7 +199,18 @@ struct ContentView: View {
     }
 
     @ViewBuilder private var canvas: some View {
-        if workspace.count == 0 {
+        if workspace.count == 0, workspace.displayPath != nil {
+            // A tab whose file has not been read yet (opened with many others, restored, or released to save memory).
+            VStack(spacing: 14) {
+                Image(systemName: "doc.richtext").font(.system(size: 48, weight: .ultraLight)).foregroundStyle(Brand.accent)
+                Text(workspace.displayName).font(.title3.weight(.medium))
+                Text(workspace.displayPath ?? "").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                if workspace.busy { Text("正在读取…").foregroundStyle(.secondary) }
+                else { Button("读取这个文件") { workspace.needsLoad = true; workspace.ensureLoaded() }.buttonStyle(.borderedProminent) }
+            }
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if workspace.count == 0 {
             VStack(spacing: 20) {
                 Image(systemName: "doc.richtext").font(.system(size: 64, weight: .ultraLight)).foregroundStyle(Brand.accent)
                 Text("每一页，都井井有条。").font(.system(size: 28, weight: .medium))
