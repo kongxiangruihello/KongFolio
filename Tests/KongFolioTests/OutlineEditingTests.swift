@@ -58,7 +58,7 @@ final class OutlineEditingTests: XCTestCase {
         let outline = ReadingServices.outline(saved)
         XCTAssertEqual(outline.map(\.label), ["序", "正文"])
         XCTAssertEqual(outline.map(\.page), [2, 6])
-        // And chapter splitting now has something to split by.
-        XCTAssertEqual(workspace.chapterCount(depth: 0), 2)
+        // And chapter splitting now has something to split by: the pages before the first entry, then the two chapters.
+        XCTAssertEqual(workspace.chapterCount(depth: 0), 3)
     }
 }
