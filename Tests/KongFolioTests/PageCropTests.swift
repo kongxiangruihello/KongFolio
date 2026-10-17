@@ -59,7 +59,7 @@ final class PageCropTests: XCTestCase {
         for y in 0..<height { for x in 0..<width where x < 6 || x >= width - 6 { pixels[y * width + x] = 20 } }      // dark scanner edges
         for y in 70..<230 { for x in 50..<150 { pixels[y * width + x] = 30 } }                                          // the text block
         pixels[5 * width + 100] = 0                                                                                       // a speck near the top
-        let found = try XCTUnwrap(ContentBounds.margins(pixels: pixels, width: width, height: height))
+        let found = try (ContentBounds.margins(pixels: pixels, width: width, height: height)).unwrap("没有找到内容")
         XCTAssertEqual(found.left, 0.25, accuracy: 0.02)
         XCTAssertEqual(found.right, 0.25, accuracy: 0.02)
         XCTAssertEqual(found.top, 70.0 / 300, accuracy: 0.02)
@@ -79,8 +79,8 @@ final class PageCropTests: XCTestCase {
         for rotation in [0, 90] {
             let document = try book(pages: 1, rotation: rotation)
             let page = try document.page(at: 0).unwrap("无页面")
-            let bitmap = try XCTUnwrap(ContentBounds.render(page))
-            let found = try XCTUnwrap(ContentBounds.margins(pixels: bitmap.pixels, width: bitmap.width, height: bitmap.height))
+            let bitmap = try (ContentBounds.render(page)).unwrap("没有找到内容")
+            let found = try (ContentBounds.margins(pixels: bitmap.pixels, width: bitmap.width, height: bitmap.height)).unwrap("没有找到内容")
             if rotation == 0 {
                 XCTAssertEqual(found.left, 0.2, accuracy: 0.03)
                 XCTAssertEqual(found.top, 0.2, accuracy: 0.03)
