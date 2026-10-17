@@ -65,9 +65,9 @@ final class SignaturePositionTests: XCTestCase {
             let position = SignaturePosition(name: "r", page: .last, centerX: 0.7, centerY: 0.2, width: 0.3)
             let rect = position.rect(aspect: 2, cropBox: crop, rotation: rotation)
             let again = SignaturePosition.make(name: "r", page: .last, rect: rect, cropBox: crop, rotation: rotation)
-            XCTAssertEqual(again.centerX, 0.7, accuracy: 0.001, "rotation \(rotation)")
-            XCTAssertEqual(again.centerY, 0.2, accuracy: 0.001, "rotation \(rotation)")
-            XCTAssertEqual(again.width, 0.3, accuracy: 0.001, "rotation \(rotation)")
+            XCTAssertEqual(again.centerX, 0.7, accuracy: 0.001)
+            XCTAssertEqual(again.centerY, 0.2, accuracy: 0.001)
+            XCTAssertEqual(again.width, 0.3, accuracy: 0.001)
         }
     }
 

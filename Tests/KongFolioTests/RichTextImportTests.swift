@@ -17,7 +17,7 @@ final class RichTextImportTests: XCTestCase {
 
     func testHandlesTheDocumentExtensions() {
         for ext in ["docx", "doc", "rtf", "rtfd", "odt", "html", "HTM"] {
-            XCTAssertTrue(RichTextImport.handles(URL(fileURLWithPath: "/tmp/a." + ext)), ext)
+            XCTAssertTrue(RichTextImport.handles(URL(fileURLWithPath: "/tmp/a." + ext)))
         }
         XCTAssertFalse(RichTextImport.handles(URL(fileURLWithPath: "/tmp/a.pdf")))
         XCTAssertFalse(RichTextImport.handles(URL(fileURLWithPath: "/tmp/a.md")))
@@ -75,7 +75,7 @@ final class RichTextImportTests: XCTestCase {
         XCTAssertTrue(text.contains("1. One"))
         XCTAssertTrue(text.contains("2. Two"))
         XCTAssertTrue(text.contains("Name\tQty"))
-        XCTAssertTrue(text.contains("Tea\t3"))
+        XCTAssertEqual(text.components(separatedBy: "\n").first { $0.hasPrefix("Tea") }, "Tea\t3")
         XCTAssertTrue(text.contains("不亦说乎"))
         XCTAssertTrue(text.contains("［图片：chart］"))
         XCTAssertFalse(text.contains("secret"))
