@@ -43,18 +43,18 @@ import AppKit
                 }.keyboardShortcut("3", modifiers: [.command, .option])
             }
             CommandMenu("标注") {
-                Button("高亮选中文字") { if let w = store.activeWorkspace { w.mark(style: .highlight, color: w.markupColor) } }
-                    .keyboardShortcut("h", modifiers: [.command, .shift]).disabled((store.activeWorkspace?.count ?? 0) == 0)
-                Button("下划线") { if let w = store.activeWorkspace { w.mark(style: .underline, color: w.markupColor) } }
-                    .keyboardShortcut("u", modifiers: [.command, .shift]).disabled((store.activeWorkspace?.count ?? 0) == 0)
-                Button("删除线") { if let w = store.activeWorkspace { w.mark(style: .strikeOut, color: w.markupColor) } }
-                    .keyboardShortcut("d", modifiers: [.command, .shift]).disabled((store.activeWorkspace?.count ?? 0) == 0)
-                Button("高亮并添加批注") { if let w = store.activeWorkspace { w.mark(style: .highlight, color: w.markupColor, annotate: true) } }
-                    .keyboardShortcut("n", modifiers: [.command, .shift]).disabled((store.activeWorkspace?.count ?? 0) == 0)
+                Button("高亮选中文字") { if let w = store.commandWorkspace { w.mark(style: .highlight, color: w.markupColor) } }
+                    .keyboardShortcut("h", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Button("下划线") { if let w = store.commandWorkspace { w.mark(style: .underline, color: w.markupColor) } }
+                    .keyboardShortcut("u", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Button("删除线") { if let w = store.commandWorkspace { w.mark(style: .strikeOut, color: w.markupColor) } }
+                    .keyboardShortcut("d", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Button("高亮并添加批注") { if let w = store.commandWorkspace { w.mark(style: .highlight, color: w.markupColor, annotate: true) } }
+                    .keyboardShortcut("n", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
             }
             CommandMenu("工作区") {
-                Button("摘录选中文字到工作区") { store.activeWorkspace?.excerptSelection() }
-                    .keyboardShortcut("e", modifiers: [.command, .option]).disabled((store.activeWorkspace?.count ?? 0) == 0)
+                Button("摘录选中文字到工作区") { store.commandWorkspace?.excerptSelection() }
+                    .keyboardShortcut("e", modifiers: [.command, .option]).disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Button(showBoard ? "隐藏工作区" : "显示工作区") { showBoard.toggle() }.keyboardShortcut("4", modifiers: [.command, .option])
             }
             CommandMenu("标签页") {

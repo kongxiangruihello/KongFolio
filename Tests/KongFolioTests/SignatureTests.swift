@@ -192,8 +192,12 @@ final class SignatureTests: XCTestCase {
 
     @MainActor final class StubView: PDFView, SignaturePlacing {
         var shown: (CGImage, Double)?
+        var shownAt: (page: PDFPage, rect: CGRect)?
         var target: (page: PDFPage, rect: CGRect)?
-        func beginSignaturePlacement(_ image: CGImage, widthFraction: Double) { shown = (image, widthFraction) }
+        func beginSignaturePlacement(_ image: CGImage, widthFraction: Double, page: PDFPage?, rect: CGRect?) {
+            shown = (image, widthFraction)
+            shownAt = page.flatMap { page in rect.map { (page, $0) } }
+        }
         func resizeSignaturePlacement(widthFraction: Double) { shown?.1 = widthFraction }
         func signaturePlacement() -> (page: PDFPage, rect: CGRect)? { target }
         func endSignaturePlacement() { shown = nil }
@@ -258,5 +262,132 @@ final class SignatureTests: XCTestCase {
         XCTAssertEqual(workspace.count, 7)
         XCTAssertNil(workspace.placingSignature)
         XCTAssertTrue(seconds < 10)
+    }
+
+    // MARK: Moving a placed signature
+
+    func testOriginalRectReversesUprightRect() {
+        let size = CGSize(width: 200, height: 300)
+        let rect = CGRect(x: 50, y: 20, width: 40, height: 10)
+        for rotation in [0, 90, 180, 270] {
+            let shown = SignatureStamp.uprightRect(rect, pageSize: size, rotation: rotation)
+            XCTAssertEqual(SignatureStamp.originalRect(shown, pageSize: size, rotation: rotation), rect)
+        }
+    }
+
+    /// A workspace with three pages and one signature placed on the second.
+    @MainActor func placedOnce(rotation: Int = 0) throws -> (workspace: Workspace, view: StubView, directory: URL) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        let workspace = Workspace(storage: directory)
+        workspace.document = blankDocument(pages: 3, rotation: rotation)
+        workspace.addSignatureImage(blackSquare(), name: "签名")
+        let view = StubView()
+        workspace.pdfView = view
+        workspace.beginPlacing(workspace.signatures[0])
+        view.target = (try workspace.document.page(at: 1).unwrap("没有页面"), CGRect(x: 60, y: 100, width: 50, height: 50))
+        workspace.confirmSignaturePlacement()
+        return (workspace, view, directory)
+    }
+
+    /// Whether the page is dark around the given point (coordinates as drawn: origin bottom left, 200 x 300 points).
+    @MainActor func dark(_ workspace: Workspace, page: Int, x: Int, y: Int, width: Int = 200, height: Int = 300) throws -> Bool {
+        pixel(rendered(try workspace.document.page(at: page).unwrap("没有页面"), width: width, height: height), x, y).r < 80
+    }
+
+    @MainActor func testAPlacedSignatureCanBePickedUpAndMoved() throws {
+        let (workspace, view, directory) = try placedOnce(); defer { try? FileManager.default.removeItem(at: directory) }
+        let page = try workspace.document.page(at: 1).unwrap("没有页面")
+        let hit = try workspace.placedSignature(on: page, at: CGPoint(x: 85, y: 125)).unwrap("没有找到签名")
+        XCTAssertNil(workspace.placedSignature(on: page, at: CGPoint(x: 150, y: 250)))
+        XCTAssertTrue(try dark(workspace, page: 1, x: 85, y: 125))
+
+        workspace.beginMovingSignature(hit.item, in: hit.layer)
+        XCTAssertNotNil(workspace.placingSignature)
+        XCTAssertNotNil(view.shownAt)
+        XCTAssertFalse(try dark(workspace, page: 1, x: 85, y: 125))        // lifted off the page
+
+        view.target = (try workspace.document.page(at: 1).unwrap("没有页面"), CGRect(x: 120, y: 200, width: 50, height: 50))
+        workspace.confirmSignaturePlacement()
+        XCTAssertNil(workspace.placingSignature)
+        XCTAssertTrue(try dark(workspace, page: 1, x: 145, y: 225))
+        XCTAssertFalse(try dark(workspace, page: 1, x: 85, y: 125))
+        XCTAssertEqual(workspace.count, 3)
+
+        // It can be moved again, and the move is one undo step.
+        let again = try workspace.placedSignature(on: workspace.document.page(at: 1).unwrap("没有页面"), at: CGPoint(x: 145, y: 225)).unwrap("没有找到签名")
+        XCTAssertEqual(again.layer.items.count, 1)
+        workspace.undo()
+        XCTAssertTrue(try dark(workspace, page: 1, x: 85, y: 125))
+        XCTAssertFalse(try dark(workspace, page: 1, x: 145, y: 225))
+    }
+
+    @MainActor func testCancellingAMovePutsTheSignatureBack() throws {
+        let (workspace, _, directory) = try placedOnce(); defer { try? FileManager.default.removeItem(at: directory) }
+        let page = try workspace.document.page(at: 1).unwrap("没有页面")
+        let hit = try workspace.placedSignature(on: page, at: CGPoint(x: 85, y: 125)).unwrap("没有找到签名")
+        workspace.beginMovingSignature(hit.item, in: hit.layer)
+        XCTAssertFalse(try dark(workspace, page: 1, x: 85, y: 125))
+        workspace.cancelSignaturePlacement()
+        XCTAssertNil(workspace.placingSignature)
+        XCTAssertTrue(try dark(workspace, page: 1, x: 85, y: 125))
+    }
+
+    @MainActor func testAPlacedSignatureCanBeRemoved() throws {
+        let (workspace, _, directory) = try placedOnce(); defer { try? FileManager.default.removeItem(at: directory) }
+        let page = try workspace.document.page(at: 1).unwrap("没有页面")
+        let hit = try workspace.placedSignature(on: page, at: CGPoint(x: 85, y: 125)).unwrap("没有找到签名")
+        workspace.removePlacedSignature(hit.item, in: hit.layer)
+        XCTAssertFalse(try dark(workspace, page: 1, x: 85, y: 125))
+        workspace.undo()
+        XCTAssertTrue(try dark(workspace, page: 1, x: 85, y: 125))
+    }
+
+    @MainActor func testAnnotationsAddedAfterPlacingSurviveAMove() throws {
+        let (workspace, view, directory) = try placedOnce(); defer { try? FileManager.default.removeItem(at: directory) }
+        let live = try workspace.document.page(at: 1).unwrap("没有页面")
+        let note = PDFAnnotation(bounds: CGRect(x: 10, y: 10, width: 80, height: 30), forType: .freeText, withProperties: nil)
+        note.contents = "之后加的批注"
+        live.addAnnotation(note)
+        let hit = try workspace.placedSignature(on: live, at: CGPoint(x: 85, y: 125)).unwrap("没有找到签名")
+        workspace.beginMovingSignature(hit.item, in: hit.layer)
+        view.target = (try workspace.document.page(at: 1).unwrap("没有页面"), CGRect(x: 120, y: 200, width: 50, height: 50))
+        workspace.confirmSignaturePlacement()
+        let annotations = try workspace.document.page(at: 1).unwrap("没有页面").annotations
+        XCTAssertTrue(annotations.contains { $0.contents == "之后加的批注" })
+    }
+
+    @MainActor func testASecondSignatureOnTheSamePageStaysMovable() throws {
+        let (workspace, view, directory) = try placedOnce(); defer { try? FileManager.default.removeItem(at: directory) }
+        workspace.beginPlacing(workspace.signatures[0])
+        view.target = (try workspace.document.page(at: 1).unwrap("没有页面"), CGRect(x: 120, y: 200, width: 50, height: 50))
+        workspace.confirmSignaturePlacement()
+        let page = try workspace.document.page(at: 1).unwrap("没有页面")
+        XCTAssertEqual(try workspace.signatureLayer(for: page).unwrap("没有图层").items.count, 2)
+        XCTAssertTrue(try dark(workspace, page: 1, x: 85, y: 125))
+        XCTAssertTrue(try dark(workspace, page: 1, x: 145, y: 225))
+    }
+
+    @MainActor func testMovingWorksOnARotatedPage() throws {
+        let (workspace, view, directory) = try placedOnce(rotation: 90); defer { try? FileManager.default.removeItem(at: directory) }
+        let page = try workspace.document.page(at: 1).unwrap("没有页面")
+        let layer = try workspace.signatureLayer(for: page).unwrap("没有图层")
+        let shown = layer.shownRect(layer.items[0])
+        // The page was flattened to its displayed orientation (300 x 200 points).
+        XCTAssertTrue(pixel(rendered(page, width: 300, height: 200), Int(shown.midX), Int(shown.midY)).r < 80)
+        let hit = try workspace.placedSignature(on: page, at: CGPoint(x: shown.midX, y: shown.midY)).unwrap("没有找到签名")
+        workspace.beginMovingSignature(hit.item, in: hit.layer)
+        view.target = (try workspace.document.page(at: 1).unwrap("没有页面"), CGRect(x: 200, y: 100, width: 40, height: 40))
+        workspace.confirmSignaturePlacement()
+        let moved = try workspace.document.page(at: 1).unwrap("没有页面")
+        XCTAssertTrue(pixel(rendered(moved, width: 300, height: 200), 220, 120).r < 80)
+        XCTAssertFalse(pixel(rendered(moved, width: 300, height: 200), Int(shown.midX), Int(shown.midY)).r < 80)
+    }
+
+    @MainActor func testSignaturesStopBeingMovableWhenThePageIsReplaced() throws {
+        let (workspace, _, directory) = try placedOnce(); defer { try? FileManager.default.removeItem(at: directory) }
+        workspace.undo()                                                    // the document is restored from a snapshot
+        let page = try workspace.document.page(at: 1).unwrap("没有页面")
+        XCTAssertNil(workspace.signatureLayer(for: page))
+        XCTAssertNil(workspace.placedSignature(on: page, at: CGPoint(x: 85, y: 125)))
     }
 }

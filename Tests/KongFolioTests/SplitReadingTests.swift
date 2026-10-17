@@ -73,6 +73,44 @@ final class SplitReadingTests: XCTestCase {
         XCTAssertEqual(c.count, 0)
     }
 
+    @MainActor func testCommandsFollowTheClickedPane() throws {
+        let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
+        let store = WorkspaceStore(storage: directory); store.bootstrap()
+        let a = tab(store, "a"), b = tab(store, "b")
+        store.select(a.id)
+        XCTAssertEqual(store.commandWorkspace?.id, a.id)
+        store.openSplit(with: b.id)
+        XCTAssertEqual(store.commandWorkspace?.id, a.id)       // nothing clicked yet: the main document
+        store.focus(b)
+        XCTAssertEqual(store.commandWorkspace?.id, b.id)       // clicked in the right pane
+        store.focus(a)
+        XCTAssertEqual(store.commandWorkspace?.id, a.id)
+        store.focus(b)
+        store.closeSplit()
+        XCTAssertEqual(store.commandWorkspace?.id, a.id)       // no pane to the right any more
+        store.openSplit(with: b.id)
+        store.focus(b)
+        store.select(b.id)                                     // switching tabs resets the focus
+        XCTAssertEqual(store.commandWorkspace?.id, b.id)
+        XCTAssertNil(b.splitPartner)
+    }
+
+    @MainActor func testUndoActsOnTheClickedPane() throws {
+        let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
+        let store = WorkspaceStore(storage: directory); store.bootstrap()
+        let a = tab(store, "a"), b = tab(store, "b")
+        store.select(a.id)
+        store.openSplit(with: b.id)
+        let note = PDFAnnotation(bounds: CGRect(x: 10, y: 10, width: 60, height: 30), forType: .freeText, withProperties: nil)
+        try b.document.page(at: 0).unwrap("无页面").addAnnotation(note)
+        b.recordAnnotationsAdded([note])
+        XCTAssertFalse(store.canUndo)                          // the main document has nothing to undo
+        store.focus(b)
+        XCTAssertTrue(store.canUndo)
+        store.undoActive()
+        XCTAssertEqual(try b.document.page(at: 0).unwrap("无页面").annotations.filter { $0.type == "FreeText" }.count, 0)
+    }
+
     func testLayoutRulesForTheSplitPane() {
         XCTAssertFalse(LayoutMetrics.showsSplit(width: LayoutMetrics.splitMinimum - 1))
         XCTAssertTrue(LayoutMetrics.showsSplit(width: LayoutMetrics.splitMinimum))

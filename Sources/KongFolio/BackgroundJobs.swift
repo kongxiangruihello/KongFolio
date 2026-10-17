@@ -16,6 +16,7 @@ struct JobSpec {
     var ocr = OCRSettings()
     var chapters: [ChapterPart] = []
     var compress = CompressLevel.standard
+    var compressKeepMarked = true
 }
 
 struct JobResult {
@@ -46,7 +47,7 @@ enum BackgroundJobs {
         if spec.operation == .chapters { return try splitChapters(spec, doc: doc, progress: progress) }
         if spec.operation == .compress {
             let target = try spec.destination.unwrap("没有导出位置")
-            let result = try PDFCompressor.compress(doc, level: spec.compress, original: spec.source.count, progress: progress)
+            let result = try PDFCompressor.compress(doc, level: spec.compress, original: spec.source.count, keepMarked: spec.compressKeepMarked, progress: progress)
             try Task.checkCancellation()
             // A file that did not get smaller is not written: the original is the better copy.
             guard result.report.smaller else { return JobResult(message: result.report.summary) }
@@ -216,7 +217,15 @@ extension Workspace {
     /// Compress now keeps text: PDFKit re-encodes embedded images instead of rasterizing every page.
     func compress() {
         guard count > 0 else { return }
+        compressScan = nil
         showCompress = true
+        guard let data = try? pdfData() else { return }
+        Task {
+            let result = await Task.detached { () -> (pictureHeavy: Int, marked: Int)? in
+                PDFDocument(data: data).map { PDFCompressor.scan($0) }
+            }.value
+            compressScan = result
+        }
     }
 
     /// Writes a smaller copy next to wherever the reader chooses; the open document is not changed.
@@ -224,7 +233,7 @@ extension Workspace {
         guard count > 0, !busy, checkDraftsForExport(), let data = try? pdfData() else { return }
         showCompress = false
         guard let destination = saveURL(type: .pdf, suffix: "pdf", name: title + "-compressed") else { return }
-        runJob(JobSpec(operation: .compress, source: data, pages: Array(0..<count), destination: destination, revision: revision, compress: compressLevel))
+        runJob(JobSpec(operation: .compress, source: data, pages: Array(0..<count), destination: destination, revision: revision, compress: compressLevel, compressKeepMarked: compressKeepMarked))
     }
 
     func exportBatch(split: Bool, selectedOnly: Bool = false) {

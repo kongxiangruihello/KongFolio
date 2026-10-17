@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ReadingSidebar: View {
     @ObservedObject var workspace: Workspace
-    @State private var noteFilter = AnnotationFilter()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -105,24 +104,24 @@ struct ReadingSidebar: View {
         }
     }
 
-    private var shownNotes: [AnnotationNote] { noteFilter.apply(to: workspace.annotationNotes) }
+    private var shownNotes: [AnnotationNote] { workspace.noteFilter.apply(to: workspace.annotationNotes) }
 
     private var notes: some View {
         Group {
             HStack {
                 Button("刷新") { workspace.refreshNotes() }
-                Button("导出 Markdown") { workspace.exportNotes(filter: noteFilter) }.disabled(workspace.count == 0)
-                Button("转为笔记标签页") { workspace.openNotesAsNote(filter: noteFilter) }.disabled(workspace.count == 0)
+                Button("导出 Markdown") { workspace.exportNotes(filter: workspace.noteFilter) }.disabled(workspace.count == 0)
+                Button("转为笔记标签页") { workspace.openNotesAsNote(filter: workspace.noteFilter) }.disabled(workspace.count == 0)
             }
             .font(.caption)
             .padding(.horizontal, 8)
             HStack(spacing: 6) {
-                Picker("类型", selection: $noteFilter.kind) {
+                Picker("类型", selection: $workspace.noteFilter.kind) {
                     Text("全部类型").tag(String?.none)
                     ForEach(AnnotationFilter.kinds, id: \.self) { Text($0).tag(String?.some($0)) }
                 }
                 .labelsHidden()
-                Picker("颜色", selection: $noteFilter.color) {
+                Picker("颜色", selection: $workspace.noteFilter.color) {
                     Text("全部颜色").tag(String?.none)
                     ForEach(AnnotationFilter.colors, id: \.self) { Text($0).tag(String?.some($0)) }
                 }
@@ -130,11 +129,11 @@ struct ReadingSidebar: View {
             }
             .font(.caption)
             .padding(.horizontal, 8)
-            TextField("在标注和笔记中搜索", text: $noteFilter.text)
+            TextField("在标注和笔记中搜索", text: $workspace.noteFilter.text)
                 .textFieldStyle(.roundedBorder)
                 .font(.caption)
                 .padding(.horizontal, 8)
-            if noteFilter.isActive {
+            if workspace.noteFilter.isActive {
                 Text("显示 \(shownNotes.count) / \(workspace.annotationNotes.count) 条").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 8)
             }
             DisclosureGroup("书目信息（用于引用）") {
