@@ -22,6 +22,15 @@ struct ReadingSidebar: View {
             if workspace.outlineEntries.isEmpty {
                 Text("此文档没有内嵌目录。可添加自己的书签。").font(.caption).foregroundStyle(.secondary).padding()
             }
+            if !workspace.outlineEntries.isEmpty {
+                Menu("按章节拆分为多个 PDF…") {
+                    ForEach(ChapterSplit.depths(workspace.outlineEntries, pageCount: workspace.count), id: \.self) { depth in
+                        Button("按第 \(depth + 1) 级目录（\(workspace.chapterCount(depth: depth)) 个文件）") { workspace.splitByChapters(depth: depth) }
+                    }
+                }
+                .disabled(workspace.busy)
+                .padding(.horizontal, 8)
+            }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 6) {
                     ForEach(workspace.outlineEntries) { entry in

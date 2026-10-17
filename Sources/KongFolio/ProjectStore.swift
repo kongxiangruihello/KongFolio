@@ -15,6 +15,8 @@ struct ProjectArchive: Codable {
     var reading: ReadingState? = nil
     var ocrOriginals: [Int: Data]? = nil
     var ocrRegions: [Int: [RecognizedLine]]? = nil
+    /// The file this document was opened from (not a project), so a restored tab still shows its file name.
+    var sourcePath: String? = nil
     var pdf: Data
     var title: String
     var selection: Int
@@ -227,7 +229,18 @@ enum RecoveryStore {
 
 // Serial writes prevent an older debounced snapshot from replacing a newer one.
 final class RecoveryWriter: @unchecked Sendable {
+    /// One queue for every tab: recovery copies of several large documents are written one after another
+    /// instead of competing with each other (and with file loading) for the disk.
+    static let shared = RecoveryWriter()
     private let queue = DispatchQueue(label: "com.kongfolio.recovery", qos: .utility)
+
+    /// Removes a recovery copy after any write already queued for it.
+    func discard(_ url: URL) {
+        queue.async { try? FileManager.default.removeItem(at: url) }
+    }
+
+    /// Returns once everything queued so far has finished.
+    func drain() { queue.sync {} }
 
     func write(_ archive: ProjectArchive, to url: URL, completion: @escaping (Error?) -> Void) {
         queue.async {
@@ -263,4 +276,6 @@ struct SignatureTemplate: Codable, Identifiable {
     var id = UUID()
     var name: String
     var pdf: Data
+    /// A processed picture (PNG with transparency) for signatures imported from a photo or scan; `pdf` is empty then.
+    var image: Data? = nil
 }

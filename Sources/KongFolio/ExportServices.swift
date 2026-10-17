@@ -8,6 +8,8 @@ struct ExportOptions: Equatable, Codable {
     var pdfMode = PDFExportMode.preserve
     var dpi = 150
     var quality = 0.9
+    /// Page numbers, header, footer and watermark; applied to PDF output only.
+    var stamp = StampOptions()
     var type: UTType { format.type }
     var suffix: String { format.suffix }
     var rasterPDF: Bool {
@@ -73,6 +75,11 @@ enum ExportServices {
 
     static func estimate(data: Data, pages: [Int], options: ExportOptions) throws -> ExportEstimate {
         guard let doc = PDFDocument(data: data), !pages.isEmpty, pages.allSatisfy({ (0..<doc.pageCount).contains($0) }) else { throw FolioError(message: "没有可估算的页面") }
+        if options.format == .pdf, options.stamp.isActive {
+            let stamped = try Stamping.apply(options.stamp, to: doc, pages: pages)
+            var plain = options; plain.stamp = StampOptions()
+            return try estimate(data: try stamped.dataRepresentation().unwrap("带页码的 PDF 生成失败"), pages: Array(0..<stamped.pageCount), options: plain)
+        }
         if options.format == .pdf, options.pdfMode == .preserve { return ExportEstimate(bytes: try preservedPDF(doc, pages: pages).count, sampled: pages.count, total: pages.count, exact: true) }
         if options.format == .pdf, options.pdfMode == .optimized {
             let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("KongFolio-estimate-\(UUID().uuidString).pdf")
@@ -90,6 +97,18 @@ enum ExportServices {
               spec.pages.allSatisfy({ (0..<doc.pageCount).contains($0) }) else { throw FolioError(message: "导出设置无效") }
         let target = try spec.destination.unwrap("请选择导出位置")
         try Task.checkCancellation()
+        if options.format == .pdf, options.stamp.isActive {
+            // Draw the stamps first, then export the stamped pages like any other document.
+            let stamped = try Stamping.apply(options.stamp, to: doc, pages: spec.pages)
+            var plain = options; plain.stamp = StampOptions()
+            var next = spec
+            next.source = try stamped.dataRepresentation().unwrap("带页码的 PDF 生成失败")
+            next.pages = Array(0..<stamped.pageCount)
+            next.exportOptions = plain
+            var result = try run(next, progress: progress)
+            result.message += "（已添加页码/页眉页脚/水印；标注已固化，链接不再可点）"
+            return result
+        }
         if options.format == .pdf, options.pdfMode == .preserve {
             let data = try preservedPDF(doc, pages: spec.pages); try Task.checkCancellation(); try data.write(to: target, options: .atomic)
             return JobResult(message: "PDF 已导出，保留页面内容与可编辑标注")

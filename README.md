@@ -1,4 +1,4 @@
-# KongFolio 0.4
+# KongFolio 0.5
 
 原生 macOS 个人文档工作台。SwiftUI / AppKit + PDFKit + Core Image + Vision + Core Graphics，全程本地处理，无第三方依赖。
 
@@ -38,6 +38,10 @@ Vision 的 `VNRecognizeTextRequest` 只读横行文字，竖排的一列字往�
 
 ## 功能概览
 
+- **窗口可自由伸缩**：任意拖动窗口大小，侧栏、顶部栏随宽度自动收起或收成图标。
+- **同时打开几十个文件**：多选或拖入的文件各占一个标签页，按需读取，最多保留 8 个在内存中，其余自动释放并记住阅读位置；重启后同样按需读取。
+- **多文档与 Markdown 笔记**：多选或拖入多个文件，每个文件一个标签页（显示文件名）；已有文档时再打开文件也进新标签页；左右侧栏可折叠（⌥⌘1 / ⌥⌘2 / ⌥⌘3）；每个标签页独立恢复。⌘N 新建 Markdown 笔记，⇧⌘O 编辑已有 .md / .txt（左侧编辑、右侧 A4 预览，可导出 PDF）。
+- **拆分与页码**：目录侧栏可按章节拆分成多个 PDF；导出 PDF 时可加页码、页眉页脚和水印（会固化标注、链接不再可点）。
 - **打开与合并**：PDF、JPG、PNG、HEIC、TIFF（含多帧），以及 Markdown / 纯文本（排版为 A4 PDF，见 `TextImport.swift`），也可以拖入窗口。多文件可先调整合并顺序；任务进行中打开的文件会排队。
 - **页面管理**：⌘ 多选、⇧ 连选，或输入 `1–3, 5, 8–10`。可拖动排序，以及复制、旋转、删除、提取、逐页拆分。文档至少保留一页。
 - **阅读**：
@@ -85,6 +89,10 @@ Vision 的 `VNRecognizeTextRequest` 只读横行文字，竖排的一列字往�
 | ReadingServices / ReadingSidebar | 目录、书签、搜索折叠、页码标签、摘录与引用 |
 | ExportServices / ExportSheet | 三种 PDF 模式、DPI、范围、估算、后台导出 |
 | TextImport | Markdown / 纯文本解码、排版并分页为 A4 PDF |
+| WorkspaceStore / RootView | 标签页：每个标签页是一个 Workspace 或一份 Markdown 笔记；会话恢复、退出确认 |
+| MarkdownNote / MarkdownEditor | Markdown 笔记：编辑、预览、备份、格式化命令 |
+| ChapterSplit | 按目录把一本书拆成多个 PDF |
+| Stamping | 导出时叠加页码、页眉页脚、水印 |
 | ImportServices / ThumbnailView | 后台读取、按页缓存的缩略图 |
 | OCRReview | 识别区域、文本与置信度对照 |
 

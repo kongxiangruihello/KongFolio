@@ -64,7 +64,18 @@ import UniformTypeIdentifiers
     @Published var selectedAnnotation: PDFAnnotation?
     @Published var annotationColor = Color.blue
     @Published var signatures: [SignatureTemplate] = []
+    @Published var placingSignature: SignatureTemplate?
+    @Published var signatureWidth = 0.28
     @Published var projectURL: URL?
+    /// The PDF, image or text file this document was opened from; nil for merged documents and projects.
+    @Published var sourceURL: URL?
+    /// The tab exists but its file has not been read yet: it was opened together with many others, restored from the last
+    /// session, or unloaded to free memory. Selecting the tab loads it (`ensureLoaded`).
+    @Published var needsLoad = false
+    var pendingView: ViewPosition?
+    /// A card's source to show as soon as this tab has loaded.
+    var pendingReveal: SourceRef?
+    var lastActive = Date()
     weak var pdfView: PDFView?
 
     // MARK: Internal state
@@ -92,22 +103,34 @@ import UniformTypeIdentifiers
     private var previewTask: Task<Void, Never>?
     private var started = false
     private var discarded = false
-    private let writer = RecoveryWriter()
+    private let writer = RecoveryWriter.shared
     let storage: URL
+    let id = UUID()
+    /// Each tab keeps its own recovery copy. The first tab uses the empty slot, which is the file name earlier versions used.
+    let slot: String
+    weak var store: WorkspaceStore?
 
-    init(storage: URL? = nil) {
+    init(storage: URL? = nil, slot: String = "") {
         self.storage = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
+        self.slot = slot
     }
 
-    var recoveryURL: URL { storage.appendingPathComponent("Recovery.kfrecovery", isDirectory: true) }
-    /// 0.2/0.3 kept the recovery copy as one JSON file.
-    var legacyRecoveryURL: URL { storage.appendingPathComponent("Recovery.kongfolio") }
+    var recoveryURL: URL { storage.appendingPathComponent(slot.isEmpty ? "Recovery.kfrecovery" : "Recovery-\(slot).kfrecovery", isDirectory: true) }
+    /// 0.2/0.3 kept the recovery copy as one JSON file (first tab only).
+    var legacyRecoveryURL: URL { storage.appendingPathComponent(slot.isEmpty ? "Recovery.kongfolio" : "Recovery-\(slot).legacy-unused") }
     var count: Int { document.pageCount }
     var page: PDFPage? { document.page(at: selection) }
     var effectivePages: [Int] {
         let valid = selectedPages.filter { $0 >= 0 && $0 < count }.sorted()
         return valid.isEmpty && count > 0 ? [selection] : valid
     }
+    /// What the tab and the title bar show: the project file, else the opened file, else the document title.
+    var displayName: String { projectURL?.lastPathComponent ?? sourceURL?.lastPathComponent ?? title }
+    var displayPath: String? { (projectURL ?? sourceURL)?.path }
+    /// Unchanged since it was opened or saved, so the file on disk is the document and no recovery copy is needed.
+    var canRestoreFromFile: Bool { !dirty && (projectURL != nil || sourceURL != nil) }
+    /// A loaded tab that can be dropped from memory and read again later without losing anything.
+    var canUnload: Bool { count > 0 && !busy && canRestoreFromFile && history.isEmpty && future.isEmpty }
     var canUndo: Bool { !history.isEmpty }
     var canRedo: Bool { !future.isEmpty }
     var canRetry: Bool { lastJob != nil && !busy }
@@ -198,7 +221,7 @@ import UniformTypeIdentifiers
         let pdf = try pdfData()
         alignMeta()
         let reading = ReadingState(bookmarks: bookmarks, outline: outlineEntries, layout: readingLayout, point: readingPoint, scale: readingScale, bibliography: bibliography.isEmpty ? nil : bibliography)
-        return ProjectArchive(reading: reading, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: mode, recipes: recipes, drafts: imageDrafts, dirty: dirty, projectPath: projectURL?.path)
+        return ProjectArchive(reading: reading, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: mode, recipes: recipes, drafts: imageDrafts, dirty: dirty, projectPath: projectURL?.path)
     }
 
     func restore(_ archive: ProjectArchive, keepProjectURL: Bool = false) throws {
@@ -222,6 +245,7 @@ import UniformTypeIdentifiers
         searchResults = []
         annotationNotes = []
         title = archive.title
+        if !keepProjectURL { sourceURL = archive.sourcePath.map { URL(fileURLWithPath: $0) } }
         selection = archive.selection
         selectedPages = archive.selectedPages
         mode = archive.mode
@@ -251,6 +275,10 @@ import UniformTypeIdentifiers
     }
 
     func remember(_ urls: [URL]) {
+        // Other tabs may have added files since this tab loaded the list; start from what is on disk.
+        if let stored = try? JSONDecoder().decode([String].self, from: Data(contentsOf: storage.appendingPathComponent("Recent.json"))) {
+            recentFiles = stored
+        }
         for url in urls.reversed() {
             recentFiles.removeAll { $0 == url.path }
             recentFiles.insert(url.path, at: 0)
@@ -265,6 +293,14 @@ import UniformTypeIdentifiers
     func scheduleRecovery() {
         guard started, count > 0 else { return }
         autoTask?.cancel()
+        guard dirty else {
+            // Nothing to protect: the opened file or saved project is this very document. Copying it into the
+            // recovery folder only cost disk time (a hash and a full write per opened PDF), and an older copy must
+            // not be restored over what is on disk. Quitting still writes a copy so the session comes back.
+            writer.discard(recoveryURL)
+            recoveryStatus = ""
+            return
+        }
         recoveryStatus = "等待自动保存"
         let delay = recoveryDelay
         autoTask = Task { [weak self] in
@@ -452,7 +488,117 @@ import UniformTypeIdentifiers
             // A discarded recovery file must not be recreated during termination.
             if discarded { return true }
         }
-        return count == 0 ? true : flushRecovery()
+        if count == 0 { return true }
+        if canRestoreFromFile {
+            // The file (or saved project) is this document; the session file remembers where to find it.
+            autoTask?.cancel()
+            try? writer.flush(nil, to: recoveryURL)
+            return true
+        }
+        return flushRecovery()
+    }
+
+    /// Empties the workspace. With `keepingSource` the file it came from stays known, so the tab can load it again.
+    private func clearDocument(keepingSource: Bool) {
+        searchTask?.cancel(); previewTask?.cancel(); estimateTask?.cancel()
+        document = PDFDocument(); cachedPDF = nil
+        pageMeta = []; selection = 0; selectedPages = [0]; rangeText = ""
+        title = "未命名文档"; mode = .document; tool = .select; note = ""
+        bookmarks = []; bookmarkName = ""; outlineEntries = []; bibliography = Bibliography()
+        search = ""; searchResults = []; searchMessage = ""; annotationNotes = []
+        readingPoint = nil; readingScale = nil
+        selectedAnnotation = nil; comparison = nil; recognizedText = ""
+        showOCRReview = false; reviewSelection = -1; exportEstimate = nil
+        history.removeAll(); future.removeAll(); lastJob = nil
+        if !keepingSource { projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil }
+        dirty = false; discarded = false
+        thumbnails.clear(); pageVersions = [:]
+        layoutRevision = UUID(); navigationToken = UUID(); revision = UUID()
+        resetImage()
+        recoveryStatus = ""
+    }
+
+    func currentViewPosition() -> ViewPosition {
+        captureReadingPosition()
+        return ViewPosition(selection: selection, x: readingPoint.map { Double($0.x) }, y: readingPoint.map { Double($0.y) }, scale: readingScale)
+    }
+
+    /// Frees the memory of an unchanged document; the tab stays and reads the file again when it is selected.
+    func unload() {
+        guard canUnload else { return }
+        pendingView = currentViewPosition()
+        autoTask?.cancel()
+        writer.discard(recoveryURL)
+        clearDocument(keepingSource: true)
+        needsLoad = true
+        status = "已释放内存：再次选中此标签页时重新读取"
+    }
+
+    /// Reads the file of a tab that was waiting (see `needsLoad`).
+    func ensureLoaded() {
+        guard needsLoad, count == 0, !busy, let url = projectURL ?? sourceURL else { return }
+        needsLoad = false
+        load([url])
+    }
+
+    /// Drops what a waiting tab was going to load (closing it, or giving up on a file that cannot be read).
+    func forgetSource() {
+        projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil
+    }
+
+    private func applyPendingView() {
+        if let position = pendingView {
+            pendingView = nil
+            selection = max(0, min(position.selection, count - 1))
+            selectedPages = [selection]
+            readingPoint = position.point
+            readingScale = position.scale
+            navigationToken = UUID()
+        }
+        if let reveal = pendingReveal {
+            pendingReveal = nil
+            revealWhenReady(reveal)
+        }
+    }
+
+    /// How this tab is written to the session file; nil for a tab with nothing to restore.
+    var sessionEntry: SessionEntry? {
+        if count > 0 {
+            guard canRestoreFromFile else { return SessionEntry(slot: slot, kind: .recovery) }
+            return fileEntry(position: currentViewPosition())
+        }
+        return needsLoad ? fileEntry(position: pendingView) : nil
+    }
+
+    private func fileEntry(position: ViewPosition?) -> SessionEntry? {
+        if let url = projectURL { return SessionEntry(slot: slot, kind: .project, path: url.path, position: position) }
+        if let url = sourceURL { return SessionEntry(slot: slot, kind: .file, path: url.path, position: position) }
+        return nil
+    }
+
+    /// Closes this tab (or, when it is the only one, returns it to the start screen).
+    func closeTab() {
+        if let store { store.close(id) } else { closeDocument() }
+    }
+
+    /// Closes the current document or image and returns to the start screen. Unsaved work is confirmed first.
+    /// The recovery copy is removed too, otherwise the closed document would be restored on the next launch.
+    @discardableResult func closeDocument() -> Bool {
+        guard count > 0 else { return false }
+        guard !busy else { status = "请等待任务完成或点击取消任务"; return false }
+        if dirty { guard confirmReplace() else { return false } }
+        autoTask?.cancel()
+        do {
+            try writer.flush(nil, to: recoveryURL)
+            try? FileManager.default.removeItem(at: legacyRecoveryURL)
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+        let closed = title
+        clearDocument(keepingSource: false)
+        status = "已关闭“\(closed)”"
+        return true
     }
 
     // MARK: Opening
@@ -466,14 +612,20 @@ import UniformTypeIdentifiers
         return panel.runModal() == .OK ? panel.urls : []
     }
 
-    func open(insert: Bool = false) {
+    func open(insert: Bool = false, merge: Bool = false) {
         guard !busy else { return }
         let urls = pickFiles()
         guard !urls.isEmpty else { return }
-        openSelected(urls, insert: insert)
+        openSelected(urls, insert: insert, merge: merge)
     }
 
-    func openSelected(_ urls: [URL], insert: Bool) {
+    /// Several files are opened side by side, one tab each. Only an explicit merge (or inserting pages into the
+    /// current document) asks for an order and combines them.
+    func openSelected(_ urls: [URL], insert: Bool, merge: Bool = false) {
+        if urls.count > 1, !insert, !merge, let store {
+            store.openEach(urls)
+            return
+        }
         if urls.count > 1 {
             pendingImports = urls
             importAsInsert = insert
@@ -519,6 +671,12 @@ import UniformTypeIdentifiers
 
     func load(_ urls: [URL], insert: Bool = false, scanAfter: Bool = false, prepared: ImportPayload? = nil) {
         guard !urls.isEmpty else { return }
+        // A document that is already open stays open: new files go to a new tab. Inserting pages and the
+        // prepared (already read) payload of a tab's own import are not routed.
+        if !insert, prepared == nil, count > 0, let store {
+            store.openInNewTab(urls, scanAfter: scanAfter)
+            return
+        }
         if busy {
             // Opening from Finder while a task runs used to be dropped silently; queue it instead.
             deferredOpen = (urls, insert)
@@ -534,11 +692,14 @@ import UniformTypeIdentifiers
                 try restore(archive)
                 discarded = false
                 projectURL = urls[0]
+                sourceURL = nil
                 history.removeAll()
                 future.removeAll()
                 remember(urls)
                 scheduleRecovery()
+                applyPendingView()
                 status = "项目已打开"
+                store?.loadedTabsChanged()
                 return
             }
             guard case .documents(let data) = prepared else { throw FolioError(message: "文档读取失败") }
@@ -593,6 +754,7 @@ import UniformTypeIdentifiers
                 projectURL = nil
                 mode = urls.count == 1 && urls[0].pathExtension.lowercased() != "pdf" && !TextImport.handles(urls[0]) ? .image : .document
                 if loaded.count == 1 { openedBytes = data.first }
+                sourceURL = loaded.count == 1 ? urls[0] : nil
             }
             readingPoint = nil
             readingScale = nil
@@ -602,7 +764,13 @@ import UniformTypeIdentifiers
             changed()
             // The opened bytes are the document. Without this, the first autosave (and the first search)
             // serialized the whole file on the main thread. `changed()` clears the cache, so set it afterwards.
-            if let openedBytes { cachedPDF = openedBytes }
+            if let openedBytes {
+                cachedPDF = openedBytes
+                // Opening one file changes nothing yet: the file on disk is the original. Without this every
+                // opened document counted as unsaved work and closing it asked whether to save.
+                dirty = false
+            }
+            applyPendingView()
             if scanAfter {
                 mode = .image
                 adjustments.scan = true
@@ -610,6 +778,7 @@ import UniformTypeIdentifiers
             }
             remember(urls)
             status = "已载入 \(count) 页"
+            store?.loadedTabsChanged()
         }
     }
 
@@ -911,19 +1080,33 @@ import UniformTypeIdentifiers
 
     /// Marks the selected text with the chosen style and color, attaching the note text.
     func highlight() {
-        guard let selected = pdfView?.currentSelection else { error = "请先在 PDF 中选中文字。扫描页需先 OCR。"; return }
+        guard pdfView?.currentSelection != nil else { error = "请先在 PDF 中选中文字。扫描页需先 OCR。"; return }
+        mark(style: markupStyle, color: markupColor, note: note)
+    }
+
+    /// Marks the current selection (floating toolbar, menu, shortcuts) and clears the selection.
+    /// With `annotate`, the new mark is selected so its note can be typed in the inspector.
+    @discardableResult
+    func mark(style: MarkupStyle, color: MarkupColor, note text: String = "", annotate: Bool = false) -> [PDFAnnotation] {
+        guard let selected = pdfView?.currentSelection, !(selected.string ?? "").isEmpty else { error = "请先在 PDF 中选中文字。扫描页需先 OCR。"; return [] }
         var added: [PDFAnnotation] = []
         for line in selected.selectionsByLine() {
             for page in line.pages {
-                let annotation = PDFAnnotation(bounds: line.bounds(for: page), forType: markupStyle.subtype, withProperties: nil)
-                annotation.color = markupStyle == .highlight ? markupColor.nsColor.withAlphaComponent(0.4) : markupColor.nsColor
-                annotation.contents = note
+                let annotation = PDFAnnotation(bounds: line.bounds(for: page), forType: style.subtype, withProperties: nil)
+                annotation.color = style == .highlight ? color.nsColor.withAlphaComponent(0.4) : color.nsColor
+                annotation.contents = text
                 annotation.setValue(line.string ?? "", forAnnotationKey: ReadingServices.quoteKey)
                 page.addAnnotation(annotation)
                 added.append(annotation)
             }
         }
         recordAnnotationsAdded(added)
+        pdfView?.clearSelection()
+        if annotate, let first = added.first {
+            selectAnnotation(first)
+            status = "已标记，可在右侧输入批注"
+        }
+        return added
     }
 
     func compare() {
