@@ -92,5 +92,7 @@ final class CompressTests: XCTestCase {
         let data = try document.dataRepresentation().unwrap("无法序列化")
         let (_, report) = try PDFCompressor.compress(document, level: .standard, original: data.count) { _ in }
         XCTAssertEqual(report.rebuilt, 0)
+        XCTAssertFalse(report.smaller)
+        XCTAssertTrue(report.summary.contains("没有找到可以压缩的大图片页面"))
     }
 }

@@ -41,12 +41,17 @@ struct CompressReport: Equatable {
     /// Pages redrawn from a lower-resolution picture, and pages left exactly as they were.
     var rebuilt: Int
     var kept: Int
+    /// True when PDFKit re-encoded the pictures itself (the light level) instead of pages being redrawn here.
+    var viaPDFKit = false
 
     var smaller: Bool { after < before }
 
     var summary: String {
         let sizes = "\(ByteCountFormatter.string(fromByteCount: Int64(before), countStyle: .file)) → \(ByteCountFormatter.string(fromByteCount: Int64(after), countStyle: .file))"
-        guard smaller else { return "此文件没有变小（\(sizes)），未生成压缩文件" }
+        guard smaller else {
+            if !viaPDFKit && rebuilt == 0 { return "没有找到可以压缩的大图片页面，未生成压缩文件" }
+            return "此文件没有变小（\(sizes)），未生成压缩文件"
+        }
         let saved = before > 0 ? Int((1 - Double(after) / Double(before)) * 100) : 0
         return "已压缩，减少 \(saved)%：\(sizes)" + (rebuilt + kept > 0 && rebuilt > 0 ? "（重绘 \(rebuilt) 页，原样保留 \(kept) 页）" : "")
     }
@@ -149,7 +154,7 @@ enum PDFCompressor {
             try ExportServices.optimizedPDF(document, pages: Array(0..<document.pageCount), to: temporary)
             let data = try Data(contentsOf: temporary)
             progress(1)
-            return (data, CompressReport(before: original, after: data.count, rebuilt: 0, kept: document.pageCount))
+            return (data, CompressReport(before: original, after: data.count, rebuilt: 0, kept: document.pageCount, viaPDFKit: true))
         }
         let outline = ReadingServices.outline(document)
         var rebuilt = 0
@@ -171,7 +176,9 @@ enum PDFCompressor {
             }
             progress(Double(index + 1) / Double(count))
         }
-        if rebuilt > 0 { ReadingServices.applyOutline(outline, to: document) }
+        // Nothing to redraw: the file would only be written again, so say so instead of producing a copy.
+        guard rebuilt > 0 else { return (Data(), CompressReport(before: original, after: original, rebuilt: 0, kept: count)) }
+        ReadingServices.applyOutline(outline, to: document)
         let data = try document.dataRepresentation().unwrap("压缩保存失败")
         return (data, CompressReport(before: original, after: data.count, rebuilt: rebuilt, kept: count - rebuilt))
     }
