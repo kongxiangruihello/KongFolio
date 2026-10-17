@@ -557,6 +557,13 @@ struct ContentView: View {
             Toggle("扫描增强", isOn: $workspace.adjustments.scan).onChange(of: workspace.adjustments.scan) { _, _ in workspace.updatePreview() }
             Button("黑白") { workspace.adjustments.saturation = 0; workspace.updatePreview() }
             Divider()
+            Text("批量应用").font(.subheadline.bold())
+            Text("用上面的亮度、对比度、饱和度、锐化、倾斜、扫描增强和旋转处理多页。裁剪与透视因页而异，不会带入；裁边请用页面管理里的“裁边”。").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("应用到选中页") { workspace.cleanPages(scope: .selected) }
+                Button("应用到全部页") { workspace.cleanPages(scope: .all) }
+            }
+            Divider()
             Text("项目保留原始页面和调整参数。应用会把页面转为图片（含文字的页面会先提示）；导出前请先应用。").font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button("重置参数") { workspace.resetAdjustments() }

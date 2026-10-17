@@ -2,7 +2,7 @@ import AppKit
 import PDFKit
 import UniformTypeIdentifiers
 
-enum JobOperation { case ocr, compress, split, images, configured, inspectOCR, chapters }
+enum JobOperation { case ocr, compress, split, images, configured, inspectOCR, chapters, cleanup }
 
 struct JobSpec {
     var operation: JobOperation
@@ -19,6 +19,8 @@ struct JobSpec {
     var compressKeepMarked = true
     /// Size to reach, in bytes; when set, the level is ignored and stronger settings are tried until the file fits.
     var compressTarget: Int? = nil
+    /// Image settings applied to every page of a `cleanup` job.
+    var cleanup = ImageAdjustments()
 }
 
 struct JobResult {
@@ -105,6 +107,10 @@ enum BackgroundJobs {
                     }
                 case .inspectOCR:
                     regions[index] = try recognize(page, settings: spec.ocr)
+                case .cleanup:
+                    let replacement = try DocumentServices.cleanedPage(page, spec.cleanup)
+                    doc.removePage(at: index)
+                    doc.insert(replacement, at: index)
                 case .configured, .chapters, .compress:
                     break
                 case .split:
@@ -125,6 +131,8 @@ enum BackgroundJobs {
             return JobResult(pdf: try doc.dataRepresentation().unwrap("OCR 保存失败"), text: doc.string ?? "", message: "OCR 完成，识别 \(recognizedCount) 页，跳过 \(skipped) 个已有文字的页面\(note)", regions: regions, originals: originals)
         case .inspectOCR:
             return JobResult(message: "识别区域检查完成，未修改页面文字", regions: regions)
+        case .cleanup:
+            return JobResult(pdf: try doc.dataRepresentation().unwrap("保存失败"), text: doc.string ?? "", message: "已处理 \(spec.pages.count) 页（可撤销）")
         case .configured, .chapters, .compress:
             throw FolioError(message: "导出任务未执行")
         case .split, .images:
@@ -148,6 +156,7 @@ extension Workspace {
         case .images: taskLabel = "导出图片"
         case .configured: taskLabel = "按设置导出"
         case .inspectOCR: taskLabel = "检查 OCR 区域"
+        case .cleanup: taskLabel = "批量处理页面"
         }
         status = taskLabel
         let worker = Task.detached(priority: .userInitiated) { [self] in
@@ -161,6 +170,7 @@ extension Workspace {
                 if result.pdf != nil || spec.operation == .inspectOCR { checkpoint() }
                 for (index, data) in result.originals { updateMeta(index) { $0.ocrOriginal = data } }
                 for (index, lines) in result.regions { updateMeta(index) { $0.ocrRegions = lines } }
+                if spec.operation == .cleanup { for index in spec.pages { updateMeta(index) { $0 = PageMeta() } } }
                 if let pdf = result.pdf, let updated = PDFDocument(data: pdf) {
                     document = updated
                     ReadingServices.applyOutline(outlineEntries, to: document)
@@ -192,7 +202,7 @@ extension Workspace {
 
     func retryJob() {
         guard let job = lastJob else { return }
-        guard ![JobOperation.ocr, .inspectOCR].contains(job.operation) || job.revision == revision else {
+        guard ![JobOperation.ocr, .inspectOCR, .cleanup].contains(job.operation) || job.revision == revision else {
             error = "文档已更改，请重新发起 OCR。"
             lastJob = nil
             return

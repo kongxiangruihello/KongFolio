@@ -141,3 +141,55 @@ final class PageCropTests: XCTestCase {
         XCTAssertTrue(workspace.cropMessage.contains("6 页"))
     }
 }
+
+final class ScanCleanupTests: XCTestCase {
+    func grey(pages: Int, level: CGFloat) throws -> PDFDocument {
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 200, height: 300)
+        let context = CGContext(consumer: CGDataConsumer(data: data)!, mediaBox: &box, nil)!
+        for _ in 0..<pages {
+            context.beginPDFPage(nil)
+            context.setFillColor(gray: level, alpha: 1)
+            context.fill(box)
+            context.endPDFPage()
+        }
+        context.closePDF()
+        return try PDFDocument(data: data as Data).unwrap("无法读取")
+    }
+
+    func average(_ page: PDFPage) throws -> Double {
+        let bitmap = try ContentBounds.render(page, width: 60).unwrap("渲染失败")
+        return Double(bitmap.pixels.reduce(0) { $0 + Int($1) }) / Double(bitmap.pixels.count)
+    }
+
+    func testBatchBrightnessChangesEveryChosenPageAndKeepsTheSize() throws {
+        let document = try grey(pages: 3, level: 0.4)
+        let before = try average(document.page(at: 0).unwrap("无页面"))
+        var values = ImageAdjustments()
+        values.brightness = 0.3
+        let spec = JobSpec(operation: .cleanup, source: document.dataRepresentation()!, pages: [0, 2], revision: UUID(), cleanup: values)
+        let result = try BackgroundJobs.run(spec) { _ in }
+        let output = try PDFDocument(data: result.pdf.unwrap("没有结果")).unwrap("无法读取结果")
+        XCTAssertEqual(output.pageCount, 3)
+        XCTAssertTrue(try average(output.page(at: 0).unwrap("无页面")) > before + 30)
+        XCTAssertTrue(try average(output.page(at: 2).unwrap("无页面")) > before + 30)
+        XCTAssertEqual(try average(output.page(at: 1).unwrap("无页面")), before, accuracy: 3)       // not chosen: untouched
+        let size = try output.page(at: 0).unwrap("无页面").bounds(for: .cropBox)
+        XCTAssertEqual(size.width, 200, accuracy: 2)
+        XCTAssertEqual(size.height, 300, accuracy: 2)
+    }
+
+    @MainActor func testBatchNeedsSomethingToApply() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let workspace = Workspace(storage: directory)
+        workspace.document = try grey(pages: 2, level: 0.5)
+        workspace.cleanPages(scope: .all)
+        XCTAssertNotNil(workspace.error)
+        XCTAssertFalse(workspace.busy)
+        // Crop and perspective are left out of what is applied to many pages.
+        workspace.adjustments.cropRect = CGRect(x: 0.1, y: 0.1, width: 0.5, height: 0.5)
+        workspace.adjustments.perspective = [CGPoint(x: 0, y: 1), CGPoint(x: 1, y: 1), CGPoint(x: 1, y: 0), CGPoint(x: 0, y: 0)]
+        XCTAssertEqual(workspace.batchAdjustments, ImageAdjustments())
+    }
+}
