@@ -96,3 +96,22 @@ final class AnnotationDigestTests: XCTestCase {
         XCTAssertTrue(AnnotationFilter(color: "粉").apply(to: notes).isEmpty)
     }
 }
+
+final class PenStyleTests: XCTestCase {
+    func testPenKeepsTheChosenWidth() {
+        XCTAssertEqual(PenStyle.make(width: 3, highlighter: false, arrow: false), PenStyle(width: 3, alpha: 1))
+        XCTAssertEqual(PenStyle.make(width: 100, highlighter: false, arrow: false).width, 24)
+        XCTAssertEqual(PenStyle.make(width: 0, highlighter: false, arrow: false).width, 0.5)
+    }
+
+    func testHighlighterIsWideAndTranslucent() {
+        let style = PenStyle.make(width: 2, highlighter: true, arrow: false)
+        XCTAssertTrue(style.width >= 10)
+        XCTAssertTrue(style.alpha < 0.5)
+        XCTAssertEqual(PenStyle.make(width: 6, highlighter: true, arrow: false).width, 24)
+    }
+
+    func testArrowsIgnoreTheHighlighter() {
+        XCTAssertEqual(PenStyle.make(width: 2, highlighter: true, arrow: true), PenStyle(width: 2, alpha: 1))
+    }
+}

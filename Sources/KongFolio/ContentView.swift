@@ -412,6 +412,14 @@ struct ContentView: View {
             Picker("工具", selection: $workspace.tool) { ForEach(AnnotationTool.allCases) { Text($0.title).tag($0) } }.labelsHidden()
             TextField("批注 / 文字框 / 笔记内容", text: $workspace.note, axis: .vertical).lineLimit(3...5)
             ColorPicker("标注颜色", selection: $workspace.annotationColor, supportsOpacity: false)
+            if workspace.tool == .pen || workspace.tool == .arrow {
+                HStack {
+                    Text("线宽 \(workspace.penWidth, format: .number.precision(.fractionLength(1)))")
+                    Slider(value: $workspace.penWidth, in: 0.5...12)
+                }
+                .font(.caption)
+                if workspace.tool == .pen { Toggle("荧光笔（宽、半透明）", isOn: $workspace.penHighlighter).font(.caption) }
+            }
             if workspace.selectedAnnotation != nil {
                 HStack { Button("更新标注") { workspace.updateAnnotation() }; Button("删除标注") { workspace.deleteAnnotation() } }
                 HStack { Button("缩小") { workspace.resizeAnnotation(0.85) }; Button("放大") { workspace.resizeAnnotation(1.15) } }

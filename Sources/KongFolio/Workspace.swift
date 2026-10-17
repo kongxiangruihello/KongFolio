@@ -63,6 +63,9 @@ import UniformTypeIdentifiers
     @Published var showImportOrder = false
     @Published var selectedAnnotation: PDFAnnotation?
     @Published var annotationColor = Color.blue
+    /// Pen and arrow line width in points; the highlighter draws a wide translucent stroke instead.
+    @Published var penWidth = 2.0
+    @Published var penHighlighter = false
     @Published var signatures: [SignatureTemplate] = []
     @Published var placingSignature: SignatureTemplate?
     @Published var signatureWidth = 0.28

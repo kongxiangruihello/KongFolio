@@ -27,6 +27,19 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
     var draws: Bool { self == .pen || self == .arrow || self == .signature }
 }
 
+/// How a pen or arrow stroke looks, from the width and highlighter settings.
+struct PenStyle: Equatable {
+    var width: Double
+    var alpha: Double
+
+    static func make(width: Double, highlighter: Bool, arrow: Bool) -> PenStyle {
+        let clamped = min(max(width, 0.5), 24)
+        // A highlighter is a broad, see-through marker; arrows keep a clean line whatever the setting.
+        if highlighter && !arrow { return PenStyle(width: max(10, clamped * 4), alpha: 0.35) }
+        return PenStyle(width: clamped, alpha: 1)
+    }
+}
+
 enum SidebarTab: String, CaseIterable, Identifiable {
     case pages = "页面"
     case outline = "目录"
