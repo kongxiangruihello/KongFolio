@@ -76,14 +76,14 @@ private extension Data {
     mutating func appendLE32(_ value: UInt32) { for shift in stride(from: 0, to: 32, by: 8) { append(UInt8((value >> UInt32(shift)) & 0xFF)) } }
 }
 
-struct WordExportOptions: Equatable {
-    enum Content: String, CaseIterable, Identifiable {
+struct WordExportOptions: Equatable, Codable {
+    enum Content: String, CaseIterable, Identifiable, Codable {
         case both = "文字和页面图片"
         case textOnly = "仅文字"
         case imagesOnly = "仅页面图片"
         var id: String { rawValue }
     }
-    enum ImageSize: String, CaseIterable, Identifiable {
+    enum ImageSize: String, CaseIterable, Identifiable, Codable {
         case small = "小（文件最小）"
         case standard = "标准"
         case high = "高（文件较大）"

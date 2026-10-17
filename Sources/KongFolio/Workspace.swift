@@ -66,6 +66,7 @@ import UniformTypeIdentifiers
     @Published var showCompress = false
     @Published var showCrop = false
     @Published var showWordExport = false
+    @Published var showBatch = false
     @Published var showOCRQuality = false
     @Published var showOutlineText = false
     @Published var showReplacementRules = false

@@ -29,6 +29,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showCompress) { CompressSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showCrop) { CropSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showWordExport) { WordExportSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showBatch) { BatchSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showReplacementRules) { ReplacementRulesSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRQuality) { OCRQualitySheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOutlineText) { OutlineTextSheet(workspace: workspace) }
@@ -250,6 +251,7 @@ struct ContentView: View {
         Button("PNG · 全部页面") { workspace.exportBatch(split: false) }
         Divider()
         Button("Word（.docx）· 文字与页面图片…") { workspace.openWordExport() }
+        Button("文件夹批处理（配方）…") { workspace.showBatch = true }
         Button("TXT") { workspace.exportText(markdown: false) }
         Button("Markdown · 全文") { workspace.exportText(markdown: true) }
         Button("Markdown · 摘录与笔记") { workspace.exportNotes() }

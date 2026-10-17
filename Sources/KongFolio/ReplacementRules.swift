@@ -2,7 +2,7 @@ import Foundation
 
 /// Corrections applied to the text of an export, for mistakes the recognition makes again and again (戊/戌/戍, 己/已/巳).
 /// They change the exported text only; the recognition record and the PDF are untouched.
-struct ReplacementRule: Equatable {
+struct ReplacementRule: Equatable, Codable {
     var from: String
     var to: String
 }
