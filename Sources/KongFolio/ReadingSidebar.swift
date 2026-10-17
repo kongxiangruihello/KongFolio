@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ReadingSidebar: View {
     @ObservedObject var workspace: Workspace
+    @State private var noteFilter = AnnotationFilter()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -104,14 +105,38 @@ struct ReadingSidebar: View {
         }
     }
 
+    private var shownNotes: [AnnotationNote] { noteFilter.apply(to: workspace.annotationNotes) }
+
     private var notes: some View {
         Group {
             HStack {
                 Button("刷新") { workspace.refreshNotes() }
-                Button("导出 Markdown") { workspace.exportNotes() }.disabled(workspace.count == 0)
+                Button("导出 Markdown") { workspace.exportNotes(filter: noteFilter) }.disabled(workspace.count == 0)
+                Button("转为笔记标签页") { workspace.openNotesAsNote(filter: noteFilter) }.disabled(workspace.count == 0)
             }
             .font(.caption)
             .padding(.horizontal, 8)
+            HStack(spacing: 6) {
+                Picker("类型", selection: $noteFilter.kind) {
+                    Text("全部类型").tag(String?.none)
+                    ForEach(AnnotationFilter.kinds, id: \.self) { Text($0).tag(String?.some($0)) }
+                }
+                .labelsHidden()
+                Picker("颜色", selection: $noteFilter.color) {
+                    Text("全部颜色").tag(String?.none)
+                    ForEach(AnnotationFilter.colors, id: \.self) { Text($0).tag(String?.some($0)) }
+                }
+                .labelsHidden()
+            }
+            .font(.caption)
+            .padding(.horizontal, 8)
+            TextField("在标注和笔记中搜索", text: $noteFilter.text)
+                .textFieldStyle(.roundedBorder)
+                .font(.caption)
+                .padding(.horizontal, 8)
+            if noteFilter.isActive {
+                Text("显示 \(shownNotes.count) / \(workspace.annotationNotes.count) 条").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 8)
+            }
             DisclosureGroup("书目信息（用于引用）") {
                 VStack(alignment: .leading, spacing: 6) {
                     TextField("作者", text: bibliographyBinding(\.author))
@@ -132,10 +157,15 @@ struct ReadingSidebar: View {
             }
             ScrollView {
                 LazyVStack(spacing: 8) {
-                    ForEach(workspace.annotationNotes) { entry in
+                    ForEach(shownNotes) { entry in
                         Button { workspace.goToNote(entry) } label: {
                             VStack(alignment: .leading, spacing: 5) {
-                                Text("\(entry.pageDescription) · \(entry.kind)").font(.caption.bold()).foregroundStyle(Brand.accent)
+                                HStack(spacing: 5) {
+                                    if let rgb = entry.rgb, rgb.count == 3 {
+                                        Circle().fill(Color(red: rgb[0], green: rgb[1], blue: rgb[2])).frame(width: 9, height: 9)
+                                    }
+                                    Text("\(entry.pageDescription) · \(entry.kind)").font(.caption.bold()).foregroundStyle(Brand.accent)
+                                }
                                 if !entry.quote.isEmpty { Text(entry.quote).font(.caption).lineLimit(5) }
                                 if !entry.note.isEmpty { Text(entry.note).font(.caption).foregroundStyle(.secondary).lineLimit(4) }
                             }
