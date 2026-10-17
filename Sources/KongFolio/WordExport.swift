@@ -96,6 +96,8 @@ struct WordExportOptions: Equatable {
     /// Lines that belong to one sentence are joined into a paragraph (the text layer of a scan has one line per row).
     var mergeLines = true
     var pageMarks = true
+    /// Vertical (竖排) pages: one line per column of the original (otherwise the page is one running paragraph).
+    var keepColumns = false
 }
 
 struct WordExportReport: Equatable {
@@ -188,7 +190,7 @@ enum WordExport {
     }
 
     /// Writes the chosen pages of `document` as a Word file. `progress` runs on the calling thread.
-    static func write(_ document: PDFDocument, pages: [Int], outline: [OutlineEntry], options: WordExportOptions, to url: URL,
+    static func write(_ document: PDFDocument, pages: [Int], outline: [OutlineEntry], options: WordExportOptions, regions: [Int: [RecognizedLine]] = [:], to url: URL,
                       progress: (Double) -> Void = { _ in }) throws -> WordExportReport {
         var report = WordExportReport()
         let zip = try ZipWriter(url: url)
@@ -218,8 +220,8 @@ enum WordExport {
                         }
                     }
                     if options.content != .imagesOnly {
-                        let text = ReadingServices.repairIdeographs(page.string ?? "")
-                        for paragraph in paragraphs(from: text, merge: options.mergeLines) {
+                        let found = OrderedText.paragraphs(regions: regions[index], pageText: page.string ?? "", mergeLines: options.mergeLines, keepColumns: options.keepColumns)
+                        for paragraph in found {
                             body += textParagraph(paragraph)
                             report.characters += paragraph.filter { !$0.isWhitespace }.count
                         }
