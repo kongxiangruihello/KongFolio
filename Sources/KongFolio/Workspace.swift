@@ -80,6 +80,11 @@ import UniformTypeIdentifiers
     @Published var penHighlighter = false
     @Published var signatures: [SignatureTemplate] = []
     @Published var placingSignature: SignatureTemplate?
+    /// Signatures placed on pages in this session, by page, so they can be moved later (see `SignatureLayer`).
+    var signatureLayers: [ObjectIdentifier: SignatureLayer] = [:]
+    /// A placed signature that was picked up and is being moved, and the document as it was before.
+    var movingSignature: (layer: SignatureLayer, item: PlacedSignature)?
+    var moveSnapshot: ProjectArchive?
     @Published var signatureWidth = 0.28
     @Published var projectURL: URL?
     /// The PDF, image or text file this document was opened from; nil for merged documents and projects.

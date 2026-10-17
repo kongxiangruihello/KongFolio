@@ -85,11 +85,15 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
     // MARK: Signature placement
     private var placement: SignaturePlacementView?
 
-    func beginSignaturePlacement(_ image: CGImage, widthFraction: Double) {
+    func beginSignaturePlacement(_ image: CGImage, widthFraction: Double, page: PDFPage?, rect: CGRect?) {
         endSignaturePlacement()
         let overlay = SignaturePlacementView(image: image)
-        let width = max(40, bounds.width * widthFraction)
-        overlay.frame = SignatureStamp.fit(aspect: overlay.aspect, width: width, center: CGPoint(x: bounds.midX, y: bounds.midY), in: bounds)
+        if let page, let rect {
+            overlay.frame = convert(rect, from: page).intersection(bounds)
+        } else {
+            let width = max(40, bounds.width * widthFraction)
+            overlay.frame = SignatureStamp.fit(aspect: overlay.aspect, width: width, center: CGPoint(x: bounds.midX, y: bounds.midY), in: bounds)
+        }
         addSubview(overlay)
         placement = overlay
         window?.makeFirstResponder(self)
@@ -128,6 +132,17 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
         let location = convert(event.locationInWindow, from: nil)
         if let page = page(for: location, nearest: false), let workspace {
             let point = convert(location, to: page)
+            if let hit = workspace.placedSignature(on: page, at: point) {
+                contextSignature = hit
+                let move = NSMenuItem(title: "移动或缩放此签名", action: #selector(moveHitSignature), keyEquivalent: "")
+                move.target = self
+                let remove = NSMenuItem(title: "删除此签名", action: #selector(removeHitSignature), keyEquivalent: "")
+                remove.target = self
+                menu.insertItem(move, at: 0)
+                menu.insertItem(remove, at: 1)
+                menu.insertItem(.separator(), at: 2)
+                return menu
+            }
             if let hit = Workspace.visibleAnnotations(on: page).reversed().first(where: { $0.bounds.contains(point) && workspace.cardID(of: $0) == nil }) {
                 workspace.selectAnnotation(hit)
                 let item = NSMenuItem(title: "删除此标注", action: #selector(deleteHitAnnotation), keyEquivalent: "")
@@ -147,6 +162,9 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
 
     @objc private func excerptToBoard() { workspace?.excerptSelection() }
     @objc private func deleteHitAnnotation() { workspace?.deleteAnnotation() }
+    private var contextSignature: (layer: SignatureLayer, item: PlacedSignature)?
+    @objc private func moveHitSignature() { if let hit = contextSignature { workspace?.beginMovingSignature(hit.item, in: hit.layer) } }
+    @objc private func removeHitSignature() { if let hit = contextSignature { workspace?.removePlacedSignature(hit.item, in: hit.layer) } }
 
     // MARK: Floating toolbar over a text selection
     private var selectionBar: NSView?
@@ -212,6 +230,13 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
         if let workspace { workspace.store?.focus(workspace) }
         guard let workspace, !workspace.busy else { super.mouseDown(with: event); return }
         let location = convert(event.locationInWindow, from: nil)
+        // Double-clicking a signature placed in this session picks it up to move or resize it.
+        if event.clickCount == 2, placement == nil, workspace.tool == .select || workspace.tool == .edit,
+           let page = page(for: location, nearest: false),
+           let hit = workspace.placedSignature(on: page, at: convert(location, to: page)) {
+            workspace.beginMovingSignature(hit.item, in: hit.layer)
+            return
+        }
         guard let page = page(for: location, nearest: false) else { return }
         let point = convert(location, to: page)
         switch workspace.tool {
