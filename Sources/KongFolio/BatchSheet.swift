@@ -66,6 +66,7 @@ struct BatchSheet: View {
             VStack(alignment: .leading, spacing: 6) {
                 TextField("名称", text: $recipes[index].name)
                 Text(recipes[index].summary).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                TextField("只处理这些页（如 3-400；留空为全部）", text: $recipes[index].pageRange)
                 Toggle("扫描增强（去底色、提高对比）", isOn: Binding(get: { recipes[index].cleanup != nil }, set: { on in
                     recipes[index].cleanup = on ? { var a = ImageAdjustments(); a.scan = true; return a }() : nil }))
                 Toggle("自动裁边（奇偶页分别）", isOn: $recipes[index].autoCrop)
@@ -84,6 +85,14 @@ struct BatchSheet: View {
                         ForEach(WordExportOptions.Content.allCases) { Text($0.rawValue).tag($0) }
                     }
                     Toggle("套用 Word 导出窗口里的校正对照表", isOn: $recipes[index].useReplacementRules)
+                }
+                Toggle("再按章节拆成多个 PDF", isOn: $recipes[index].splitChapters)
+                if recipes[index].splitChapters {
+                    Picker("拆分到", selection: $recipes[index].chapterDepth) {
+                        Text("卷 / 篇（最上层）").tag(0)
+                        Text("章（含下一层）").tag(1)
+                    }
+                    Toggle("没有目录时，从文字里找“卷之一”“第二章”等标题", isOn: $recipes[index].detectHeadings)
                 }
             }
         } else {
