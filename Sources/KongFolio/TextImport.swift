@@ -21,10 +21,10 @@ enum TextImport {
     static let bodySize: CGFloat = 12
     static let maximumPages = 3000
 
-    private static let fontKey = NSAttributedString.Key(kCTFontAttributeName as String)
-    private static let colorKey = NSAttributedString.Key(kCTForegroundColorAttributeName as String)
-    private static let styleKey = NSAttributedString.Key(kCTParagraphStyleAttributeName as String)
-    private static let underlineKey = NSAttributedString.Key(kCTUnderlineStyleAttributeName as String)
+    static let fontKey = NSAttributedString.Key(kCTFontAttributeName as String)
+    static let colorKey = NSAttributedString.Key(kCTForegroundColorAttributeName as String)
+    static let styleKey = NSAttributedString.Key(kCTParagraphStyleAttributeName as String)
+    static let underlineKey = NSAttributedString.Key(kCTUnderlineStyleAttributeName as String)
 
     static let gb18030 = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
     static let big5 = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.big5.rawValue)))
