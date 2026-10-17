@@ -27,6 +27,7 @@ struct ContentView: View {
         } message: { Text(workspace.error ?? "") }
         .sheet(isPresented: $workspace.showExport) { ExportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showCompress) { CompressSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showCrop) { CropSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRReview) { OCRReview(workspace: workspace) }
         .sheet(isPresented: $workspace.showTools) { quickTools }
         .sheet(isPresented: $workspace.showImportOrder) { importOrder }
@@ -426,6 +427,7 @@ struct ContentView: View {
                 Button("旋转 90°") { workspace.rotate() }
                 Button("删除页面", role: .destructive) { workspace.remove() }.disabled(workspace.effectivePages.count >= workspace.count)
             }
+            Button("裁边…") { workspace.openCrop() }
             Button("插入 PDF / 图片…") { workspace.open(insert: true) }
             HStack {
                 Button("提取选中页") { workspace.exportPDF(currentOnly: true) }
