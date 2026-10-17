@@ -63,28 +63,66 @@ enum PDFCompressor {
     /// A redrawn page must be at least this much smaller than the pictures it replaces.
     static let requiredRatio = 0.75
 
-    /// Bytes of the picture streams (page-level `XObject` images) that a page refers to.
+    /// Bytes of the picture streams a page uses: those in its own resources (also inherited from the page tree) and
+    /// those inside form XObjects (pictures wrapped in a group, as many scanners and exporters write them).
     static func imageBytes(_ page: PDFPage) -> Int {
         guard let reference = page.pageRef, let dictionary = reference.dictionary else { return 0 }
+        var node: CGPDFDictionaryRef? = dictionary
         var resources: CGPDFDictionaryRef?
-        guard CGPDFDictionaryGetDictionary(dictionary, "Resources", &resources), let resources else { return 0 }
+        // Resources may be inherited from a parent node of the page tree.
+        for _ in 0..<8 {
+            guard let current = node else { break }
+            if CGPDFDictionaryGetDictionary(current, "Resources", &resources), resources != nil { break }
+            var parent: CGPDFDictionaryRef?
+            node = CGPDFDictionaryGetDictionary(current, "Parent", &parent) ? parent : nil
+        }
+        guard let resources else { return 0 }
+        return imageBytes(in: resources, depth: 0)
+    }
+
+    private static func imageBytes(in resources: CGPDFDictionaryRef, depth: Int) -> Int {
         var objects: CGPDFDictionaryRef?
         guard CGPDFDictionaryGetDictionary(resources, "XObject", &objects), let objects else { return 0 }
-        final class Box { var total = 0 }
+        final class Box { var total = 0; var depth = 0 }
         let box = Box()
+        box.depth = depth
         CGPDFDictionaryApplyBlock(objects, { _, object, info in
             guard let info else { return true }
+            let box = Unmanaged<Box>.fromOpaque(info).takeUnretainedValue()
             var stream: CGPDFStreamRef?
             guard CGPDFObjectGetValue(object, .stream, &stream), let stream, let streamDictionary = CGPDFStreamGetDictionary(stream) else { return true }
             var subtype: UnsafePointer<CChar>?
-            guard CGPDFDictionaryGetName(streamDictionary, "Subtype", &subtype), let subtype, String(cString: subtype) == "Image" else { return true }
-            var length: CGPDFInteger = 0
-            if CGPDFDictionaryGetInteger(streamDictionary, "Length", &length) {
-                Unmanaged<Box>.fromOpaque(info).takeUnretainedValue().total += Int(length)
+            guard CGPDFDictionaryGetName(streamDictionary, "Subtype", &subtype), let subtype else { return true }
+            switch String(cString: subtype) {
+            case "Image":
+                var length: CGPDFInteger = 0
+                if CGPDFDictionaryGetInteger(streamDictionary, "Length", &length) { box.total += Int(length) }
+            case "Form":
+                var inner: CGPDFDictionaryRef?
+                if box.depth < 4, CGPDFDictionaryGetDictionary(streamDictionary, "Resources", &inner), let inner {
+                    box.total += PDFCompressor.imageBytes(in: inner, depth: box.depth + 1)
+                }
+            default: break
             }
             return true
         }, Unmanaged.passUnretained(box).toOpaque())
         return box.total
+    }
+
+    /// Whether the page carries anything a redraw would flatten: links, form fields, marks and notes.
+    static func hasMarks(_ page: PDFPage) -> Bool {
+        page.annotations.contains { $0.type != "Popup" }
+    }
+
+    /// How many pages have pictures worth redrawing, and how many of those also carry annotations or links.
+    static func scan(_ document: PDFDocument) -> (pictureHeavy: Int, marked: Int) {
+        var heavy = 0, marked = 0
+        for index in 0..<document.pageCount {
+            guard let page = document.page(at: index), imageBytes(page) >= minimumImageBytes else { continue }
+            heavy += 1
+            if hasMarks(page) { marked += 1 }
+        }
+        return (heavy, marked)
     }
 
     /// The page drawn from a JPEG at `dpi`, with its text kept as invisible text so it stays searchable and selectable.
@@ -147,7 +185,7 @@ enum PDFCompressor {
     }
 
     /// Compresses `document` in place (picture-heavy pages are replaced) and returns the new file.
-    static func compress(_ document: PDFDocument, level: CompressLevel, original: Int, progress: (Double) -> Void) throws -> (data: Data, report: CompressReport) {
+    static func compress(_ document: PDFDocument, level: CompressLevel, original: Int, keepMarked: Bool = false, progress: (Double) -> Void) throws -> (data: Data, report: CompressReport) {
         if level == .light {
             let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("KongFolio-compress-\(UUID().uuidString).pdf")
             defer { try? FileManager.default.removeItem(at: temporary) }
@@ -163,6 +201,8 @@ enum PDFCompressor {
             try Task.checkCancellation()
             try autoreleasepool {
                 guard let page = document.page(at: index) else { return }
+                // Pages with annotations or links stay exactly as they are when the reader asked for that.
+                if keepMarked && hasMarks(page) { return }
                 let pictures = imageBytes(page)
                 if pictures >= minimumImageBytes {
                     let candidate = try rebuild(page, dpi: level.dpi, quality: level.quality)

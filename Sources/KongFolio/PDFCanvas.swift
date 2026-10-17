@@ -209,6 +209,7 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
 
     override func mouseDown(with event: NSEvent) {
         hideSelectionToolbar()
+        if let workspace { workspace.store?.focus(workspace) }
         guard let workspace, !workspace.busy else { super.mouseDown(with: event); return }
         let location = convert(event.locationInWindow, from: nil)
         guard let page = page(for: location, nearest: false) else { return }

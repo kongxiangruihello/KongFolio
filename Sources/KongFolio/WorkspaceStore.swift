@@ -4,7 +4,7 @@ import Foundation
 import UniformTypeIdentifiers
 
 /// One tab: a PDF/image document workspace or a Markdown note being edited.
-@MainActor enum OpenTab: Identifiable {
+@MainActor enum OpenTab: @preconcurrency Identifiable {
     case document(Workspace)
     case note(MarkdownNote)
 
@@ -44,6 +44,20 @@ import UniformTypeIdentifiers
 
     var activeTab: OpenTab? { tabs.first { $0.id == selectedID } }
     var activeWorkspace: Workspace? { activeTab?.workspace }
+
+    /// With two documents side by side, the one the reader last clicked in; nil or the active tab otherwise.
+    @Published private(set) var focusedID: UUID?
+
+    /// The document that marking, excerpting and undo commands act on: the clicked pane when reading side by side.
+    var commandWorkspace: Workspace? {
+        guard let active = activeWorkspace else { return nil }
+        if let partner = active.splitPartner, partner.id == focusedID { return partner }
+        return active
+    }
+
+    func focus(_ workspace: Workspace) {
+        if focusedID != workspace.id { focusedID = workspace.id }
+    }
     var activeNote: MarkdownNote? { activeTab?.note }
     var canSave: Bool {
         if let workspace = activeWorkspace { return workspace.count > 0 && !workspace.busy }
@@ -53,8 +67,8 @@ import UniformTypeIdentifiers
         if let workspace = activeWorkspace { return workspace.count > 0 && !workspace.busy }
         return activeNote != nil
     }
-    var canUndo: Bool { activeWorkspace.map { $0.canUndo && !$0.busy } ?? (activeNote != nil) }
-    var canRedo: Bool { activeWorkspace.map { $0.canRedo && !$0.busy } ?? (activeNote != nil) }
+    var canUndo: Bool { commandWorkspace.map { $0.canUndo && !$0.busy } ?? (activeNote != nil) }
+    var canRedo: Bool { commandWorkspace.map { $0.canRedo && !$0.busy } ?? (activeNote != nil) }
 
     // MARK: Session
 
@@ -132,6 +146,7 @@ import UniformTypeIdentifiers
     func select(_ id: UUID) {
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
         selectedID = id
+        focusedID = id
         forwarding = tab.changes.sink { [weak self] _ in self?.objectWillChange.send() }
         tab.workspace?.lastActive = Date()
         tab.workspace?.ensureLoaded()
@@ -155,7 +170,7 @@ import UniformTypeIdentifiers
         active.splitOffset = partner.selection - active.selection
     }
 
-    func closeSplit() { activeWorkspace?.splitPartner = nil }
+    func closeSplit() { activeWorkspace?.splitPartner = nil; focusedID = selectedID }
 
     func selectNext() { step(1) }
     func selectPrevious() { step(-1) }
@@ -307,12 +322,12 @@ import UniformTypeIdentifiers
     }
 
     func undoActive() {
-        if let workspace = activeWorkspace { workspace.undo() }
+        if let workspace = commandWorkspace { workspace.undo() }
         else { activeNote?.textView?.undoManager?.undo() }
     }
 
     func redoActive() {
-        if let workspace = activeWorkspace { workspace.redo() }
+        if let workspace = commandWorkspace { workspace.redo() }
         else { activeNote?.textView?.undoManager?.redo() }
     }
 }

@@ -99,4 +99,51 @@ final class CompressTests: XCTestCase {
         XCTAssertFalse(report.smaller)
         XCTAssertTrue(report.summary.contains("没有找到可以压缩的大图片页面"))
     }
+
+    func testPagesWithMarksCanBeLeftAlone() throws {
+        func marked() throws -> PDFDocument {
+            let (document, _) = try makeScan()
+            let mark = PDFAnnotation(bounds: CGRect(x: 60, y: 395, width: 200, height: 24), forType: .highlight, withProperties: nil)
+            mark.color = NSColor(srgbRed: 1, green: 0.9, blue: 0, alpha: 0.4)
+            try document.page(at: 0).unwrap("无页面").addAnnotation(mark)
+            return document
+        }
+        let scan = PDFCompressor.scan(try marked())
+        XCTAssertEqual(scan.pictureHeavy, 1)
+        XCTAssertEqual(scan.marked, 1)
+
+        let kept = try PDFCompressor.compress(try marked(), level: .standard, original: 1, keepMarked: true) { _ in }
+        XCTAssertEqual(kept.report.rebuilt, 0)
+        XCTAssertFalse(kept.report.smaller)
+
+        let redrawn = try PDFCompressor.compress(try marked(), level: .standard, original: 10_000_000, keepMarked: false) { _ in }
+        XCTAssertEqual(redrawn.report.rebuilt, 1)
+    }
+
+    /// Pictures wrapped in a group (a transparency layer is written as a form XObject) are still found.
+    func testPicturesInsideAGroupAreFound() throws {
+        let width = 1200, height = 1500
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        var seed: UInt32 = 99
+        for index in 0..<(width * height) {
+            seed = seed &* 1664525 &+ 1013904223
+            let value = UInt8(120 + Int((seed >> 24) % 20))
+            pixels[index * 4] = value; pixels[index * 4 + 1] = value; pixels[index * 4 + 2] = value; pixels[index * 4 + 3] = 255
+        }
+        let picture = pixels.withUnsafeMutableBytes { raw in
+            CGContext(data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!.makeImage()!
+        }
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 595, height: 842)
+        let context = CGContext(consumer: CGDataConsumer(data: data)!, mediaBox: &box, nil)!
+        context.beginPDFPage(nil)
+        context.setAlpha(0.9)
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        context.draw(picture, in: box)
+        context.endTransparencyLayer()
+        context.endPDFPage()
+        context.closePDF()
+        let document = try PDFDocument(data: data as Data).unwrap("无法读取")
+        XCTAssertTrue(PDFCompressor.imageBytes(try document.page(at: 0).unwrap("无页面")) > PDFCompressor.minimumImageBytes)
+    }
 }
