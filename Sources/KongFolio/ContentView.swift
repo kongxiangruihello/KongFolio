@@ -376,6 +376,8 @@ struct ContentView: View {
             Picker("渲染精度", selection: $workspace.ocrSettings.dpi) {
                 ForEach(OCRSettings.dpiChoices, id: \.self) { Text("\($0) DPI").tag($0) }
             }
+            Toggle("忽略已有的文字层，整页重新识别", isOn: Binding(get: { workspace.ocrSettings.ignoresTextLayer }, set: { workspace.ocrSettings.ignoresTextLayer = $0 }))
+            Text("有些扫描件（如汉王 OCR 处理过的）文字层里只有标题，程序会当作“已有文字”而跳过。遇到这种书请打开此项。原有的少量文字会留在页面里，导出时不受影响。").font(.caption).foregroundStyle(.secondary)
             Toggle("竖排（实验）", isOn: $workspace.ocrSettings.vertical)
             if workspace.ocrSettings.vertical {
                 Text("按列从右到左切分，每列转成横行后识别，再逐字放回原位。适合字距清楚的刻本、排印本；夹注、双行小字和插图可能识别不全，请用“检查当前页区域”核对。").font(.caption).foregroundStyle(.secondary)
@@ -385,7 +387,7 @@ struct ContentView: View {
                 Button("识别选中页") { workspace.ocr(selectedOnly: true) }
             }
             .disabled(workspace.count == 0)
-            Text("文字少于 \(workspace.ocrSettings.minimumTextCharacters) 个字符的页面会被识别；原有标注会被固化，执行前会提示。").font(.caption).foregroundStyle(.secondary)
+            Text(workspace.ocrSettings.ignoresTextLayer ? "所有选定的页面都会被识别；原有标注会被固化，执行前会提示。" : "文字少于 \(workspace.ocrSettings.minimumTextCharacters) 个字符的页面会被识别；原有标注会被固化，执行前会提示。").font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button("检查当前页区域") { workspace.inspectOCR() }
                 Button("OCR 质量检查…") { workspace.openOCRQuality() }

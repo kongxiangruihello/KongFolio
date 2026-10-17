@@ -32,7 +32,41 @@ enum VerticalText {
             guard drawn else { throw FolioError(message: "竖排识别：无法读取页面图像。") }
             pixels = buffer
         }
+        init(width: Int, height: Int, pixels: [UInt8]) {
+            self.width = width
+            self.height = height
+            self.pixels = pixels
+        }
         subscript(x: Int, y: Int) -> UInt8 { pixels[y * width + x] }
+    }
+
+    /// Paints over the rules of the printed frame (版框, 界栏) and dark scanner edges. A rule that runs across the
+    /// whole page joins every column of text into one, and then no column can be found at all. Rows that are dark over
+    /// more than half of the width and columns dark over more than 65 % of the height are rules: text never gets there
+    /// (the densest text row of a real page measured 31 %, its densest column 46 %). A page that is mostly dark, where
+    /// that would wipe out a large part of the picture, is left alone.
+    static func clearingFrame(_ gray: Gray, level: UInt8) -> Gray {
+        let width = gray.width, height = gray.height
+        var rowInk = [Int](repeating: 0, count: height), columnInk = [Int](repeating: 0, count: width)
+        for y in 0..<height { for x in 0..<width where gray[x, y] < level { rowInk[y] += 1; columnInk[x] += 1 } }
+        let rules = rowInk.map { $0 * 2 > width }
+        let bars = columnInk.map { $0 * 100 > height * 65 }
+        let ruleCount = rules.filter { $0 }.count, barCount = bars.filter { $0 }.count
+        guard ruleCount + barCount > 0, ruleCount * 100 <= height * 15, barCount * 100 <= width * 15 else { return gray }
+        func grown(_ flags: [Bool], by amount: Int) -> [Bool] {
+            var result = flags
+            for index in flags.indices where flags[index] {
+                for step in -amount...amount where result.indices.contains(index + step) { result[index + step] = true }
+            }
+            return result
+        }
+        let margin = max(2, min(width, height) / 700)
+        let clearRows = grown(rules, by: margin), clearColumns = grown(bars, by: margin)
+        var pixels = gray.pixels
+        for y in 0..<height {
+            for x in 0..<width where clearRows[y] || clearColumns[x] { pixels[y * width + x] = 255 }
+        }
+        return Gray(width: width, height: height, pixels: pixels)
     }
 
     /// Otsu's threshold on the grayscale histogram, limited so near-blank pages don't pick up paper texture.
@@ -85,8 +119,9 @@ enum VerticalText {
     }
 
     /// Finds text columns (right to left) and the character cells inside each.
-    static func layout(_ gray: Gray) -> [Column] {
-        let level = threshold(gray)
+    static func layout(_ original: Gray) -> [Column] {
+        let level = threshold(original)
+        let gray = clearingFrame(original, level: level)
         var columnInk = [Int](repeating: 0, count: gray.width)
         for y in 0..<gray.height { for x in 0..<gray.width where gray[x, y] < level { columnInk[x] += 1 } }
         var columns = runs(columnInk, minimum: max(1, gray.height / 400))

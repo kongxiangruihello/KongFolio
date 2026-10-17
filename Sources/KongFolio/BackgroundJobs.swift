@@ -106,7 +106,7 @@ enum BackgroundJobs {
                 switch spec.operation {
                 case .ocr:
                     // A stray header or scanner stamp no longer makes a scanned page count as "already has text".
-                    if spec.forceOCR || textCharacterCount(page) < spec.ocr.minimumTextCharacters {
+                    if spec.forceOCR || spec.ocr.ignoresTextLayer || textCharacterCount(page) < spec.ocr.minimumTextCharacters {
                         originals[index] = DocumentServices.subset(doc, indexes: [index]).dataRepresentation()
                         let lines = try recognize(page, settings: spec.ocr)
                         regions[index] = lines
@@ -237,7 +237,7 @@ extension Workspace {
             guard confirm("重新识别会从 OCR 前的页面重新生成文本层", "这些页面在上次 OCR 后新增的标注会被替换，操作可撤销。", action: "重新识别") else { return }
         } else {
             // OCR redraws pages with their annotations burned in; say so before it happens.
-            let targets = pages.filter { index in document.page(at: index).map { BackgroundJobs.textCharacterCount($0) < ocrSettings.minimumTextCharacters } ?? false }
+            let targets = pages.filter { index in ocrSettings.ignoresTextLayer || (document.page(at: index).map { BackgroundJobs.textCharacterCount($0) < ocrSettings.minimumTextCharacters } ?? false) }
             let flattened = targets.reduce(0) { total, index in total + (document.page(at: index).map { Workspace.visibleAnnotations(on: $0).count } ?? 0) }
             if flattened > 0 {
                 guard confirm("OCR 会把 \(flattened) 个标注固化到页面中", "固化后的高亮、笔记和手写不能再编辑或移动，也不会出现在摘录列表里。建议先 OCR、再批注。操作可撤销。", action: "继续识别") else { return }
