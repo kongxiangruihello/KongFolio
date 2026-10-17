@@ -7,6 +7,8 @@ enum LayoutKeys {
     static let board = "KongFolio.showBoard"
     /// Colour the source text of an excerpt in the document (on by default).
     static let tintSources = "KongFolio.tintSources"
+    /// Clicking an excerpt card shows its source document beside the current one (on by default).
+    static let cardsBeside = "KongFolio.cardsBeside"
 }
 
 /// How the interface adapts to the window width. Panels the user switched on are hidden while the window is too

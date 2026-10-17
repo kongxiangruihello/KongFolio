@@ -7,6 +7,7 @@ struct BoardView: View {
     @State private var connecting = false
     @State private var firstEnd: UUID?
     @AppStorage(LayoutKeys.tintSources) private var tintSources = true
+    @AppStorage(LayoutKeys.cardsBeside) private var cardsBeside = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -66,6 +67,7 @@ struct BoardView: View {
                     Button("按原文顺序整理") { board.arrangeBySource() }.disabled(!board.hasContent)
                     Button("撤销整理") { board.undoArrangement() }.disabled(!board.canUndoArrangement)
                     Toggle("摘录后给原文着色", isOn: $tintSources)
+                    Toggle("点卡片时在右栏打开原文", isOn: $cardsBeside)
                     Divider()
                     Button("导出 Markdown…") { board.exportMarkdown() }.disabled(!board.hasContent)
                     Divider()

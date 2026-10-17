@@ -66,3 +66,6 @@ jobs:
           name: ci-logs-${{ matrix.os }}
           path: ci-logs
           if-no-files-found: ignore
+      - name: Failure summary
+        if: always()
+        run: ./scripts/ci-summary.sh ci-logs ${{ matrix.os }}

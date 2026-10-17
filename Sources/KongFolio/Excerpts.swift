@@ -199,15 +199,21 @@ extension Workspace {
 }
 
 extension WorkspaceStore {
-    /// Takes the reader to a card's source: the tab that already shows the file, or a new tab that opens it.
-    /// Returns false when the file cannot be found.
-    @discardableResult func reveal(_ source: SourceRef) -> Bool {
+    /// Takes the reader to a card's source. By default (setting `cardsBeside`) the source document is shown in the right
+    /// pane next to the document in front, so the reader keeps their place; otherwise the tab that already shows the file
+    /// is brought to the front, or a new tab opens it. Returns false when the file cannot be found.
+    @discardableResult func reveal(_ source: SourceRef, beside: Bool? = nil) -> Bool {
         guard !source.path.isEmpty else {
             present(FolioError(message: "这张卡片的来源文档没有保存为文件，无法跳转。"))
             return false
         }
+        let wantsBeside = beside ?? (UserDefaults.standard.object(forKey: LayoutKeys.cardsBeside) as? Bool ?? true)
         let position = source.position
         if let workspace = tabs.compactMap(\.workspace).first(where: { $0.matches(path: source.path) }) {
+            if wantsBeside, let front = activeWorkspace, front.count > 0, front.id != workspace.id {
+                showBeside(workspace, source: source, in: front)
+                return true
+            }
             if workspace.count == 0 { workspace.pendingView = position; workspace.pendingReveal = source }
             select(workspace.id)
             if workspace.count > 0 { workspace.go(to: position, highlighting: source.rects, anchor: source.anchor) }
@@ -217,15 +223,39 @@ extension WorkspaceStore {
             present(FolioError(message: "找不到原文件：\(source.path)"))
             return false
         }
+        let front = activeWorkspace
+        let besideFront = wantsBeside && (front?.count ?? 0) > 0
         let target: Workspace
-        if let current = activeWorkspace, current.count == 0, !current.busy, current.sourceURL == nil, current.projectURL == nil { target = current } else { target = addWorkspace() }
+        if !besideFront, let current = front, current.count == 0, !current.busy, current.sourceURL == nil, current.projectURL == nil { target = current } else { target = addWorkspace() }
         let url = URL(fileURLWithPath: source.path)
         if url.pathExtension.lowercased() == "kongfolio" { target.projectURL = url } else { target.sourceURL = url }
         target.pendingView = position
         target.pendingReveal = source
-        select(target.id)
-        target.load([url])
+        if besideFront, let front {
+            // The new tab opens in the background; the document in front stays in front.
+            select(front.id)
+            showBeside(target, source: source, in: front)
+            target.load([url])
+        } else {
+            select(target.id)
+            target.load([url])
+        }
         return true
+    }
+
+    /// Shows `workspace` in the right pane of `front` and takes it to the card's place.
+    private func showBeside(_ workspace: Workspace, source: SourceRef, in front: Workspace) {
+        workspace.lastActive = Date()
+        front.splitPartner = workspace
+        focus(workspace)
+        if workspace.count == 0 {
+            workspace.pendingView = source.position
+            workspace.pendingReveal = source
+            workspace.ensureLoaded()
+        } else {
+            // The pane may have been created just now; wait until its view shows the document, then go to the place.
+            workspace.revealWhenReady(source)
+        }
     }
 
     /// Wires the workspace to the documents: deleting or recolouring a card follows in the document's highlight.

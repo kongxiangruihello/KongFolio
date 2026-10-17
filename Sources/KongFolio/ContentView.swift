@@ -478,6 +478,12 @@ struct ContentView: View {
                         SignatureThumbnail(template: template)
                         Button(template.name) { workspace.beginPlacing(template) }.buttonStyle(.plain).lineLimit(1)
                         Spacer()
+                        Menu {
+                            ForEach(workspace.allSignaturePositions) { position in
+                                Button(position.name) { workspace.placeSignature(template, at: position) }
+                            }
+                        } label: { Image(systemName: "scope") }
+                        .menuStyle(.borderlessButton).fixedSize().help("放到已记住的位置")
                         Button { workspace.removeSignature(template.id) } label: { Image(systemName: "trash") }
                     }
                 }
@@ -488,6 +494,24 @@ struct ContentView: View {
                     HStack {
                         Text("大小")
                         Slider(value: Binding(get: { workspace.signatureWidth }, set: { workspace.setSignatureWidth($0) }), in: 0.08...0.8)
+                    }
+                    Menu("位置模板") {
+                        ForEach(workspace.allSignaturePositions) { position in
+                            Button(position.name) { if let template = workspace.placingSignature { workspace.placeSignature(template, at: position) } }
+                        }
+                        Divider()
+                        Menu("记住当前位置为") {
+                            ForEach(SignaturePosition.Page.allCases, id: \.self) { page in
+                                Button(page.label) { workspace.rememberSignaturePosition(as: page) }
+                            }
+                        }
+                        if !workspace.signaturePositions.isEmpty {
+                            Menu("删除位置") {
+                                ForEach(workspace.signaturePositions) { position in
+                                    Button(position.name) { workspace.removeSignaturePosition(position.id) }
+                                }
+                            }
+                        }
                     }
                     HStack {
                         Button("放置到页面") { workspace.confirmSignaturePlacement() }
