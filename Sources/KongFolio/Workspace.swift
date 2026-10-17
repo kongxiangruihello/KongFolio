@@ -65,6 +65,9 @@ import UniformTypeIdentifiers
     @Published var annotationColor = Color.blue
     @Published var showCompress = false
     @Published var showCrop = false
+    @Published var showWordExport = false
+    @Published var wordOptions = WordExportOptions()
+    @Published var wordScope = CropScope.all
     @Published var cropOdd = CropMargins()
     @Published var cropEven = CropMargins()
     @Published var cropSeparate = false

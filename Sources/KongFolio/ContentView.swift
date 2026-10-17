@@ -28,6 +28,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showExport) { ExportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showCompress) { CompressSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showCrop) { CropSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showWordExport) { WordExportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRReview) { OCRReview(workspace: workspace) }
         .sheet(isPresented: $workspace.showTools) { quickTools }
         .sheet(isPresented: $workspace.showImportOrder) { importOrder }
@@ -244,6 +245,7 @@ struct ContentView: View {
         Button("TIFF · 当前页") { workspace.exportImage(.tiff) }
         Button("PNG · 全部页面") { workspace.exportBatch(split: false) }
         Divider()
+        Button("Word（.docx）· 文字与页面图片…") { workspace.openWordExport() }
         Button("TXT") { workspace.exportText(markdown: false) }
         Button("Markdown · 全文") { workspace.exportText(markdown: true) }
         Button("Markdown · 摘录与笔记") { workspace.exportNotes() }
