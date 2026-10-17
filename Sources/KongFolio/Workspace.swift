@@ -71,6 +71,8 @@ import UniformTypeIdentifiers
     @Published var compressLevel = CompressLevel.standard
     /// Pages that carry annotations or links are left as they are instead of being redrawn.
     @Published var compressKeepMarked = true
+    @Published var compressUseTarget = false
+    @Published var compressTargetMB = 5.0
     /// Pages with large pictures, and how many of them carry annotations or links (set when the compress sheet opens).
     @Published var compressScan: (pictureHeavy: Int, marked: Int)?
     /// The filter chosen in the annotation list, kept while switching between tabs.

@@ -146,4 +146,53 @@ final class CompressTests: XCTestCase {
         let document = try PDFDocument(data: data as Data).unwrap("无法读取")
         XCTAssertTrue(PDFCompressor.imageBytes(try document.page(at: 0).unwrap("无页面")) > PDFCompressor.minimumImageBytes)
     }
+
+    // MARK: Target size
+
+    func testTargetSizeStopsAtTheFirstStepThatFits() throws {
+        let (_, original) = try makeScan()
+        let target = original.count / 2
+        let (data, report) = try PDFCompressor.compress(source: original, targetBytes: target) { _ in }
+        XCTAssertTrue(data.count <= target)
+        XCTAssertTrue(report.reachedTarget)
+        XCTAssertTrue(report.summary.contains("已达到目标"))
+        XCTAssertNotNil(PDFDocument(data: data))
+    }
+
+    func testTargetSizeTriesStrongerSettingsAndReportsWhenItCannotFit() throws {
+        let (_, original) = try makeScan()
+        let standard = try PDFCompressor.compress(try makeScan().document, level: .standard, original: original.count) { _ in }
+        // A target below what the standard step gives forces a later step; one of 1 byte can never be met.
+        let tighter = try PDFCompressor.compress(source: original, targetBytes: standard.data.count - 1) { _ in }
+        XCTAssertTrue(tighter.report.after < standard.data.count || !tighter.report.reachedTarget)
+        let impossible = try PDFCompressor.compress(source: original, targetBytes: 1) { _ in }
+        XCTAssertFalse(impossible.report.reachedTarget)
+        XCTAssertTrue(impossible.report.smaller)
+        XCTAssertTrue(impossible.report.summary.contains("未能压到目标"))
+        XCTAssertTrue(impossible.data.count <= standard.data.count)
+    }
+
+    func testTargetLargerThanTheFileLeavesItAlone() throws {
+        let (_, original) = try makeScan()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let destination = folder.appendingPathComponent("out.pdf")
+        let result = try BackgroundJobs.run(JobSpec(operation: .compress, source: original, pages: [0, 1], destination: destination, revision: UUID(), compressTarget: original.count + 1000)) { _ in }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+        XCTAssertTrue(result.message.contains("本来就不超过"))
+    }
+
+    func testTargetJobWritesAFileThatFits() throws {
+        let (_, original) = try makeScan()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let destination = folder.appendingPathComponent("out.pdf")
+        let target = original.count / 2
+        let result = try BackgroundJobs.run(JobSpec(operation: .compress, source: original, pages: [0, 1], destination: destination, revision: UUID(), compressTarget: target)) { _ in }
+        let size = try Data(contentsOf: destination).count
+        XCTAssertTrue(size <= target)
+        XCTAssertTrue(result.message.contains("已达到目标"))
+    }
 }

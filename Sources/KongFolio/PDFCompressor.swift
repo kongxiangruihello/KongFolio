@@ -43,17 +43,33 @@ struct CompressReport: Equatable {
     var kept: Int
     /// True when PDFKit re-encoded the pictures itself (the light level) instead of pages being redrawn here.
     var viaPDFKit = false
+    /// The size the reader asked for (bytes), and whether leaving annotated pages alone held the result back.
+    var target: Int? = nil
+    var annotatedPagesKept = false
 
     var smaller: Bool { after < before }
+    var reachedTarget: Bool { target.map { after <= $0 } ?? true }
+
+    private static func text(_ bytes: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file) }
 
     var summary: String {
-        let sizes = "\(ByteCountFormatter.string(fromByteCount: Int64(before), countStyle: .file)) → \(ByteCountFormatter.string(fromByteCount: Int64(after), countStyle: .file))"
+        let sizes = "\(Self.text(before)) → \(Self.text(after))"
+        if let target, before <= target { return "文件本来就不超过 \(Self.text(target))（\(Self.text(before))），未生成压缩文件" }
         guard smaller else {
             if !viaPDFKit && rebuilt == 0 { return "没有找到可以压缩的大图片页面，未生成压缩文件" }
             return "此文件没有变小（\(sizes)），未生成压缩文件"
         }
         let saved = before > 0 ? Int(((1 - Double(after) / Double(before)) * 100).rounded()) : 0
-        return "已压缩，减少 \(saved)%：\(sizes)" + (rebuilt + kept > 0 && rebuilt > 0 ? "（重绘 \(rebuilt) 页，原样保留 \(kept) 页）" : "")
+        var message = "已压缩，减少 \(saved)%：\(sizes)" + (rebuilt + kept > 0 && rebuilt > 0 ? "（重绘 \(rebuilt) 页，原样保留 \(kept) 页）" : "")
+        if let target {
+            if after <= target {
+                message += "；已达到目标 \(Self.text(target))"
+            } else {
+                message += "；未能压到目标 \(Self.text(target))，这是最低画质下的结果"
+                if annotatedPagesKept { message += "（带批注或链接的页面按设置未压缩，关闭该选项可能再小一些）" }
+            }
+        }
+        return message
     }
 }
 
@@ -194,6 +210,35 @@ enum PDFCompressor {
             progress(1)
             return (data, CompressReport(before: original, after: data.count, rebuilt: 0, kept: document.pageCount, viaPDFKit: true))
         }
+        return try redraw(document, dpi: level.dpi, quality: level.quality, original: original, keepMarked: keepMarked, progress: progress)
+    }
+
+    /// Picture resolution / JPEG quality steps tried, in order, when the reader names a size to reach.
+    static let targetSteps: [(dpi: Int, quality: Double)] = [(150, 0.6), (120, 0.5), (100, 0.42), (80, 0.35), (60, 0.3)]
+
+    /// Shrinks step by step until the file is no larger than `targetBytes`, and returns the first result that is,
+    /// otherwise the smallest one found. Every step starts again from `source`, so quality never degrades twice.
+    static func compress(source: Data, targetBytes: Int, keepMarked: Bool = false, progress: (Double) -> Void) throws -> (data: Data, report: CompressReport) {
+        guard PDFDocument(data: source) != nil else { throw FolioError(message: "无法读取要压缩的文档。") }
+        var best: (data: Data, report: CompressReport)?
+        for (index, step) in targetSteps.enumerated() {
+            try Task.checkCancellation()
+            guard let document = PDFDocument(data: source) else { break }
+            let steps = Double(targetSteps.count)
+            let result = try redraw(document, dpi: step.dpi, quality: step.quality, original: source.count, keepMarked: keepMarked) { progress((Double(index) + $0) / steps) }
+            // No page can be redrawn smaller: lower settings will not change that.
+            if result.report.rebuilt == 0 { best = best ?? result; break }
+            if best == nil || result.report.after < best!.report.after { best = result }
+            if result.report.after <= targetBytes { break }
+        }
+        guard var chosen = best else { throw FolioError(message: "压缩失败。") }
+        chosen.report.target = targetBytes
+        chosen.report.annotatedPagesKept = keepMarked && chosen.report.after > targetBytes && chosen.report.kept > 0
+        progress(1)
+        return chosen
+    }
+
+    private static func redraw(_ document: PDFDocument, dpi: Int, quality: Double, original: Int, keepMarked: Bool, progress: (Double) -> Void) throws -> (data: Data, report: CompressReport) {
         let outline = ReadingServices.outline(document)
         var rebuilt = 0
         let count = document.pageCount
@@ -205,7 +250,7 @@ enum PDFCompressor {
                 if keepMarked && hasMarks(page) { return }
                 let pictures = imageBytes(page)
                 if pictures >= minimumImageBytes {
-                    let candidate = try rebuild(page, dpi: level.dpi, quality: level.quality)
+                    let candidate = try rebuild(page, dpi: dpi, quality: quality)
                     let size = candidate.dataRepresentation?.count ?? Int.max
                     if Double(size) < Double(pictures) * requiredRatio {
                         document.removePage(at: index)
