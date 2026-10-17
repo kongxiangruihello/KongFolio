@@ -12,25 +12,77 @@ enum OrderedText {
         return singles * 100 >= lines.count * 60
     }
 
-    /// The text of each column in reading order, or nil when the regions are not those of a vertical page.
-    static func verticalColumns(_ lines: [RecognizedLine]) -> [String]? {
+    /// One character of a vertical page in reading order, with where it is (fractions of the page, origin bottom-left)
+    /// and which column of the page it is in. `approximate` characters share the box of their whole column.
+    struct Glyph: Equatable {
+        var text: String
+        var box: CGRect
+        var column: Int
+        var approximate: Bool
+    }
+
+    /// The characters of a vertical page in reading order, or nil when the regions are not those of a vertical page.
+    static func characters(_ lines: [RecognizedLine]) -> [Glyph]? {
         guard isVertical(lines) else { return nil }
-        var columns: [String] = []
+        var result: [Glyph] = []
+        var column = -1
         var currentX: CGFloat?
         for line in lines {
             let text = line.text.filter { !$0.isWhitespace }
             guard !text.isEmpty else { continue }
             if line.approximate == true || line.text.count != 1 {
-                columns.append(text)
+                column += 1
                 currentX = nil
-            } else if let x = currentX, abs(line.box.minX - x) < max(line.box.width, 0.001) * 0.5, !columns.isEmpty {
-                columns[columns.count - 1] += text
+                for character in text { result.append(Glyph(text: String(character), box: line.box, column: column, approximate: true)) }
             } else {
-                columns.append(text)
-                currentX = line.box.minX
+                if column < 0 || currentX == nil || abs(line.box.minX - (currentX ?? 0)) >= max(line.box.width, 0.001) * 0.5 {
+                    column += 1
+                    currentX = line.box.minX
+                }
+                result.append(Glyph(text: text, box: line.box, column: column, approximate: false))
             }
         }
+        return result
+    }
+
+    /// The text of each column in reading order, or nil when the regions are not those of a vertical page.
+    static func verticalColumns(_ lines: [RecognizedLine]) -> [String]? {
+        guard let characters = characters(lines) else { return nil }
+        var columns: [String] = []
+        var last = -1
+        for character in characters {
+            if character.column != last { columns.append(""); last = character.column }
+            columns[columns.count - 1] += character.text
+        }
         return columns
+    }
+
+    /// The text of the characters `isIncluded` accepts, a line per column (what copying a selection should give).
+    static func text(of characters: [Glyph], including isIncluded: (Glyph) -> Bool) -> String {
+        var lines: [String] = []
+        var last = -1
+        for character in characters where isIncluded(character) {
+            if character.column != last { lines.append(""); last = character.column }
+            lines[lines.count - 1] += character.text
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Fractions of the page as it is shown (Vision's boxes) → a rectangle in page coordinates.
+    static func pageRect(forFraction box: CGRect, cropBox: CGRect, rotation: Int) -> CGRect {
+        let quarterTurn = abs(rotation % 180) == 90
+        let width = quarterTurn ? cropBox.height : cropBox.width, height = quarterTurn ? cropBox.width : cropBox.height
+        let shown = CGRect(x: box.minX * width, y: box.minY * height, width: box.width * width, height: box.height * height)
+        return SignatureStamp.originalRect(shown, pageSize: cropBox.size, rotation: rotation).offsetBy(dx: cropBox.minX, dy: cropBox.minY)
+    }
+
+    /// A rectangle in page coordinates → fractions of the page as it is shown.
+    static func fraction(ofPageRect rect: CGRect, cropBox: CGRect, rotation: Int) -> CGRect {
+        let quarterTurn = abs(rotation % 180) == 90
+        let width = quarterTurn ? cropBox.height : cropBox.width, height = quarterTurn ? cropBox.width : cropBox.height
+        guard width > 0, height > 0 else { return .zero }
+        let shown = SignatureStamp.uprightRect(rect.offsetBy(dx: -cropBox.minX, dy: -cropBox.minY), pageSize: cropBox.size, rotation: rotation)
+        return CGRect(x: shown.minX / width, y: shown.minY / height, width: shown.width / width, height: shown.height / height)
     }
 
     /// Paragraphs of a page for an export. Vertical pages use the stored order (one paragraph per column when
