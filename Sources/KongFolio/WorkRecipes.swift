@@ -2,7 +2,7 @@ import AppKit
 import PDFKit
 
 /// Page ranges as people write them: "1-20, 25, 40-" (page numbers start at 1; "40-" runs to the last page).
-enum PageRange {
+enum PageSpan {
     /// Zero-based page indexes in ascending order, nil when the text cannot be read. Empty text means every page.
     static func parse(_ text: String, pageCount: Int) -> [Int]? {
         let cleaned = text.replacingOccurrences(of: "，", with: ",").replacingOccurrences(of: "、", with: ",")
@@ -129,7 +129,7 @@ enum BatchPipeline {
         guard var document = PDFDocument(data: data) else { throw FolioError(message: "无法读取这个 PDF。") }
         if document.isLocked, !document.unlock(withPassword: "") { throw FolioError(message: "文件需要密码才能打开。") }
         guard document.pageCount > 0 else { throw FolioError(message: "这个 PDF 没有页面。") }
-        guard let keep = PageRange.parse(recipe.pageRange, pageCount: document.pageCount) else { throw FolioError(message: "页码范围“\(recipe.pageRange)”无法理解，请写成 1-20, 25, 40- 这样。") }
+        guard let keep = PageSpan.parse(recipe.pageRange, pageCount: document.pageCount) else { throw FolioError(message: "页码范围“\(recipe.pageRange)”无法理解，请写成 1-20, 25, 40- 这样。") }
         guard !keep.isEmpty else { throw FolioError(message: "页码范围“\(recipe.pageRange)”超出了这个文件的页数（\(document.pageCount) 页）。") }
         // The outline is read before the pages are picked, and follows them to their new places.
         let sourceOutline = ReadingServices.outline(document)

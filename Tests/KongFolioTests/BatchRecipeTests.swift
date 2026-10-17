@@ -121,21 +121,21 @@ final class BatchRecipeTests: XCTestCase {
 
 final class PageRangeTests: XCTestCase {
     func testRangesAreReadAsPeopleWriteThem() {
-        XCTAssertEqual(PageRange.parse("", pageCount: 5) ?? [], [0, 1, 2, 3, 4])
-        XCTAssertEqual(PageRange.parse("1-3, 5", pageCount: 10) ?? [], [0, 1, 2, 4])
-        XCTAssertEqual(PageRange.parse("8-", pageCount: 10) ?? [], [7, 8, 9])
-        XCTAssertEqual(PageRange.parse("-2", pageCount: 10) ?? [], [0, 1])
-        XCTAssertEqual(PageRange.parse("３，５－６", pageCount: 3) == nil, true)
-        XCTAssertEqual(PageRange.parse("2，4－5", pageCount: 10) ?? [], [1, 3, 4])
-        XCTAssertEqual(PageRange.parse("9-20", pageCount: 10) ?? [], [8, 9])
-        XCTAssertEqual(PageRange.parse("50", pageCount: 10) ?? [-1], [])
+        XCTAssertEqual(PageSpan.parse("", pageCount: 5) ?? [], [0, 1, 2, 3, 4])
+        XCTAssertEqual(PageSpan.parse("1-3, 5", pageCount: 10) ?? [], [0, 1, 2, 4])
+        XCTAssertEqual(PageSpan.parse("8-", pageCount: 10) ?? [], [7, 8, 9])
+        XCTAssertEqual(PageSpan.parse("-2", pageCount: 10) ?? [], [0, 1])
+        XCTAssertEqual(PageSpan.parse("３，５－６", pageCount: 3) == nil, true)
+        XCTAssertEqual(PageSpan.parse("2，4－5", pageCount: 10) ?? [], [1, 3, 4])
+        XCTAssertEqual(PageSpan.parse("9-20", pageCount: 10) ?? [], [8, 9])
+        XCTAssertEqual(PageSpan.parse("50", pageCount: 10) ?? [-1], [])
     }
 
     func testNonsenseIsRejected() {
-        XCTAssertTrue(PageRange.parse("abc", pageCount: 10) == nil)
-        XCTAssertTrue(PageRange.parse("5-2", pageCount: 10) == nil)
-        XCTAssertTrue(PageRange.parse("0", pageCount: 10) == nil)
-        XCTAssertTrue(PageRange.parse("1-2-3", pageCount: 10) == nil)
+        XCTAssertTrue(PageSpan.parse("abc", pageCount: 10) == nil)
+        XCTAssertTrue(PageSpan.parse("5-2", pageCount: 10) == nil)
+        XCTAssertTrue(PageSpan.parse("0", pageCount: 10) == nil)
+        XCTAssertTrue(PageSpan.parse("1-2-3", pageCount: 10) == nil)
     }
 
     func testRecipesSavedByVersion013StillLoad() throws {
