@@ -10,6 +10,9 @@ struct SourceRef: Codable, Equatable {
     var pageLabel: String? = nil
     /// The selected lines (or the captured region) in page coordinates.
     var rects: [CGRect] = []
+    /// The first words of the excerpt as PDFKit reads them. If the page numbers have changed since (pages added or
+    /// removed), the excerpt is found again by this text.
+    var anchor: String? = nil
 
     var pageDescription: String {
         "第 \(page + 1) 页" + (pageLabel.map { $0 == String(page + 1) ? "" : "（印刷页码 \($0)）" } ?? "")
@@ -127,7 +130,14 @@ enum BoardGeometry {
     @Published var dirty = false
     @Published var error: String?
     @Published var status = ""
+    /// The card to show attention to (after an excerpt, or when its highlight in the document was clicked).
+    @Published var focusedID: UUID?
+    /// Called before a card is deleted / after its colour changed, so the highlight in the document can follow.
+    var onRemove: ((BoardCard) -> Void)?
+    var onColorChange: ((BoardCard) -> Void)?
     private var backupTask: Task<Void, Never>?
+    private var focusTask: Task<Void, Never>?
+    private var arrangementUndo: [UUID: CGPoint]?
 
     init(id: UUID = UUID(), title: String = "工作区", cards: [BoardCard] = [], links: [BoardLink] = [], fileURL: URL? = nil, dirty: Bool = false, storage: URL? = nil) {
         self.id = id
@@ -180,7 +190,7 @@ enum BoardGeometry {
 
     @discardableResult func addImage(_ data: Data, size: CGSize, source: SourceRef?, color: CardColor = .blue) -> UUID {
         let position = nextPosition()
-        let width = Board.cardWidth, aspect = size.width > 0 ? size.height / size.width : 0.6
+        let width = Board.cardWidth, aspect = Double(size.width > 0 ? size.height / size.width : 0.6)
         return append(BoardCard(kind: .image, imageData: data, source: source, x: position.x, y: position.y, width: width, height: min(420, max(100, (width - 20) * aspect + 70)), color: color))
     }
 
@@ -195,22 +205,74 @@ enum BoardGeometry {
         changed()
     }
 
-    func move(_ id: UUID, to point: CGPoint) { update(id) { $0.x = max(0, Double(point.x)); $0.y = max(0, Double(point.y)) } }
+    func move(_ id: UUID, to point: CGPoint) { arrangementUndo = nil; update(id) { $0.x = max(0, Double(point.x)); $0.y = max(0, Double(point.y)) } }
     func resize(_ id: UUID, to size: CGSize) {
         update(id) { $0.width = max(Board.minimumWidth, Double(size.width)); $0.height = max(Board.minimumHeight, Double(size.height)) }
     }
     func setText(_ id: UUID, _ text: String) { update(id) { $0.text = text } }
     func setComment(_ id: UUID, _ comment: String) { update(id) { $0.comment = comment } }
-    func setColor(_ id: UUID, _ color: CardColor) { update(id) { $0.color = color } }
+    func setColor(_ id: UUID, _ color: CardColor) {
+        update(id) { $0.color = color }
+        if let card = card(id) { onColorChange?(card) }
+    }
     func bringToFront(_ id: UUID) {
         guard let card = card(id), card.z < (cards.map(\.z).max() ?? 0) else { return }
         update(id) { $0.z = nextZ() }
     }
 
     func remove(_ id: UUID) {
+        if let card = card(id) { onRemove?(card) }
         cards.removeAll { $0.id == id }
         links.removeAll { $0.from == id || $0.to == id }
         changed()
+    }
+
+    /// An excerpt of the same words from the same place, so selecting it twice does not pile up duplicates.
+    func existingExcerpt(text: String, source: SourceRef?) -> BoardCard? {
+        cards.first { $0.kind == .text && $0.text == text && $0.source?.path == source?.path && $0.source?.page == source?.page }
+    }
+
+    func focus(_ id: UUID) {
+        focusedID = id
+        focusTask?.cancel()
+        focusTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            guard !Task.isCancelled else { return }
+            self?.focusedID = nil
+        }
+    }
+
+    // MARK: Arranging
+
+    /// One column per document, each in reading order (page, then top to bottom); notes without a source go last.
+    func arrangeBySource() {
+        guard !cards.isEmpty else { return }
+        arrangementUndo = Dictionary(uniqueKeysWithValues: cards.map { ($0.id, CGPoint(x: $0.x, y: $0.y)) })
+        var names: [String] = []
+        for card in cards.sorted(by: { $0.z < $1.z }) {
+            let name = card.source?.fileName ?? ""
+            if !names.contains(name) { names.append(name) }
+        }
+        if let blank = names.firstIndex(of: "") { names.append(names.remove(at: blank)) }
+        for (column, name) in names.enumerated() {
+            let group = cards.filter { ($0.source?.fileName ?? "") == name }.sorted {
+                let a = ($0.source?.page ?? Int.max, -($0.source?.rects.map(\.maxY).max() ?? 0)), b = ($1.source?.page ?? Int.max, -($1.source?.rects.map(\.maxY).max() ?? 0))
+                return a != b ? a < b : $0.z < $1.z
+            }
+            var y = 40.0
+            for card in group {
+                update(card.id) { $0.x = 40 + Double(column) * (Board.cardWidth + 30); $0.y = y }
+                y += card.height + 16
+            }
+        }
+    }
+
+    var canUndoArrangement: Bool { arrangementUndo != nil }
+
+    func undoArrangement() {
+        guard let positions = arrangementUndo else { return }
+        arrangementUndo = nil
+        for (id, point) in positions { update(id) { $0.x = Double(point.x); $0.y = Double(point.y) } }
     }
 
     // MARK: Links

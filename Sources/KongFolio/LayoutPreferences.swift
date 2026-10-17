@@ -5,6 +5,8 @@ enum LayoutKeys {
     static let sidebar = "KongFolio.showSidebar"
     static let inspector = "KongFolio.showInspector"
     static let board = "KongFolio.showBoard"
+    /// Colour the source text of an excerpt in the document (on by default).
+    static let tintSources = "KongFolio.tintSources"
 }
 
 /// How the interface adapts to the window width. Panels the user switched on are hidden while the window is too

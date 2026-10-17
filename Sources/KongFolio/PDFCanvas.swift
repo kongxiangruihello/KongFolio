@@ -62,6 +62,9 @@ final class DrawingPDFView: PDFView {
     private var moveStart = CGPoint.zero
     private var originalOrigin = CGPoint.zero
     private var didMove = false
+    /// The card of an excerpt colour that was pressed (a click without dragging shows the card in the workspace).
+    private var pressedCard: UUID?
+    private var pressMoved = false
     /// Rubber band of the region excerpt tool.
     private var regionStart: CGPoint?
     private lazy var regionView: NSView = {
@@ -116,6 +119,7 @@ final class DrawingPDFView: PDFView {
                 workspace.tool = .edit
                 return
             }
+            if let hit = page.annotation(at: point), let id = workspace.cardID(of: hit) { pressedCard = id; pressMoved = false } else { pressedCard = nil }
             super.mouseDown(with: event)
         case .edit:
             let hit = Workspace.visibleAnnotations(on: page).reversed().first { $0.bounds.insetBy(dx: -4, dy: -4).contains(point) }
@@ -148,6 +152,7 @@ final class DrawingPDFView: PDFView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if pressedCard != nil { pressMoved = true }
         if let start = regionStart {
             let current = convert(event.locationInWindow, from: nil)
             regionView.frame = CGRect(x: min(start.x, current.x), y: min(start.y, current.y), width: abs(current.x - start.x), height: abs(current.y - start.y))
@@ -191,6 +196,12 @@ final class DrawingPDFView: PDFView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if let id = pressedCard {
+            pressedCard = nil
+            super.mouseUp(with: event)
+            if !pressMoved { workspace?.focusCard(id) }
+            return
+        }
         if regionStart != nil {
             let rect = regionView.frame
             regionStart = nil

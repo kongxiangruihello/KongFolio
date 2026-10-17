@@ -39,6 +39,7 @@ import UniformTypeIdentifiers
         let folder = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
         self.storage = folder
         self.board = Board(storage: folder)
+        connectBoardToDocuments()
     }
 
     var activeTab: OpenTab? { tabs.first { $0.id == selectedID } }

@@ -71,6 +71,8 @@ import UniformTypeIdentifiers
     /// session, or unloaded to free memory. Selecting the tab loads it (`ensureLoaded`).
     @Published var needsLoad = false
     var pendingView: ViewPosition?
+    /// A card's source to show as soon as this tab has loaded.
+    var pendingReveal: SourceRef?
     var lastActive = Date()
     weak var pdfView: PDFView?
 
@@ -543,13 +545,18 @@ import UniformTypeIdentifiers
     }
 
     private func applyPendingView() {
-        guard let position = pendingView else { return }
-        pendingView = nil
-        selection = max(0, min(position.selection, count - 1))
-        selectedPages = [selection]
-        readingPoint = position.point
-        readingScale = position.scale
-        navigationToken = UUID()
+        if let position = pendingView {
+            pendingView = nil
+            selection = max(0, min(position.selection, count - 1))
+            selectedPages = [selection]
+            readingPoint = position.point
+            readingScale = position.scale
+            navigationToken = UUID()
+        }
+        if let reveal = pendingReveal {
+            pendingReveal = nil
+            revealWhenReady(reveal)
+        }
     }
 
     /// How this tab is written to the session file; nil for a tab with nothing to restore.
