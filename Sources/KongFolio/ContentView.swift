@@ -389,6 +389,7 @@ struct ContentView: View {
             HStack {
                 Button("识别全部") { workspace.ocr() }
                 Button("识别选中页") { workspace.ocr(selectedOnly: true) }
+                Button("继续识别") { workspace.ocr(resume: true) }.help("跳过已经识别过的页面，用于中断后接着做")
             }
             .disabled(workspace.count == 0)
             Text(workspace.ocrSettings.ignoresTextLayer ? "所有选定的页面都会被识别；原有标注会被固化，执行前会提示。" : "文字少于 \(workspace.ocrSettings.minimumTextCharacters) 个字符的页面会被识别；原有标注会被固化，执行前会提示。").font(.caption).foregroundStyle(.secondary)
