@@ -34,6 +34,30 @@ struct ContentView: View {
         .onChange(of: workspace.mode) { _, _ in workspace.resetImage(); workspace.scheduleRecovery() }
     }
 
+    private func splitShown(width: CGFloat) -> Bool {
+        workspace.splitPartner != nil && LayoutMetrics.showsSplit(width: width)
+    }
+
+    /// Lists the other open documents to read beside this one.
+    private func splitMenu(iconOnly: Bool) -> some View {
+        Menu {
+            let candidates = workspace.store?.splitCandidates ?? []
+            if candidates.isEmpty { Text("没有其他已打开的文档") }
+            ForEach(candidates, id: \.id) { other in
+                Button("与「\(other.displayName)」并排阅读") { workspace.store?.openSplit(with: other.id) }
+            }
+            if workspace.splitPartner != nil {
+                Divider()
+                Button("关闭并排阅读") { workspace.splitPartner = nil }
+            }
+        } label: {
+            if iconOnly { Image(systemName: "rectangle.split.2x1") } else { Label("并排", systemImage: "rectangle.split.2x1") }
+        }
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("把另一个已打开的文档放在右边，两份对照阅读")
+    }
+
     private func boardShown(width: CGFloat) -> Bool {
         workspace.store != nil && LayoutMetrics.showsBoard(preferred: showBoard, width: width)
     }
@@ -46,8 +70,12 @@ struct ContentView: View {
             HSplitView {
                 if LayoutMetrics.showsSidebar(preferred: showSidebar, width: width) { sidebar.frame(minWidth: 140, idealWidth: 180, maxWidth: 230) }
                 canvas.frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
+                if splitShown(width: width), let partner = workspace.splitPartner {
+                    SplitPane(primary: workspace, partner: partner) { workspace.splitPartner = nil }
+                        .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
+                }
                 if boardShown(width: width), let board = workspace.store?.board { BoardView(board: board, workspace: workspace).frame(minWidth: 280, idealWidth: 380, maxWidth: .infinity) }
-                if LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width)) { inspector.frame(minWidth: 220, idealWidth: 290, maxWidth: 340) }
+                if LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width), splitShown: splitShown(width: width)) { inspector.frame(minWidth: 220, idealWidth: 290, maxWidth: 340) }
             }
             Divider()
             statusBar(width: width)
@@ -105,7 +133,7 @@ struct ContentView: View {
     private func topBar(width: CGFloat) -> some View {
         let style = LayoutMetrics.topBarStyle(width: width)
         let sidebarShown = LayoutMetrics.showsSidebar(preferred: showSidebar, width: width)
-        let inspectorShown = LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width))
+        let inspectorShown = LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width), splitShown: splitShown(width: width))
         let boardIsShown = boardShown(width: width)
         return HStack(spacing: style == .full ? 16 : 10) {
             Button { showSidebar.toggle() } label: { Image(systemName: "sidebar.left") }
@@ -127,12 +155,14 @@ struct ContentView: View {
             Spacer(minLength: 0)
             switch style {
             case .full:
+                splitMenu(iconOnly: false)
                 toolsButton(iconOnly: false)
                 openMenu(iconOnly: false)
                 saveButton(iconOnly: false)
                 closeButton(iconOnly: false)
                 exportMenu(iconOnly: false)
             case .icons:
+                splitMenu(iconOnly: true)
                 toolsButton(iconOnly: true)
                 openMenu(iconOnly: true)
                 saveButton(iconOnly: true)

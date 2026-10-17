@@ -64,6 +64,10 @@ import UniformTypeIdentifiers
     @Published var selectedAnnotation: PDFAnnotation?
     @Published var annotationColor = Color.blue
     @Published var showCompress = false
+    /// The other document shown beside this one (side-by-side reading), with the page offset kept while syncing.
+    @Published var splitPartner: Workspace?
+    @Published var splitSync = false
+    var splitOffset = 0
     @Published var compressLevel = CompressLevel.standard
     /// Pen and arrow line width in points; the highlighter draws a wide translucent stroke instead.
     @Published var penWidth = 2.0
