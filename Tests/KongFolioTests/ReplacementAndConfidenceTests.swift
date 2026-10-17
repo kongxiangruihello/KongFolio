@@ -21,7 +21,7 @@ final class ReplacementAndConfidenceTests: XCTestCase {
     func testDoubtfulColumnsAreFoundByTheirLowestConfidence() throws {
         let lines = column("學而時習之", x: 0.8, confidence: 0.9) + column("不亦說乎", x: 0.7, confidence: 0.3) + column("有朋自遠方來", x: 0.6, confidence: 0.49)
         let glyphs = try OrderedText.characters(lines).unwrap("不是竖排")
-        XCTAssertEqual(glyphs[5].confidence, 0.3, accuracy: 0.001)
+        XCTAssertEqual(Double(glyphs[5].confidence), 0.3, accuracy: 0.001)
         let boxes = OrderedText.doubtfulColumns(glyphs, threshold: 0.5)
         XCTAssertEqual(boxes.count, 2)
         XCTAssertEqual(boxes[0].minX, 0.7, accuracy: 0.0001)                 // the second column, as one box
