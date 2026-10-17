@@ -32,15 +32,16 @@ final class QuickAccessTests: XCTestCase {
     func testSearchMatchesPartsOfNames() {
         let names = ["论语译注.pdf", "孟子正义.pdf", "Report 2024 final.pdf", "report-draft.pdf", "笔记 论语.md"]
         XCTAssertEqual(TabSearch.rank(names, query: "论语"), [0, 4])
-        XCTAssertEqual(TabSearch.rank(names, query: "REPORT"), [3, 2])        // starts the name beats a later word
+        XCTAssertEqual(TabSearch.rank(names, query: "REPORT"), [2, 3])        // both start the name: the order is kept
+        XCTAssertEqual(TabSearch.rank(names, query: "draft"), [3])
         XCTAssertEqual(TabSearch.rank(names, query: "report final"), [2])     // every word must match
-        XCTAssertEqual(TabSearch.rank(names, query: "rpt"), [3, 2])           // letters in order, gaps allowed
+        XCTAssertEqual(TabSearch.rank(names, query: "rpt"), [2, 3])           // letters in order, gaps allowed
         XCTAssertEqual(TabSearch.rank(names, query: "没有"), [])
         XCTAssertEqual(TabSearch.rank(names, query: "  "), [0, 1, 2, 3, 4])
     }
 
     func testAWordStartingTheNameBeatsAMatchInTheMiddle() {
-        let names = ["my-notes.pdf", "notes.pdf", "annotations.pdf"]
+        let names = ["my-notes.pdf", "notes.pdf", "denotes.pdf"]
         XCTAssertEqual(TabSearch.rank(names, query: "notes"), [1, 0, 2])
     }
 

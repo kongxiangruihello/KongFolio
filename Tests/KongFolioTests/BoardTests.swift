@@ -173,6 +173,9 @@ final class BoardTests: XCTestCase {
     }
 
     @MainActor func testRevealSelectsTheOpenTabAndGoesToThePlace() throws {
+        // This is the "open in the same tab" behaviour; opening beside is covered in QuickAccessTests.
+        UserDefaults.standard.set(false, forKey: LayoutKeys.cardsBeside)
+        defer { UserDefaults.standard.removeObject(forKey: LayoutKeys.cardsBeside) }
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("书.pdf")
         try DocumentServicesTests().fixture().dataRepresentation()!.write(to: url)
