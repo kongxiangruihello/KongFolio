@@ -9,17 +9,7 @@ struct ContentView: View {
     @AppStorage(LayoutKeys.inspector) private var showInspector = true
 
     var body: some View {
-        VStack(spacing: 0) {
-            topBar
-            Divider()
-            HSplitView {
-                if showSidebar { sidebar.frame(minWidth: 150, idealWidth: 180, maxWidth: 230) }
-                canvas.frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
-                if showInspector { inspector.frame(minWidth: 260, idealWidth: 290, maxWidth: 340) }
-            }
-            Divider()
-            statusBar
-        }
+        GeometryReader { proxy in layout(width: proxy.size.width) }
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(Brand.accent)
         .disabled(workspace.busy)
@@ -41,23 +31,39 @@ struct ContentView: View {
         .onChange(of: workspace.mode) { _, _ in workspace.resetImage(); workspace.scheduleRecovery() }
     }
 
-    private var statusBar: some View {
+    /// The window can be any size: panels and top bar controls adapt to the width (see `LayoutMetrics`).
+    private func layout(width: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            topBar(width: width)
+            Divider()
+            HSplitView {
+                if LayoutMetrics.showsSidebar(preferred: showSidebar, width: width) { sidebar.frame(minWidth: 140, idealWidth: 180, maxWidth: 230) }
+                canvas.frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
+                if LayoutMetrics.showsInspector(preferred: showInspector, width: width) { inspector.frame(minWidth: 220, idealWidth: 290, maxWidth: 340) }
+            }
+            Divider()
+            statusBar(width: width)
+        }
+        .frame(width: width)
+    }
+
+    private func statusBar(width: CGFloat) -> some View {
         HStack {
             Circle().fill(workspace.busy ? Color.orange : Color.green).frame(width: 6, height: 6)
-            Text(workspace.status)
-            Spacer()
+            Text(workspace.status).lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: 0)
             if workspace.count > 0 {
-                Text("\(workspace.selection + 1) / \(workspace.count) 页")
-                if let page = workspace.page, let label = ReadingServices.pageLabel(page, index: workspace.selection) {
-                    Text("印刷页码 \(label)").foregroundStyle(.secondary)
+                Text("\(workspace.selection + 1) / \(workspace.count) 页").lineLimit(1).fixedSize()
+                if width >= 560, let page = workspace.page, let label = ReadingServices.pageLabel(page, index: workspace.selection) {
+                    Text("印刷页码 \(label)").foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-            Text(workspace.recoveryStatus).foregroundStyle(.secondary)
+            if width >= 760 { Text(workspace.recoveryStatus).foregroundStyle(.secondary).lineLimit(1) }
             if workspace.canRetry { Button("重试任务") { workspace.retryJob() } }
-            Text("KongFolio \(AppInfo.version)").foregroundStyle(.tertiary)
+            if width >= 640 { Text("KongFolio \(AppInfo.version)").foregroundStyle(.tertiary).lineLimit(1) }
         }
         .font(.caption)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, width >= 640 ? 16 : 10)
         .padding(.vertical, 8)
     }
 
@@ -88,57 +94,125 @@ struct ContentView: View {
         .onAppear { comparisonSync.page = workspace.selection }
     }
 
-    private var topBar: some View {
-        HStack(spacing: 16) {
+    private func topBar(width: CGFloat) -> some View {
+        let style = LayoutMetrics.topBarStyle(width: width)
+        let sidebarShown = LayoutMetrics.showsSidebar(preferred: showSidebar, width: width)
+        let inspectorShown = LayoutMetrics.showsInspector(preferred: showInspector, width: width)
+        return HStack(spacing: style == .full ? 16 : 10) {
             Button { showSidebar.toggle() } label: { Image(systemName: "sidebar.left") }
                 .buttonStyle(.borderless)
-                .help(showSidebar ? "隐藏左侧栏（⌥⌘1）" : "显示左侧栏（⌥⌘1）")
-            Image(systemName: "square.stack.3d.up.fill").font(.title2).foregroundStyle(Brand.accent)
+                .foregroundStyle(showSidebar && !sidebarShown ? .tertiary : .primary)
+                .help(sidebarShown ? "隐藏左侧栏（⌥⌘1）" : (showSidebar ? "窗口太窄，放宽后显示左侧栏" : "显示左侧栏（⌥⌘1）"))
+            if style != .minimal { Image(systemName: "square.stack.3d.up.fill").font(.title2).foregroundStyle(Brand.accent) }
             VStack(alignment: .leading, spacing: 2) {
-                Text("KongFolio").font(.headline)
-                Text(workspace.displayName + (workspace.dirty && workspace.count > 0 ? " •" : "")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                if style != .minimal { Text("KongFolio").font(.headline).lineLimit(1) }
+                Text(workspace.displayName + (workspace.dirty && workspace.count > 0 ? " •" : "")).font(style == .minimal ? .callout : .caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     .help(workspace.displayPath ?? "")
             }
-            .frame(width: 175, alignment: .leading)
+            .frame(minWidth: 40, idealWidth: 175, maxWidth: style == .full ? 220 : 260, alignment: .leading)
             Picker("模式", selection: $workspace.mode) {
                 ForEach(WorkspaceMode.allCases) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented)
-            .frame(width: 160)
-            Spacer()
-            Button { workspace.showTools = true } label: { Label("快捷工具", systemImage: "square.grid.2x2") }
-            Menu {
-                Button("打开文档或项目…（可多选，各占一个标签页）") { workspace.open() }
-                Button("合并多个文件为一个文档…") { workspace.open(merge: true) }
-                if !workspace.recentFiles.isEmpty {
-                    Divider()
-                    ForEach(workspace.recentFiles, id: \.self) { path in
-                        Button(URL(fileURLWithPath: path).lastPathComponent) { workspace.load([URL(fileURLWithPath: path)]) }.help(path)
-                    }
-                }
-            } label: { Label("打开", systemImage: "folder") }
-            Button("保存") { workspace.saveProject() }.disabled(workspace.count == 0).help("保存 KongFolio 项目（⌘S）")
-            Button("关闭") { workspace.closeTab() }.disabled(workspace.count == 0 || workspace.busy).help("关闭当前文档或图片（⇧⌘W）")
-            Menu {
-                Button("PDF · 全部页面") { workspace.exportPDF() }
-                Button("PDF · 提取选中页") { workspace.exportPDF(currentOnly: true) }
-                Button("PDF · 压缩图片（保留文字）") { workspace.compress() }
-                Divider()
-                Button("JPG · 当前页") { workspace.exportImage(.jpg) }
-                Button("PNG · 当前页") { workspace.exportImage(.png) }
-                Button("TIFF · 当前页") { workspace.exportImage(.tiff) }
-                Button("PNG · 全部页面") { workspace.exportBatch(split: false) }
-                Divider()
-                Button("TXT") { workspace.exportText(markdown: false) }
-                Button("Markdown · 全文") { workspace.exportText(markdown: true) }
-                Button("Markdown · 摘录与笔记") { workspace.exportNotes() }
-            } label: { Label("导出", systemImage: "square.and.arrow.up") }
-            .disabled(workspace.count == 0)
+            .frame(width: style == .full ? 160 : 110)
+            Spacer(minLength: 0)
+            switch style {
+            case .full:
+                toolsButton(iconOnly: false)
+                openMenu(iconOnly: false)
+                saveButton(iconOnly: false)
+                closeButton(iconOnly: false)
+                exportMenu(iconOnly: false)
+            case .icons:
+                toolsButton(iconOnly: true)
+                openMenu(iconOnly: true)
+                saveButton(iconOnly: true)
+                closeButton(iconOnly: true)
+                exportMenu(iconOnly: true)
+            case .minimal:
+                Menu {
+                    Button("快捷工具") { workspace.showTools = true }
+                    Menu("打开") { openItems }
+                    Button("保存") { workspace.saveProject() }.disabled(workspace.count == 0)
+                    Button("关闭") { workspace.closeTab() }.disabled(workspace.count == 0 || workspace.busy)
+                    Menu("导出") { exportItems }.disabled(workspace.count == 0)
+                } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(width: 32)
+                .help("更多操作")
+            }
             Button { showInspector.toggle() } label: { Image(systemName: "sidebar.right") }
                 .buttonStyle(.borderless)
-                .help(showInspector ? "隐藏右侧栏（⌥⌘2）" : "显示右侧栏（⌥⌘2）")
+                .foregroundStyle(showInspector && !inspectorShown ? .tertiary : .primary)
+                .help(inspectorShown ? "隐藏右侧栏（⌥⌘2）" : (showInspector ? "窗口太窄，放宽后显示右侧栏" : "显示右侧栏（⌥⌘2）"))
         }
-        .padding(16)
+        .padding(style == .full ? 16 : 10)
+    }
+
+    @ViewBuilder private func toolsButton(iconOnly: Bool) -> some View {
+        Button { workspace.showTools = true } label: {
+            if iconOnly { Image(systemName: "square.grid.2x2") } else { Label("快捷工具", systemImage: "square.grid.2x2") }
+        }.help("快捷工具")
+    }
+
+    @ViewBuilder private var openItems: some View {
+        Button("打开文档或项目…（可多选，各占一个标签页）") { workspace.open() }
+        Button("合并多个文件为一个文档…") { workspace.open(merge: true) }
+        if !workspace.recentFiles.isEmpty {
+            Divider()
+            ForEach(workspace.recentFiles, id: \.self) { path in
+                Button(URL(fileURLWithPath: path).lastPathComponent) { workspace.load([URL(fileURLWithPath: path)]) }.help(path)
+            }
+        }
+    }
+
+    private func openMenu(iconOnly: Bool) -> some View {
+        Menu { openItems } label: {
+            if iconOnly { Image(systemName: "folder") } else { Label("打开", systemImage: "folder") }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("打开文件")
+    }
+
+    @ViewBuilder private func saveButton(iconOnly: Bool) -> some View {
+        Button { workspace.saveProject() } label: {
+            if iconOnly { Image(systemName: "square.and.arrow.down") } else { Text("保存") }
+        }
+        .disabled(workspace.count == 0).help("保存 KongFolio 项目（⌘S）")
+    }
+
+    @ViewBuilder private func closeButton(iconOnly: Bool) -> some View {
+        Button { workspace.closeTab() } label: {
+            if iconOnly { Image(systemName: "xmark.circle") } else { Text("关闭") }
+        }
+        .disabled(workspace.count == 0 || workspace.busy).help("关闭当前文档或图片（⇧⌘W）")
+    }
+
+    @ViewBuilder private var exportItems: some View {
+        Button("PDF · 全部页面") { workspace.exportPDF() }
+        Button("PDF · 提取选中页") { workspace.exportPDF(currentOnly: true) }
+        Button("PDF · 压缩图片（保留文字）") { workspace.compress() }
+        Divider()
+        Button("JPG · 当前页") { workspace.exportImage(.jpg) }
+        Button("PNG · 当前页") { workspace.exportImage(.png) }
+        Button("TIFF · 当前页") { workspace.exportImage(.tiff) }
+        Button("PNG · 全部页面") { workspace.exportBatch(split: false) }
+        Divider()
+        Button("TXT") { workspace.exportText(markdown: false) }
+        Button("Markdown · 全文") { workspace.exportText(markdown: true) }
+        Button("Markdown · 摘录与笔记") { workspace.exportNotes() }
+    }
+
+    private func exportMenu(iconOnly: Bool) -> some View {
+        Menu { exportItems } label: {
+            if iconOnly { Image(systemName: "square.and.arrow.up") } else { Label("导出", systemImage: "square.and.arrow.up") }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(workspace.count == 0)
+        .help("导出")
     }
 
     private var sidebar: some View {

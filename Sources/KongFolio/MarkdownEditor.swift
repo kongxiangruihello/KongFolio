@@ -6,23 +6,26 @@ struct MarkdownEditorView: View {
     @ObservedObject var note: MarkdownNote
 
     var body: some View {
-        VStack(spacing: 0) {
-            toolbar
-            Divider()
-            HSplitView {
-                MarkdownTextView(note: note).frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
-                if note.showPreview {
-                    MarkdownPreview(note: note).frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                toolbar
+                Divider()
+                HSplitView {
+                    MarkdownTextView(note: note).frame(minWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
+                    if LayoutMetrics.showsPreview(preferred: note.showPreview, width: proxy.size.width) {
+                        MarkdownPreview(note: note).frame(minWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
+                Divider()
+                HStack {
+                    Text(note.status.isEmpty ? (note.fileURL?.path ?? "尚未保存到文件") : note.status).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    Text("\(note.characterCount) 字").lineLimit(1).fixedSize()
+                }
+                .font(.caption).foregroundStyle(.secondary)
+                .padding(.horizontal, 16).padding(.vertical, 8)
             }
-            Divider()
-            HStack {
-                Text(note.status.isEmpty ? (note.fileURL?.path ?? "尚未保存到文件") : note.status).lineLimit(1).truncationMode(.middle)
-                Spacer()
-                Text("\(note.characterCount) 字")
-            }
-            .font(.caption).foregroundStyle(.secondary)
-            .padding(.horizontal, 16).padding(.vertical, 8)
+            .frame(width: proxy.size.width)
         }
         .alert("无法完成操作", isPresented: Binding(get: { note.error != nil }, set: { if !$0 { note.error = nil } })) {
             Button("好") { note.error = nil }
@@ -30,6 +33,11 @@ struct MarkdownEditorView: View {
     }
 
     private var toolbar: some View {
+        // Scrolls sideways when the window is narrower than the buttons.
+        ScrollView(.horizontal, showsIndicators: false) { toolbarButtons }
+    }
+
+    private var toolbarButtons: some View {
         HStack(spacing: 6) {
             Button("保存") { note.save() }.help("保存为 .md 文件（⌘S）")
             Button("另存为…") { note.save(asNew: true) }

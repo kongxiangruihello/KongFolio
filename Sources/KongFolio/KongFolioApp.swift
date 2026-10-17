@@ -10,7 +10,7 @@ import AppKit
     var body: some Scene {
         Window("KongFolio", id: "workspace") {
             RootView(store: store)
-                .frame(minWidth: 1060, minHeight: 720)
+                .frame(minWidth: 380, minHeight: 300)
                 .background(WindowAccessor { window in delegate.attach(window) })
                 .onAppear { delegate.store = store; store.bootstrap() }
                 .onOpenURL { url in
@@ -18,6 +18,9 @@ import AppKit
                     else { store.openInNewTab([url]) }
                 }
         }
+        // The window can be dragged to any size, from a narrow reading strip to a full screen.
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1280, height: 820)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("打开…") { store.open() }.keyboardShortcut("o")

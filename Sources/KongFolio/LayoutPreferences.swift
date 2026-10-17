@@ -5,3 +5,22 @@ enum LayoutKeys {
     static let sidebar = "KongFolio.showSidebar"
     static let inspector = "KongFolio.showInspector"
 }
+
+/// How the interface adapts to the window width. Panels the user switched on are hidden while the window is too
+/// narrow for them (their preference is kept and they return when the window is wide enough again).
+enum LayoutMetrics {
+    enum TopBarStyle: Equatable { case full, icons, minimal }
+
+    static let fullTopBar: CGFloat = 1100
+    static let iconTopBar: CGFloat = 780
+    static let sidebarMinimum: CGFloat = 640
+    static let inspectorMinimum: CGFloat = 880
+    static let previewMinimum: CGFloat = 640
+
+    static func topBarStyle(width: CGFloat) -> TopBarStyle {
+        width >= fullTopBar ? .full : (width >= iconTopBar ? .icons : .minimal)
+    }
+    static func showsSidebar(preferred: Bool, width: CGFloat) -> Bool { preferred && width >= sidebarMinimum }
+    static func showsInspector(preferred: Bool, width: CGFloat) -> Bool { preferred && width >= inspectorMinimum }
+    static func showsPreview(preferred: Bool, width: CGFloat) -> Bool { preferred && width >= previewMinimum }
+}
