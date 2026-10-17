@@ -68,6 +68,10 @@ import UniformTypeIdentifiers
     @Published var showWordExport = false
     @Published var showOCRQuality = false
     @Published var showOutlineText = false
+    @Published var showOutlineCandidates = false
+    @Published var outlineCandidates: [OutlineCandidate] = []
+    @Published var outlineCandidatesChosen: Set<String> = []
+    @Published var outlineCandidatesHadText = true
     @Published var ocrChecked = 0
     @Published var ocrDoubtful: [OCRPageQuality] = []
     @Published var wordOptions = WordExportOptions()
