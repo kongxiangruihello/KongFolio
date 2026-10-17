@@ -1,5 +1,7 @@
+import AppKit
 import CoreGraphics
 import Foundation
+import PDFKit
 
 /// Reading order for vertical (竖排) pages. PDFKit reads a page's text layer left to right, so the columns of a
 /// vertical page come out in the wrong order; the OCR regions stored with the page keep the order they were
@@ -19,6 +21,7 @@ enum OrderedText {
         var box: CGRect
         var column: Int
         var approximate: Bool
+        var confidence: Float = 1
     }
 
     /// The characters of a vertical page in reading order, or nil when the regions are not those of a vertical page.
@@ -33,13 +36,13 @@ enum OrderedText {
             if line.approximate == true || line.text.count != 1 {
                 column += 1
                 currentX = nil
-                for character in text { result.append(Glyph(text: String(character), box: line.box, column: column, approximate: true)) }
+                for character in text { result.append(Glyph(text: String(character), box: line.box, column: column, approximate: true, confidence: line.confidence)) }
             } else {
                 if column < 0 || currentX == nil || abs(line.box.minX - (currentX ?? 0)) >= max(line.box.width, 0.001) * 0.5 {
                     column += 1
                     currentX = line.box.minX
                 }
-                result.append(Glyph(text: text, box: line.box, column: column, approximate: false))
+                result.append(Glyph(text: text, box: line.box, column: column, approximate: false, confidence: line.confidence))
             }
         }
         return result
@@ -66,6 +69,18 @@ enum OrderedText {
             lines[lines.count - 1] += character.text
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// One box (fractions of the page) for every column whose recognition confidence is below `threshold`.
+    /// The recognition reports a confidence for a whole column piece, not for single characters.
+    static func doubtfulColumns(_ glyphs: [Glyph], threshold: Float) -> [CGRect] {
+        var boxes: [Int: CGRect] = [:]
+        var lowest: [Int: Float] = [:]
+        for glyph in glyphs {
+            boxes[glyph.column] = boxes[glyph.column].map { $0.union(glyph.box) } ?? glyph.box
+            lowest[glyph.column] = min(lowest[glyph.column] ?? 1, glyph.confidence)
+        }
+        return boxes.keys.sorted().filter { (lowest[$0] ?? 1) < threshold }.compactMap { boxes[$0] }
     }
 
     /// Fractions of the page as it is shown (Vision's boxes) → a rectangle in page coordinates.
@@ -135,6 +150,25 @@ extension Workspace {
             if !result.reasons.isEmpty { doubtful.append(result) }
         }
         return (checked, doubtful)
+    }
+
+    /// Marks, in yellow, the columns of recognised pages whose confidence is low. Marks stay until the option is
+    /// switched off; switch it off and on again after recognising more pages.
+    func refreshConfidenceMarks() {
+        guard let view = pdfView else { return }
+        guard showLowConfidence else { view.highlightedSelections = nil; return }
+        var marks: [PDFSelection] = []
+        for index in 0..<count where marks.count < 600 {
+            guard let page = document.page(at: index), let glyphs = OrderedText.characters(meta(index).ocrRegions ?? []) else { continue }
+            let crop = page.bounds(for: .cropBox)
+            for box in OrderedText.doubtfulColumns(glyphs, threshold: OCRQuality.lowConfidence) {
+                guard let mark = page.selection(for: OrderedText.pageRect(forFraction: box, cropBox: crop, rotation: page.rotation)) else { continue }
+                mark.color = NSColor.systemYellow.withAlphaComponent(0.5)
+                marks.append(mark)
+            }
+        }
+        view.highlightedSelections = marks.isEmpty ? nil : marks
+        status = marks.isEmpty ? "没有低置信度的列" : "已标出 \(marks.count) 列低置信度的文字（黄色）"
     }
 
     func openOCRQuality() {

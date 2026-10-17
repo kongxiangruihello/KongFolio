@@ -29,6 +29,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showCompress) { CompressSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showCrop) { CropSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showWordExport) { WordExportSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showReplacementRules) { ReplacementRulesSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRQuality) { OCRQualitySheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOutlineText) { OutlineTextSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOutlineCandidates) { OutlineCandidatesSheet(workspace: workspace) }
@@ -394,6 +395,7 @@ struct ContentView: View {
             HStack {
                 Button("检查当前页区域") { workspace.inspectOCR() }
                 Button("OCR 质量检查…") { workspace.openOCRQuality() }
+                Toggle("标出低置信度的列", isOn: Binding(get: { workspace.showLowConfidence }, set: { workspace.showLowConfidence = $0; workspace.refreshConfidenceMarks() }))
                 if workspace.meta(workspace.selection).ocrRegions != nil {
                     Button("查看") { workspace.reviewSelection = -1; workspace.showOCRReview = true }
                 }

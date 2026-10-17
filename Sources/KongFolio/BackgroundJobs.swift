@@ -193,6 +193,7 @@ extension Workspace {
                     ReadingServices.applyOutline(outlineEntries, to: document)
                     recognizedText = result.text
                     changed()
+                    if showLowConfidence { refreshConfidenceMarks() }
                 }
                 if spec.operation == .inspectOCR {
                     edited(pdfChanged: false)

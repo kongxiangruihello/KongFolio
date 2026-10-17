@@ -68,6 +68,14 @@ import UniformTypeIdentifiers
     @Published var showWordExport = false
     @Published var showOCRQuality = false
     @Published var showOutlineText = false
+    @Published var showReplacementRules = false
+    @Published var replacementText = UserDefaults.standard.string(forKey: ReplacementRules.textKey) ?? "" {
+        didSet { UserDefaults.standard.set(replacementText, forKey: ReplacementRules.textKey) }
+    }
+    @Published var applyReplacements = UserDefaults.standard.bool(forKey: ReplacementRules.enabledKey) {
+        didSet { UserDefaults.standard.set(applyReplacements, forKey: ReplacementRules.enabledKey) }
+    }
+    @Published var showLowConfidence = false
     @Published var showOutlineCandidates = false
     @Published var outlineCandidates: [OutlineCandidate] = []
     @Published var outlineCandidatesChosen: Set<String> = []
@@ -1112,8 +1120,9 @@ import UniformTypeIdentifiers
         guard checkDraftsForExport() else { return }
         let text = (0..<count).map { index in
             // Vertical pages read from their recognition record (right-to-left columns); others from the text layer.
-            let body = OrderedText.verticalColumns(meta(index).ocrRegions ?? []).map { $0.map { ReadingServices.repairIdeographs($0) }.joined() }
-                ?? ReadingServices.repairIdeographs(document.page(at: index)?.string ?? "")
+            let body = ReplacementRules.apply(applyReplacements ? ReplacementRules.parse(replacementText) : [],
+                to: OrderedText.verticalColumns(meta(index).ocrRegions ?? []).map { $0.map { ReadingServices.repairIdeographs($0) }.joined() }
+                    ?? ReadingServices.repairIdeographs(document.page(at: index)?.string ?? ""))
             return (markdown ? "## 第 \(index + 1) 页\n\n" : "") + body
         }.joined(separator: "\n\n")
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { error = "未发现文本，请先运行 OCR。"; return }
