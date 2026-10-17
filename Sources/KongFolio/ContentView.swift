@@ -5,15 +5,17 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @ObservedObject var workspace: Workspace
     @StateObject private var comparisonSync = ComparisonSync()
+    @AppStorage(LayoutKeys.sidebar) private var showSidebar = true
+    @AppStorage(LayoutKeys.inspector) private var showInspector = true
 
     var body: some View {
         VStack(spacing: 0) {
             topBar
             Divider()
             HSplitView {
-                sidebar.frame(minWidth: 150, idealWidth: 180, maxWidth: 230)
+                if showSidebar { sidebar.frame(minWidth: 150, idealWidth: 180, maxWidth: 230) }
                 canvas.frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
-                inspector.frame(minWidth: 260, idealWidth: 290, maxWidth: 340)
+                if showInspector { inspector.frame(minWidth: 260, idealWidth: 290, maxWidth: 340) }
             }
             Divider()
             statusBar
@@ -88,10 +90,14 @@ struct ContentView: View {
 
     private var topBar: some View {
         HStack(spacing: 16) {
+            Button { showSidebar.toggle() } label: { Image(systemName: "sidebar.left") }
+                .buttonStyle(.borderless)
+                .help(showSidebar ? "隐藏左侧栏（⌥⌘1）" : "显示左侧栏（⌥⌘1）")
             Image(systemName: "square.stack.3d.up.fill").font(.title2).foregroundStyle(Brand.accent)
             VStack(alignment: .leading, spacing: 2) {
                 Text("KongFolio").font(.headline)
-                Text(workspace.title + (workspace.dirty ? " •" : "")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(workspace.displayName + (workspace.dirty && workspace.count > 0 ? " •" : "")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .help(workspace.displayPath ?? "")
             }
             .frame(width: 175, alignment: .leading)
             Picker("模式", selection: $workspace.mode) {
@@ -102,7 +108,8 @@ struct ContentView: View {
             Spacer()
             Button { workspace.showTools = true } label: { Label("快捷工具", systemImage: "square.grid.2x2") }
             Menu {
-                Button("打开文档或项目…") { workspace.open() }
+                Button("打开文档或项目…（可多选，各占一个标签页）") { workspace.open() }
+                Button("合并多个文件为一个文档…") { workspace.open(merge: true) }
                 if !workspace.recentFiles.isEmpty {
                     Divider()
                     ForEach(workspace.recentFiles, id: \.self) { path in
@@ -127,6 +134,9 @@ struct ContentView: View {
                 Button("Markdown · 摘录与笔记") { workspace.exportNotes() }
             } label: { Label("导出", systemImage: "square.and.arrow.up") }
             .disabled(workspace.count == 0)
+            Button { showInspector.toggle() } label: { Image(systemName: "sidebar.right") }
+                .buttonStyle(.borderless)
+                .help(showInspector ? "隐藏右侧栏（⌥⌘2）" : "显示右侧栏（⌥⌘2）")
         }
         .padding(16)
     }

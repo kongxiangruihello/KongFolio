@@ -65,6 +65,8 @@ import UniformTypeIdentifiers
     @Published var annotationColor = Color.blue
     @Published var signatures: [SignatureTemplate] = []
     @Published var projectURL: URL?
+    /// The PDF, image or text file this document was opened from; nil for merged documents and projects.
+    @Published var sourceURL: URL?
     weak var pdfView: PDFView?
 
     // MARK: Internal state
@@ -113,6 +115,9 @@ import UniformTypeIdentifiers
         let valid = selectedPages.filter { $0 >= 0 && $0 < count }.sorted()
         return valid.isEmpty && count > 0 ? [selection] : valid
     }
+    /// What the tab and the title bar show: the project file, else the opened file, else the document title.
+    var displayName: String { projectURL?.lastPathComponent ?? sourceURL?.lastPathComponent ?? title }
+    var displayPath: String? { (projectURL ?? sourceURL)?.path }
     var canUndo: Bool { !history.isEmpty }
     var canRedo: Bool { !future.isEmpty }
     var canRetry: Bool { lastJob != nil && !busy }
@@ -203,7 +208,7 @@ import UniformTypeIdentifiers
         let pdf = try pdfData()
         alignMeta()
         let reading = ReadingState(bookmarks: bookmarks, outline: outlineEntries, layout: readingLayout, point: readingPoint, scale: readingScale, bibliography: bibliography.isEmpty ? nil : bibliography)
-        return ProjectArchive(reading: reading, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: mode, recipes: recipes, drafts: imageDrafts, dirty: dirty, projectPath: projectURL?.path)
+        return ProjectArchive(reading: reading, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: mode, recipes: recipes, drafts: imageDrafts, dirty: dirty, projectPath: projectURL?.path)
     }
 
     func restore(_ archive: ProjectArchive, keepProjectURL: Bool = false) throws {
@@ -227,6 +232,7 @@ import UniformTypeIdentifiers
         searchResults = []
         annotationNotes = []
         title = archive.title
+        if !keepProjectURL { sourceURL = archive.sourcePath.map { URL(fileURLWithPath: $0) } }
         selection = archive.selection
         selectedPages = archive.selectedPages
         mode = archive.mode
@@ -502,7 +508,7 @@ import UniformTypeIdentifiers
         selectedAnnotation = nil; comparison = nil; recognizedText = ""
         showOCRReview = false; reviewSelection = -1; exportEstimate = nil
         history.removeAll(); future.removeAll(); lastJob = nil
-        projectURL = nil; dirty = false; discarded = false
+        projectURL = nil; sourceURL = nil; dirty = false; discarded = false
         thumbnails.clear(); pageVersions = [:]
         layoutRevision = UUID(); navigationToken = UUID(); revision = UUID()
         resetImage()
@@ -522,14 +528,20 @@ import UniformTypeIdentifiers
         return panel.runModal() == .OK ? panel.urls : []
     }
 
-    func open(insert: Bool = false) {
+    func open(insert: Bool = false, merge: Bool = false) {
         guard !busy else { return }
         let urls = pickFiles()
         guard !urls.isEmpty else { return }
-        openSelected(urls, insert: insert)
+        openSelected(urls, insert: insert, merge: merge)
     }
 
-    func openSelected(_ urls: [URL], insert: Bool) {
+    /// Several files are opened side by side, one tab each. Only an explicit merge (or inserting pages into the
+    /// current document) asks for an order and combines them.
+    func openSelected(_ urls: [URL], insert: Bool, merge: Bool = false) {
+        if urls.count > 1, !insert, !merge, let store {
+            store.openEach(urls)
+            return
+        }
         if urls.count > 1 {
             pendingImports = urls
             importAsInsert = insert
@@ -596,6 +608,7 @@ import UniformTypeIdentifiers
                 try restore(archive)
                 discarded = false
                 projectURL = urls[0]
+                sourceURL = nil
                 history.removeAll()
                 future.removeAll()
                 remember(urls)
@@ -655,6 +668,7 @@ import UniformTypeIdentifiers
                 projectURL = nil
                 mode = urls.count == 1 && urls[0].pathExtension.lowercased() != "pdf" && !TextImport.handles(urls[0]) ? .image : .document
                 if loaded.count == 1 { openedBytes = data.first }
+                sourceURL = loaded.count == 1 ? urls[0] : nil
             }
             readingPoint = nil
             readingScale = nil

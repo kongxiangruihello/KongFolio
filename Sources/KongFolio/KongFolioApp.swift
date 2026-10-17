@@ -4,6 +4,8 @@ import AppKit
 @main struct KongFolioApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var store = WorkspaceStore()
+    @AppStorage(LayoutKeys.sidebar) private var showSidebar = true
+    @AppStorage(LayoutKeys.inspector) private var showInspector = true
 
     var body: some Scene {
         Window("KongFolio", id: "workspace") {
@@ -27,6 +29,14 @@ import AppKit
                 Button("另存为…") { store.saveActive(asNew: true) }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(!store.canSave)
                 Button("导出 PDF…") { store.exportActive() }.keyboardShortcut("e").disabled(!store.canSave)
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
+            }
+            CommandGroup(replacing: .sidebar) {
+                Button(showSidebar ? "隐藏左侧栏" : "显示左侧栏") { showSidebar.toggle() }.keyboardShortcut("1", modifiers: [.command, .option])
+                Button(showInspector ? "隐藏右侧栏" : "显示右侧栏") { showInspector.toggle() }.keyboardShortcut("2", modifiers: [.command, .option])
+                Button("专注阅读（隐藏/恢复两侧栏）") {
+                    let show = !showSidebar && !showInspector
+                    showSidebar = show; showInspector = show
+                }.keyboardShortcut("3", modifiers: [.command, .option])
             }
             CommandGroup(replacing: .undoRedo) {
                 Button("撤销") { store.undoActive() }.keyboardShortcut("z").disabled(!store.canUndo)

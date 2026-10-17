@@ -69,8 +69,10 @@ private struct DocumentTab: View {
     let selected: Bool
 
     var body: some View {
-        TabChip(icon: workspace.count == 0 ? "tray" : (workspace.mode == .image ? "photo" : "doc.richtext"),
-                title: workspace.count == 0 ? "新标签页" : workspace.title,
+        let loading = workspace.count == 0 && workspace.sourceURL != nil
+        TabChip(icon: loading ? "arrow.down.circle" : (workspace.count == 0 ? "tray" : (workspace.mode == .image ? "photo" : "doc.richtext")),
+                title: workspace.count == 0 && !loading ? "新标签页" : workspace.displayName,
+                tooltip: workspace.displayPath ?? "",
                 dirty: workspace.dirty && workspace.count > 0, selected: selected,
                 select: { store.select(workspace.id) }, close: { store.close(workspace.id) })
     }
@@ -82,7 +84,7 @@ private struct NoteTab: View {
     let selected: Bool
 
     var body: some View {
-        TabChip(icon: "square.and.pencil", title: note.title, dirty: note.dirty, selected: selected,
+        TabChip(icon: "square.and.pencil", title: note.title, tooltip: note.fileURL?.path ?? "尚未保存到文件", dirty: note.dirty, selected: selected,
                 select: { store.select(note.id) }, close: { store.close(note.id) })
     }
 }
@@ -90,6 +92,7 @@ private struct NoteTab: View {
 private struct TabChip: View {
     let icon: String
     let title: String
+    let tooltip: String
     let dirty: Bool
     let selected: Bool
     let select: () -> Void
@@ -98,7 +101,7 @@ private struct TabChip: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: icon).foregroundStyle(.secondary)
-            Text(title + (dirty ? " •" : "")).lineLimit(1).frame(maxWidth: 160, alignment: .leading)
+            Text(title + (dirty ? " •" : "")).lineLimit(1).truncationMode(.middle).frame(maxWidth: 200, alignment: .leading)
             Button(action: close) { Image(systemName: "xmark").font(.caption2) }
                 .buttonStyle(.plain)
                 .help("关闭此标签页")
@@ -109,5 +112,6 @@ private struct TabChip: View {
         .background(selected ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
+        .help(tooltip)
     }
 }

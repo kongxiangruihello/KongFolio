@@ -114,6 +114,30 @@ import UniformTypeIdentifiers
         target.load(urls, scanAfter: scanAfter)
     }
 
+    /// Opens every file in its own tab, one after another so large files do not compete for the disk.
+    /// The tabs appear at once with their file names; the first one is brought to the front.
+    func openEach(_ urls: [URL]) {
+        var jobs: [(Workspace, URL)] = []
+        for url in urls {
+            let claimed = Set(jobs.map { $0.0.id })
+            let target: Workspace
+            if let current = activeWorkspace, current.count == 0, !current.busy, !claimed.contains(current.id) { target = current }
+            else { target = addWorkspace() }
+            target.sourceURL = url
+            jobs.append((target, url))
+        }
+        if let first = jobs.first { select(first.0.id) }
+        let queued = jobs
+        Task { [weak self] in
+            for (workspace, url) in queued {
+                // A tab closed while it waited is not loaded.
+                guard let self, self.tabs.contains(where: { $0.id == workspace.id }) else { continue }
+                workspace.load([url])
+                while workspace.busy { try? await Task.sleep(nanoseconds: 50_000_000) }
+            }
+        }
+    }
+
     /// The "open" command: shows the file panel for an empty document tab, creating one when a note is in front.
     func open() {
         let target: Workspace

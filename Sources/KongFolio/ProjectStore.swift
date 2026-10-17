@@ -15,6 +15,8 @@ struct ProjectArchive: Codable {
     var reading: ReadingState? = nil
     var ocrOriginals: [Int: Data]? = nil
     var ocrRegions: [Int: [RecognizedLine]]? = nil
+    /// The file this document was opened from (not a project), so a restored tab still shows its file name.
+    var sourcePath: String? = nil
     var pdf: Data
     var title: String
     var selection: Int
