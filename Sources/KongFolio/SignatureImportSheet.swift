@@ -24,9 +24,12 @@ struct SignatureImportSheet: View {
             if source != nil {
                 Toggle("去除背景（纸张变透明）", isOn: $options.removeBackground)
                 if options.removeBackground {
-                    HStack {
-                        Text("去底强度")
-                        Slider(value: $options.threshold, in: 0.3...0.97)
+                    Toggle("自动判断去底强度", isOn: $options.automatic)
+                    if !options.automatic {
+                        HStack {
+                            Text("去底强度")
+                            Slider(value: $options.threshold, in: 0.3...0.97)
+                        }
                     }
                     Toggle("校正不均匀的光线（拍照时有阴影）", isOn: $options.evenOutLight)
                 }

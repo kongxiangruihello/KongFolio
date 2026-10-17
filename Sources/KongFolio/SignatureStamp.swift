@@ -126,9 +126,11 @@ extension Workspace {
         let index = document.index(for: placement.page)
         guard index != NSNotFound else { cancelSignaturePlacement(); return }
         do {
-            // The page object may be stale after in-memory edits, so the page is redrawn from a committed copy.
-            let committed = try PDFDocument(data: pdfData()).unwrap("无法读取当前文档")
-            let page = try committed.page(at: index).unwrap("页面读取失败")
+            // The page object may be stale after in-memory edits, so the page is redrawn from a freshly serialized
+            // copy of that one page; the rest of the document is not touched.
+            let single = DocumentServices.subset(document, indexes: [index])
+            let committed = try PDFDocument(data: single.dataRepresentation().unwrap("无法读取当前页")).unwrap("无法读取当前页")
+            let page = try committed.page(at: 0).unwrap("页面读取失败")
             let baked = try SignatureStamp.bake(image, onto: page, userRect: placement.rect).unwrap("无法把签名写入页面")
             checkpoint()
             document.removePage(at: index)
