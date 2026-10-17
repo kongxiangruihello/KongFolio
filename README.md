@@ -1,4 +1,4 @@
-# KongFolio 0.4
+# KongFolio 0.5
 
 原生 macOS 个人文档工作台。SwiftUI / AppKit + PDFKit + Core Image + Vision + Core Graphics，全程本地处理，无第三方依赖。
 
