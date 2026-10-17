@@ -122,13 +122,14 @@ final class ExcerptPolishTests: XCTestCase {
     @MainActor func testExcerptIsFoundAgainWhenPagesHaveMoved() throws {
         defer { resetDefaults() }
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
-        let text = (1...400).map { "第\($0)行：用于检验摘录定位的一行文字。" }.joined(separator: "\n")
+        // The helper selects the first words, so the document must contain them.
+        let text = "学而时习之，不亦说乎？\n" + (1...400).map { "第\($0)行：用于检验摘录定位的一行文字。" }.joined(separator: "\n")
         let (store, tab, _) = try makeStore(directory, text: text); defer { store.board.removeBackup() }
-        // "第200" only occurs in line 200; searching for 行 would miss, because PDFKit reads it as the radical form ⾏.
-        let match = try tab.document.findString("第200", withOptions: []).first.unwrap("没有找到文字")
-        let truePage = tab.document.index(for: try match.pages.first.unwrap("没有页面"))
+        let anchor = "第200行："
+        let pages = (0..<tab.count).filter { tab.document.page(at: $0)?.string?.contains(anchor) == true }
+        XCTAssertEqual(pages.count, 1)
+        let truePage = try pages.first.unwrap("没有找到文字")
         XCTAssertTrue(truePage > 2)
-        let anchor = try match.string.unwrap("没有文字")
         // The card says page 1, but the words are on a later page.
         tab.go(to: ViewPosition(selection: 0, x: 10, y: 20, scale: nil), anchor: anchor)
         XCTAssertEqual(tab.selection, truePage)

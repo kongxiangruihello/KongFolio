@@ -137,15 +137,23 @@ extension Workspace {
     // MARK: Going to a place in the document
 
     /// Where an excerpt really is now: on the recorded page if its first words are still there, otherwise the nearest
-    /// match elsewhere (pages may have been added, removed or reordered since the excerpt was made).
+    /// page that has them (pages may have been added, removed or reordered since the excerpt was made).
+    /// Pages are searched by their own text, starting at the recorded page and moving outward; PDFKit's document search
+    /// is not reliable for CJK text mixed with digits.
     func locate(anchor: String, near index: Int) -> (page: Int, rect: CGRect)? {
-        if document.page(at: index)?.string?.contains(anchor) == true { return nil }
-        let candidates = document.findString(anchor, withOptions: [.literal]).compactMap { match -> (Int, CGRect)? in
-            guard let page = match.pages.first else { return nil }
-            let position = document.index(for: page)
-            return position == NSNotFound ? nil : (position, match.bounds(for: page))
+        guard count > 0, !anchor.isEmpty else { return nil }
+        let start = max(0, min(index, count - 1))
+        if document.page(at: start)?.string?.contains(anchor) == true { return nil }
+        for distance in 1..<max(2, count) {
+            for candidate in [start - distance, start + distance] where candidate >= 0 && candidate < count {
+                guard let page = document.page(at: candidate), let text = page.string else { continue }
+                let range = (text as NSString).range(of: anchor)
+                guard range.location != NSNotFound else { continue }
+                let rect = page.selection(for: range)?.bounds(for: page) ?? page.bounds(for: .cropBox)
+                return (candidate, rect)
+            }
         }
-        return candidates.min { abs($0.0 - index) < abs($1.0 - index) }.map { (page: $0.0, rect: $0.1) }
+        return nil
     }
 
     /// Scrolls to a place in the document and marks it for a moment.
