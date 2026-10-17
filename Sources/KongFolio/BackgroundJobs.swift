@@ -266,9 +266,9 @@ extension Workspace {
     }
 
     /// Pages per background job; each chunk is applied as soon as it finishes, so a cancel keeps the earlier ones.
-    static let ocrChunkSize = 10
+    nonisolated static let ocrChunkSize = 10
 
-    static func chunks(_ pages: [Int], size: Int = ocrChunkSize) -> [[Int]] {
+    nonisolated static func chunks(_ pages: [Int], size: Int = ocrChunkSize) -> [[Int]] {
         guard size > 0 else { return [pages] }
         return stride(from: 0, to: pages.count, by: size).map { Array(pages[$0..<min($0 + size, pages.count)]) }
     }
