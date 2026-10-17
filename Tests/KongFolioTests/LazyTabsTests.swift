@@ -103,9 +103,12 @@ final class LazyTabsTests: XCTestCase {
 
     @MainActor func testOldestUnchangedTabsAreReleased() throws {
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
-        let store = WorkspaceStore(storage: directory); store.bootstrap(); store.maxLoadedTabs = 2
+        let store = WorkspaceStore(storage: directory); store.bootstrap(); store.maxLoadedTabs = 100
         let tabs = try (1...4).map { loadedTab(store, try pdf(in: directory, "\($0).pdf")) }
-        for tab in tabs { store.select(tab.id) }
+        for tab in tabs { store.select(tab.id) }   // visit in order: 1 is the least recently used, 4 the most
+        XCTAssertEqual(tabs.map(\.count), [3, 3, 3, 3])
+        store.maxLoadedTabs = 2
+        store.select(tabs[3].id)
         XCTAssertEqual(tabs.map(\.count), [0, 0, 3, 3])
         XCTAssertEqual(tabs.map(\.needsLoad), [true, true, false, false])
         XCTAssertEqual(tabs.map(\.displayName), ["1.pdf", "2.pdf", "3.pdf", "4.pdf"])
@@ -113,11 +116,13 @@ final class LazyTabsTests: XCTestCase {
 
     @MainActor func testChangedTabsStayLoadedEvenOverTheLimit() throws {
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
-        let store = WorkspaceStore(storage: directory); store.bootstrap(); store.maxLoadedTabs = 1
+        let store = WorkspaceStore(storage: directory); store.bootstrap(); store.maxLoadedTabs = 100
         let tabs = try (1...3).map { loadedTab(store, try pdf(in: directory, "\($0).pdf")) }
-        tabs[1].dirty = true
         for tab in tabs { store.select(tab.id) }
-        XCTAssertEqual(tabs[1].count, 3)
+        tabs[1].dirty = true
+        store.maxLoadedTabs = 1
+        store.select(tabs[2].id)
+        XCTAssertEqual(tabs[1].count, 3)   // unsaved changes: kept although over the limit
         XCTAssertEqual(tabs[0].count, 0)
         XCTAssertEqual(tabs[2].count, 3)
     }
@@ -189,7 +194,7 @@ final class LazyTabsTests: XCTestCase {
         first.document = DocumentServicesTests().fixture(); first.sourceURL = try pdf(in: directory, "一.pdf"); first.selection = 1
         let second = loadedTab(store, try pdf(in: directory, "二.pdf"))
         let edited = loadedTab(store, nil)   // not from a file, so it is kept as a recovery copy
-        XCTAssertTrue(store.prepareToClose() || true)
+        XCTAssertTrue(store.prepareToClose())
         store.select(second.id)
         store.saveSession()
 
@@ -214,6 +219,6 @@ final class LazyTabsTests: XCTestCase {
         try JSONEncoder().encode(session).write(to: directory.appendingPathComponent("Session.json"))
         let store = WorkspaceStore(storage: directory); store.bootstrap()
         XCTAssertEqual(store.tabs.count, 1)
-        XCTAssertEqual(store.activeWorkspace?.displayPath, nil)
+        XCTAssertNil(store.activeWorkspace?.displayPath)
     }
 }
