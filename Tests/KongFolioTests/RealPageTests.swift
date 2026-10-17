@@ -50,9 +50,10 @@ final class RealPageTests: XCTestCase {
         let lines = try VerticalText.recognize(image, languages: ["zh-Hant", "en-US"])
         let columns = try OrderedText.verticalColumns(lines).unwrap("识别结果不是竖排")
         let text = columns.joined()
-        XCTAssertTrue(columns.count >= 8)
-        XCTAssertTrue(text.count >= 100)
+        // Written as equalities so that a failure shows the number: min(n, k) == k means n >= k.
+        XCTAssertEqual(min(columns.count, 8), 8)
+        XCTAssertEqual(min(text.count, 150), 150)
         // Seven headings of the page end in 國.
-        XCTAssertTrue(text.filter { $0 == "國" || $0 == "国" }.count >= 3)
+        XCTAssertEqual(min(text.filter { $0 == "國" || $0 == "国" }.count, 3), 3)
     }
 }

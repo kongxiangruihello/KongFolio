@@ -182,7 +182,11 @@ enum VerticalText {
             }
         }
         guard let strip = ctx.makeImage() else { throw FolioError(message: "竖排识别：无法生成识别图像。") }
-        let observations = try recognizeRows(strip, languages: languages)
+        // Vision ignores text shorter than 1/32 of the image height by default. With many columns the canvas is tall and
+        // every character is a small part of it (about 3 % for fifteen columns), so most of a page would be dropped
+        // (a real page gave fewer than 100 characters out of about 450). Ask for text down to a fraction of the cell.
+        let relativeCell = Float(cellSize) / Float(canvasHeight)
+        let observations = try recognizeRows(strip, languages: languages, minimumTextHeight: max(0.002, min(0.03, relativeCell * 0.4)))
         var rowsText = [[(x: CGFloat, text: String, confidence: Float)]](repeating: [], count: columns.count)
         for observation in observations {
             guard let candidate = observation.topCandidates(1).first else { continue }
@@ -213,9 +217,10 @@ enum VerticalText {
         return lines
     }
 
-    static func recognizeRows(_ image: CGImage, languages: [String]) throws -> [VNRecognizedTextObservation] {
+    static func recognizeRows(_ image: CGImage, languages: [String], minimumTextHeight: Float = 0.03125) throws -> [VNRecognizedTextObservation] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
+        request.minimumTextHeight = minimumTextHeight
         let supported = Set(DocumentServices.supportedOCRLanguages)
         let chosen = languages.filter { supported.isEmpty || supported.contains($0) }
         request.recognitionLanguages = chosen.isEmpty ? ["zh-Hant", "zh-Hans"] : chosen
