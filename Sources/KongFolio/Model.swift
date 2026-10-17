@@ -147,6 +147,13 @@ struct OCRSettings: Codable, Equatable {
     var vertical = false
     /// Pages with at least this many non-whitespace characters already count as text pages and are skipped.
     var minimumTextCharacters = 20
+    /// Recognise pages even when they already have some text. Scans from other OCR software often carry only the
+    /// headings; such a page has "text" but not its text. Optional so settings saved before this existed still load.
+    var ignoreTextLayer: Bool? = nil
+    var ignoresTextLayer: Bool {
+        get { ignoreTextLayer ?? false }
+        set { ignoreTextLayer = newValue ? true : nil }
+    }
 
     static let presets: [OCRLanguagePreset] = [
         OCRLanguagePreset(id: "hans", title: "简体中文 + 英文", languages: ["zh-Hans", "en-US"]),
