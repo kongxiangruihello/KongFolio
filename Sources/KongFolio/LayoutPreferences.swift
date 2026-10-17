@@ -22,14 +22,18 @@ enum LayoutMetrics {
     /// With the workspace pane open, the properties panel needs room for it as well.
     static let inspectorWithBoardMinimum: CGFloat = 1180
     static let previewMinimum: CGFloat = 640
+    /// Two documents side by side need room for both pages.
+    static let splitMinimum: CGFloat = 760
+    static let inspectorWithSplitMinimum: CGFloat = 1280
 
     static func topBarStyle(width: CGFloat) -> TopBarStyle {
         width >= fullTopBar ? .full : (width >= iconTopBar ? .icons : .minimal)
     }
     static func showsSidebar(preferred: Bool, width: CGFloat) -> Bool { preferred && width >= sidebarMinimum }
-    static func showsInspector(preferred: Bool, width: CGFloat, boardShown: Bool = false) -> Bool {
-        preferred && width >= (boardShown ? inspectorWithBoardMinimum : inspectorMinimum)
+    static func showsInspector(preferred: Bool, width: CGFloat, boardShown: Bool = false, splitShown: Bool = false) -> Bool {
+        preferred && width >= max(boardShown ? inspectorWithBoardMinimum : inspectorMinimum, splitShown ? inspectorWithSplitMinimum : 0)
     }
+    static func showsSplit(width: CGFloat) -> Bool { width >= splitMinimum }
     static func showsBoard(preferred: Bool, width: CGFloat) -> Bool { preferred && width >= boardMinimum }
     static func showsPreview(preferred: Bool, width: CGFloat) -> Bool { preferred && width >= previewMinimum }
 }

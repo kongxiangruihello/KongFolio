@@ -65,6 +65,28 @@ final class SignatureTests: XCTestCase {
         XCTAssertNil(SignatureImage.process(photo(gradient: false, ink: false), options: SignatureOptions()))
     }
 
+    func testAutomaticStrengthRemovesDarkPaperThatTheFixedValueKeeps() throws {
+        // Paper photographed in dim light: every pixel is darker than the fixed cutoff.
+        func dimPhoto() -> CGImage {
+            var data = [UInt8](repeating: 0, count: 300 * 100 * 4)
+            for y in 0..<100 { for x in 0..<300 {
+                let ink = x >= 100 && x < 200 && y >= 45 && y < 55
+                let value = UInt8((ink ? 0.1 : 0.72) * 255), base = (y * 300 + x) * 4
+                data[base] = value; data[base + 1] = value; data[base + 2] = value; data[base + 3] = 255
+            } }
+            return data.withUnsafeMutableBytes { raw in
+                CGContext(data: raw.baseAddress, width: 300, height: 100, bitsPerComponent: 8, bytesPerRow: 1200, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!.makeImage()!
+            }
+        }
+        var fixed = SignatureOptions(); fixed.automatic = false; fixed.evenOutLight = false; fixed.trim = false
+        var automatic = fixed; automatic.automatic = true
+        let kept = try SignatureImage.process(dimPhoto(), options: fixed).unwrap("没有结果")
+        XCTAssertTrue(pixel(kept, 5, 5).a > 20)
+        let removed = try SignatureImage.process(dimPhoto(), options: automatic).unwrap("没有结果")
+        XCTAssertEqual(pixel(removed, 5, 5).a, 0)
+        XCTAssertTrue(pixel(removed, 150, 50).a > 200)
+    }
+
     func testBackgroundCanBeKept() throws {
         var options = SignatureOptions(); options.removeBackground = false
         let result = try SignatureImage.process(photo(gradient: false), options: options).unwrap("没有结果")
@@ -204,5 +226,37 @@ final class SignatureTests: XCTestCase {
         XCTAssertTrue(pixel(rendered(try workspace.document.page(at: 0).unwrap("没有页面"), width: 200, height: 300), 85, 125).r > 200)
         workspace.undo()
         XCTAssertTrue(pixel(rendered(try workspace.document.page(at: 1).unwrap("没有页面"), width: 200, height: 300), 85, 125).r > 200)
+    }
+
+    /// A scan-sized document (about 10 MB of incompressible picture data): placing a signature must stay quick.
+    @MainActor func testPlacingOnATenMegabyteDocumentIsQuick() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let doc = PDFDocument()
+        for index in 0..<7 {
+            var noise = [UInt8](repeating: 0, count: 600 * 800 * 4)
+            var generator = SystemRandomNumberGenerator()
+            for i in 0..<noise.count { noise[i] = i % 4 == 3 ? 255 : UInt8.random(in: 0...255, using: &generator) }
+            let cg = noise.withUnsafeMutableBytes { raw in
+                CGContext(data: raw.baseAddress, width: 600, height: 800, bitsPerComponent: 8, bytesPerRow: 2400, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!.makeImage()!
+            }
+            let image = NSImage(cgImage: cg, size: NSSize(width: 600, height: 800))
+            doc.insert(PDFPage(image: image)!, at: index)
+        }
+        let size = doc.dataRepresentation()?.count ?? 0
+        let workspace = Workspace(storage: directory)
+        workspace.document = PDFDocument(data: doc.dataRepresentation()!)!
+        workspace.addSignatureImage(blackSquare(), name: "签名")
+        let view = StubView()
+        workspace.pdfView = view
+        workspace.beginPlacing(workspace.signatures[0])
+        view.target = (workspace.document.page(at: 3)!, CGRect(x: 100, y: 100, width: 80, height: 40))
+        let started = Date()
+        workspace.confirmSignaturePlacement()
+        let seconds = Date().timeIntervalSince(started)
+        print("签名放置耗时 \(String(format: "%.2f", seconds)) 秒，文档 \(size / 1_000_000) MB，\(workspace.count) 页")
+        XCTAssertEqual(workspace.count, 7)
+        XCTAssertNil(workspace.placingSignature)
+        XCTAssertTrue(seconds < 10)
     }
 }

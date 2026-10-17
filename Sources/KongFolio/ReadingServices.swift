@@ -37,6 +37,9 @@ struct AnnotationNote: Identifiable {
     var quote: String
     var note: String
     var label: String? = nil
+    /// The marker colour name ("黄", "绿", "蓝", "粉") for coloured marks, and the colour itself for the sidebar swatch.
+    var colorName: String? = nil
+    var rgb: [Double]? = nil
     /// "第 3 页" or "第 3 页（印刷页码 15）".
     var pageDescription: String { label.map { "第 \(page + 1) 页（印刷页码 \($0)）" } ?? "第 \(page + 1) 页" }
 }
@@ -209,11 +212,17 @@ enum ReadingServices {
                 }
                 let markup = ["Highlight", "Underline", "StrikeOut"].contains(annotation.type ?? "")
                 let quote = annotation.value(forAnnotationKey: quoteKey) as? String ?? (markup ? page.selection(for: annotation.bounds)?.string ?? "" : "")
-                notes.append(AnnotationNote(page: i, index: index, kind: kind, quote: repairIdeographs(quote), note: annotation.contents ?? "", label: pageLabel(page, index: i)))
+                var entry = AnnotationNote(page: i, index: index, kind: kind, quote: repairIdeographs(quote), note: annotation.contents ?? "", label: pageLabel(page, index: i))
+                if markup || annotation.type == "Text" || annotation.type == "Ink", let rgb = annotation.color.usingColorSpace(.sRGB) {
+                    entry.colorName = MarkupColor.nearest(to: rgb)?.rawValue
+                    entry.rgb = [Double(rgb.redComponent), Double(rgb.greenComponent), Double(rgb.blueComponent)]
+                }
+                notes.append(entry)
             }
         }
         return notes
     }
+    private static let markupNames: Set<String> = ["高亮", "下划线", "删除线"]
     static func markdown(title: String, notes: [AnnotationNote], bibliography: Bibliography? = nil) -> String {
         let title = title.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ")
         var text = "# \(title) — 批注摘要\n\n"
@@ -225,7 +234,9 @@ enum ReadingServices {
         var current = -1
         for entry in notes.sorted(by: { ($0.page, $0.index) < ($1.page, $1.index) }) {
             if entry.page != current { current = entry.page; text += "\n## \(entry.pageDescription)\n" }
-            text += "\n### \(entry.kind)\n\n"
+            var heading = entry.kind
+            if markupNames.contains(entry.kind), let colour = entry.colorName { heading += "（\(colour)）" }
+            text += "\n### \(heading)\n\n"
             if !entry.quote.isEmpty { text += entry.quote.components(separatedBy: .newlines).map { "> " + $0 }.joined(separator: "\n") + "\n\n" }
             if !entry.note.isEmpty { text += "笔记：\n\n" + entry.note + "\n" }
             if entry.quote.isEmpty && entry.note.isEmpty { text += "（图形标注，无文本）\n" }
@@ -278,10 +289,6 @@ extension Workspace {
         selectPage(entry.page); guard let page, entry.index < page.annotations.count else { return }
         readingPoint = CGPoint(x: page.annotations[entry.index].bounds.minX, y: page.annotations[entry.index].bounds.maxY + 20)
         selectAnnotation(page.annotations[entry.index]); tool = .edit; pdfView?.go(to: page.annotations[entry.index].bounds, on: page)
-    }
-    func exportNotes() {
-        guard let url = saveURL(type: .init(filenameExtension: "md") ?? .plainText, suffix: "md", name: title + "-notes") else { return }
-        report { try ReadingServices.markdown(title: title, notes: ReadingServices.notes(document), bibliography: bibliography).write(to: url, atomically: true, encoding: .utf8); status = "已导出带页码和原文的批注摘要" }
     }
 }
 

@@ -118,8 +118,10 @@ final class VersionTwoTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: split.destination!.path).count, 2)
         XCTAssertEqual(PDFDocument(url: split.destination!.appendingPathComponent("page-0003.pdf"))!.pageCount, 1)
         let compact = folder.appendingPathComponent("compressed.pdf")
-        _ = try BackgroundJobs.run(JobSpec(operation: .compress, source: source, pages: [0, 1, 2], destination: compact, revision: UUID())) { _ in }
-        XCTAssertEqual(PDFDocument(url: compact)!.pageCount, 3)
+        // The fixture has no pictures, so there is nothing to shrink: no copy is written and the reason is given.
+        let result = try BackgroundJobs.run(JobSpec(operation: .compress, source: source, pages: [0, 1, 2], destination: compact, revision: UUID())) { _ in }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: compact.path))
+        XCTAssertTrue(result.message.contains("没有找到可以压缩的大图片页面"))
     }
     func testCancelLeavesNoPartialExport() async throws {
         let folder = try temporary(); defer { try? FileManager.default.removeItem(at: folder) }

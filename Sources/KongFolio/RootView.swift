@@ -105,6 +105,11 @@ private struct DocumentTab: View {
                 dirty: workspace.dirty && workspace.count > 0, selected: selected, compact: compact,
                 dimmed: workspace.count == 0 && known && !loading,
                 select: { store.select(workspace.id) }, close: { store.close(workspace.id) })
+            .contextMenu {
+                if !selected, store.activeWorkspace != nil {
+                    Button("在右侧并排阅读（与当前文档对照）") { store.openSplit(with: workspace.id) }
+                }
+            }
     }
 }
 

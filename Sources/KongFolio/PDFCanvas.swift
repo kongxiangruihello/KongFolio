@@ -287,10 +287,11 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
             for p in points.dropFirst() { path.line(to: CGPoint(x: p.x - bounds.minX, y: p.y - bounds.minY)) }
             annotation.add(path)
         }
-        annotation.color = workspace.tool == .signature ? .black : NSColor(workspace.annotationColor)
+        let style = PenStyle.make(width: workspace.penWidth, highlighter: workspace.penHighlighter, arrow: workspace.tool == .arrow)
+        annotation.color = workspace.tool == .signature ? .black : NSColor(workspace.annotationColor).withAlphaComponent(style.alpha)
         if workspace.tool == .signature { annotation.userName = "KongFolio Signature" }
         let border = PDFBorder()
-        border.lineWidth = workspace.tool == .signature ? 1.6 : 2.0
+        border.lineWidth = workspace.tool == .signature ? 1.6 : style.width
         annotation.border = border
         page.addAnnotation(annotation)
         provisional = annotation

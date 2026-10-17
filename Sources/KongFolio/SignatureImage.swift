@@ -23,6 +23,9 @@ struct SignatureOptions: Equatable {
     var removeBackground = true
     /// Pixels lighter than this (after the light has been evened out) become transparent. 0...1
     var threshold = 0.8
+    /// Picks the strength from the picture itself (ink and paper are told apart by their brightness histogram);
+    /// `threshold` is used only when this is off.
+    var automatic = true
     /// Divides out uneven lighting (a shadow across the paper, a page photographed at an angle).
     var evenOutLight = true
     var tint = InkTint.black
@@ -113,6 +116,32 @@ enum SignatureImage {
         return pass(pass(values, horizontal: true), horizontal: false)
     }
 
+    /// Otsu's method on the brightness histogram: the level that best separates dark ink from light paper,
+    /// moved a little towards the paper so the soft edge of a stroke stays.
+    static func autoCutoff(_ light: [Float]) -> Float {
+        let bins = 64
+        var histogram = [Double](repeating: 0, count: bins)
+        for value in light { histogram[min(bins - 1, max(0, Int(value * Float(bins))))] += 1 }
+        let total = Double(light.count)
+        guard total > 0 else { return 0.8 }
+        var sumAll = 0.0
+        for (index, count) in histogram.enumerated() { sumAll += Double(index) * count }
+        var weightBackground = 0.0, sumBackground = 0.0, best = 0.0, threshold = 0
+        for index in 0..<bins {
+            weightBackground += histogram[index]
+            guard weightBackground > 0 else { continue }
+            let weightForeground = total - weightBackground
+            guard weightForeground > 0 else { break }
+            sumBackground += Double(index) * histogram[index]
+            let meanBackground = sumBackground / weightBackground
+            let meanForeground = (sumAll - sumBackground) / weightForeground
+            let between = weightBackground * weightForeground * (meanBackground - meanForeground) * (meanBackground - meanForeground)
+            if between > best { best = between; threshold = index }
+        }
+        let level = Float(threshold + 1) / Float(bins)
+        return min(max(level + 0.1, 0.45), 0.95)
+    }
+
     /// Turns a signature photo into ink on a transparent background; nil when no ink is found.
     static func process(_ image: CGImage, options: SignatureOptions) -> CGImage? {
         guard let loaded = Self.pixels(of: image) else { return nil }
@@ -143,7 +172,8 @@ enum SignatureImage {
                 for y in 0..<height { for x in 0..<width { paper[y * width + x] = coarse[(y / block) * cw + x / block] } }
                 for index in 0..<light.count { light[index] = min(1, light[index] / max(paper[index], 0.08)) }
             }
-            let cutoff = Float(min(max(options.threshold, 0.05), 0.98)), band: Float = 0.15
+            let cutoff = options.automatic ? autoCutoff(light) : Float(min(max(options.threshold, 0.05), 0.98))
+            let band: Float = 0.15
             for index in 0..<(width * height) {
                 let ink = min(max((cutoff - light[index]) / band, 0), 1)
                 let base = index * 4

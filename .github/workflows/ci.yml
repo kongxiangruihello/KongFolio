@@ -31,12 +31,17 @@ jobs:
           swift build 2>&1 | tee ci-logs/build.log
       - name: XCTest
         if: success() || failure()
+        timeout-minutes: 12
+        env:
+          # Unbuffered output shows which test was running if one ever hangs.
+          NSUnbufferedIO: "YES"
         run: |
           set -o pipefail
           mkdir -p ci-logs
           swift test 2>&1 | tee ci-logs/xctest.log
       - name: Portable test script
         if: success() || failure()
+        timeout-minutes: 12
         run: |
           set -o pipefail
           mkdir -p ci-logs

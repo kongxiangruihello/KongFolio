@@ -22,7 +22,7 @@ struct ExportOptions: Equatable, Codable {
 struct ExportEstimate { var bytes: Int; var sampled: Int; var total: Int; var exact: Bool }
 enum ExportServices {
     static func pixels(_ page: PDFPage, dpi: Int) throws -> CGSize {
-        guard [72, 150, 300, 600].contains(dpi) else { throw FolioError(message: "不支持的分辨率") }
+        guard (36...1200).contains(dpi) else { throw FolioError(message: "不支持的分辨率") }
         let b = page.bounds(for: .cropBox), rotated = abs(page.rotation % 180) == 90
         let width = ceil((rotated ? b.height : b.width) * Double(dpi) / 72)
         let height = ceil((rotated ? b.width : b.height) * Double(dpi) / 72)

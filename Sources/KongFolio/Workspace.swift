@@ -63,6 +63,15 @@ import UniformTypeIdentifiers
     @Published var showImportOrder = false
     @Published var selectedAnnotation: PDFAnnotation?
     @Published var annotationColor = Color.blue
+    @Published var showCompress = false
+    /// The other document shown beside this one (side-by-side reading), with the page offset kept while syncing.
+    @Published var splitPartner: Workspace?
+    @Published var splitSync = false
+    var splitOffset = 0
+    @Published var compressLevel = CompressLevel.standard
+    /// Pen and arrow line width in points; the highlighter draws a wide translucent stroke instead.
+    @Published var penWidth = 2.0
+    @Published var penHighlighter = false
     @Published var signatures: [SignatureTemplate] = []
     @Published var placingSignature: SignatureTemplate?
     @Published var signatureWidth = 0.28
@@ -150,7 +159,7 @@ import UniformTypeIdentifiers
     func confirm(_ title: String, _ detail: String, action: String) -> Bool {
         if let handler = Workspace.confirmationHandler { return handler(title, detail) }
         // Without a running application (unit tests, scripts) there is nobody to ask.
-        guard NSApp != nil else { return true }
+        guard AppEnvironment.isInteractive else { return true }
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = detail
@@ -641,7 +650,7 @@ import UniformTypeIdentifiers
         guard !files.isEmpty else { error = "只能拖入 PDF、图片、Markdown、TXT 或 KongFolio 项目。"; return }
         let isProject = files.contains { $0.pathExtension.lowercased() == "kongfolio" }
         var insert = false
-        if count > 0, !isProject, NSApp != nil {
+        if count > 0, !isProject, AppEnvironment.isInteractive {
             let alert = NSAlert()
             alert.messageText = "如何处理拖入的 \(files.count) 个文件？"
             alert.addButton(withTitle: "插入到当前页之后")

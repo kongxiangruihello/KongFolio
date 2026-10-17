@@ -138,6 +138,25 @@ import UniformTypeIdentifiers
         trimLoadedTabs()
     }
 
+    // MARK: Side by side
+
+    /// Documents that can be shown beside the active one.
+    var splitCandidates: [Workspace] {
+        tabs.compactMap(\.workspace).filter { $0.id != selectedID && ($0.count > 0 || $0.needsLoad) }
+    }
+
+    /// Shows another open document next to the active one, for reading the two against each other.
+    func openSplit(with id: UUID) {
+        guard let active = activeWorkspace, let partner = tabs.compactMap(\.workspace).first(where: { $0.id == id }), partner.id != active.id else { return }
+        partner.lastActive = Date()
+        partner.ensureLoaded()
+        active.splitPartner = partner
+        active.splitSync = false
+        active.splitOffset = partner.selection - active.selection
+    }
+
+    func closeSplit() { activeWorkspace?.splitPartner = nil }
+
     func selectNext() { step(1) }
     func selectPrevious() { step(-1) }
 
@@ -158,7 +177,8 @@ import UniformTypeIdentifiers
         let loaded = tabs.compactMap(\.workspace).filter { $0.count > 0 }
         guard loaded.count > maxLoadedTabs else { return }
         var excess = loaded.count - maxLoadedTabs
-        for workspace in loaded.filter({ $0.id != selectedID && $0.canUnload }).sorted(by: { $0.lastActive < $1.lastActive }) where excess > 0 {
+        let partners = Set(tabs.compactMap(\.workspace).compactMap { $0.splitPartner?.id })
+        for workspace in loaded.filter({ $0.id != selectedID && !partners.contains($0.id) && $0.canUnload }).sorted(by: { $0.lastActive < $1.lastActive }) where excess > 0 {
             workspace.unload()
             excess -= 1
         }
@@ -229,7 +249,7 @@ import UniformTypeIdentifiers
     }
 
     func present(_ error: Error) {
-        guard NSApp != nil else { return }
+        guard AppEnvironment.isInteractive else { return }
         NSAlert(error: error).runModal()
     }
 
@@ -253,6 +273,7 @@ import UniformTypeIdentifiers
             }
         }
         tabs.remove(at: index)
+        for workspace in tabs.compactMap(\.workspace) where workspace.splitPartner?.id == id { workspace.splitPartner = nil }
         if selectedID == id, !tabs.isEmpty { select(tabs[min(index, tabs.count - 1)].id) }
     }
 

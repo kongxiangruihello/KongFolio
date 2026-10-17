@@ -26,11 +26,36 @@ struct ContentView: View {
             Button("好") { workspace.error = nil }
         } message: { Text(workspace.error ?? "") }
         .sheet(isPresented: $workspace.showExport) { ExportSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showCompress) { CompressSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRReview) { OCRReview(workspace: workspace) }
         .sheet(isPresented: $workspace.showTools) { quickTools }
         .sheet(isPresented: $workspace.showImportOrder) { importOrder }
         .sheet(isPresented: Binding(get: { workspace.comparison != nil }, set: { if !$0 { workspace.comparison = nil } })) { comparisonSheet }
         .onChange(of: workspace.mode) { _, _ in workspace.resetImage(); workspace.scheduleRecovery() }
+    }
+
+    private func splitShown(width: CGFloat) -> Bool {
+        workspace.splitPartner != nil && LayoutMetrics.showsSplit(width: width)
+    }
+
+    /// Lists the other open documents to read beside this one.
+    private func splitMenu(iconOnly: Bool) -> some View {
+        Menu {
+            let candidates = workspace.store?.splitCandidates ?? []
+            if candidates.isEmpty { Text("没有其他已打开的文档") }
+            ForEach(candidates, id: \.id) { other in
+                Button("与「\(other.displayName)」并排阅读") { workspace.store?.openSplit(with: other.id) }
+            }
+            if workspace.splitPartner != nil {
+                Divider()
+                Button("关闭并排阅读") { workspace.splitPartner = nil }
+            }
+        } label: {
+            if iconOnly { Image(systemName: "rectangle.split.2x1") } else { Label("并排", systemImage: "rectangle.split.2x1") }
+        }
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("把另一个已打开的文档放在右边，两份对照阅读")
     }
 
     private func boardShown(width: CGFloat) -> Bool {
@@ -45,8 +70,12 @@ struct ContentView: View {
             HSplitView {
                 if LayoutMetrics.showsSidebar(preferred: showSidebar, width: width) { sidebar.frame(minWidth: 140, idealWidth: 180, maxWidth: 230) }
                 canvas.frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
+                if splitShown(width: width), let partner = workspace.splitPartner {
+                    SplitPane(primary: workspace, partner: partner) { workspace.splitPartner = nil }
+                        .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
+                }
                 if boardShown(width: width), let board = workspace.store?.board { BoardView(board: board, workspace: workspace).frame(minWidth: 280, idealWidth: 380, maxWidth: .infinity) }
-                if LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width)) { inspector.frame(minWidth: 220, idealWidth: 290, maxWidth: 340) }
+                if LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width), splitShown: splitShown(width: width)) { inspector.frame(minWidth: 220, idealWidth: 290, maxWidth: 340) }
             }
             Divider()
             statusBar(width: width)
@@ -104,7 +133,7 @@ struct ContentView: View {
     private func topBar(width: CGFloat) -> some View {
         let style = LayoutMetrics.topBarStyle(width: width)
         let sidebarShown = LayoutMetrics.showsSidebar(preferred: showSidebar, width: width)
-        let inspectorShown = LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width))
+        let inspectorShown = LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width), splitShown: splitShown(width: width))
         let boardIsShown = boardShown(width: width)
         return HStack(spacing: style == .full ? 16 : 10) {
             Button { showSidebar.toggle() } label: { Image(systemName: "sidebar.left") }
@@ -126,12 +155,14 @@ struct ContentView: View {
             Spacer(minLength: 0)
             switch style {
             case .full:
+                splitMenu(iconOnly: false)
                 toolsButton(iconOnly: false)
                 openMenu(iconOnly: false)
                 saveButton(iconOnly: false)
                 closeButton(iconOnly: false)
                 exportMenu(iconOnly: false)
             case .icons:
+                splitMenu(iconOnly: true)
                 toolsButton(iconOnly: true)
                 openMenu(iconOnly: true)
                 saveButton(iconOnly: true)
@@ -205,7 +236,7 @@ struct ContentView: View {
     @ViewBuilder private var exportItems: some View {
         Button("PDF · 全部页面") { workspace.exportPDF() }
         Button("PDF · 提取选中页") { workspace.exportPDF(currentOnly: true) }
-        Button("PDF · 压缩图片（保留文字）") { workspace.compress() }
+        Button("PDF · 压缩体积…") { workspace.compress() }
         Divider()
         Button("JPG · 当前页") { workspace.exportImage(.jpg) }
         Button("PNG · 当前页") { workspace.exportImage(.png) }
@@ -412,6 +443,14 @@ struct ContentView: View {
             Picker("工具", selection: $workspace.tool) { ForEach(AnnotationTool.allCases) { Text($0.title).tag($0) } }.labelsHidden()
             TextField("批注 / 文字框 / 笔记内容", text: $workspace.note, axis: .vertical).lineLimit(3...5)
             ColorPicker("标注颜色", selection: $workspace.annotationColor, supportsOpacity: false)
+            if workspace.tool == .pen || workspace.tool == .arrow {
+                HStack {
+                    Text("线宽 \(workspace.penWidth, format: .number.precision(.fractionLength(1)))")
+                    Slider(value: $workspace.penWidth, in: 0.5...12)
+                }
+                .font(.caption)
+                if workspace.tool == .pen { Toggle("荧光笔（宽、半透明）", isOn: $workspace.penHighlighter).font(.caption) }
+            }
             if workspace.selectedAnnotation != nil {
                 HStack { Button("更新标注") { workspace.updateAnnotation() }; Button("删除标注") { workspace.deleteAnnotation() } }
                 HStack { Button("缩小") { workspace.resizeAnnotation(0.85) }; Button("放大") { workspace.resizeAnnotation(1.15) } }
