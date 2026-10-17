@@ -186,6 +186,39 @@ extension Workspace {
         status = "已恢复 \(targets.count) 页的完整页面"
     }
 
+    /// The margins a page has right now.
+    func currentCrop(of index: Int) -> CropMargins {
+        guard let page = document.page(at: index) else { return .zero }
+        return PageCrop.margins(of: page.bounds(for: .cropBox), mediaBox: page.bounds(for: .mediaBox), rotation: page.rotation)
+    }
+
+    /// Switches the sheet to one page at a time, starting from what the page has now.
+    func setCropSingle(_ on: Bool) {
+        cropSingle = on
+        if on { cropPage = currentCrop(of: selection) }
+    }
+
+    /// Moves the preview to a neighbouring page and loads that page's own cut into the sliders.
+    func stepCropPage(_ delta: Int) {
+        let next = min(max(selection + delta, 0), count - 1)
+        guard next != selection else { return }
+        selection = next
+        if cropSingle { cropPage = currentCrop(of: next) }
+    }
+
+    /// Cuts only the page being previewed and leaves the sheet open for the next one.
+    func applyCropToCurrentPage() {
+        guard count > 0, let page = document.page(at: selection) else { return }
+        let margins = cropPage.clamped
+        let before = currentCrop(of: selection)
+        guard before != margins else { return }
+        checkpoint()
+        page.setBounds(PageCrop.cropBox(mediaBox: page.bounds(for: .mediaBox), rotation: page.rotation, margins: margins), for: .cropBox)
+        moveRegions(of: selection, from: before, to: margins)
+        changed()
+        status = "已裁第 \(selection + 1) 页（可撤销）"
+    }
+
     /// Keeps the recognised regions of a page on their characters when the visible area changes.
     private func moveRegions(of index: Int, from old: CropMargins, to new: CropMargins) {
         guard old != new else { return }
@@ -196,6 +229,17 @@ extension Workspace {
                 return moved
             }
         }
+    }
+
+    /// Proposes margins for the page being previewed alone.
+    func detectCropPage() {
+        guard let page = document.page(at: selection), let bitmap = ContentBounds.render(page),
+              let found = ContentBounds.margins(pixels: bitmap.pixels, width: bitmap.width, height: bitmap.height) else {
+            cropMessage = "没有在这一页上找到可识别的内容。"
+            return
+        }
+        cropPage = found
+        cropMessage = "已检测本页内容边界，请看预览后再点“裁这一页”。"
     }
 
     /// Looks at the pages to cut and proposes margins (one setting for odd pages, one for even pages).

@@ -32,12 +32,25 @@ struct ImageAdjustments: Equatable, Codable {
 }
 enum DocumentServices {
     static let context = CIContext()
+    /// A file marked "no modification" (owner-restricted) is rebuilt from copies of its pages, which carry no
+    /// encryption, so annotations and edits are saved like in any other file. Other files are returned as they are.
+    static func unrestricted(_ document: PDFDocument) -> PDFDocument {
+        guard document.isEncrypted, !document.allowsDocumentChanges else { return document }
+        let copy = PDFDocument()
+        for index in 0..<document.pageCount {
+            guard let page = document.page(at: index)?.copy() as? PDFPage else { return document }
+            copy.insert(page, at: copy.pageCount)
+        }
+        ReadingServices.applyOutline(ReadingServices.outline(document), to: copy)
+        return copy
+    }
+
     static func load(_ url: URL) throws -> PDFDocument {
         if url.pathExtension.lowercased() == "pdf" {
             guard let document = PDFDocument(url: url), !document.isLocked, document.pageCount > 0 else {
                 throw FolioError(message: "无法打开 PDF，文件可能损坏或需要密码。")
             }
-            return document
+            return unrestricted(document)
         }
         if TextImport.handles(url) { return try TextImport.document(from: url) }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { throw FolioError(message: "不支持或无法读取：\(url.lastPathComponent)") }

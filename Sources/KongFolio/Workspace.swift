@@ -66,6 +66,7 @@ import UniformTypeIdentifiers
     @Published var showCompress = false
     @Published var showCrop = false
     @Published var showWordExport = false
+    @Published var showBatch = false
     @Published var showOCRQuality = false
     @Published var showOutlineText = false
     @Published var showReplacementRules = false
@@ -90,6 +91,11 @@ import UniformTypeIdentifiers
     @Published var cropScope = CropScope.all
     @Published var cropDetecting = false
     @Published var cropMessage = ""
+    /// Fine-tuning one page at a time: the sliders then edit `cropPage` instead of the odd/even settings.
+    @Published var cropSingle = false
+    @Published var accuracyReference = ""
+    @Published var accuracyMessage = ""
+    @Published var cropPage = CropMargins()
     /// The other document shown beside this one (side-by-side reading), with the page offset kept while syncing.
     @Published var splitPartner: Workspace?
     @Published var splitSync = false
@@ -137,6 +143,7 @@ import UniformTypeIdentifiers
     var future: [UndoEntry] = []
     var activeJob: Task<JobResult, Error>?
     var lastJob: JobSpec?
+    var ocrChain: OCRChain?
     /// How long the last full PDF serialization took; autosave backs off on large documents.
     var lastSerializationSeconds = 0.0
     var previewIsProxy = false

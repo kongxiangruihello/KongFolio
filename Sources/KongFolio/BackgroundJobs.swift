@@ -26,6 +26,8 @@ struct JobSpec {
     var outline: [OutlineEntry] = []
     /// Recognition records by page, for reading vertical pages in the right order.
     var regions: [Int: [RecognizedLine]] = [:]
+    /// Later chunks of one OCR run share the first chunk's undo step.
+    var continuation = false
 }
 
 struct JobResult {
@@ -35,6 +37,9 @@ struct JobResult {
     var message: String
     var regions: [Int: [RecognizedLine]] = [:]
     var originals: [Int: Data] = [:]
+    /// Pages recognized and pages left alone by an `ocr` job, so a chunked run can add them up.
+    var recognized = 0
+    var skipped = 0
 }
 
 enum BackgroundJobs {
@@ -144,7 +149,7 @@ enum BackgroundJobs {
         case .ocr:
             let approximate = regions.values.flatMap { $0 }.contains { $0.approximate == true }
             let note = spec.ocr.vertical ? (approximate ? "（竖排模式：部分列未能逐字对位，这些列的高亮位置为整列近似）" : "（竖排模式）") : ""
-            return JobResult(pdf: try doc.dataRepresentation().unwrap("OCR 保存失败"), text: doc.string ?? "", message: "OCR 完成，识别 \(recognizedCount) 页，跳过 \(skipped) 个已有文字的页面\(note)", regions: regions, originals: originals)
+            return JobResult(pdf: try doc.dataRepresentation().unwrap("OCR 保存失败"), text: doc.string ?? "", message: "OCR 完成，识别 \(recognizedCount) 页，跳过 \(skipped) 个已有文字的页面\(note)", regions: regions, originals: originals, recognized: recognizedCount, skipped: skipped)
         case .inspectOCR:
             return JobResult(message: "识别区域检查完成，未修改页面文字", regions: regions)
         case .cleanup:
@@ -158,11 +163,20 @@ enum BackgroundJobs {
     }
 }
 
+struct OCRChain {
+    var total: Int
+    var remaining: [[Int]]
+    var done = 0
+    var recognized = 0
+    var skipped = 0
+}
+
 extension Workspace {
     func runJob(_ spec: JobSpec) {
         guard !busy else { return }
         busy = true
         progress = 0
+        if !spec.continuation && spec.operation != .ocr { ocrChain = nil }
         lastJob = spec
         switch spec.operation {
         case .ocr: taskLabel = "识别文本"
@@ -177,14 +191,15 @@ extension Workspace {
         }
         status = taskLabel
         let worker = Task.detached(priority: .userInitiated) { [self] in
-            try BackgroundJobs.run(spec) { value in Task { @MainActor in self.progress = value } }
+            try BackgroundJobs.run(spec) { value in Task { @MainActor in self.progress = self.chainProgress(value, pages: spec.pages.count) } }
         }
         activeJob = worker
         Task {
-            defer { busy = false; activeJob = nil }
+            var chaining = false
+            defer { if !chaining { busy = false; activeJob = nil } }
             do {
                 let result = try await worker.value
-                if result.pdf != nil || spec.operation == .inspectOCR { checkpoint() }
+                if (result.pdf != nil && !spec.continuation) || spec.operation == .inspectOCR { checkpoint() }
                 for (index, data) in result.originals { updateMeta(index) { $0.ocrOriginal = data } }
                 for (index, lines) in result.regions { updateMeta(index) { $0.ocrRegions = lines } }
                 if spec.operation == .cleanup { for index in spec.pages { updateMeta(index) { $0 = PageMeta() } } }
@@ -200,14 +215,36 @@ extension Workspace {
                     showOCRReview = true
                     reviewSelection = -1
                 }
-                status = result.message
+                if spec.operation == .ocr, var chain = ocrChain {
+                    chain.recognized += result.recognized
+                    chain.skipped += result.skipped
+                    chain.done += spec.pages.count
+                    ocrChain = chain
+                    if let next = chain.remaining.first {
+                        ocrChain?.remaining.removeFirst()
+                        chaining = true
+                        busy = false
+                        activeJob = nil
+                        continueOCR(pages: next, like: spec)
+                        return
+                    }
+                    ocrChain = nil
+                    status = "OCR 完成，识别 \(chain.recognized) 页，跳过 \(chain.skipped) 个已有文字的页面" + (spec.ocr.vertical ? "（竖排模式）" : "")
+                } else {
+                    status = result.message
+                }
                 lastJob = nil
                 if let destination = result.destination { NSWorkspace.shared.open(destination) }
             } catch is CancellationError {
-                status = "任务已取消；当前文档未改动"
+                if let chain = ocrChain, chain.done > 0 {
+                    status = "已取消；前 \(chain.done) 页的识别结果已保留，可用“继续识别”接着做"
+                } else {
+                    status = "任务已取消；当前文档未改动"
+                }
+                ocrChain = nil
             } catch {
                 self.error = error.localizedDescription
-                status = "任务失败，可重试"
+                status = ocrChain.map { $0.done > 0 ? "任务失败；前 \($0.done) 页的结果已保留，可重试或“继续识别”" : "任务失败，可重试" } ?? "任务失败，可重试"
             }
         }
     }
@@ -228,9 +265,36 @@ extension Workspace {
         runJob(job)
     }
 
-    func ocr(selectedOnly: Bool = false, force: Bool = false) {
+    /// Pages per background job; each chunk is applied as soon as it finishes, so a cancel keeps the earlier ones.
+    nonisolated static let ocrChunkSize = 10
+
+    nonisolated static func chunks(_ pages: [Int], size: Int = ocrChunkSize) -> [[Int]] {
+        guard size > 0 else { return [pages] }
+        return stride(from: 0, to: pages.count, by: size).map { Array(pages[$0..<min($0 + size, pages.count)]) }
+    }
+
+    func chainProgress(_ value: Double, pages: Int) -> Double {
+        guard let chain = ocrChain, chain.total > 0 else { return value }
+        return (Double(chain.done) + value * Double(pages)) / Double(chain.total)
+    }
+
+    func continueOCR(pages: [Int], like previous: JobSpec) {
+        guard let source = try? pdfData() else { ocrChain = nil; return }
+        var spec = previous
+        spec.source = source
+        spec.pages = pages
+        spec.revision = revision
+        spec.ocrSources = ocrOriginals
+        spec.continuation = true
+        runJob(spec)
+    }
+
+    /// `resume` leaves out pages that already carry recognition records, for picking up an interrupted run.
+    func ocr(selectedOnly: Bool = false, force: Bool = false, resume: Bool = false) {
         guard count > 0, !busy, checkDraftsForExport(), let source = try? pdfData() else { return }
-        let pages = selectedOnly ? effectivePages : Array(0..<count)
+        var pages = selectedOnly ? effectivePages : Array(0..<count)
+        if resume { pages = pages.filter { !(meta($0).ocrRegions.map { !$0.isEmpty } ?? false) } }
+        guard !pages.isEmpty else { status = "所有页面都已识别"; return }
         if force {
             guard pages.allSatisfy({ meta($0).ocrOriginal != nil }) else {
                 error = "重新识别仅支持在 0.3 及以后生成过 OCR 的页面；其他页面请先使用识别区域检查。"
@@ -245,7 +309,10 @@ extension Workspace {
                 guard confirm("OCR 会把 \(flattened) 个标注固化到页面中", "固化后的高亮、笔记和手写不能再编辑或移动，也不会出现在摘录列表里。建议先 OCR、再批注。操作可撤销。", action: "继续识别") else { return }
             }
         }
-        runJob(JobSpec(operation: .ocr, source: source, pages: pages, revision: revision, forceOCR: force, ocrSources: ocrOriginals, ocr: ocrSettings))
+        var parts = Workspace.chunks(pages)
+        let first = parts.removeFirst()
+        ocrChain = OCRChain(total: pages.count, remaining: parts)
+        runJob(JobSpec(operation: .ocr, source: source, pages: first, revision: revision, forceOCR: force, ocrSources: ocrOriginals, ocr: ocrSettings))
     }
 
     func inspectOCR() {

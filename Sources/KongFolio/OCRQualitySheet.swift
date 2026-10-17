@@ -29,6 +29,17 @@ struct OCRQualitySheet: View {
             }
             Text("只检查在本项目里做过 OCR、留有识别记录的页面。判断依据：识别出的字很少、有列没能逐字对位、置信度偏低。这只是提示，不代表一定有错，请对照原图核实。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            DisclosureGroup("与校对稿比较（测算字准确率）") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("把当前第 \(workspace.selection + 1) 页校对好的文字粘贴在下面（标点、空白不计），按键即可得到识别的字准确率。换一种识别设置后再比较一次，就知道哪种更准。")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    TextEditor(text: $workspace.accuracyReference).font(.system(size: 12)).frame(height: 90).border(Color.secondary.opacity(0.4))
+                    HStack {
+                        Button("计算") { workspace.compareAccuracy() }
+                        if !workspace.accuracyMessage.isEmpty { Text(workspace.accuracyMessage).font(.caption).textSelection(.enabled) }
+                    }
+                }
+            }
             HStack {
                 Button("关闭") { workspace.showOCRQuality = false }.keyboardShortcut(.cancelAction)
                 Spacer()
