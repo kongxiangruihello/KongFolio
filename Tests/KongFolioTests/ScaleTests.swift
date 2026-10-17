@@ -57,15 +57,13 @@ final class ScaleTests: XCTestCase {
         let url = directory.appendingPathComponent("w.docx")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let wordTime = try milliseconds { _ = try BatchPipeline.process(data, recipe: word, replacements: [], wordURL: url) }
-        // Deliberately failing until budgets are chosen: each line shows one timing in milliseconds.
-        XCTAssertEqual(-1, built)
-        XCTAssertEqual(-2, open)
-        XCTAssertEqual(-3, serialize)
-        XCTAssertEqual(-4, subset)
-        XCTAssertEqual(-5, crop)
-        XCTAssertEqual(-6, undo)
-        XCTAssertEqual(-7, pipeline)
-        XCTAssertEqual(-8, wordTime)
-        XCTAssertEqual(-9, data.count / 1000)
+        // Measured on CI (macOS 15 / 26, synthetic scans): serialise 110 ms, crop 300 pages 4 ms, undo 100 ms,
+        // 60-page recipe 3.5-4.3 s, 60-page Word file 0.6-1.0 s. Budgets leave room for slower runners.
+        XCTAssertEqual(min(serialize, 3000), serialize)
+        XCTAssertEqual(min(subset, 1000), subset)
+        XCTAssertEqual(min(crop, 3000), crop)
+        XCTAssertEqual(min(undo, 3000), undo)
+        XCTAssertEqual(min(pipeline, 25000), pipeline)
+        XCTAssertEqual(min(wordTime, 8000), wordTime)
     }
 }
