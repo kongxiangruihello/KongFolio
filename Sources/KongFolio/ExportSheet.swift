@@ -45,7 +45,14 @@ struct ExportSheet: View {
                 Text(workspace.exportOptions.pdfMode.detail + (workspace.exportOptions.pdfMode == .preserve ? "已有图片调整造成的栅格化不会逆转。" : ""))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if workspace.exportOptions.format == .pdf { stampControls }
+            if workspace.exportOptions.format == .pdf {
+                Toggle("末尾附标注摘要页（每条标注的页码、原文和笔记）", isOn: Binding(get: { workspace.exportOptions.appendsNotes }, set: { workspace.exportOptions.appendsNotes = $0 }))
+                    .disabled(workspace.exportOptions.scope != .all)
+                if workspace.exportOptions.scope != .all {
+                    Text("摘要页只在导出全部页面时可用，因为页码要与整本书对应。").font(.caption).foregroundStyle(.secondary)
+                }
+                stampControls
+            }
             if workspace.exportOptions.rendersPixels {
                 Picker("分辨率", selection: $workspace.exportOptions.dpi) {
                     ForEach([72, 150, 300, 600], id: \.self) { Text("\($0) DPI").tag($0) }

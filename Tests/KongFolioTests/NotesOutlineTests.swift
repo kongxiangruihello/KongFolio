@@ -1,0 +1,127 @@
+import XCTest
+import PDFKit
+@testable import KongFolio
+
+final class NotesOutlineTests: XCTestCase {
+    func note(_ page: Int, _ index: Int = 0, kind: String = "高亮", quote: String = "", text: String = "", color: String? = "黄") -> AnnotationNote {
+        AnnotationNote(page: page, index: index, kind: kind, quote: quote, note: text, label: nil, colorName: color, rgb: nil)
+    }
+
+    let outline = [
+        OutlineEntry(page: 2, label: "第一卷", depth: 0),
+        OutlineEntry(page: 3, label: "第一章", depth: 1),
+        OutlineEntry(page: 6, label: "第二章", depth: 1),
+        OutlineEntry(page: 9, label: "第二卷", depth: 0),
+    ]
+
+    func testNotesFallUnderTheChapterTheyAreIn() {
+        let notes = [note(3, quote: "甲"), note(4, 1, quote: "乙"), note(7, quote: "丙"), note(10, quote: "丁")]
+        let sections = NotesOutline.sections(notes: notes, outline: outline)
+        // 第一卷 has no notes of its own but heads its chapters; 第二卷 has one.
+        XCTAssertEqual(sections.map(\.title), ["第一卷", "第一章", "第二章", "第二卷"])
+        XCTAssertEqual(sections.map(\.depth), [0, 1, 1, 0])
+        XCTAssertEqual(sections.map { $0.notes.count }, [0, 2, 1, 1])
+    }
+
+    func testChaptersWithoutNotesAreLeftOutAndEarlyNotesGetTheirOwnSection() {
+        let sections = NotesOutline.sections(notes: [note(0, quote: "序前"), note(10, quote: "末")], outline: outline)
+        XCTAssertEqual(sections.map(\.title), [NotesOutline.beforeContents, "第二卷"])
+    }
+
+    func testWithoutAnOutlineThereIsOneSectionInPageOrder() {
+        let sections = NotesOutline.sections(notes: [note(5, quote: "后"), note(1, quote: "先")], outline: [])
+        XCTAssertEqual(sections.count, 1)
+        XCTAssertEqual(sections[0].title, NotesOutline.everything)
+        XCTAssertEqual(sections[0].notes.map(\.quote), ["先", "后"])
+        XCTAssertEqual(NotesOutline.sections(notes: [], outline: outline).count, 0)
+    }
+
+    func testMarkdownAndTextCarryHeadingsPagesQuotesAndNotes() {
+        let sections = NotesOutline.sections(notes: [note(3, quote: "学而时习之", text: "开篇"), note(10, kind: "矩形", color: nil)], outline: outline)
+        let markdown = NotesOutline.markdown(title: "论语", sections: sections)
+        XCTAssertTrue(markdown.hasPrefix("# 论语 — 笔记大纲"))
+        XCTAssertTrue(markdown.contains("## 第一卷"))
+        XCTAssertTrue(markdown.contains("### 第一章"))
+        XCTAssertTrue(markdown.contains("第 4 页 · 高亮（黄）"))
+        XCTAssertTrue(markdown.contains("> 学而时习之"))
+        XCTAssertTrue(markdown.contains("笔记：开篇"))
+        XCTAssertTrue(markdown.contains("（图形标注，无文本）"))
+        let text = NotesOutline.plainText(title: "论语", sections: sections)
+        XCTAssertTrue(text.contains("原文：学而时习之"))
+        XCTAssertTrue(text.contains("  第一章"))
+    }
+
+    func testTheWordFileIsValidAndHasTheHeadings() throws {
+        let sections = NotesOutline.sections(notes: [note(3, quote: "学而时习之", text: "开篇")], outline: outline)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("n.docx")
+        try WordExport.writeNotesOutline(title: "论语", sections: sections, to: url)
+        let helper = WordExportTests()
+        XCTAssertTrue(try helper.unzip(["-t", url.path]).contains("No errors detected"))
+        let xml = try helper.unzip(["-p", url.path, "word/document.xml"])
+        XCTAssertTrue(xml.contains("论语 — 笔记大纲") && xml.contains("第一卷") && xml.contains("学而时习之") && xml.contains("笔记：开篇"))
+        XCTAssertTrue(xml.contains("Heading1") && xml.contains("Heading2") && xml.contains("Heading3"))
+    }
+}
+
+final class FlattenedExportTests: XCTestCase {
+    func annotatedBook() throws -> PDFDocument {
+        let book = try TextImport.render((1...40).map { "第\($0)行：学而时习之，不亦说乎？" }.joined(separator: "\n"), markdown: false)
+        let box = try AnnotationShapes.make(tool: .rectangle, points: [CGPoint(x: 60, y: 600), CGPoint(x: 260, y: 660)], style: PenStyle(width: 2, alpha: 1), color: .red, fill: false, constrained: false).unwrap("没有生成")
+        try book.page(at: 0).unwrap("无页面").addAnnotation(box)
+        let note = PDFAnnotation(bounds: CGRect(x: 300, y: 600, width: 28, height: 28), forType: .text, withProperties: nil)
+        note.contents = "要点"
+        try book.page(at: 0).unwrap("无页面").addAnnotation(note)
+        return book
+    }
+
+    func testFlatteningDrawsTheAnnotationsIntoThePagesAndKeepsTheText() throws {
+        let book = try annotatedBook()
+        let pages = Array(0..<book.pageCount)
+        let data = try ExportServices.flattenedPDF(book, pages: pages)
+        let flat = try PDFDocument(data: data).unwrap("无法读取")
+        XCTAssertEqual(flat.pageCount, book.pageCount)
+        XCTAssertEqual(flat.page(at: 0)?.annotations.filter { ["Square", "Text"].contains($0.type ?? "") }.count, 0)
+        XCTAssertTrue((flat.page(at: 0)?.string ?? "").contains("学而时习之"))
+    }
+
+    func testTheSummaryPagesAreAppendedAfterTheBook() throws {
+        let book = try annotatedBook()
+        let notes = ReadingServices.notes(book)
+        XCTAssertEqual(notes.count, 2)
+        let combined = try ExportServices.withSummaryPages(book, notes: notes)
+        XCTAssertTrue(combined.pageCount > book.pageCount)
+        let last = combined.page(at: combined.pageCount - 1)?.string ?? ""
+        let allText = (book.pageCount..<combined.pageCount).compactMap { combined.page(at: $0)?.string }.joined()
+        XCTAssertTrue(allText.contains("要点") || last.contains("要点"))
+        XCTAssertTrue(allText.contains("标注摘要"))
+    }
+
+    func testTheConfiguredExportFlattensAndAppendsSummaryPages() throws {
+        let book = try annotatedBook()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var options = ExportOptions()
+        options.pdfMode = .flatten
+        options.appendsNotes = true
+        let target = directory.appendingPathComponent("out.pdf")
+        let source = try book.dataRepresentation().unwrap("无法序列化")
+        let spec = JobSpec(operation: .configured, source: source, pages: Array(0..<book.pageCount), destination: target, revision: UUID(), exportOptions: options)
+        let result = try ExportServices.run(spec) { _ in }
+        XCTAssertTrue(result.message.contains("摘要页"))
+        let out = try PDFDocument(url: target).unwrap("无法读取输出")
+        XCTAssertTrue(out.pageCount > book.pageCount)
+        XCTAssertEqual(out.page(at: 0)?.annotations.filter { ["Square", "Text"].contains($0.type ?? "") }.count, 0)
+    }
+
+    func testOldSavedExportSettingsStillDecode() throws {
+        let data = try JSONEncoder().encode(ExportOptions())
+        var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        object["appendNotes"] = nil
+        let stripped = try JSONSerialization.data(withJSONObject: object)
+        XCTAssertFalse(try JSONDecoder().decode(ExportOptions.self, from: stripped).appendsNotes)
+    }
+}

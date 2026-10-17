@@ -10,6 +10,13 @@ struct ExportOptions: Equatable, Codable {
     var quality = 0.9
     /// Page numbers, header, footer and watermark; applied to PDF output only.
     var stamp = StampOptions()
+    /// Add pages at the end that list every annotation with its page number (PDF of the whole document only).
+    /// Optional so saved export settings still decode.
+    var appendNotes: Bool? = nil
+    var appendsNotes: Bool {
+        get { appendNotes ?? false }
+        set { appendNotes = newValue ? true : nil }
+    }
     var type: UTType { format.type }
     var suffix: String { format.suffix }
     var rasterPDF: Bool {
@@ -73,6 +80,31 @@ enum ExportServices {
         return size
     }
 
+    /// The pages with their annotations drawn into the content; text stays as text and the outline follows the pages.
+    static func flattenedPDF(_ doc: PDFDocument, pages: [Int], progress: @escaping @Sendable (Double) -> Void = { _ in }) throws -> Data {
+        let output = PDFDocument()
+        for (offset, index) in pages.enumerated() {
+            try Task.checkCancellation()
+            try autoreleasepool {
+                let page = try doc.page(at: index).unwrap("页面读取失败")
+                output.insert(try DocumentServices.searchablePage(page, lines: []), at: output.pageCount)
+            }
+            progress(Double(offset + 1) / Double(max(pages.count, 1)))
+        }
+        let outlines = ReadingServices.outline(doc).compactMap { entry -> OutlineEntry? in guard let index = pages.firstIndex(of: entry.page) else { return nil }; var copy = entry; copy.page = index; return copy }
+        ReadingServices.applyOutline(outlines, to: output)
+        return try output.dataRepresentation().unwrap("PDF 保存失败")
+    }
+
+    /// `doc` followed by pages that list its annotations.
+    static func withSummaryPages(_ doc: PDFDocument, notes: [AnnotationNote]) throws -> PDFDocument {
+        let summary = try TextImport.render(ReadingServices.markdown(title: "标注摘要", notes: notes), markdown: true)
+        let combined = DocumentServices.subset(doc, indexes: Array(0..<doc.pageCount))
+        for index in 0..<summary.pageCount { if let page = summary.page(at: index)?.copy() as? PDFPage { combined.insert(page, at: combined.pageCount) } }
+        ReadingServices.applyOutline(ReadingServices.outline(doc), to: combined)
+        return combined
+    }
+
     static func estimate(data: Data, pages: [Int], options: ExportOptions) throws -> ExportEstimate {
         guard let doc = PDFDocument(data: data), !pages.isEmpty, pages.allSatisfy({ (0..<doc.pageCount).contains($0) }) else { throw FolioError(message: "没有可估算的页面") }
         if options.format == .pdf, options.stamp.isActive {
@@ -80,7 +112,8 @@ enum ExportServices {
             var plain = options; plain.stamp = StampOptions()
             return try estimate(data: try stamped.dataRepresentation().unwrap("带页码的 PDF 生成失败"), pages: Array(0..<stamped.pageCount), options: plain)
         }
-        if options.format == .pdf, options.pdfMode == .preserve { return ExportEstimate(bytes: try preservedPDF(doc, pages: pages).count, sampled: pages.count, total: pages.count, exact: true) }
+        if options.format == .pdf, options.pdfMode == .preserve { return ExportEstimate(bytes: try preservedPDF(doc, pages: pages).count, sampled: pages.count, total: pages.count, exact: !options.appendsNotes) }
+        if options.format == .pdf, options.pdfMode == .flatten { return ExportEstimate(bytes: Int(Double(try preservedPDF(doc, pages: pages).count) * 1.1), sampled: pages.count, total: pages.count, exact: false) }
         if options.format == .pdf, options.pdfMode == .optimized {
             let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("KongFolio-estimate-\(UUID().uuidString).pdf")
             defer { try? FileManager.default.removeItem(at: temporary) }
@@ -97,6 +130,20 @@ enum ExportServices {
               spec.pages.allSatisfy({ (0..<doc.pageCount).contains($0) }) else { throw FolioError(message: "导出设置无效") }
         let target = try spec.destination.unwrap("请选择导出位置")
         try Task.checkCancellation()
+        if options.format == .pdf, options.appendsNotes, spec.pages == Array(0..<doc.pageCount) {
+            let notes = ReadingServices.notes(doc)
+            if !notes.isEmpty {
+                let combined = try withSummaryPages(doc, notes: notes)
+                var plain = options; plain.appendNotes = nil
+                var next = spec
+                next.source = try combined.dataRepresentation().unwrap("带摘要页的 PDF 生成失败")
+                next.pages = Array(0..<combined.pageCount)
+                next.exportOptions = plain
+                var result = try run(next, progress: progress)
+                result.message += "（末尾附 \(notes.count) 条标注的摘要页）"
+                return result
+            }
+        }
         if options.format == .pdf, options.stamp.isActive {
             // Draw the stamps first, then export the stamped pages like any other document.
             let stamped = try Stamping.apply(options.stamp, to: doc, pages: spec.pages)
@@ -108,6 +155,12 @@ enum ExportServices {
             var result = try run(next, progress: progress)
             result.message += "（已添加页码/页眉页脚/水印；标注已固化，链接不再可点）"
             return result
+        }
+        if options.format == .pdf, options.pdfMode == .flatten {
+            let flattened = try flattenedPDF(doc, pages: spec.pages, progress: progress)
+            try Task.checkCancellation()
+            try flattened.write(to: target, options: .atomic)
+            return JobResult(message: "PDF 已导出：标注已固化进页面，文字仍可搜索")
         }
         if options.format == .pdf, options.pdfMode == .preserve {
             let data = try preservedPDF(doc, pages: spec.pages); try Task.checkCancellation(); try data.write(to: target, options: .atomic)

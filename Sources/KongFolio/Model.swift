@@ -89,12 +89,14 @@ enum PDFExportMode: String, Codable, CaseIterable, Identifiable {
     case preserve = "保留原始内容"
     case optimized = "压缩图片（保留文字）"
     case raster = "图片型 PDF"
+    case flatten = "固化标注（保留文字）"
     var id: String { rawValue }
     var detail: String {
         switch self {
         case .preserve: return "保留页面原始内容、尺寸、目录和可编辑标注，不重新采样。"
         case .optimized: return "用 PDFKit 把页面中的图片重新编码为适合屏幕的 JPEG；文字、矢量内容、链接和目录保留。不保证每个文件都会变小。"
         case .raster: return "整页重新渲染为图片；文字、链接和标注固化，体积由 DPI 和质量决定。"
+        case .flatten: return "把高亮、画线、批注等标注画进页面，在任何阅读器、打印和分享时都看得见，不能再编辑；页面文字和目录保留，链接不再可点，旋转会固化。"
         }
     }
 }

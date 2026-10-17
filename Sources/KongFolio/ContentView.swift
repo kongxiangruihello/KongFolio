@@ -241,7 +241,10 @@ struct ContentView: View {
     }
 
     @ViewBuilder private var exportItems: some View {
+        Button("KongFolio 项目…（含标注、识别、目录，可再次打开）") { workspace.saveProject(asNew: true) }
+        Divider()
         Button("PDF · 全部页面") { workspace.exportPDF() }
+        Button("PDF · 固化标注，可附摘要页…") { workspace.openExport(format: .pdf, scope: .all, pdfMode: .flatten) }
         Button("PDF · 提取选中页") { workspace.exportPDF(currentOnly: true) }
         Button("PDF · 压缩体积…") { workspace.compress() }
         Divider()
@@ -255,6 +258,10 @@ struct ContentView: View {
         Button("TXT") { workspace.exportText(markdown: false) }
         Button("Markdown · 全文") { workspace.exportText(markdown: true) }
         Button("Markdown · 摘录与笔记") { workspace.exportNotes() }
+        Divider()
+        Button("笔记大纲 · Word（按目录分章）…") { workspace.exportNotesOutline(.word) }
+        Button("笔记大纲 · Markdown…") { workspace.exportNotesOutline(.markdown) }
+        Button("笔记大纲 · 文本…") { workspace.exportNotesOutline(.text) }
     }
 
     private func exportMenu(iconOnly: Bool) -> some View {
