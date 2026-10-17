@@ -30,6 +30,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showCrop) { CropSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showWordExport) { WordExportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRQuality) { OCRQualitySheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showOutlineText) { OutlineTextSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRReview) { OCRReview(workspace: workspace) }
         .sheet(isPresented: $workspace.showTools) { quickTools }
         .sheet(isPresented: $workspace.showImportOrder) { importOrder }

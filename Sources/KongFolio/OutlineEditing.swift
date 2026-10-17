@@ -52,6 +52,13 @@ extension Workspace {
         outlineChanged()
     }
 
+    /// Puts `entries` in place of the whole table of contents.
+    func replaceOutline(_ entries: [OutlineEntry]) {
+        checkpoint()
+        outlineEntries = entries
+        outlineChanged()
+    }
+
     private func outlineChanged() {
         ReadingServices.applyOutline(outlineEntries, to: document)
         cachedPDF = nil

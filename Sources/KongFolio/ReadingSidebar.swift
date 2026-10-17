@@ -34,6 +34,7 @@ struct ReadingSidebar: View {
                     Picker("级别", selection: $outlineDepth) { ForEach(0..<4) { Text("第 \($0 + 1) 级").tag($0) } }.labelsHidden().frame(width: 90)
                     Button("把当前页加入目录", action: addOutline).disabled(workspace.count == 0)
                 }
+                Button("编辑目录文本…") { workspace.showOutlineText = true }.disabled(workspace.count == 0)
                 if workspace.outlineEntries.isEmpty {
                     Text("此文档没有目录。给章节的起始页加入目录后，导出或另存为 PDF 时会写进文件，也可用来按章节拆分。").font(.caption).foregroundStyle(.secondary)
                 }

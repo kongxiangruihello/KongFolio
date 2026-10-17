@@ -67,6 +67,7 @@ import UniformTypeIdentifiers
     @Published var showCrop = false
     @Published var showWordExport = false
     @Published var showOCRQuality = false
+    @Published var showOutlineText = false
     @Published var ocrChecked = 0
     @Published var ocrDoubtful: [OCRPageQuality] = []
     @Published var wordOptions = WordExportOptions()
