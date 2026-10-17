@@ -220,7 +220,7 @@ enum RichTextImport {
                     var first = true
                     for cell in element.children ?? [] {
                         guard let cell = cell as? XMLElement, ["td", "th"].contains(cell.name?.lowercased() ?? "") else { continue }
-                        if !first { builder.appendText("\t", style, collapse: false) }
+                        if !first { builder.trimTrailingSpaces(); builder.appendText("\t", style, collapse: false) }
                         first = false
                         var cellStyle = style
                         if cell.name?.lowercased() == "th" { cellStyle.bold = true }
@@ -259,6 +259,7 @@ enum RichTextImport {
             let start = output.length
             content(&self)
             guard output.length > start else { return }
+            trimTrailingSpaces()
             if !output.string.hasSuffix("\n") { output.append(NSAttributedString(string: "\n", attributes: [TextImport.fontKey: TextImport.font(size: style.size)])) }
             let range = NSRange(location: start, length: output.length - start)
             let paragraph = TextImport.paragraphStyle(first: style.indent + hanging + first, indent: style.indent + hanging, after: after, before: before)
@@ -268,7 +269,13 @@ enum RichTextImport {
             }
         }
 
+        /// Spaces left at the end of the text by collapsed white space never belong before a line break or a tab.
+        fileprivate mutating func trimTrailingSpaces() {
+            while output.length > 0, output.string.hasSuffix(" ") { output.deleteCharacters(in: NSRange(location: output.length - 1, length: 1)) }
+        }
+
         private mutating func ensureLineBreak() {
+            trimTrailingSpaces()
             if output.length > 0, !output.string.hasSuffix("\n") {
                 output.append(NSAttributedString(string: "\n", attributes: [TextImport.fontKey: TextImport.font(size: TextImport.bodySize)]))
             }
