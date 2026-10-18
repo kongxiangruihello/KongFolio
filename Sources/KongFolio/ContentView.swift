@@ -168,6 +168,7 @@ struct ContentView: View {
             switch style {
             case .full:
                 splitMenu(iconOnly: false)
+                annotateButton(iconOnly: false)
                 toolsButton(iconOnly: false)
                 openMenu(iconOnly: false)
                 saveButton(iconOnly: false)
@@ -175,6 +176,7 @@ struct ContentView: View {
                 exportMenu(iconOnly: false)
             case .icons:
                 splitMenu(iconOnly: true)
+                annotateButton(iconOnly: true)
                 toolsButton(iconOnly: true)
                 openMenu(iconOnly: true)
                 saveButton(iconOnly: true)
@@ -182,6 +184,7 @@ struct ContentView: View {
                 exportMenu(iconOnly: true)
             case .minimal:
                 Menu {
+                    Button(workspace.showAnnotationBar ? "收起标注工具栏" : "打开标注工具栏") { workspace.showAnnotationBar.toggle() }.disabled(workspace.count == 0)
                     Button("快捷工具") { workspace.showTools = true }
                     Menu("打开") { openItems }
                     Button("保存") { workspace.saveProject() }.disabled(workspace.count == 0)
@@ -203,6 +206,16 @@ struct ContentView: View {
                 .help(inspectorShown ? "隐藏右侧栏（⌥⌘2）" : (showInspector ? "窗口太窄，放宽后显示右侧栏" : "显示右侧栏（⌥⌘2）"))
         }
         .padding(style == .full ? 16 : 10)
+    }
+
+    /// Always in the top bar, so the annotation tools are one click away without being open on every document.
+    @ViewBuilder private func annotateButton(iconOnly: Bool) -> some View {
+        Button { workspace.showAnnotationBar.toggle() } label: {
+            if iconOnly { Image(systemName: "pencil.tip.crop.circle") } else { Label("标注", systemImage: "pencil.tip.crop.circle") }
+        }
+        .foregroundStyle(workspace.showAnnotationBar ? Brand.accent : Color.primary)
+        .disabled(workspace.count == 0)
+        .help(workspace.showAnnotationBar ? "收起标注工具栏（⌥⌘A）" : "打开标注工具栏（⌥⌘A）：画线、画框、写文字、荧光笔")
     }
 
     @ViewBuilder private func toolsButton(iconOnly: Bool) -> some View {

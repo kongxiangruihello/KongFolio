@@ -1,4 +1,4 @@
-# KongFolio 0.20
+# KongFolio 0.21
 
 原生 macOS 个人文档工作台。SwiftUI / AppKit + PDFKit + Core Image + Vision + Core Graphics，全程本地处理，无第三方依赖。
 
@@ -14,6 +14,8 @@ open ../KongFolio.app
 ## 近期版本要点
 
 完整清单见 `CHANGELOG.md`。
+
+**0.21**：标注工具栏仍默认收起，顶栏新增“标注”按钮，页面右上角的入口更醒目。
 
 **0.20**（专注文档处理，去掉图片功能）
 - 去掉图片模式及其调色、裁剪、倾斜、透视、扫描增强、批量应用；去掉图片的打开、拖入与导出（JPG / PNG / TIFF）；去掉「图片转 PDF」「PDF 转图片」「导入扫描件」；批处理配方不再有「扫描增强」。
