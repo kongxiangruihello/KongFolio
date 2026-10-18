@@ -37,6 +37,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showOCRReview) { OCRReview(workspace: workspace) }
         .sheet(isPresented: $workspace.showProofreading) { ColumnProofView(workspace: workspace) }
         .sheet(isPresented: $workspace.showOutlineEditor) { OutlineEditorView(workspace: workspace) }
+        .sheet(isPresented: $workspace.showProgress) { ReadingProgressSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showTools) { quickTools }
         .sheet(isPresented: $workspace.showImportOrder) { importOrder }
         .sheet(isPresented: Binding(get: { workspace.comparison != nil }, set: { if !$0 { workspace.comparison = nil } })) { comparisonSheet }

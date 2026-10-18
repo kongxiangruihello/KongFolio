@@ -160,7 +160,9 @@ enum ReadingServices {
             let label = pageLabel(page, index: i)
             // A vertical page that was recognised here is searched in reading order, so a phrase that runs from
             // the foot of one column to the head of the next is found (PDFKit would read the columns left to right).
-            if let lines = records[i], let characters = OrderedText.characters(lines), !characters.isEmpty {
+            var recognised: [OrderedText.Glyph]?
+            if let lines = records[i], let found = OrderedText.characters(lines), !found.isEmpty { recognised = found } else { recognised = OrderedText.glyphs(of: page) }
+            if let characters = recognised {
                 let joined = characters.map(\.text).joined()
                 var starts: [Int] = []
                 var offset = 0
@@ -341,6 +343,8 @@ extension Workspace {
         guard let chosen = pdfView?.currentSelection, !(chosen.string ?? "").isEmpty else {
             if let columns = OrderedText.verticalColumns(meta(selection).ocrRegions ?? []) {
                 put(columns.map { ReadingServices.repairIdeographs($0) }.joined(separator: "\n"), "已复制本页文字（竖排，按列从右到左）")
+            } else if let page, let glyphs = OrderedText.glyphs(of: page) {
+                put(ReadingServices.repairIdeographs(OrderedText.text(of: glyphs) { _ in true }), "已复制本页文字（竖排文字层，按列从右到左）")
             } else {
                 put(ReadingServices.repairIdeographs(page?.string ?? ""), "已复制本页文字")
             }
@@ -349,7 +353,7 @@ extension Workspace {
         var parts: [String] = []
         for page in chosen.pages.sorted(by: { document.index(for: $0) < document.index(for: $1) }) {
             let index = document.index(for: page)
-            guard index != NSNotFound, let glyphs = OrderedText.characters(meta(index).ocrRegions ?? []) else {
+            guard index != NSNotFound, let glyphs = OrderedText.characters(meta(index).ocrRegions ?? []) ?? OrderedText.glyphs(of: page) else {
                 put(ReadingServices.repairIdeographs(chosen.string ?? ""), "已复制（所选页没有竖排识别记录，按文字层顺序）")
                 return
             }

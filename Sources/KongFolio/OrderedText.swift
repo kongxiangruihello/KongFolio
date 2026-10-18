@@ -48,6 +48,73 @@ enum OrderedText {
         return result
     }
 
+    /// A character of a page's own text layer and where PDFKit says it is (page coordinates).
+    struct LayerCharacter: Equatable {
+        var text: String
+        var rect: CGRect
+    }
+
+    /// Whether the characters, in the order the text layer gives them, run down the page (each one under the last)
+    /// rather than along it. Looks at the first 60 characters only, so books of horizontal pages cost almost nothing.
+    static func looksVertical(_ characters: [LayerCharacter]) -> Bool {
+        let sample = characters.filter { $0.rect.width > 0 && $0.rect.height > 0 }.prefix(60)
+        guard sample.count >= 9 else { return false }
+        var down = 0, pairs = 0
+        let items = Array(sample)
+        for index in 1..<items.count {
+            let previous = items[index - 1].rect, current = items[index].rect
+            pairs += 1
+            if abs(current.midX - previous.midX) <= max(previous.width, current.width) * 0.5 && current.midY < previous.midY { down += 1 }
+        }
+        return down * 100 >= pairs * 60
+    }
+
+    /// Columns right to left, characters top to bottom, for a vertical text layer that was not recognised here.
+    static func glyphs(fromLayer characters: [LayerCharacter], cropBox: CGRect, rotation: Int) -> [Glyph] {
+        let kept = characters.filter { !$0.text.allSatisfy(\.isWhitespace) && $0.rect.width > 0 && $0.rect.height > 0 }
+        guard !kept.isEmpty else { return [] }
+        let widths = kept.map(\.rect.width).sorted()
+        let tolerance = widths[widths.count / 2] * 0.6
+        var columns: [[LayerCharacter]] = []
+        var references: [CGFloat] = []
+        for character in kept.sorted(by: { $0.rect.midX > $1.rect.midX }) {
+            if let last = references.last, abs(character.rect.midX - last) <= tolerance {
+                columns[columns.count - 1].append(character)
+                references[references.count - 1] = columns[columns.count - 1].map(\.rect.midX).reduce(0, +) / CGFloat(columns[columns.count - 1].count)
+            } else {
+                columns.append([character])
+                references.append(character.rect.midX)
+            }
+        }
+        var result: [Glyph] = []
+        for (column, members) in columns.enumerated() {
+            for character in members.sorted(by: { $0.rect.midY > $1.rect.midY }) {
+                result.append(Glyph(text: character.text, box: fraction(ofPageRect: character.rect, cropBox: cropBox, rotation: rotation), column: column, approximate: false))
+            }
+        }
+        return result
+    }
+
+    /// The reading-order characters of a page whose own text layer is vertical, or nil for any other page.
+    static func glyphs(of page: PDFPage) -> [Glyph]? {
+        guard let string = page.string, (string as NSString).length >= 9 else { return nil }
+        let text = string as NSString
+        func layer(upTo limit: Int) -> [LayerCharacter] {
+            var result: [LayerCharacter] = []
+            var location = 0
+            while location < text.length, result.count < limit {
+                let range = text.rangeOfComposedCharacterSequence(at: location)
+                let piece = text.substring(with: range)
+                if !piece.allSatisfy(\.isWhitespace) { result.append(LayerCharacter(text: piece, rect: page.characterBounds(at: range.location))) }
+                location = NSMaxRange(range)
+            }
+            return result
+        }
+        guard looksVertical(layer(upTo: 60)) else { return nil }
+        let all = glyphs(fromLayer: layer(upTo: Int.max), cropBox: page.bounds(for: .cropBox), rotation: page.rotation)
+        return all.isEmpty ? nil : all
+    }
+
     /// The text of each column in reading order, or nil when the regions are not those of a vertical page.
     static func verticalColumns(_ lines: [RecognizedLine]) -> [String]? {
         guard let characters = characters(lines) else { return nil }

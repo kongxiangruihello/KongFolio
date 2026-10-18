@@ -29,6 +29,9 @@ import UniformTypeIdentifiers
     @Published var showProofreading = false
     @Published var showOutlineEditor = false
     @Published var showProgress = false
+    @Published var progress = ReadingProgress()
+    var progressLoadedFor: String?
+    var progressTask: Task<Void, Never>?
     @Published var reviewSelection = -1
     @Published var ocrSettings = OCRSettings.load() { didSet { if ocrSettings != oldValue { ocrSettings.save() } } }
     var estimateTask: Task<ExportEstimate, Error>?
@@ -644,7 +647,7 @@ import UniformTypeIdentifiers
         bookmarks = []; bookmarkName = ""; outlineEntries = []; bibliography = Bibliography()
         search = ""; searchResults = []; searchMessage = ""; annotationNotes = []
         readingPoint = nil; readingScale = nil
-        selectedAnnotation = nil; comparison = nil; recognizedText = ""
+        hiddenKinds = []; selectedAnnotation = nil; comparison = nil; recognizedText = ""
         showOCRReview = false; reviewSelection = -1; exportEstimate = nil
         history.removeAll(); future.removeAll(); lastJob = nil
         if !keepingSource { projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil }

@@ -70,6 +70,39 @@ struct AnnotationBar: View {
             .menuStyle(.borderlessButton).frame(width: 34).hint("样式预设：颜色、线宽、虚线、填充一键套用", $hovered)
     }
 
+    private var textBoxMenu: some View {
+        Menu {
+            Menu("字体") {
+                ForEach(AnnotationTextStyle.fonts, id: \.title) { item in Button(item.title) { workspace.styleTextBoxes(font: item.name) } }
+            }
+            Menu("字号") {
+                ForEach(AnnotationTextStyle.sizes, id: \.self) { size in Button("\(Int(size)) 磅") { workspace.styleTextBoxes(size: size) } }
+            }
+            Menu("底色") {
+                ForEach(AnnotationTextStyle.fills, id: \.title) { item in Button(item.title) { workspace.styleTextBoxes(fill: item.color) } }
+            }
+            Menu("边框") {
+                Button("无") { workspace.styleTextBoxes(border: 0) }
+                Button("细（1 磅）") { workspace.styleTextBoxes(border: 1) }
+                Button("粗（2 磅）") { workspace.styleTextBoxes(border: 2) }
+            }
+        } label: { Image(systemName: "textformat.size") }
+            .menuStyle(.borderlessButton).frame(width: 34).hint("文字框样式：先用“编辑标注”点选一个文字框，或在标注列表里勾选", $hovered)
+    }
+
+    private var layersMenu: some View {
+        Menu {
+            ForEach(AnnotationFilter.kinds, id: \.self) { kind in
+                Button { workspace.setLayer(kind, visible: workspace.hiddenKinds.contains(kind)) } label: {
+                    Text((workspace.hiddenKinds.contains(kind) ? "显示 " : "隐藏 ") + kind)
+                }
+            }
+            Divider()
+            Button("全部显示") { workspace.showAllLayers() }.disabled(workspace.hiddenKinds.isEmpty)
+        } label: { Image(systemName: workspace.hiddenKinds.isEmpty ? "square.3.layers.3d" : "square.3.layers.3d.slash") }
+            .menuStyle(.borderlessButton).frame(width: 34).hint("按类型隐藏或显示标注（只影响显示，保存和导出时一律完整）", $hovered)
+    }
+
     private static func askName() -> String? {
         let alert = NSAlert()
         alert.messageText = "预设名称"
@@ -109,6 +142,8 @@ struct AnnotationBar: View {
             ColorPicker("", selection: Binding(get: { workspace.annotationColor }, set: { workspace.chooseAnnotationColor($0) }), supportsOpacity: false).labelsHidden().frame(width: 28)
                 .hint("更多颜色…", $hovered)
             presetsMenu
+            textBoxMenu
+            layersMenu
             Menu {
                 ForEach([1.0, 2.0, 3.0, 5.0, 8.0], id: \.self) { width in
                     Button("\(Int(width)) 磅") { workspace.penWidth = width }
