@@ -50,11 +50,9 @@ import AppKit
                     showSidebar = show; showInspector = show
                 }.keyboardShortcut("3", modifiers: [.command, .option])
             }
-            CommandGroup(after: .textEditing) {
+            CommandGroup(after: .pasteboard) {
                 Button("查找下一处") { store.commandWorkspace?.stepSearch(1) }.keyboardShortcut("g").disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Button("查找上一处") { store.commandWorkspace?.stepSearch(-1) }.keyboardShortcut("g", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
-            }
-            CommandGroup(after: .pasteboard) {
                 Button("复制（竖排按列从右到左）") { store.commandWorkspace?.copyInReadingOrder() }
                     .keyboardShortcut("c", modifiers: [.command, .option]).disabled((store.commandWorkspace?.count ?? 0) == 0)
             }
