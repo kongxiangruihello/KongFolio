@@ -17,7 +17,7 @@ struct OutlineEditorView: View {
                     let n = draft.mergeDuplicates()
                     message = n == 0 ? "没有重复的条目" : "已合并 \(n) 条重复的"
                 }
-                Button("重新生成") { load() }
+                Button("重新生成") { load(fresh: true) }
                 Menu("导出") {
                     Button("Word（按章节）…") { workspace.writeNotesOutline(draft.exportSections, .word) }
                     Button("Markdown…") { workspace.writeNotesOutline(draft.exportSections, .markdown) }
@@ -46,7 +46,8 @@ struct OutlineEditorView: View {
                 .font(.caption).foregroundStyle(.secondary).padding(8)
         }
         .frame(width: 720, height: 620)
-        .onAppear(perform: load)
+        .onAppear { load(fresh: false) }
+        .onDisappear { workspace.outlineDraft = draft }
     }
 
     private func row(_ note: AnnotationNote, sectionIndex: Int) -> some View {
@@ -75,9 +76,14 @@ struct OutlineEditorView: View {
         .padding(.vertical, 3)
     }
 
-    private func load() {
-        draft = OutlineDraft(sections: workspace.notesOutlineSections().filter { !$0.notes.isEmpty || $0.depth >= 0 })
+    private func load(fresh: Bool) {
+        if !fresh, let kept = workspace.outlineDraft {
+            draft = kept
+            message = "已恢复上次整理的结果；点“重新生成”可按文档现状重来"
+        } else {
+            draft = OutlineDraft(sections: workspace.notesOutlineSections())
+            message = ""
+        }
         tagText = [:]
-        message = ""
     }
 }

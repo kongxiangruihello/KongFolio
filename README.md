@@ -1,4 +1,4 @@
-# KongFolio 0.17
+# KongFolio 0.18
 
 原生 macOS 个人文档工作台。SwiftUI / AppKit + PDFKit + Core Image + Vision + Core Graphics，全程本地处理，无第三方依赖。
 
@@ -14,6 +14,10 @@ open ../KongFolio.app
 ## 近期版本要点
 
 完整清单见 `CHANGELOG.md`。
+
+**0.18**（收尾与说明）
+- 整理笔记大纲的结果在关闭窗口后保留；任何导出前先恢复被隐藏的标注类型。
+- 新增 `使用说明.md`（按任务写的日常用法）。
 
 **0.17**（标注导出与整理）
 - **导出**：干净副本、含标注并附批注清单、批注清单单独一份、只含当前筛选的标注。
