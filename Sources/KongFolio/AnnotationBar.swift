@@ -79,7 +79,7 @@ struct AnnotationBar: View {
                     Button("\(Int(width)) 磅") { workspace.penWidth = width }
                 }
             } label: { Image(systemName: "lineweight") }
-                .menuStyle(.borderlessButton).frame(width: 34).hint("线宽（现在 \(workspace.penWidth, format: .number.precision(.fractionLength(1))) 磅）", $hovered)
+                .menuStyle(.borderlessButton).frame(width: 34).hint(String(format: "线宽（现在 %.1f 磅）", workspace.penWidth), $hovered)
             Toggle(isOn: $workspace.shapeFill) { Image(systemName: "square.fill") }
                 .toggleStyle(.button).buttonStyle(.plain).hint("矩形、椭圆填充半透明颜色", $hovered)
             Toggle(isOn: $workspace.lineDashed) { Image(systemName: "line.3.horizontal") }
