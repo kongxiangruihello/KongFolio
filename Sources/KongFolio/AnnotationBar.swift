@@ -172,10 +172,11 @@ struct AnnotationBarButton: View {
 
     var body: some View {
         Button { workspace.showAnnotationBar = true } label: {
-            Label("标注", systemImage: "pencil.tip.crop.circle").font(.callout)
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(.regularMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.primary.opacity(0.15), lineWidth: 0.5))
+            Label("标注", systemImage: "pencil.tip.crop.circle").font(.callout.weight(.medium))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14).padding(.vertical, 7)
+                .background(Brand.accent, in: Capsule())
+                .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
         }
         .buttonStyle(.plain)
         .help("打开标注工具栏（⌥⌘A）：画线、画框、写文字、荧光笔")
