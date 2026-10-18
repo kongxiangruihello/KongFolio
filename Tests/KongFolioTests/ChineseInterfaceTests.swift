@@ -6,7 +6,8 @@ final class ChineseInterfaceTests: XCTestCase {
         XCTAssertEqual(AppLanguage.preferred(from: ["en-US", "fr-FR"]), ["zh-Hans", "en-US", "fr-FR"])
         XCTAssertEqual(AppLanguage.preferred(from: []), ["zh-Hans"])
         XCTAssertEqual(AppLanguage.preferred(from: ["zh-Hans-CN", "en-US"]), ["zh-Hans-CN", "en-US"])
-        XCTAssertEqual(AppLanguage.preferred(from: ["en-US", "zh-Hans-CN"]), ["zh-Hans", "en-US", "zh-Hans-CN"])
+        // A Chinese entry further down is folded into the one put in front.
+        XCTAssertEqual(AppLanguage.preferred(from: ["en-US", "zh-Hans-CN"]), ["zh-Hans", "en-US"])
     }
 
     func testTheSettingIsWrittenOnceAndLeftAloneAfterwards() throws {
