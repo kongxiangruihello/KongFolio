@@ -90,7 +90,7 @@ extension Workspace {
         progressTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled, let self, self.selection == index, index < self.count else { return }
-            if self.readingProgressLoadedFor != path { self.readingProgress = ReadingProgress.load(path: path); self.readingProgressLoadedFor = path }
+            if self.progressLoadedFor != path { self.readingProgress = ReadingProgress.load(path: path); self.progressLoadedFor = path }
             self.readingProgress.last = index
             self.readingProgress.visited.insert(index)
             self.readingProgress.save(path: path)
