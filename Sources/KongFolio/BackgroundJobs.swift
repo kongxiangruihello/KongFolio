@@ -227,6 +227,7 @@ extension Workspace {
         case .word: taskLabel = "导出 Word"
         }
         status = taskLabel
+        let began = Date()
         let worker = Task.detached(priority: .userInitiated) { [self] in
             try BackgroundJobs.run(spec) { value in Task { @MainActor in self.progress = self.chainProgress(value, pages: spec.pages.count) } }
         }
@@ -236,6 +237,8 @@ extension Workspace {
             defer { if !chaining { busy = false; activeJob = nil } }
             do {
                 let result = try await worker.value
+                let ran = Date().timeIntervalSince(began)
+                PerfLog.record(taskLabel, name: displayName, pages: spec.pages.count, seconds: ran, note: "识别 \(result.recognized)，跳过 \(result.skipped)")
                 if (result.pdf != nil && !spec.continuation) || spec.operation == .inspectOCR { checkpoint() }
                 if !spec.pageMap.isEmpty {
                     applyChunk(result, spec)

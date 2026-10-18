@@ -54,6 +54,9 @@ import AppKit
             CommandGroup(after: .help) {
                 Button("开启 / 关闭悬停提示诊断") { TooltipDiagnostics.shared.toggle() }
                 Button("在访达中显示悬停诊断记录") { TooltipDiagnostics.shared.revealLog() }
+                Button("在访达中显示性能日志（识别、批量处理耗时）") {
+                    if FileManager.default.fileExists(atPath: PerfLog.url.path) { NSWorkspace.shared.activateFileViewerSelecting([PerfLog.url]) }
+                }
             }
             CommandMenu("标注") {
                 Button((store.commandWorkspace?.showAnnotationBar ?? true) ? "隐藏标注工具栏" : "显示标注工具栏") {

@@ -35,6 +35,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showOutlineText) { OutlineTextSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOutlineCandidates) { OutlineCandidatesSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRReview) { OCRReview(workspace: workspace) }
+        .sheet(isPresented: $workspace.showProofreading) { ColumnProofView(workspace: workspace) }
         .sheet(isPresented: $workspace.showTools) { quickTools }
         .sheet(isPresented: $workspace.showImportOrder) { importOrder }
         .sheet(isPresented: Binding(get: { workspace.comparison != nil }, set: { if !$0 { workspace.comparison = nil } })) { comparisonSheet }
@@ -422,6 +423,9 @@ struct ContentView: View {
                 Toggle("标出低置信度的列", isOn: Binding(get: { workspace.showLowConfidence }, set: { workspace.showLowConfidence = $0; workspace.refreshConfidenceMarks() }))
                 if workspace.meta(workspace.selection).ocrRegions != nil {
                     Button("查看") { workspace.reviewSelection = -1; workspace.showOCRReview = true }
+                }
+                if ColumnProofreading.columns(workspace.meta(workspace.selection).ocrRegions ?? []) != nil {
+                    Button("逐列校对…") { workspace.showProofreading = true }.help("竖排页：每一列的原图与识别文字上下对照，直接改字")
                 }
             }
             Button("重新识别选中页") { workspace.ocr(selectedOnly: true, force: true) }

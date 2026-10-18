@@ -183,3 +183,19 @@ final class TooltipDiagnosticsTests: XCTestCase {
         XCTAssertTrue(TooltipDiagnostics.describe(chainFrom: nil).contains("没有视图"))
     }
 }
+
+final class PerfLogTests: XCTestCase {
+    func testLineHasPagesSecondsAndRate() {
+        let text = PerfLog.line("识别文本", name: "书.pdf", pages: 20, seconds: 40)
+        XCTAssertTrue(text.contains("| 识别文本 | 书.pdf | 20 页 | 40.0 秒 | 2.00 秒/页"))
+    }
+
+    func testRecordAppends() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("perf-" + UUID().uuidString + ".log")
+        PerfLog.record("a", name: "x", pages: 1, seconds: 1, to: file)
+        PerfLog.record("b", name: "y", pages: 0, seconds: 2, to: file)
+        let lines = try String(contentsOf: file, encoding: .utf8).split(separator: "\n")
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertFalse(lines[1].contains("秒/页"))
+    }
+}

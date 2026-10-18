@@ -26,6 +26,7 @@ import UniformTypeIdentifiers
     @Published var exportEstimate: ExportEstimate?
     @Published var estimating = false
     @Published var showOCRReview = false
+    @Published var showProofreading = false
     @Published var reviewSelection = -1
     @Published var ocrSettings = OCRSettings.load() { didSet { if ocrSettings != oldValue { ocrSettings.save() } } }
     var estimateTask: Task<ExportEstimate, Error>?

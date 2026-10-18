@@ -296,6 +296,7 @@ struct BatchItem: Identifiable, Equatable {
                 }
                 items[offset].state = .running
                 fileProgress = 0
+                let began = Date()
                 let outcome: Result<String, Error> = await Task.detached(priority: .userInitiated) { [self] in
                     do {
                         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
@@ -312,6 +313,10 @@ struct BatchItem: Identifiable, Equatable {
                         return .success("\(result.pages) 页" + (result.recognized > 0 ? "，识别 \(result.recognized) 页" : ""))
                     } catch { return .failure(error) }
                 }.value
+                if case .success(let note) = outcome {
+                    let size = (try? item.url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 } ?? 0
+                    PerfLog.record("批量处理", name: item.url.lastPathComponent, pages: Int(note.split(separator: " ").first.flatMap { Int($0) } ?? 0), seconds: Date().timeIntervalSince(began), note: String(format: "%.1f MB", Double(size) / 1_048_576))
+                }
                 switch outcome {
                 case .success(let note): items[offset].state = .done(note); done += 1
                 case .failure(let error):
