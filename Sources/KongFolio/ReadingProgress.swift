@@ -90,21 +90,21 @@ extension Workspace {
         progressTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard !Task.isCancelled, let self, self.selection == index, index < self.count else { return }
-            if self.progressLoadedFor != path { self.progress = ReadingProgress.load(path: path); self.progressLoadedFor = path }
-            self.progress.last = index
-            self.progress.visited.insert(index)
-            self.progress.save(path: path)
+            if self.readingProgressLoadedFor != path { self.readingProgress = ReadingProgress.load(path: path); self.readingProgressLoadedFor = path }
+            self.readingProgress.last = index
+            self.readingProgress.visited.insert(index)
+            self.readingProgress.save(path: path)
         }
     }
 
     func refreshProgress() {
-        guard let path = progressPath else { progress = ReadingProgress(); return }
-        progress = ReadingProgress.load(path: path)
+        guard let path = progressPath else { readingProgress = ReadingProgress(); return }
+        readingProgress = ReadingProgress.load(path: path)
         progressLoadedFor = path
     }
 
     func clearProgress() {
         if let path = progressPath { ReadingProgress.clear(path: path) }
-        progress = ReadingProgress()
+        readingProgress = ReadingProgress()
     }
 }

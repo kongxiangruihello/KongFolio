@@ -5,11 +5,11 @@ struct ReadingProgressSheet: View {
     @ObservedObject var workspace: Workspace
 
     private var chapters: [ReadingProgress.Chapter] {
-        ReadingProgress.chapters(outline: workspace.outlineEntries, visited: workspace.progress.visited, pageCount: workspace.count)
+        ReadingProgress.chapters(outline: workspace.outlineEntries, visited: workspace.readingProgress.visited, pageCount: workspace.count)
     }
 
     var body: some View {
-        let progress = workspace.progress
+        let progress = workspace.readingProgress
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("阅读进度").font(.headline)

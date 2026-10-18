@@ -29,7 +29,7 @@ import UniformTypeIdentifiers
     @Published var showProofreading = false
     @Published var showOutlineEditor = false
     @Published var showProgress = false
-    @Published var progress = ReadingProgress()
+    @Published var readingProgress = ReadingProgress()
     var progressLoadedFor: String?
     var progressTask: Task<Void, Never>?
     @Published var reviewSelection = -1

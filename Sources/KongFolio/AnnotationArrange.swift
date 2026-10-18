@@ -71,8 +71,13 @@ enum AnnotationTextStyle {
 extension Workspace {
     /// The annotations that are ticked in the list, grouped by page.
     private var tickedByPage: [[PDFAnnotation]] {
-        Dictionary(grouping: annotations(ofNotes: selectedNoteIDs).filter(AnnotationLayout.canMove)) { $0.page.map { document.index(for: $0) } ?? -1 }
-            .filter { $0.key >= 0 }.sorted { $0.key < $1.key }.map(\.value)
+        var groups: [Int: [PDFAnnotation]] = [:]
+        for annotation in annotations(ofNotes: selectedNoteIDs) where AnnotationLayout.canMove(annotation) {
+            guard let page = annotation.page else { continue }
+            let index = document.index(for: page)
+            if index != NSNotFound { groups[index, default: []].append(annotation) }
+        }
+        return groups.keys.sorted().compactMap { groups[$0] }
     }
 
     func arrangeSelectedNotes(_ change: ([CGRect]) -> [CGRect], minimum: Int) {
