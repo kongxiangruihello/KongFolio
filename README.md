@@ -1,4 +1,4 @@
-# KongFolio 0.18
+# KongFolio 0.19
 
 原生 macOS 个人文档工作台。SwiftUI / AppKit + PDFKit + Core Image + Vision + Core Graphics，全程本地处理，无第三方依赖。
 
@@ -14,6 +14,10 @@ open ../KongFolio.app
 ## 近期版本要点
 
 完整清单见 `CHANGELOG.md`。
+
+**0.19**（阅读、批注、编辑）
+- 夜间阅读；⌘G / ⇧⌘G 查找下一处、上一处。
+- 复制 / 粘贴 / 再制标注；插入空白页；给选中文字加链接或去掉链接。
 
 **0.18**（收尾与说明）
 - 整理笔记大纲的结果在关闭窗口后保留；任何导出前先恢复被隐藏的标注类型。
