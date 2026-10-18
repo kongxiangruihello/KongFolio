@@ -376,9 +376,6 @@ struct ContentView: View {
                 .overlay(alignment: .top) {
                     if workspace.showAnnotationBar { AnnotationBar(workspace: workspace).padding(.top, 10) }
                 }
-                .overlay(alignment: .topTrailing) {
-                    if !workspace.showAnnotationBar { AnnotationBarButton(workspace: workspace).padding(.top, 10).padding(.trailing, 18) }
-                }
         }
     }
 

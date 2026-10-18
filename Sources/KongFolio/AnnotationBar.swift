@@ -166,23 +166,6 @@ struct AnnotationBar: View {
     }
 }
 
-/// The small button that opens the annotation bar while it is closed.
-struct AnnotationBarButton: View {
-    @ObservedObject var workspace: Workspace
-
-    var body: some View {
-        Button { workspace.showAnnotationBar = true } label: {
-            Label("标注", systemImage: "pencil.tip.crop.circle").font(.callout.weight(.medium))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14).padding(.vertical, 7)
-                .background(Brand.accent, in: Capsule())
-                .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
-        }
-        .buttonStyle(.plain)
-        .help("打开标注工具栏（⌥⌘A）：画线、画框、写文字、荧光笔")
-    }
-}
-
 /// A Chinese tooltip that also shows in the bar's caption line right away; the whole box counts as hoverable, not just the glyph.
 private struct HintModifier: ViewModifier {
     let text: String
