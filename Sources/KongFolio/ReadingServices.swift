@@ -312,7 +312,7 @@ extension Workspace {
     }
 
     func startSearch() {
-        searchTask?.cancel(); searchResults = []; searchMessage = ""
+        searchTask?.cancel(); searchResults = []; searchMessage = ""; searchCursor = nil
         guard !search.isEmpty, let data = try? pdfData() else { return }
         let query = search, version = revision; searchMessage = "正在搜索…"; sidebarTab = .search
         var records: [Int: [RecognizedLine]] = [:]
@@ -324,6 +324,7 @@ extension Workspace {
         }
     }
     func goToSearch(_ hit: SearchHit) {
+        searchCursor = searchResults.firstIndex { $0.id == hit.id }
         selectPage(hit.page)
         guard let selection = searchSelection(for: hit) else { return }
         if let page { let bounds = selection.bounds(for: page); readingPoint = CGPoint(x: bounds.minX, y: bounds.maxY + 20) }

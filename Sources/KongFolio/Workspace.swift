@@ -28,6 +28,11 @@ import UniformTypeIdentifiers
     @Published var showOCRReview = false
     @Published var showProofreading = false
     @Published var showOutlineEditor = false
+    @Published var nightReading = UserDefaults.standard.bool(forKey: Workspace.nightKey) {
+        didSet { UserDefaults.standard.set(nightReading, forKey: Workspace.nightKey); applyNightReading() }
+    }
+    var searchCursor: Int?
+    var copiedAnnotations: [PDFAnnotation] = []
     /// The outline as the reader has arranged it, kept while the tab is open so closing the editor loses nothing.
     var outlineDraft: OutlineDraft?
     @Published var showProgress = false

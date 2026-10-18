@@ -216,3 +216,66 @@ final class Version18Tests: XCTestCase {
         XCTAssertEqual(kept.sections[0].notes.map(\.quote), ["乙", "甲"])
     }
 }
+
+final class Version19Tests: XCTestCase {
+    func testLinkTargets() {
+        XCTAssertEqual(LinkTarget.parse("12", pageCount: 30), .page(11))
+        XCTAssertEqual(LinkTarget.parse(" 1 ", pageCount: 30), .page(0))
+        XCTAssertEqual(LinkTarget.parse("31", pageCount: 30), nil)
+        XCTAssertEqual(LinkTarget.parse("0", pageCount: 30), nil)
+        XCTAssertEqual(LinkTarget.parse("example.com/a", pageCount: 3), .web(URL(string: "https://example.com/a")!))
+        XCTAssertEqual(LinkTarget.parse("http://x.org", pageCount: 3), .web(URL(string: "http://x.org")!))
+        XCTAssertEqual(LinkTarget.parse("不是网址", pageCount: 3), nil)
+        XCTAssertEqual(LinkTarget.parse("", pageCount: 3), nil)
+    }
+
+    func testShiftAfterInsertion() {
+        XCTAssertEqual([0, 2, 3, 5].map { PageEditing.shifted($0, insertedAt: 3) }, [0, 2, 4, 6])
+    }
+
+    func testPasteStaysOnThePage() {
+        let page = CGRect(x: 0, y: 0, width: 200, height: 300)
+        XCTAssertEqual(PageEditing.pasteBounds(CGRect(x: 10, y: 100, width: 50, height: 20), in: page), CGRect(x: 24, y: 86, width: 50, height: 20))
+        let edge = PageEditing.pasteBounds(CGRect(x: 170, y: 5, width: 30, height: 20), in: page)
+        XCTAssertEqual(edge.maxX, 200)
+        XCTAssertEqual(edge.minY, 0)
+    }
+
+    func testSearchRing() {
+        XCTAssertEqual(PageEditing.ring(nil, step: 1, count: 3), 0)
+        XCTAssertEqual(PageEditing.ring(nil, step: -1, count: 3), 2)
+        XCTAssertEqual(PageEditing.ring(2, step: 1, count: 3), 0)
+        XCTAssertEqual(PageEditing.ring(0, step: -1, count: 3), 2)
+        XCTAssertEqual(PageEditing.ring(0, step: 1, count: 0), nil)
+    }
+
+    @MainActor func testBlankPageIsInsertedWithMetaAndBookmarksShifted() {
+        let space = Workspace(storage: FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true))
+        let doc = PDFDocument()
+        for _ in 0..<3 { let p = PDFPage(); p.setBounds(CGRect(x: 0, y: 0, width: 300, height: 400), for: .mediaBox); doc.insert(p, at: doc.pageCount) }
+        space.document = doc
+        space.updateMeta(2) { $0.ocrRegions = [RecognizedLine(text: "字", box: .zero)] }
+        space.selection = 0
+        space.insertBlankPage()
+        XCTAssertEqual(space.document.pageCount, 4)
+        XCTAssertEqual(space.selection, 1)
+        XCTAssertEqual(space.document.page(at: 1)?.bounds(for: .mediaBox).size, CGSize(width: 300, height: 400))
+        XCTAssertEqual(space.meta(3).ocrRegions?.count, 1)
+        XCTAssertEqual(space.meta(1).ocrRegions == nil, true)
+    }
+
+    @MainActor func testPasteMakesCopiesOnTheCurrentPage() {
+        let space = Workspace(storage: FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true))
+        let doc = PDFDocument()
+        for _ in 0..<2 { let p = PDFPage(); p.setBounds(CGRect(x: 0, y: 0, width: 300, height: 400), for: .mediaBox); doc.insert(p, at: doc.pageCount) }
+        space.document = doc
+        let mark = PDFAnnotation(bounds: CGRect(x: 20, y: 200, width: 60, height: 30), forType: .square, withProperties: nil)
+        doc.page(at: 0)?.addAnnotation(mark)
+        space.selectedAnnotation = mark
+        space.copySelectedAnnotations()
+        space.selection = 1
+        space.pasteAnnotations()
+        XCTAssertEqual(doc.page(at: 1)?.annotations.filter { $0.type == "Square" }.count, 1)
+        XCTAssertEqual(doc.page(at: 0)?.annotations.filter { $0.type == "Square" }.count, 1)
+    }
+}
