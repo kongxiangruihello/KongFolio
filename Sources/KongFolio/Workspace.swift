@@ -540,7 +540,8 @@ import UniformTypeIdentifiers
             // A PDF is a hand-off: once it is written the work is done with, as after "放弃修改".
             guard saveAsPDFBeforeLeaving() else { return false }
             return discardWork()
-        case .alertFourthButtonReturn:
+        case NSApplication.ModalResponse(rawValue: NSApplication.ModalResponse.alertThirdButtonReturn.rawValue + 1):
+            // AppKit names only the first three alert buttons; the fourth follows them.
             return discardWork()
         default:
             return false
