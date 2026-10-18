@@ -843,7 +843,6 @@ import UniformTypeIdentifiers
             changed()
             // The opened bytes are the document. Without this, the first autosave (and the first search)
             // serialized the whole file on the main thread. `changed()` clears the cache, so set it afterwards.
-            if rebuilt { status = "这个文件带有“禁止修改”的限制，已转成可编辑的副本；保存时请另存，原文件不会被改动" }
             if let openedBytes { cachedPDF = openedBytes }
             // Opening one file changes nothing yet: the file on disk is the original (or, for a file marked "no modification",
             // an editable copy of it). Without this every opened document counted as unsaved work and closing it asked
@@ -856,7 +855,7 @@ import UniformTypeIdentifiers
                 updatePreview()
             }
             remember(urls)
-            status = "已载入 \(count) 页"
+            status = "已载入 \(count) 页" + (rebuilt ? "（此文件带“禁止修改”限制，已转成可编辑副本；原文件不会被改动）" : "")
             store?.loadedTabsChanged()
         }
     }
