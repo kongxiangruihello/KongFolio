@@ -18,11 +18,11 @@ final class CloseDocumentTests: XCTestCase {
     @MainActor func testCloseReturnsToEmptyState() throws {
         let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
         let w = Workspace(storage: directory); w.document = DocumentServicesTests().fixture()
-        w.title = "书"; w.search = "x"; w.selection = 2; w.mode = .image
+        w.title = "书"; w.search = "x"; w.selection = 2
         w.history = [.snapshot(try w.snapshot())]
         XCTAssertTrue(w.closeDocument())
         XCTAssertEqual(w.count, 0); XCTAssertEqual(w.title, "未命名文档"); XCTAssertEqual(w.selection, 0)
-        XCTAssertEqual(w.mode, .document); XCTAssertEqual(w.search, "")
+        XCTAssertEqual(w.search, "")
         XCTAssertFalse(w.canUndo); XCTAssertFalse(w.canRedo); XCTAssertFalse(w.dirty)
         XCTAssertNil(w.projectURL); XCTAssertNil(w.page)
         XCTAssertTrue(w.status.contains("书"))

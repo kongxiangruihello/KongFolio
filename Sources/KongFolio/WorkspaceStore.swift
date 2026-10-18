@@ -218,11 +218,11 @@ import UniformTypeIdentifiers
     }
 
     /// Opens files in the current tab when it is empty, otherwise in a new tab.
-    func openInNewTab(_ urls: [URL], scanAfter: Bool = false) {
+    func openInNewTab(_ urls: [URL]) {
         let target: Workspace
         if let current = activeWorkspace, current.count == 0, !current.busy { target = current } else { target = addWorkspace() }
         select(target.id)
-        target.load(urls, scanAfter: scanAfter)
+        target.load(urls)
     }
 
     /// Opens every file in its own tab. The tabs appear at once with their file names; the first one is read and brought
@@ -370,7 +370,7 @@ extension OpenTab {
 
     var switcherIcon: String {
         switch self {
-        case .document(let workspace): return workspace.mode == .image ? "photo" : "doc.richtext"
+        case .document: return "doc.richtext"
         case .note: return "square.and.pencil"
         }
     }

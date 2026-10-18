@@ -31,10 +31,6 @@ struct ExportSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("导出设置").font(.title2.bold())
-            Picker("文件格式", selection: $workspace.exportOptions.format) {
-                ForEach(ExportFormat.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
             Picker("页面范围", selection: $workspace.exportOptions.scope) {
                 ForEach(ExportScope.allCases) { Text($0.rawValue).tag($0) }
             }
@@ -42,7 +38,7 @@ struct ExportSheet: View {
                 Picker("PDF 类型", selection: $workspace.exportOptions.pdfMode) {
                     ForEach(PDFExportMode.allCases) { Text($0.rawValue).tag($0) }
                 }
-                Text(workspace.exportOptions.pdfMode.detail + (workspace.exportOptions.pdfMode == .preserve ? "已有图片调整造成的栅格化不会逆转。" : ""))
+                Text(workspace.exportOptions.pdfMode.detail)
                     .font(.caption).foregroundStyle(.secondary)
             }
             if workspace.exportOptions.format == .pdf {
@@ -60,14 +56,12 @@ struct ExportSheet: View {
                 if let page = workspace.page, let pixels = try? ExportServices.pixels(page, dpi: workspace.exportOptions.dpi) {
                     Text("当前页：\(Int(pixels.width)) × \(Int(pixels.height)) 像素").font(.caption).foregroundStyle(.secondary)
                 }
-                if workspace.exportOptions.format == .jpg || workspace.exportOptions.format == .pdf {
-                    HStack {
-                        Text("JPEG 质量")
-                        Slider(value: $workspace.exportOptions.quality, in: 0.1...1)
-                        Text(workspace.exportOptions.quality, format: .percent.precision(.fractionLength(0))).frame(width: 45)
-                    }
+                HStack {
+                    Text("JPEG 质量")
+                    Slider(value: $workspace.exportOptions.quality, in: 0.1...1)
+                    Text(workspace.exportOptions.quality, format: .percent.precision(.fractionLength(0))).frame(width: 45)
                 }
-                Text("图片包含页面与标注外观；提高 DPI 不会恢复原图中已丢失的细节。").font(.caption).foregroundStyle(.secondary)
+                Text("图片型 PDF 把每页重绘为图片；提高 DPI 不会恢复原图中已丢失的细节。").font(.caption).foregroundStyle(.secondary)
             }
             Divider()
             HStack {

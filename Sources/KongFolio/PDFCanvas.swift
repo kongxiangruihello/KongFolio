@@ -11,7 +11,7 @@ struct PDFCanvas: NSViewRepresentable {
                 guard let view, let workspace, let page = view.currentPage, view.document === workspace.document else { return }
                 let index = workspace.document.index(for: page)
                 if index != NSNotFound { workspace.noteVisit(index) }
-                if index != NSNotFound && index != workspace.selection { workspace.selection = index; if workspace.selectedPages.count <= 1 { workspace.selectedPages = [index] }; workspace.resetImage(); workspace.scheduleRecovery() }
+                if index != NSNotFound && index != workspace.selection { workspace.selection = index; if workspace.selectedPages.count <= 1 { workspace.selectedPages = [index] }; workspace.scheduleRecovery() }
             }
         }
         return view

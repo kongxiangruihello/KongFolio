@@ -57,7 +57,7 @@ struct BoardView: View {
                 Button { workspace.excerptSelection() } label: { Label("摘录选中文字", systemImage: "text.quote") }
                     .help("把选中的文字放进工作区（⌥⌘E）")
                     .disabled(workspace.count == 0)
-                Button { workspace.mode = .document; workspace.tool = .region } label: { Label("区域摘录", systemImage: "viewfinder") }
+                Button { workspace.tool = .region } label: { Label("区域摘录", systemImage: "viewfinder") }
                     .help("在页面上框选一块区域（图表、表格）放进工作区")
                     .disabled(workspace.count == 0)
                 Button { board.addNote() } label: { Label("便签", systemImage: "note.text.badge.plus") }.help("新建一张自由笔记")
