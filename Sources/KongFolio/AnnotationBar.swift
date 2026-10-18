@@ -50,6 +50,40 @@ struct AnnotationBar: View {
         }
     }
 
+    private var presetsMenu: some View {
+        Menu {
+            ForEach(workspace.allPresets) { preset in
+                Button(preset.name) { workspace.apply(preset) }
+            }
+            Divider()
+            Button("把当前样式存为预设…") {
+                if let name = Self.askName() { workspace.saveCurrentStyle(named: name) }
+            }
+            if !workspace.userPresets.isEmpty {
+                Menu("删除预设") {
+                    ForEach(workspace.userPresets) { preset in
+                        Button(preset.name) { workspace.deletePreset(preset) }
+                    }
+                }
+            }
+        } label: { Image(systemName: "star.square") }
+            .menuStyle(.borderlessButton).frame(width: 34).hint("样式预设：颜色、线宽、虚线、填充一键套用", $hovered)
+    }
+
+    private static func askName() -> String? {
+        let alert = NSAlert()
+        alert.messageText = "预设名称"
+        alert.informativeText = "保存当前的颜色、线宽、虚线与填充设置。"
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = "我的样式"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
+    }
+
     private var bar: some View {
         HStack(spacing: 6) {
             ForEach(entries) { entry in
@@ -74,6 +108,7 @@ struct AnnotationBar: View {
             }
             ColorPicker("", selection: Binding(get: { workspace.annotationColor }, set: { workspace.chooseAnnotationColor($0) }), supportsOpacity: false).labelsHidden().frame(width: 28)
                 .hint("更多颜色…", $hovered)
+            presetsMenu
             Menu {
                 ForEach([1.0, 2.0, 3.0, 5.0, 8.0], id: \.self) { width in
                     Button("\(Int(width)) 磅") { workspace.penWidth = width }

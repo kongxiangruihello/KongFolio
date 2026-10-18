@@ -114,6 +114,12 @@ import UniformTypeIdentifiers
     @Published var penHighlighter = false
     /// Rectangles and ellipses get a translucent fill.
     @Published var shapeFill = false
+    /// Entries ticked in the annotation list, for deleting or recolouring several at once.
+    @Published var selectedNoteIDs: Set<String> = []
+    /// Styles the reader saved from the annotation bar (the built-in ones are in `AnnotationPresets.builtIn`).
+    @Published var userPresets: [AnnotationPreset] = AnnotationPresets.loadUser() {
+        didSet { AnnotationPresets.saveUser(userPresets) }
+    }
     /// Dashed instead of solid for lines, arrows, rectangles and ellipses.
     @Published var lineDashed = false
     /// The drawing tools floating over the page. Off by default (reading comes first); a small button brings them up.

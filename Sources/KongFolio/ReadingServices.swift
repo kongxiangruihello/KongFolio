@@ -362,7 +362,7 @@ extension Workspace {
         guard let data = try? pdfData() else { return }; let version = revision
         Task {
             let results = await Task.detached { () -> [AnnotationNote] in guard let doc = PDFDocument(data: data) else { return [] }; return ReadingServices.notes(doc) }.value
-            if version == revision { annotationNotes = results }
+            if version == revision { annotationNotes = results; selectedNoteIDs.formIntersection(results.map(\.id)) }
         }
     }
     func goToNote(_ entry: AnnotationNote) {

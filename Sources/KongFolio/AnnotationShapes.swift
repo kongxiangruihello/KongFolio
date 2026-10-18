@@ -149,3 +149,46 @@ enum AnnotationStyleDefaults {
         }
     }
 }
+
+/// A named drawing style: colour, width, dashes, fill, and whether the pen is the highlighter.
+struct AnnotationPreset: Codable, Equatable, Identifiable {
+    var id = UUID()
+    var name: String
+    var rgb: [Double]
+    var width: Double
+    var dashed = false
+    var fill = false
+    var highlighter = false
+}
+
+enum AnnotationPresets {
+    static let defaultsKey = "KongFolio.annotationPresets"
+
+    static let builtIn: [AnnotationPreset] = [
+        AnnotationPreset(id: UUID(uuidString: "00000000-0000-4000-8000-000000000001")!, name: "红色细线", rgb: [0.9, 0.15, 0.15], width: 2),
+        AnnotationPreset(id: UUID(uuidString: "00000000-0000-4000-8000-000000000002")!, name: "蓝色粗线", rgb: [0.1, 0.35, 0.9], width: 4),
+        AnnotationPreset(id: UUID(uuidString: "00000000-0000-4000-8000-000000000003")!, name: "红色虚线框", rgb: [0.9, 0.15, 0.15], width: 2, dashed: true),
+        AnnotationPreset(id: UUID(uuidString: "00000000-0000-4000-8000-000000000004")!, name: "红色填充框", rgb: [0.9, 0.15, 0.15], width: 2, fill: true),
+        AnnotationPreset(id: UUID(uuidString: "00000000-0000-4000-8000-000000000005")!, name: "黄色荧光笔", rgb: [1.0, 0.82, 0.0], width: 3, highlighter: true),
+        AnnotationPreset(id: UUID(uuidString: "00000000-0000-4000-8000-000000000006")!, name: "绿色荧光笔", rgb: [0.2, 0.75, 0.3], width: 3, highlighter: true),
+    ]
+
+    static func loadUser(_ defaults: UserDefaults = .standard) -> [AnnotationPreset] {
+        guard let data = defaults.data(forKey: defaultsKey), let list = try? JSONDecoder().decode([AnnotationPreset].self, from: data) else { return [] }
+        return list
+    }
+
+    static func saveUser(_ presets: [AnnotationPreset], _ defaults: UserDefaults = .standard) {
+        if let data = try? JSONEncoder().encode(presets) { defaults.set(data, forKey: defaultsKey) }
+    }
+
+    /// A name that is not taken yet: "我的样式", "我的样式 2"…
+    static func freshName(_ wanted: String, among existing: [AnnotationPreset]) -> String {
+        let base = wanted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "我的样式" : wanted.trimmingCharacters(in: .whitespacesAndNewlines)
+        let taken = Set((builtIn + existing).map(\.name))
+        guard taken.contains(base) else { return base }
+        var number = 2
+        while taken.contains("\(base) \(number)") { number += 1 }
+        return "\(base) \(number)"
+    }
+}

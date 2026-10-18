@@ -116,6 +116,11 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
         placement = nil
     }
 
+    /// ⌘C on a selection copies in reading order (columns right to left on a vertical page); with nothing selected it stays PDFKit's.
+    override func copy(_ sender: Any?) {
+        if let workspace, !(currentSelection?.string ?? "").isEmpty { workspace.copyInReadingOrder() } else { super.copy(sender) }
+    }
+
     override func keyDown(with event: NSEvent) {
         if placement != nil, let workspace {
             switch event.keyCode {
