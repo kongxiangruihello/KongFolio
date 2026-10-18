@@ -173,7 +173,7 @@ import UniformTypeIdentifiers
     private var autoTask: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
     private var started = false
-    private var discarded = false
+    private(set) var discarded = false
     private let writer = RecoveryWriter.shared
     let storage: URL
     let id = UUID()
@@ -528,28 +528,60 @@ import UniformTypeIdentifiers
         guard dirty else { return true }
         let alert = NSAlert()
         alert.messageText = "保存当前工作？"
-        alert.informativeText = "保存为 KongFolio 项目可保留页面、标注、原始图片和未应用的调整。"
+        alert.informativeText = "保存为 KongFolio 项目可保留页面、标注、原始图片和未应用的调整；保存为 PDF 得到一份普通 PDF（页面、标注和已识别的文字都在，标注仍可编辑）。"
         alert.addButton(withTitle: "保存项目")
+        alert.addButton(withTitle: "保存为 PDF…")
         alert.addButton(withTitle: "取消")
         alert.addButton(withTitle: "放弃修改")
         switch alert.runModal() {
         case .alertFirstButtonReturn:
             return saveProject(background: false)
-        case .alertThirdButtonReturn:
-            autoTask?.cancel()
-            do {
-                try writer.flush(nil, to: recoveryURL)
-                try? FileManager.default.removeItem(at: legacyRecoveryURL)
-            } catch {
-                self.error = error.localizedDescription
-                return false
-            }
-            dirty = false
-            discarded = true
-            return true
+        case .alertSecondButtonReturn:
+            // A PDF is a hand-off: once it is written the work is done with, as after "放弃修改".
+            guard saveAsPDFBeforeLeaving() else { return false }
+            return discardWork()
+        case .alertFourthButtonReturn:
+            return discardWork()
         default:
             return false
         }
+    }
+
+    /// Asks where to put a PDF of the document and writes it; false when cancelled or when it failed.
+    func saveAsPDFBeforeLeaving() -> Bool {
+        guard checkDraftsForExport() else { return false }
+        guard let url = saveURL(type: .pdf, suffix: "pdf") else { return false }
+        do { try writePDFCopy(to: url) } catch {
+            self.error = "保存 PDF 失败：\(error.localizedDescription)"
+            return false
+        }
+        status = "已保存为 PDF：\(url.lastPathComponent)"
+        return true
+    }
+
+    /// The document as a plain PDF (page content, annotations, outline and recognised text), written through a temporary file.
+    func writePDFCopy(to url: URL) throws {
+        let data = try pdfData()
+        let staging = url.deletingLastPathComponent().appendingPathComponent(".KongFolio-\(UUID().uuidString.prefix(8)).partial")
+        defer { try? FileManager.default.removeItem(at: staging) }
+        try data.write(to: staging)
+        if FileManager.default.fileExists(atPath: url.path) { _ = try FileManager.default.replaceItemAt(url, withItemAt: staging) }
+        else { try FileManager.default.moveItem(at: staging, to: url) }
+    }
+
+    /// Lets go of the unsaved work: no recovery copy is kept and the document counts as clean.
+    func discardWork() -> Bool {
+        autoTask?.cancel()
+        do {
+            try writer.flush(nil, to: recoveryURL)
+            try? FileManager.default.removeItem(at: legacyRecoveryURL)
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+        dirty = false
+        discarded = true
+        return true
     }
 
     func prepareToClose() -> Bool {
