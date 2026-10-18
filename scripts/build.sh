@@ -14,6 +14,11 @@ APP="$STAGING/KongFolio.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/KongFolio" "$APP/Contents/MacOS/KongFolio"
 cp "$ROOT/Info.plist" "$APP/Contents/Info.plist"
+# A bundle without localization folders gets English standard menus (File, Edit, View…) even on a Chinese system.
+for language in zh-Hans en; do
+    mkdir -p "$APP/Contents/Resources/$language.lproj"
+    printf '"CFBundleName" = "KongFolio";\n' > "$APP/Contents/Resources/$language.lproj/InfoPlist.strings"
+done
 swift "$ROOT/scripts/Icon.swift" "$ROOT/.build/KongFolio.iconset"
 iconutil -c icns "$ROOT/.build/KongFolio.iconset" -o "$APP/Contents/Resources/KongFolio.icns"
 codesign --force --deep --sign - "$APP"
