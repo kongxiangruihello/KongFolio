@@ -190,9 +190,16 @@ struct ReadingSidebar: View {
             if workspace.annotationNotes.isEmpty {
                 Text("尚无摘录或标注。选中文字后，可在右侧输入笔记并标记。").font(.caption).foregroundStyle(.secondary).padding()
             }
+            batchControls
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(shownNotes) { entry in
+                        HStack(alignment: .top, spacing: 6) {
+                        Button { workspace.toggleNote(entry.id) } label: {
+                            Image(systemName: workspace.selectedNoteIDs.contains(entry.id) ? "checkmark.square.fill" : "square").padding(.top, 10)
+                        }
+                        .buttonStyle(.plain)
+                        .help("勾选，用于批量删除或改色")
                         Button { workspace.goToNote(entry) } label: {
                             VStack(alignment: .leading, spacing: 5) {
                                 HStack(spacing: 5) {
@@ -209,10 +216,35 @@ struct ReadingSidebar: View {
                             .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain)
+                        }
                     }
                 }
                 .padding(8)
             }
+        }
+    }
+
+    private let batchColors: [(name: String, color: Color)] = [("红", .red), ("橙", .orange), ("黄", .yellow), ("绿", .green), ("蓝", .blue), ("黑", .black)]
+
+    /// Select-all / delete / recolour for the ticked entries; only annotations can be changed, excerpts are left alone.
+    @ViewBuilder private var batchControls: some View {
+        if !workspace.annotationNotes.isEmpty {
+            HStack(spacing: 6) {
+                Button("全选显示的") { workspace.selectNotes(shownNotes) }
+                if !workspace.selectedNoteIDs.isEmpty {
+                    Button("清除选择") { workspace.selectedNoteIDs = [] }
+                    Button("删除选中（\(workspace.selectedNoteIDs.count)）", role: .destructive) { workspace.deleteSelectedNotes() }
+                    ForEach(batchColors, id: \.name) { item in
+                        Button { workspace.recolorSelectedNotes(NSColor(item.color)) } label: {
+                            Circle().fill(item.color).frame(width: 13, height: 13)
+                        }
+                        .buttonStyle(.plain)
+                        .help("选中的标注改为\(item.name)色")
+                    }
+                }
+            }
+            .font(.caption)
+            .padding(.horizontal, 8)
         }
     }
 

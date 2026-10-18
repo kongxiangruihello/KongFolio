@@ -31,9 +31,16 @@ struct AnnotationFilter: Equatable {
     func matches(_ note: AnnotationNote) -> Bool {
         if let kind, note.kind != kind { return false }
         if let color, note.colorName != color { return false }
-        let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let needle = Self.folded(text.trimmingCharacters(in: .whitespacesAndNewlines))
         guard !needle.isEmpty else { return true }
-        return note.quote.localizedCaseInsensitiveContains(needle) || note.note.localizedCaseInsensitiveContains(needle)
+        // Traditional and simplified forms, full-width forms and case are not told apart, and the kind, the colour and
+        // the page ("第 12 页") can be searched like the text itself.
+        return [note.quote, note.note, note.kind, note.colorName ?? "", note.pageDescription].contains { Self.folded($0).contains(needle) }
+    }
+
+    static func folded(_ text: String) -> String {
+        var cache: [String: String] = [:]
+        return FoldedText(text, simplify: true, cache: &cache).text as String
     }
 
     func apply(to notes: [AnnotationNote]) -> [AnnotationNote] { isActive ? notes.filter(matches) : notes }

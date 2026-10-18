@@ -10,7 +10,7 @@ struct FolioError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
 }
-struct RecognizedLine: Codable {
+struct RecognizedLine: Codable, Equatable {
     var text: String
     var box: CGRect
     var confidence: Float = 1

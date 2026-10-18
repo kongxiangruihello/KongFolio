@@ -22,8 +22,7 @@ extension Workspace {
         annotationColor = color
         guard tool == .edit, let annotation = selectedAnnotation else { return }
         let edit = beginAnnotationEdit([annotation])
-        if annotation.type == "FreeText" { annotation.fontColor = NSColor(color) }
-        else { annotation.color = NSColor(color).withAlphaComponent(annotation.type == "Highlight" ? 0.4 : 1) }
+        AnnotationRecolor.apply(annotation, color: NSColor(color))
         commitAnnotationEdit(edit)
         selectedAnnotation = annotation
     }
