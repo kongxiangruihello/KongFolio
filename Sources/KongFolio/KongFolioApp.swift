@@ -51,6 +51,10 @@ import AppKit
                 Button("复制（竖排按列从右到左）") { store.commandWorkspace?.copyInReadingOrder() }
                     .keyboardShortcut("c", modifiers: [.command, .option]).disabled((store.commandWorkspace?.count ?? 0) == 0)
             }
+            CommandGroup(after: .help) {
+                Button("开启 / 关闭悬停提示诊断") { TooltipDiagnostics.shared.toggle() }
+                Button("在访达中显示悬停诊断记录") { TooltipDiagnostics.shared.revealLog() }
+            }
             CommandMenu("标注") {
                 Button((store.commandWorkspace?.showAnnotationBar ?? true) ? "隐藏标注工具栏" : "显示标注工具栏") {
                     if let w = store.commandWorkspace { w.showAnnotationBar.toggle() }
@@ -108,6 +112,7 @@ struct WindowAccessor: NSViewRepresentable {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        if UserDefaults.standard.bool(forKey: TooltipDiagnostics.key) { TooltipDiagnostics.shared.start() }
     }
 
     func attach(_ window: NSWindow) {

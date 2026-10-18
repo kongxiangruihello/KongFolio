@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 import PDFKit
 @testable import KongFolio
 
@@ -129,5 +130,56 @@ final class FlattenedExportTests: XCTestCase {
         object["appendNotes"] = nil
         let stripped = try JSONSerialization.data(withJSONObject: object)
         XCTAssertFalse(try JSONDecoder().decode(ExportOptions.self, from: stripped).appendsNotes)
+    }
+}
+
+final class OutlineWithExcerptsTests: XCTestCase {
+    private func card(_ kind: CardKind, text: String, comment: String = "", path: String? = nil, page: Int = 0) -> BoardCard {
+        BoardCard(kind: kind, text: text, comment: comment,
+                  source: path.map { SourceRef(path: $0, fileName: "a.pdf", page: page) },
+                  x: 0, y: 0, width: 100, height: 100)
+    }
+
+    func testOnlyThisDocumentsExcerptsAreFiled() {
+        let cards = [card(.text, text: "甲", comment: "批", path: "/a.pdf", page: 4),
+                     card(.text, text: "乙", path: "/b.pdf", page: 1),
+                     card(.note, text: "自由笔记"),
+                     card(.note, text: "")]
+        let result = NotesOutline.excerptNotes(cards: cards) { $0.path == "/a.pdf" }
+        XCTAssertEqual(result.excerpts.map(\.quote), ["甲"])
+        XCTAssertEqual(result.excerpts.first?.page, 4)
+        XCTAssertEqual(result.excerpts.first?.note, "批")
+        XCTAssertEqual(result.excerpts.first?.kind, "摘录")
+        XCTAssertEqual(result.free.map(\.quote), ["自由笔记"])
+    }
+
+    func testExcerptsSitBesideAnnotationsInPageOrder() {
+        let mark = AnnotationNote(page: 2, index: 0, kind: "高亮", quote: "标注", note: "")
+        let excerpt = NotesOutline.excerptNotes(cards: [card(.text, text: "摘", path: "/a.pdf", page: 1)]) { _ in true }.excerpts
+        let sections = NotesOutline.sections(notes: [mark] + excerpt, outline: [])
+        XCTAssertEqual(sections.first?.notes.map(\.kind), ["摘录", "高亮"])
+        XCTAssertEqual(Set((excerpt + [mark]).map(\.id)).count, 2)
+    }
+
+    func testImageExcerptsHaveAReadableLine() {
+        let image = NotesOutline.excerptNotes(cards: [card(.image, text: "", path: "/a.pdf")]) { _ in true }.excerpts
+        XCTAssertEqual(image.first?.kind, "截图摘录")
+        XCTAssertFalse(image.first?.quote.isEmpty ?? true)
+    }
+}
+
+final class TooltipDiagnosticsTests: XCTestCase {
+    @MainActor func testChainReportsTheNearestTooltipAbove() {
+        let parent = NSView(), child = NSView(), leaf = NSView()
+        parent.toolTip = "完整路径"
+        parent.addSubview(child); child.addSubview(leaf)
+        let text = TooltipDiagnostics.describe(chainFrom: leaf)
+        XCTAssertTrue(text.contains("完整路径"))
+        XCTAssertTrue(text.contains("NSView"))
+    }
+
+    @MainActor func testChainSaysWhenThereIsNone() {
+        XCTAssertTrue(TooltipDiagnostics.describe(chainFrom: NSView()).contains("无"))
+        XCTAssertTrue(TooltipDiagnostics.describe(chainFrom: nil).contains("没有视图"))
     }
 }
