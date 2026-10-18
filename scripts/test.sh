@@ -28,6 +28,7 @@ shim = '''
 class XCTestCase {}
 func XCTAssertTrue(_ value: Bool, _ message: String = "", file: StaticString = #file, line: UInt = #line) { precondition(value, "Assertion failed at \\(file):\\(line) \\(message)") }
 func XCTAssertFalse(_ value: Bool, _ message: String = "", file: StaticString = #file, line: UInt = #line) { precondition(!value, "Assertion failed at \\(file):\\(line) \\(message)") }
+func XCTUnwrap<T>(_ value: T?, _ message: String = "", file: StaticString = #file, line: UInt = #line) throws -> T { guard let value else { preconditionFailure("Unexpectedly nil at \(file):\(line) \(message)") }; return value }
 func XCTAssertEqual<T: Equatable>(_ a: T, _ b: T, _ message: String = "", file: StaticString = #file, line: UInt = #line) { precondition(a == b, "Expected \\(a) == \\(b) at \\(file):\\(line) \\(message)") }
 func XCTAssertEqual(_ a: Double, _ b: Double, accuracy: Double, file: StaticString = #file, line: UInt = #line) { precondition(abs(a - b) <= accuracy, "Expected \\(a) ≈ \\(b) at \\(file):\\(line)") }
 func XCTAssertNil(_ value: Any?, file: StaticString = #file, line: UInt = #line) { precondition(value == nil, "Expected nil at \\(file):\\(line)") }
