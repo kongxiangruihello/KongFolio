@@ -1,4 +1,4 @@
-# KongFolio 0.22
+# KongFolio 0.23
 
 原生 macOS 个人文档工作台。SwiftUI / AppKit + PDFKit + Core Image + Vision + Core Graphics，全程本地处理，无第三方依赖。
 
@@ -14,6 +14,8 @@ open ../KongFolio.app
 ## 近期版本要点
 
 完整清单见 `CHANGELOG.md`。
+
+**0.23**：启动后在后台预热 PDFKit / Vision / 字体，缓解安装后第一次打开 PDF 偏慢；性能日志新增“启动预热”“打开文件”。
 
 **0.22**：去掉页面右上角的“标注”按钮，标注入口只留顶栏的“标注”按钮。
 

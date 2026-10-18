@@ -11,6 +11,7 @@ import AppKit
     init() {
         AppLanguage.apply()
         AppInterface.registerDefaults()
+        AppWarmup.start()
     }
 
     var body: some Scene {

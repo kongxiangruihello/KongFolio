@@ -180,6 +180,8 @@ import UniformTypeIdentifiers
     /// Tests and scripts replace this to answer confirmation dialogs.
     static var confirmationHandler: ((_ title: String, _ detail: String) -> Bool)?
     var cachedPDF: Data?
+    /// When the file being opened was asked for, for the open-time line in the performance log.
+    var openBegan: Date?
     private var displayCache: (key: String, image: NSImage)?
     private var importAsInsert = false
     private var deferredOpen: (urls: [URL], insert: Bool)?
@@ -899,6 +901,10 @@ import UniformTypeIdentifiers
             if !insert, loaded.count == 1 { dirty = false }
             applyPendingView()
             remember(urls)
+            if let began = openBegan, !insert {
+                PerfLog.record("打开文件", name: displayName, pages: count, seconds: Date().timeIntervalSince(began), note: "从点开到载入完成")
+            }
+            openBegan = nil
             status = "已载入 \(count) 页" + (rebuilt ? "（此文件带“禁止修改”限制，已转成可编辑副本；原文件不会被改动）" : "")
             store?.loadedTabsChanged()
         }
