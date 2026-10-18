@@ -26,7 +26,7 @@ enum AnnotationShapes {
     }
 
     /// The annotation for the stroke so far (`points` runs from where the mouse went down to where it is now).
-    static func make(tool: AnnotationTool, points: [CGPoint], style: PenStyle, color: NSColor, fill: Bool, constrained: Bool) -> PDFAnnotation? {
+    static func make(tool: AnnotationTool, points: [CGPoint], style: PenStyle, color: NSColor, fill: Bool, constrained: Bool, dashed: Bool = false) -> PDFAnnotation? {
         guard let start = points.first, let last = points.last else { return nil }
         let annotation: PDFAnnotation
         let border = PDFBorder()
@@ -56,6 +56,10 @@ enum AnnotationShapes {
         default:
             return nil
         }
+        if dashed, tool != .pen, tool != .signature {
+            border.style = .dashed
+            border.dashPattern = [NSNumber(value: Double(max(style.width, 1)) * 3), NSNumber(value: Double(max(style.width, 1)) * 2)]
+        }
         annotation.color = color.withAlphaComponent(style.alpha)
         annotation.border = border
         return annotation
@@ -76,6 +80,7 @@ extension AnnotationTool {
         case .ellipse: return "circle"
         case .signature: return "signature"
         case .region: return "viewfinder"
+        case .eraser: return "eraser"
         }
     }
 }
@@ -106,5 +111,41 @@ extension AnnotationTool {
     static func boxHeight(for text: String) -> CGFloat {
         let lines = text.components(separatedBy: .newlines).reduce(0) { $0 + max(1, Int((Double($1.count) * 14 / 204).rounded(.up))) }
         return CGFloat(max(1, lines)) * 18 + 12
+    }
+}
+
+/// Single-key tool switches for the page (only while the annotation bar is open).
+enum AnnotationShortcuts {
+    static func tool(for key: String) -> (tool: AnnotationTool, highlighter: Bool)? {
+        switch key.lowercased() {
+        case "v": return (.select, false)
+        case "p": return (.pen, false)
+        case "h": return (.pen, true)
+        case "l": return (.line, false)
+        case "a": return (.arrow, false)
+        case "r": return (.rectangle, false)
+        case "o": return (.ellipse, false)
+        case "t": return (.textBox, false)
+        case "n": return (.note, false)
+        case "e": return (.edit, false)
+        case "x": return (.eraser, false)
+        default: return nil
+        }
+    }
+}
+
+/// What each tool starts with (colour as sRGB components, line width), so a highlighter is yellow and a pen red without setting it up.
+enum AnnotationStyleDefaults {
+    static func key(tool: AnnotationTool, highlighter: Bool) -> String { tool == .pen && highlighter ? "marker" : tool.rawValue }
+
+    static func style(for key: String) -> (rgb: [Double], width: Double)? {
+        switch key {
+        case "marker": return ([1.0, 0.82, 0.0], 3)
+        case AnnotationTool.pen.rawValue, AnnotationTool.line.rawValue, AnnotationTool.arrow.rawValue, AnnotationTool.rectangle.rawValue, AnnotationTool.ellipse.rawValue:
+            return ([0.9, 0.15, 0.15], 2)
+        case AnnotationTool.textBox.rawValue: return ([0, 0, 0], 2)
+        case AnnotationTool.note.rawValue: return ([1.0, 0.82, 0.0], 2)
+        default: return nil
+        }
     }
 }

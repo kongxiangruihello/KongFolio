@@ -2,6 +2,32 @@ import SwiftUI
 import PDFKit
 
 extension Workspace {
+    /// Switches the drawing tool; each tool keeps its own colour and width, starting from sensible ones.
+    func selectTool(_ next: AnnotationTool, highlighter: Bool = false) {
+        let current = AnnotationStyleDefaults.key(tool: tool, highlighter: penHighlighter)
+        if AnnotationStyleDefaults.style(for: current) != nil, let rgb = NSColor(annotationColor).usingColorSpace(.sRGB) {
+            toolStyles[current] = ([Double(rgb.redComponent), Double(rgb.greenComponent), Double(rgb.blueComponent)], penWidth)
+        }
+        tool = next
+        penHighlighter = next == .pen && highlighter
+        let key = AnnotationStyleDefaults.key(tool: next, highlighter: penHighlighter)
+        if let style = toolStyles[key] ?? AnnotationStyleDefaults.style(for: key) {
+            annotationColor = Color(.sRGB, red: style.rgb[0], green: style.rgb[1], blue: style.rgb[2], opacity: 1)
+            penWidth = style.width
+        }
+    }
+
+    /// A colour picked in the bar: it becomes the drawing colour, and recolours the selected mark when one is being edited.
+    func chooseAnnotationColor(_ color: Color) {
+        annotationColor = color
+        guard tool == .edit, let annotation = selectedAnnotation else { return }
+        let edit = beginAnnotationEdit([annotation])
+        if annotation.type == "FreeText" { annotation.fontColor = NSColor(color) }
+        else { annotation.color = NSColor(color).withAlphaComponent(annotation.type == "Highlight" ? 0.4 : 1) }
+        commitAnnotationEdit(edit)
+        selectedAnnotation = annotation
+    }
+
     func selectAnnotation(_ annotation: PDFAnnotation?) {
         selectedAnnotation = annotation
         if let annotation {

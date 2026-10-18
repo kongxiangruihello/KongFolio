@@ -114,10 +114,17 @@ import UniformTypeIdentifiers
     @Published var penHighlighter = false
     /// Rectangles and ellipses get a translucent fill.
     @Published var shapeFill = false
-    /// The drawing tools floating over the page (shown unless the reader closes them).
-    @Published var showAnnotationBar = UserDefaults.standard.object(forKey: "KongFolio.annotationBar") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(showAnnotationBar, forKey: "KongFolio.annotationBar") }
+    /// Dashed instead of solid for lines, arrows, rectangles and ellipses.
+    @Published var lineDashed = false
+    /// The drawing tools floating over the page. Off by default (reading comes first); a small button brings them up.
+    @Published var showAnnotationBar = UserDefaults.standard.object(forKey: "KongFolio.annotationBar2") as? Bool ?? false {
+        didSet {
+            UserDefaults.standard.set(showAnnotationBar, forKey: "KongFolio.annotationBar2")
+            if !showAnnotationBar, tool != .select { tool = .select }
+        }
     }
+    /// The colour and width each tool was last used with.
+    var toolStyles: [String: (rgb: [Double], width: Double)] = [:]
     @Published var signatures: [SignatureTemplate] = []
     @Published var signaturePositions: [SignaturePosition] = []
     @Published var placingSignature: SignatureTemplate?
@@ -837,12 +844,11 @@ import UniformTypeIdentifiers
             // The opened bytes are the document. Without this, the first autosave (and the first search)
             // serialized the whole file on the main thread. `changed()` clears the cache, so set it afterwards.
             if rebuilt { status = "这个文件带有“禁止修改”的限制，已转成可编辑的副本；保存时请另存，原文件不会被改动" }
-            if let openedBytes {
-                cachedPDF = openedBytes
-                // Opening one file changes nothing yet: the file on disk is the original. Without this every
-                // opened document counted as unsaved work and closing it asked whether to save.
-                dirty = false
-            }
+            if let openedBytes { cachedPDF = openedBytes }
+            // Opening one file changes nothing yet: the file on disk is the original (or, for a file marked "no modification",
+            // an editable copy of it). Without this every opened document counted as unsaved work and closing it asked
+            // whether to save.
+            if !insert, loaded.count == 1 { dirty = false }
             applyPendingView()
             if scanAfter {
                 mode = .image
