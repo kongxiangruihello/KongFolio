@@ -35,6 +35,7 @@ struct PDFCanvas: NSViewRepresentable {
             }
             context.coordinator.navigation = workspace.navigationToken
         }
+        if view.contentFilters.isEmpty == workspace.nightReading { workspace.applyNightReading() }
         if context.coordinator.revision != workspace.revision { view.layoutDocumentView(); context.coordinator.revision = workspace.revision }
         if context.coordinator.scrollObserver == nil, let clip = view.documentView?.enclosingScrollView?.contentView {
             clip.postsBoundsChangedNotifications = true

@@ -42,10 +42,17 @@ import AppKit
             CommandGroup(replacing: .sidebar) {
                 Button(showSidebar ? "隐藏左侧栏" : "显示左侧栏") { showSidebar.toggle() }.keyboardShortcut("1", modifiers: [.command, .option])
                 Button(showInspector ? "隐藏右侧栏" : "显示右侧栏") { showInspector.toggle() }.keyboardShortcut("2", modifiers: [.command, .option])
+                Button((store.commandWorkspace?.nightReading ?? false) ? "关闭夜间阅读" : "夜间阅读（页面反色）") {
+                    if let w = store.commandWorkspace { w.nightReading.toggle() }
+                }.keyboardShortcut("d", modifiers: [.command, .option]).disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Button("专注阅读（隐藏/恢复两侧栏）") {
                     let show = !showSidebar && !showInspector
                     showSidebar = show; showInspector = show
                 }.keyboardShortcut("3", modifiers: [.command, .option])
+            }
+            CommandGroup(after: .textEditing) {
+                Button("查找下一处") { store.commandWorkspace?.stepSearch(1) }.keyboardShortcut("g").disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Button("查找上一处") { store.commandWorkspace?.stepSearch(-1) }.keyboardShortcut("g", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
             }
             CommandGroup(after: .pasteboard) {
                 Button("复制（竖排按列从右到左）") { store.commandWorkspace?.copyInReadingOrder() }
@@ -60,6 +67,10 @@ import AppKit
                 }
             }
             CommandMenu("标注") {
+                Button("复制标注") { store.commandWorkspace?.copySelectedAnnotations() }.keyboardShortcut("c", modifiers: [.command, .option, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Button("粘贴标注") { store.commandWorkspace?.pasteAnnotations() }.keyboardShortcut("v", modifiers: [.command, .option, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Button("再制所选标注") { store.commandWorkspace?.duplicateSelectedAnnotations() }.keyboardShortcut("d").disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Divider()
                 Button((store.commandWorkspace?.showAnnotationBar ?? true) ? "隐藏标注工具栏" : "显示标注工具栏") {
                     if let w = store.commandWorkspace { w.showAnnotationBar.toggle() }
                 }.keyboardShortcut("a", modifiers: [.command, .option]).disabled((store.commandWorkspace?.count ?? 0) == 0)
@@ -72,6 +83,15 @@ import AppKit
                     .keyboardShortcut("d", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Button("高亮并添加批注") { if let w = store.commandWorkspace { w.mark(style: .highlight, color: w.markupColor, annotate: true) } }
                     .keyboardShortcut("n", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
+            }
+            CommandMenu("编辑页面") {
+                Button("在当前页后插入空白页") { store.commandWorkspace?.insertBlankPage() }.disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Button("在当前页前插入空白页") { store.commandWorkspace?.insertBlankPage(before: true) }.disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Divider()
+                Button("给选中文字加链接…") {
+                    if let w = store.commandWorkspace, let text = TextPrompt.ask("链接去向", detail: "输入页码（1–\(w.count)）跳到那一页，或输入网址。", button: "加链接") { w.addLinkToSelection(text) }
+                }.disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Button("去掉选中文字上的链接") { store.commandWorkspace?.removeLinksInSelection() }.disabled((store.commandWorkspace?.count ?? 0) == 0)
             }
             CommandMenu("工作区") {
                 Button("摘录选中文字到工作区") { store.commandWorkspace?.excerptSelection() }
