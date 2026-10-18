@@ -105,8 +105,14 @@ private struct DocumentTab: View {
                 tooltip: workspace.displayPath ?? "",
                 dirty: workspace.dirty && workspace.count > 0, selected: selected, compact: compact,
                 dimmed: workspace.count == 0 && known && !loading,
+                hover: { inside in store.setPathHint(inside ? Workspace.pathHintText(path: workspace.displayPath, title: workspace.title) : nil) },
                 select: { store.select(workspace.id) }, close: { store.close(workspace.id) })
             .contextMenu {
+                if workspace.displayPath != nil {
+                    Button("拷贝完整路径") { workspace.copyPath() }
+                    Button("在访达中显示") { workspace.revealInFinder() }
+                    Divider()
+                }
                 if !selected, store.activeWorkspace != nil {
                     Button("在右侧并排阅读（与当前文档对照）") { store.openSplit(with: workspace.id) }
                 }
@@ -122,6 +128,7 @@ private struct NoteTab: View {
 
     var body: some View {
         TabChip(icon: "square.and.pencil", title: note.title, tooltip: note.fileURL?.path ?? "尚未保存到文件", dirty: note.dirty, selected: selected, compact: compact, dimmed: false,
+                hover: { inside in store.setPathHint(inside ? (note.fileURL.map { "文件：" + $0.path } ?? "尚未保存到文件") : nil) },
                 select: { store.select(note.id) }, close: { store.close(note.id) })
     }
 }
@@ -134,6 +141,7 @@ private struct TabChip: View {
     let selected: Bool
     let compact: Bool
     let dimmed: Bool
+    var hover: (Bool) -> Void = { _ in }
     let select: () -> Void
     let close: () -> Void
 
@@ -153,5 +161,6 @@ private struct TabChip: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
         .help(tooltip)
+        .onHover { hover($0) }
     }
 }

@@ -198,6 +198,23 @@ import UniformTypeIdentifiers
     /// What the tab and the title bar show: the project file, else the opened file, else the document title.
     var displayName: String { projectURL?.lastPathComponent ?? sourceURL?.lastPathComponent ?? title }
     var displayPath: String? { (projectURL ?? sourceURL)?.path }
+    /// What the status bar says while the pointer is over a file name (the system tooltip is slow and not always shown).
+    @Published var pathHint: String?
+    static func pathHintText(path: String?, title: String) -> String {
+        guard let path, !path.isEmpty else { return "未保存的文档：" + title }
+        return "文件：" + path
+    }
+    func showPathHint(_ on: Bool) { pathHint = on ? Workspace.pathHintText(path: displayPath, title: title) : nil }
+    func copyPath() {
+        guard let path = displayPath else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
+        status = "已拷贝路径：" + path
+    }
+    func revealInFinder() {
+        guard let url = projectURL ?? sourceURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
     /// Unchanged since it was opened or saved, so the file on disk is the document and no recovery copy is needed.
     var canRestoreFromFile: Bool { !dirty && (projectURL != nil || sourceURL != nil) }
     /// A loaded tab that can be dropped from memory and read again later without losing anything.

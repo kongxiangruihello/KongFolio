@@ -45,6 +45,12 @@ import UniformTypeIdentifiers
     var activeTab: OpenTab? { tabs.first { $0.id == selectedID } }
     var activeWorkspace: Workspace? { activeTab?.workspace }
 
+    /// Shows `text` in the status bar of the open document (nil clears it everywhere, so no stale hint stays behind a tab switch).
+    func setPathHint(_ text: String?) {
+        for workspace in tabs.compactMap(\.workspace) where workspace.pathHint != nil { workspace.pathHint = nil }
+        if let text { activeWorkspace?.pathHint = text }
+    }
+
     /// With two documents side by side, the one the reader last clicked in; nil or the active tab otherwise.
     @Published private(set) var focusedID: UUID?
 

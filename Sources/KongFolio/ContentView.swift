@@ -93,7 +93,7 @@ struct ContentView: View {
     private func statusBar(width: CGFloat) -> some View {
         HStack {
             Circle().fill(workspace.busy ? Color.orange : Color.green).frame(width: 6, height: 6)
-            Text(workspace.status).lineLimit(1).truncationMode(.tail)
+            Text(workspace.pathHint ?? workspace.status).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 0)
             if workspace.count > 0 {
                 Text("\(workspace.selection + 1) / \(workspace.count) 页").lineLimit(1).fixedSize()
@@ -152,6 +152,14 @@ struct ContentView: View {
                 if style != .minimal { Text("KongFolio").font(.headline).lineLimit(1) }
                 Text(workspace.displayName + (workspace.dirty && workspace.count > 0 ? " •" : "")).font(style == .minimal ? .callout : .caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     .help(workspace.displayPath ?? "")
+                    .contentShape(Rectangle())
+                    .onHover { workspace.showPathHint($0) }
+                    .contextMenu {
+                        if workspace.displayPath != nil {
+                            Button("拷贝完整路径") { workspace.copyPath() }
+                            Button("在访达中显示") { workspace.revealInFinder() }
+                        }
+                    }
             }
             .frame(minWidth: 40, idealWidth: 175, maxWidth: style == .full ? 220 : 260, alignment: .leading)
             Picker("模式", selection: $workspace.mode) {

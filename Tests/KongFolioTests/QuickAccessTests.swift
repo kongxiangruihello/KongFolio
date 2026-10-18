@@ -118,3 +118,26 @@ final class QuickAccessTests: XCTestCase {
         XCTAssertNil(a.splitPartner)
     }
 }
+
+final class PathHintTests: XCTestCase {
+    func testTheHintNamesTheFileOrSaysTheDocumentIsUnsaved() {
+        XCTAssertEqual(Workspace.pathHintText(path: "/Users/我/书/各国近事.pdf", title: "x"), "文件：/Users/我/书/各国近事.pdf")
+        XCTAssertEqual(Workspace.pathHintText(path: nil, title: "新文档"), "未保存的文档：新文档")
+        XCTAssertEqual(Workspace.pathHintText(path: "", title: "新文档"), "未保存的文档：新文档")
+    }
+
+    @MainActor func testTheHintIsOnlyEverOnOneOpenDocumentAndClearsEverywhere() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = WorkspaceStore(storage: directory); store.bootstrap(); defer { store.board.removeBackup() }
+        let first = try store.activeWorkspace.unwrap("没有当前文档")
+        store.setPathHint("文件：/a.pdf")
+        XCTAssertEqual(first.pathHint, "文件：/a.pdf")
+        store.setPathHint(nil)
+        XCTAssertEqual(first.pathHint == nil, true)
+        first.showPathHint(true)
+        XCTAssertEqual(first.pathHint?.hasPrefix("未保存的文档：") ?? false, true)
+        first.showPathHint(false)
+        XCTAssertEqual(first.pathHint == nil, true)
+    }
+}
