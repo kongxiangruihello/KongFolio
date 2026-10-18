@@ -43,6 +43,8 @@ struct AnnotationNote: Identifiable {
     /// The marker colour name ("黄", "绿", "蓝", "粉") for coloured marks, and the colour itself for the sidebar swatch.
     var colorName: String? = nil
     var rgb: [Double]? = nil
+    /// Labels the reader gave the entry in the notes outline editor.
+    var tags: [String] = []
     /// "第 3 页" or "第 3 页（印刷页码 15）".
     var pageDescription: String { label.map { "第 \(page + 1) 页（印刷页码 \($0)）" } ?? "第 \(page + 1) 页" }
 }
@@ -219,25 +221,29 @@ enum ReadingServices {
         return result
     }
 
+    /// The name a kind of annotation goes by in lists and exports.
+    static func kindName(for type: String?) -> String {
+        switch type {
+        case "Highlight": return "高亮"
+        case "Underline": return "下划线"
+        case "StrikeOut": return "删除线"
+        case "Text": return "批注"
+        case "FreeText": return "文字框"
+        case "Ink": return "手写"
+        case "Line": return "箭头/线条"
+        case "Square": return "矩形"
+        case "Circle": return "椭圆"
+        default: return type ?? "标注"
+        }
+    }
+
     static func notes(_ doc: PDFDocument) -> [AnnotationNote] {
         var notes: [AnnotationNote] = []
         for i in 0..<doc.pageCount {
             guard let page = doc.page(at: i) else { continue }
             for (index, annotation) in page.annotations.enumerated() {
                 guard !["Link", "Widget", "Popup"].contains(annotation.type ?? "") else { continue }
-                let kind: String
-                switch annotation.type {
-                case "Highlight": kind = "高亮"
-                case "Underline": kind = "下划线"
-                case "StrikeOut": kind = "删除线"
-                case "Text": kind = "批注"
-                case "FreeText": kind = "文字框"
-                case "Ink": kind = "手写"
-                case "Line": kind = "箭头/线条"
-                case "Square": kind = "矩形"
-                case "Circle": kind = "椭圆"
-                default: kind = annotation.type ?? "标注"
-                }
+                let kind = kindName(for: annotation.type)
                 let markup = ["Highlight", "Underline", "StrikeOut"].contains(annotation.type ?? "")
                 let quote = annotation.value(forAnnotationKey: quoteKey) as? String ?? (markup ? page.selection(for: annotation.bounds)?.string ?? "" : "")
                 var entry = AnnotationNote(page: i, index: index, kind: kind, quote: repairIdeographs(quote), note: annotation.contents ?? "", label: pageLabel(page, index: i))

@@ -36,6 +36,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showOutlineCandidates) { OutlineCandidatesSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRReview) { OCRReview(workspace: workspace) }
         .sheet(isPresented: $workspace.showProofreading) { ColumnProofView(workspace: workspace) }
+        .sheet(isPresented: $workspace.showOutlineEditor) { OutlineEditorView(workspace: workspace) }
         .sheet(isPresented: $workspace.showTools) { quickTools }
         .sheet(isPresented: $workspace.showImportOrder) { importOrder }
         .sheet(isPresented: Binding(get: { workspace.comparison != nil }, set: { if !$0 { workspace.comparison = nil } })) { comparisonSheet }
@@ -271,6 +272,12 @@ struct ContentView: View {
         Button("笔记大纲 · Word（按目录分章）…") { workspace.exportNotesOutline(.word) }
         Button("笔记大纲 · Markdown…") { workspace.exportNotesOutline(.markdown) }
         Button("笔记大纲 · 文本…") { workspace.exportNotesOutline(.text) }
+        Button("笔记大纲 · 整理后导出（排序、标签、合并重复）…") { workspace.showOutlineEditor = true }
+        Divider()
+        Button("PDF · 干净副本（不含任何标注）…") { workspace.exportAnnotationPDF(.clean) }
+        Button("PDF · 含标注，末尾附批注清单…") { workspace.exportAnnotationPDF(.annotatedWithList) }
+        Button("PDF · 批注清单（单独一份）…") { workspace.exportAnnotationPDF(.listOnly) }
+        Button("PDF · 只含列表当前筛选的标注…") { workspace.exportAnnotationPDF(.filtered) }
     }
 
     private func exportMenu(iconOnly: Bool) -> some View {
