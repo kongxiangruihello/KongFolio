@@ -86,7 +86,7 @@ final class AnnotationShapesTests: XCTestCase {
 }
 
 final class AnnotationBarBehaviourTests: XCTestCase {
-    func workspace() -> Workspace {
+    @MainActor func workspace() -> Workspace {
         Workspace(storage: FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true))
     }
 
