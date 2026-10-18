@@ -200,7 +200,7 @@ import UniformTypeIdentifiers
     var displayPath: String? { (projectURL ?? sourceURL)?.path }
     /// What the status bar says while the pointer is over a file name (the system tooltip is slow and not always shown).
     @Published var pathHint: String?
-    static func pathHintText(path: String?, title: String) -> String {
+    nonisolated static func pathHintText(path: String?, title: String) -> String {
         guard let path, !path.isEmpty else { return "未保存的文档：" + title }
         return "文件：" + path
     }
