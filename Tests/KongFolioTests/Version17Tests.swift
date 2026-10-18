@@ -200,3 +200,19 @@ final class DiagnosticReportTests: XCTestCase {
         XCTAssertTrue(text.contains("（没有）"))
     }
 }
+
+final class Version18Tests: XCTestCase {
+    @MainActor func testExportCheckBringsHiddenLayersBack() {
+        let space = Workspace(storage: FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true))
+        space.hiddenKinds = ["高亮"]
+        XCTAssertTrue(space.checkDraftsForExport())
+        XCTAssertTrue(space.hiddenKinds.isEmpty)
+    }
+
+    func testDraftSurvivesAsAValue() {
+        var draft = OutlineDraft(sections: [NotesSection(title: "一", depth: 0, notes: [AnnotationNote(page: 0, index: 0, kind: "高亮", quote: "甲", note: ""), AnnotationNote(page: 1, index: 0, kind: "高亮", quote: "乙", note: "")])])
+        draft.move("1-0", by: -1)
+        let kept = draft
+        XCTAssertEqual(kept.sections[0].notes.map(\.quote), ["乙", "甲"])
+    }
+}

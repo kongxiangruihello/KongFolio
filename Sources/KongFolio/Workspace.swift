@@ -28,6 +28,8 @@ import UniformTypeIdentifiers
     @Published var showOCRReview = false
     @Published var showProofreading = false
     @Published var showOutlineEditor = false
+    /// The outline as the reader has arranged it, kept while the tab is open so closing the editor loses nothing.
+    var outlineDraft: OutlineDraft?
     @Published var showProgress = false
     @Published var readingProgress = ReadingProgress()
     var progressLoadedFor: String?
@@ -647,7 +649,7 @@ import UniformTypeIdentifiers
         bookmarks = []; bookmarkName = ""; outlineEntries = []; bibliography = Bibliography()
         search = ""; searchResults = []; searchMessage = ""; annotationNotes = []
         readingPoint = nil; readingScale = nil
-        hiddenKinds = []; selectedAnnotation = nil; comparison = nil; recognizedText = ""
+        hiddenKinds = []; outlineDraft = nil; selectedAnnotation = nil; comparison = nil; recognizedText = ""
         showOCRReview = false; reviewSelection = -1; exportEstimate = nil
         history.removeAll(); future.removeAll(); lastJob = nil
         if !keepingSource { projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil }
@@ -1206,6 +1208,8 @@ import UniformTypeIdentifiers
             error = "有图片调整尚未应用。请先应用到页面，再导出；保存项目可以保留这些调整。"
             return false
         }
+        // Whatever is exported, hidden annotation types come back first: a layer is only a view setting.
+        showAllLayers()
         return true
     }
 
