@@ -124,6 +124,14 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
             default: break
             }
         }
+        if let workspace, workspace.showAnnotationBar, event.modifierFlags.intersection([.command, .option, .control]).isEmpty {
+            if event.keyCode == 53 { workspace.selectTool(.select); return }
+            if [51, 117].contains(event.keyCode), workspace.selectedAnnotation != nil { workspace.deleteAnnotation(); return }
+            if let key = event.charactersIgnoringModifiers, key.count == 1, let match = AnnotationShortcuts.tool(for: key) {
+                workspace.selectTool(match.tool, highlighter: match.highlighter)
+                return
+            }
+        }
         super.keyDown(with: event)
     }
 
@@ -281,6 +289,13 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
             drawingPage = page
             points = [point]
             provisional = nil
+        case .eraser:
+            // Removes the topmost mark whose box holds the click; undo brings it back.
+            if let hit = Workspace.visibleAnnotations(on: page).reversed().first(where: { $0.bounds.insetBy(dx: -3, dy: -3).contains(point) }) {
+                workspace.selectAnnotation(hit)
+                workspace.deleteAnnotation()
+                needsDisplay = true
+            }
         case .region:
             regionStart = location
             regionView.frame = CGRect(origin: location, size: .zero)
@@ -311,7 +326,7 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
         let signature = workspace.tool == .signature
         let drawn = signature ? PenStyle(width: 1.6, alpha: 1) : style
         guard let annotation = AnnotationShapes.make(tool: workspace.tool, points: points, style: drawn, color: color, fill: workspace.shapeFill,
-                                                       constrained: event.modifierFlags.contains(.shift)) else { return }
+                                                       constrained: event.modifierFlags.contains(.shift), dashed: workspace.lineDashed) else { return }
         if signature { annotation.userName = "KongFolio Signature" }
         page.addAnnotation(annotation)
         provisional = annotation

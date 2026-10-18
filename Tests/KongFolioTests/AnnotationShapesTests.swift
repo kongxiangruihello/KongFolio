@@ -1,5 +1,6 @@
 import XCTest
 import PDFKit
+import SwiftUI
 @testable import KongFolio
 
 final class AnnotationShapesTests: XCTestCase {
@@ -81,5 +82,102 @@ final class AnnotationShapesTests: XCTestCase {
         XCTAssertEqual(AnnotationText.boxHeight(for: "短"), 30, accuracy: 0.001)
         XCTAssertTrue(AnnotationText.boxHeight(for: String(repeating: "字", count: 60)) > AnnotationText.boxHeight(for: "短"))
         XCTAssertTrue(AnnotationText.boxHeight(for: "一\n二\n三") > AnnotationText.boxHeight(for: "一"))
+    }
+}
+
+final class AnnotationBarBehaviourTests: XCTestCase {
+    @MainActor func workspace() -> Workspace {
+        Workspace(storage: FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true))
+    }
+
+    @MainActor func testTheBarIsClosedUntilAskedFor() {
+        UserDefaults.standard.removeObject(forKey: "KongFolio.annotationBar2")
+        XCTAssertFalse(workspace().showAnnotationBar)
+    }
+
+    @MainActor func testClosingTheBarGoesBackToReading() {
+        let space = workspace()
+        space.showAnnotationBar = true
+        space.selectTool(.pen)
+        XCTAssertEqual(space.tool, AnnotationTool.pen)
+        space.showAnnotationBar = false
+        XCTAssertEqual(space.tool, AnnotationTool.select)
+        UserDefaults.standard.removeObject(forKey: "KongFolio.annotationBar2")
+    }
+
+    @MainActor func testEachToolKeepsItsOwnColourAndWidth() {
+        let space = workspace()
+        space.selectTool(.pen)
+        XCTAssertEqual(space.penWidth, 2, accuracy: 0.001)
+        space.penWidth = 6
+        space.annotationColor = Color(.sRGB, red: 0, green: 0.6, blue: 0, opacity: 1)
+        space.selectTool(.pen, highlighter: true)
+        XCTAssertTrue(space.penHighlighter)
+        XCTAssertEqual(space.penWidth, 3, accuracy: 0.001)
+        let marker = NSColor(space.annotationColor).usingColorSpace(.sRGB)
+        XCTAssertTrue((marker?.redComponent ?? 0) > 0.9 && (marker?.blueComponent ?? 1) < 0.1)
+        space.selectTool(.pen)
+        XCTAssertFalse(space.penHighlighter)
+        XCTAssertEqual(space.penWidth, 6, accuracy: 0.001)
+        let pen = NSColor(space.annotationColor).usingColorSpace(.sRGB)
+        XCTAssertTrue((pen?.greenComponent ?? 0) > 0.5 && (pen?.redComponent ?? 1) < 0.1)
+    }
+
+    func testKeysChooseTools() {
+        XCTAssertEqual(AnnotationShortcuts.tool(for: "L")?.tool, AnnotationTool.line)
+        XCTAssertEqual(AnnotationShortcuts.tool(for: "h")?.highlighter, true)
+        XCTAssertEqual(AnnotationShortcuts.tool(for: "x")?.tool, AnnotationTool.eraser)
+        XCTAssertEqual(AnnotationShortcuts.tool(for: "z") == nil, true)
+        let keys = ["v", "p", "h", "l", "a", "r", "o", "t", "n", "e", "x"]
+        XCTAssertEqual(Set(keys.compactMap { AnnotationShortcuts.tool(for: $0).map { "\($0.tool.rawValue)\($0.highlighter)" } }).count, keys.count)
+    }
+
+    func testDashedStrokesAreDashedAndPenStrokesAreNot() throws {
+        let points = [CGPoint(x: 10, y: 10), CGPoint(x: 90, y: 60)]
+        let style = PenStyle(width: 2, alpha: 1)
+        let rectangle = try AnnotationShapes.make(tool: .rectangle, points: points, style: style, color: .red, fill: false, constrained: false, dashed: true).unwrap("没有生成")
+        XCTAssertEqual(rectangle.border?.style == .dashed, true)
+        let solid = try AnnotationShapes.make(tool: .rectangle, points: points, style: style, color: .red, fill: false, constrained: false).unwrap("没有生成")
+        XCTAssertEqual(solid.border?.style == .solid, true)
+        let pen = try AnnotationShapes.make(tool: .pen, points: points, style: style, color: .red, fill: false, constrained: false, dashed: true).unwrap("没有生成")
+        XCTAssertEqual(pen.border?.style == .solid, true)
+    }
+
+    func testEveryDrawingToolHasADefaultStyleAndTheEraserDoesNotDraw() {
+        for tool in [AnnotationTool.pen, .line, .arrow, .rectangle, .ellipse, .textBox, .note] {
+            XCTAssertEqual(AnnotationStyleDefaults.style(for: AnnotationStyleDefaults.key(tool: tool, highlighter: false)) == nil, false)
+        }
+        XCTAssertEqual(AnnotationStyleDefaults.style(for: AnnotationStyleDefaults.key(tool: .pen, highlighter: true)) == nil, false)
+        XCTAssertFalse(AnnotationTool.eraser.draws)
+    }
+}
+
+final class ReadingDoesNotDirtyTheDocumentTests: XCTestCase {
+    func sampleURL() -> URL? {
+        [URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/framed-vertical-page.pdf"),
+         URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Tests/KongFolioTests/Fixtures/framed-vertical-page.pdf")]
+            .first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    @MainActor func testAnOpenedFileIsNotUnsavedWorkEvenWhenItIsRebuiltAsAnEditableCopy() throws {
+        guard let url = sampleURL() else { return }
+        let space = Workspace(storage: FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true))
+        space.load([url], prepared: .documents([try Data(contentsOf: url)]))
+        XCTAssertEqual(space.count, 1)
+        XCTAssertFalse(space.dirty)
+        space.selectPage(0)
+        XCTAssertFalse(space.dirty)
+        // Closing a document that was only read does not ask anything.
+        XCTAssertTrue(space.closeDocument())
+        XCTAssertEqual(space.count, 0)
+    }
+
+    @MainActor func testAnEditMakesItUnsavedWork() throws {
+        guard let url = sampleURL() else { return }
+        let space = Workspace(storage: FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true))
+        space.load([url], prepared: .documents([try Data(contentsOf: url)]))
+        XCTAssertFalse(space.dirty)
+        space.rotate()
+        XCTAssertTrue(space.dirty)
     }
 }

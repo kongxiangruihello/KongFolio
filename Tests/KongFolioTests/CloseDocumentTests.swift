@@ -70,3 +70,34 @@ final class CloseDocumentTests: XCTestCase {
         XCTAssertTrue(w.dirty)
     }
 }
+
+final class SaveAsPDFBeforeLeavingTests: XCTestCase {
+    @MainActor func testThePDFCopyHoldsThePagesAndTheAnnotationsAndLeavesNoStagingFile() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let space = Workspace(storage: directory.appendingPathComponent("store", isDirectory: true))
+        space.document = try TextImport.render((1...30).map { "第\($0)行：学而时习之" }.joined(separator: "\n"), markdown: false)
+        let note = PDFAnnotation(bounds: CGRect(x: 60, y: 600, width: 28, height: 28), forType: .text, withProperties: nil)
+        note.contents = "要点"
+        try space.document.page(at: 0).unwrap("无页面").addAnnotation(note)
+        let target = directory.appendingPathComponent("out.pdf")
+        try Data("old".utf8).write(to: target)
+        try space.writePDFCopy(to: target)
+        let copy = try PDFDocument(url: target).unwrap("无法读取")
+        XCTAssertEqual(copy.pageCount, space.count)
+        XCTAssertEqual(copy.page(at: 0)?.annotations.filter { $0.type == "Text" }.count, 1)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasPrefix(".") }.count, 0)
+    }
+
+    @MainActor func testLettingGoOfTheWorkMakesTheDocumentCleanAndKeepsNoRecoveryCopy() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let space = Workspace(storage: directory)
+        space.document = try TextImport.render("甲\n乙", markdown: false)
+        space.dirty = true
+        XCTAssertTrue(space.discardWork())
+        XCTAssertFalse(space.dirty)
+        XCTAssertTrue(space.discarded)
+    }
+}

@@ -23,6 +23,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
     case arrow = "箭头"
     case rectangle = "矩形"
     case ellipse = "椭圆"
+    case eraser = "橡皮"
     case signature = "签名"
     case region = "区域摘录"
     var id: String { rawValue }

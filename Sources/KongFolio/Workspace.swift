@@ -114,10 +114,17 @@ import UniformTypeIdentifiers
     @Published var penHighlighter = false
     /// Rectangles and ellipses get a translucent fill.
     @Published var shapeFill = false
-    /// The drawing tools floating over the page (shown unless the reader closes them).
-    @Published var showAnnotationBar = UserDefaults.standard.object(forKey: "KongFolio.annotationBar") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(showAnnotationBar, forKey: "KongFolio.annotationBar") }
+    /// Dashed instead of solid for lines, arrows, rectangles and ellipses.
+    @Published var lineDashed = false
+    /// The drawing tools floating over the page. Off by default (reading comes first); a small button brings them up.
+    @Published var showAnnotationBar = UserDefaults.standard.object(forKey: "KongFolio.annotationBar2") as? Bool ?? false {
+        didSet {
+            UserDefaults.standard.set(showAnnotationBar, forKey: "KongFolio.annotationBar2")
+            if !showAnnotationBar, tool != .select { tool = .select }
+        }
     }
+    /// The colour and width each tool was last used with.
+    var toolStyles: [String: (rgb: [Double], width: Double)] = [:]
     @Published var signatures: [SignatureTemplate] = []
     @Published var signaturePositions: [SignaturePosition] = []
     @Published var placingSignature: SignatureTemplate?
@@ -166,7 +173,7 @@ import UniformTypeIdentifiers
     private var autoTask: Task<Void, Never>?
     private var previewTask: Task<Void, Never>?
     private var started = false
-    private var discarded = false
+    private(set) var discarded = false
     private let writer = RecoveryWriter.shared
     let storage: URL
     let id = UUID()
@@ -191,6 +198,23 @@ import UniformTypeIdentifiers
     /// What the tab and the title bar show: the project file, else the opened file, else the document title.
     var displayName: String { projectURL?.lastPathComponent ?? sourceURL?.lastPathComponent ?? title }
     var displayPath: String? { (projectURL ?? sourceURL)?.path }
+    /// What the status bar says while the pointer is over a file name (the system tooltip is slow and not always shown).
+    @Published var pathHint: String?
+    nonisolated static func pathHintText(path: String?, title: String) -> String {
+        guard let path, !path.isEmpty else { return "未保存的文档：" + title }
+        return "文件：" + path
+    }
+    func showPathHint(_ on: Bool) { pathHint = on ? Workspace.pathHintText(path: displayPath, title: title) : nil }
+    func copyPath() {
+        guard let path = displayPath else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
+        status = "已拷贝路径：" + path
+    }
+    func revealInFinder() {
+        guard let url = projectURL ?? sourceURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
     /// Unchanged since it was opened or saved, so the file on disk is the document and no recovery copy is needed.
     var canRestoreFromFile: Bool { !dirty && (projectURL != nil || sourceURL != nil) }
     /// A loaded tab that can be dropped from memory and read again later without losing anything.
@@ -521,28 +545,61 @@ import UniformTypeIdentifiers
         guard dirty else { return true }
         let alert = NSAlert()
         alert.messageText = "保存当前工作？"
-        alert.informativeText = "保存为 KongFolio 项目可保留页面、标注、原始图片和未应用的调整。"
+        alert.informativeText = "保存为 KongFolio 项目可保留页面、标注、原始图片和未应用的调整；保存为 PDF 得到一份普通 PDF（页面、标注和已识别的文字都在，标注仍可编辑）。"
         alert.addButton(withTitle: "保存项目")
+        alert.addButton(withTitle: "保存为 PDF…")
         alert.addButton(withTitle: "取消")
         alert.addButton(withTitle: "放弃修改")
         switch alert.runModal() {
         case .alertFirstButtonReturn:
             return saveProject(background: false)
-        case .alertThirdButtonReturn:
-            autoTask?.cancel()
-            do {
-                try writer.flush(nil, to: recoveryURL)
-                try? FileManager.default.removeItem(at: legacyRecoveryURL)
-            } catch {
-                self.error = error.localizedDescription
-                return false
-            }
-            dirty = false
-            discarded = true
-            return true
+        case .alertSecondButtonReturn:
+            // A PDF is a hand-off: once it is written the work is done with, as after "放弃修改".
+            guard saveAsPDFBeforeLeaving() else { return false }
+            return discardWork()
+        case NSApplication.ModalResponse(rawValue: NSApplication.ModalResponse.alertThirdButtonReturn.rawValue + 1):
+            // AppKit names only the first three alert buttons; the fourth follows them.
+            return discardWork()
         default:
             return false
         }
+    }
+
+    /// Asks where to put a PDF of the document and writes it; false when cancelled or when it failed.
+    func saveAsPDFBeforeLeaving() -> Bool {
+        guard checkDraftsForExport() else { return false }
+        guard let url = saveURL(type: .pdf, suffix: "pdf") else { return false }
+        do { try writePDFCopy(to: url) } catch {
+            self.error = "保存 PDF 失败：\(error.localizedDescription)"
+            return false
+        }
+        status = "已保存为 PDF：\(url.lastPathComponent)"
+        return true
+    }
+
+    /// The document as a plain PDF (page content, annotations, outline and recognised text), written through a temporary file.
+    func writePDFCopy(to url: URL) throws {
+        let data = try pdfData()
+        let staging = url.deletingLastPathComponent().appendingPathComponent(".KongFolio-\(UUID().uuidString.prefix(8)).partial")
+        defer { try? FileManager.default.removeItem(at: staging) }
+        try data.write(to: staging)
+        if FileManager.default.fileExists(atPath: url.path) { _ = try FileManager.default.replaceItemAt(url, withItemAt: staging) }
+        else { try FileManager.default.moveItem(at: staging, to: url) }
+    }
+
+    /// Lets go of the unsaved work: no recovery copy is kept and the document counts as clean.
+    func discardWork() -> Bool {
+        autoTask?.cancel()
+        do {
+            try writer.flush(nil, to: recoveryURL)
+            try? FileManager.default.removeItem(at: legacyRecoveryURL)
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+        dirty = false
+        discarded = true
+        return true
     }
 
     func prepareToClose() -> Bool {
@@ -836,13 +893,11 @@ import UniformTypeIdentifiers
             changed()
             // The opened bytes are the document. Without this, the first autosave (and the first search)
             // serialized the whole file on the main thread. `changed()` clears the cache, so set it afterwards.
-            if rebuilt { status = "这个文件带有“禁止修改”的限制，已转成可编辑的副本；保存时请另存，原文件不会被改动" }
-            if let openedBytes {
-                cachedPDF = openedBytes
-                // Opening one file changes nothing yet: the file on disk is the original. Without this every
-                // opened document counted as unsaved work and closing it asked whether to save.
-                dirty = false
-            }
+            if let openedBytes { cachedPDF = openedBytes }
+            // Opening one file changes nothing yet: the file on disk is the original (or, for a file marked "no modification",
+            // an editable copy of it). Without this every opened document counted as unsaved work and closing it asked
+            // whether to save.
+            if !insert, loaded.count == 1 { dirty = false }
             applyPendingView()
             if scanAfter {
                 mode = .image
@@ -850,7 +905,7 @@ import UniformTypeIdentifiers
                 updatePreview()
             }
             remember(urls)
-            status = "已载入 \(count) 页"
+            status = "已载入 \(count) 页" + (rebuilt ? "（此文件带“禁止修改”限制，已转成可编辑副本；原文件不会被改动）" : "")
             store?.loadedTabsChanged()
         }
     }
