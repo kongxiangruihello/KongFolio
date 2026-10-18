@@ -27,6 +27,11 @@ import UniformTypeIdentifiers
     @Published var estimating = false
     @Published var showOCRReview = false
     @Published var showProofreading = false
+    @Published var showOutlineEditor = false
+    @Published var showProgress = false
+    @Published var readingProgress = ReadingProgress()
+    var progressLoadedFor: String?
+    var progressTask: Task<Void, Never>?
     @Published var reviewSelection = -1
     @Published var ocrSettings = OCRSettings.load() { didSet { if ocrSettings != oldValue { ocrSettings.save() } } }
     var estimateTask: Task<ExportEstimate, Error>?
@@ -117,6 +122,8 @@ import UniformTypeIdentifiers
     @Published var shapeFill = false
     /// Entries ticked in the annotation list, for deleting or recolouring several at once.
     @Published var selectedNoteIDs: Set<String> = []
+    /// Kinds of annotation hidden on the page right now ("高亮", "手写"…); not part of the file.
+    @Published var hiddenKinds: Set<String> = []
     /// Styles the reader saved from the annotation bar (the built-in ones are in `AnnotationPresets.builtIn`).
     @Published var userPresets: [AnnotationPreset] = AnnotationPresets.loadUser() {
         didSet { AnnotationPresets.saveUser(userPresets) }
@@ -303,6 +310,10 @@ import UniformTypeIdentifiers
     func pdfData() throws -> Data {
         if let cachedPDF { return cachedPDF }
         let started = Date()
+        // Hidden layers are a view setting: the file is always written with every annotation showing.
+        let hidden = hiddenKinds
+        if !hidden.isEmpty { hiddenKinds = []; applyLayers() }
+        defer { if !hidden.isEmpty { hiddenKinds = hidden; applyLayers() } }
         guard count > 0, let data = document.dataRepresentation() else { throw FolioError(message: "没有可保存的文档。") }
         lastSerializationSeconds = Date().timeIntervalSince(started)
         cachedPDF = data
@@ -636,7 +647,7 @@ import UniformTypeIdentifiers
         bookmarks = []; bookmarkName = ""; outlineEntries = []; bibliography = Bibliography()
         search = ""; searchResults = []; searchMessage = ""; annotationNotes = []
         readingPoint = nil; readingScale = nil
-        selectedAnnotation = nil; comparison = nil; recognizedText = ""
+        hiddenKinds = []; selectedAnnotation = nil; comparison = nil; recognizedText = ""
         showOCRReview = false; reviewSelection = -1; exportEstimate = nil
         history.removeAll(); future.removeAll(); lastJob = nil
         if !keepingSource { projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil }

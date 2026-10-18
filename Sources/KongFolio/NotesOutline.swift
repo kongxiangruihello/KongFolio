@@ -73,11 +73,7 @@ enum NotesOutline {
 
     static let freeNotesTitle = "工作区笔记（无出处）"
 
-    private static func head(_ note: AnnotationNote) -> String {
-        var text = note.pageDescription + " · " + note.kind
-        if ["高亮", "下划线", "删除线"].contains(note.kind), let color = note.colorName { text += "（\(color)）" }
-        return text
-    }
+    private static func head(_ note: AnnotationNote) -> String { WordExport.headText(note) }
 
     static func markdown(title: String, sections: [NotesSection], bibliography: Bibliography? = nil) -> String {
         let clean = title.replacingOccurrences(of: "\n", with: " ")
@@ -155,6 +151,7 @@ extension WordExport {
     static func headText(_ note: AnnotationNote) -> String {
         var text = note.pageDescription + " · " + note.kind
         if ["高亮", "下划线", "删除线"].contains(note.kind), let color = note.colorName { text += "（\(color)）" }
+        if !note.tags.isEmpty { text += "　" + note.tags.map { "#" + $0 }.joined(separator: " ") }
         return text
     }
 }
@@ -162,13 +159,24 @@ extension WordExport {
 extension Workspace {
     enum NotesOutlineFormat { case word, markdown, text }
 
-    func exportNotesOutline(_ format: NotesOutlineFormat, filter: AnnotationFilter = AnnotationFilter()) {
+    /// The outline as the filter and the table of contents give it, with the workspace's excerpts and free notes.
+    func notesOutlineSections(filter: AnnotationFilter = AnnotationFilter()) -> [NotesSection] {
         let cards = NotesOutline.excerptNotes(cards: store?.board.cards ?? []) { [self] in matches(path: $0.path) }
         let notes = filter.apply(to: ReadingServices.notes(document) + cards.excerpts)
         let free = filter.apply(to: cards.free)
-        guard !notes.isEmpty || !free.isEmpty else { error = "没有可导出的标注或摘录。先在页面上高亮、画线、写批注，或把文字摘录到工作区。"; return }
         var sections = NotesOutline.sections(notes: notes, outline: outlineEntries)
         if !free.isEmpty { sections.append(NotesSection(title: NotesOutline.freeNotesTitle, depth: 0, notes: free)) }
+        return sections
+    }
+
+    func exportNotesOutline(_ format: NotesOutlineFormat, filter: AnnotationFilter = AnnotationFilter()) {
+        let sections = notesOutlineSections(filter: filter)
+        guard sections.contains(where: { !$0.notes.isEmpty }) else { error = "没有可导出的标注或摘录。先在页面上高亮、画线、写批注，或把文字摘录到工作区。"; return }
+        writeNotesOutline(sections, format)
+    }
+
+    func writeNotesOutline(_ sections: [NotesSection], _ format: NotesOutlineFormat) {
+        let total = sections.reduce(0) { $0 + $1.notes.count }
         let suffix: String, type: UTType
         switch format {
         case .word: suffix = "docx"; type = UTType(filenameExtension: "docx") ?? .data
@@ -182,7 +190,7 @@ extension Workspace {
             case .markdown: try NotesOutline.markdown(title: title, sections: sections, bibliography: bibliography).write(to: url, atomically: true, encoding: .utf8)
             case .text: try NotesOutline.plainText(title: title, sections: sections).write(to: url, atomically: true, encoding: .utf8)
             }
-            status = "已导出笔记大纲：\(notes.count + free.count) 条（标注与摘录），\(sections.filter { !$0.notes.isEmpty }.count) 个章节"
+            status = "已导出笔记大纲：\(total) 条（标注与摘录），\(sections.filter { !$0.notes.isEmpty }.count) 个章节"
         }
     }
 }

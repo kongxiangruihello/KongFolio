@@ -34,6 +34,7 @@ struct ReadingSidebar: View {
                     Picker("级别", selection: $outlineDepth) { ForEach(0..<4) { Text("第 \($0 + 1) 级").tag($0) } }.labelsHidden().frame(width: 90)
                     Button("把当前页加入目录", action: addOutline).disabled(workspace.count == 0)
                 }
+                Button("阅读进度…") { workspace.refreshProgress(); workspace.showProgress = true }.disabled(workspace.count == 0)
                 HStack {
                     Button("编辑目录文本…") { workspace.showOutlineText = true }
                     Button("找卷、章标题…") { workspace.findOutlineCandidates() }
@@ -234,6 +235,18 @@ struct ReadingSidebar: View {
                 if !workspace.selectedNoteIDs.isEmpty {
                     Button("清除选择") { workspace.selectedNoteIDs = [] }
                     Button("删除选中（\(workspace.selectedNoteIDs.count)）", role: .destructive) { workspace.deleteSelectedNotes() }
+                    Menu("排列") {
+                        Button("左对齐") { workspace.alignSelectedNotes(.left) }
+                        Button("右对齐") { workspace.alignSelectedNotes(.right) }
+                        Button("顶对齐") { workspace.alignSelectedNotes(.top) }
+                        Button("底对齐") { workspace.alignSelectedNotes(.bottom) }
+                        Button("水平居中") { workspace.alignSelectedNotes(.centerX) }
+                        Button("垂直居中") { workspace.alignSelectedNotes(.centerY) }
+                        Divider()
+                        Button("横向等距（至少 3 个）") { workspace.distributeSelectedNotes(horizontally: true) }
+                        Button("纵向等距（至少 3 个）") { workspace.distributeSelectedNotes(horizontally: false) }
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
                     ForEach(batchColors, id: \.name) { item in
                         Button { workspace.recolorSelectedNotes(NSColor(item.color)) } label: {
                             Circle().fill(item.color).frame(width: 13, height: 13)
