@@ -259,15 +259,24 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
             didMove = false
         case .note, .textBox:
             let isNote = workspace.tool == .note
-            let annotation = PDFAnnotation(bounds: CGRect(x: point.x, y: point.y - 40, width: isNote ? 28 : 220, height: isNote ? 28 : 50), forType: isNote ? .text : .freeText, withProperties: nil)
-            annotation.contents = workspace.note.isEmpty ? "双击批注查看；右侧输入文字后可继续添加" : workspace.note
+            // The text is asked for right here, unless one was already typed in the side panel.
+            let text: String
+            if workspace.note.isEmpty {
+                guard let entered = AnnotationText.ask(note: isNote) else { return }
+                text = entered
+            } else {
+                text = workspace.note
+            }
+            let height: CGFloat = isNote ? 28 : AnnotationText.boxHeight(for: text)
+            let annotation = PDFAnnotation(bounds: CGRect(x: point.x, y: point.y - height, width: isNote ? 28 : 220, height: height), forType: isNote ? .text : .freeText, withProperties: nil)
+            annotation.contents = text
             annotation.font = NSFont.systemFont(ofSize: 14)
-            annotation.fontColor = .black
+            annotation.fontColor = isNote ? .black : NSColor(workspace.annotationColor)
             annotation.color = isNote ? .systemYellow : .clear
             page.addAnnotation(annotation)
             workspace.recordAnnotationsAdded([annotation])
             needsDisplay = true
-        case .pen, .arrow, .signature:
+        case .pen, .line, .arrow, .rectangle, .ellipse, .signature:
             // Nothing is recorded until the stroke ends; mouseDown no longer serializes the document.
             drawingPage = page
             points = [point]
@@ -297,28 +306,13 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
         let point = convert(convert(event.locationInWindow, from: nil), to: page)
         points.append(point)
         if let provisional { page.removeAnnotation(provisional) }
-        let annotation: PDFAnnotation
-        if workspace.tool == .arrow, let start = points.first {
-            let bounds = CGRect(x: min(start.x, point.x) - 3, y: min(start.y, point.y) - 3, width: abs(point.x - start.x) + 6, height: abs(point.y - start.y) + 6)
-            annotation = PDFAnnotation(bounds: bounds, forType: .line, withProperties: nil)
-            annotation.startPoint = CGPoint(x: start.x - bounds.minX, y: start.y - bounds.minY)
-            annotation.endPoint = CGPoint(x: point.x - bounds.minX, y: point.y - bounds.minY)
-            annotation.endLineStyle = .openArrow
-        } else {
-            let xs = points.map(\.x), ys = points.map(\.y)
-            let bounds = CGRect(x: xs.min()! - 3, y: ys.min()! - 3, width: xs.max()! - xs.min()! + 6, height: ys.max()! - ys.min()! + 6)
-            annotation = PDFAnnotation(bounds: bounds, forType: .ink, withProperties: nil)
-            let path = NSBezierPath()
-            path.move(to: CGPoint(x: points[0].x - bounds.minX, y: points[0].y - bounds.minY))
-            for p in points.dropFirst() { path.line(to: CGPoint(x: p.x - bounds.minX, y: p.y - bounds.minY)) }
-            annotation.add(path)
-        }
-        let style = PenStyle.make(width: workspace.penWidth, highlighter: workspace.penHighlighter, arrow: workspace.tool == .arrow)
-        annotation.color = workspace.tool == .signature ? .black : NSColor(workspace.annotationColor).withAlphaComponent(style.alpha)
-        if workspace.tool == .signature { annotation.userName = "KongFolio Signature" }
-        let border = PDFBorder()
-        border.lineWidth = workspace.tool == .signature ? 1.6 : style.width
-        annotation.border = border
+        let style = PenStyle.make(width: workspace.penWidth, highlighter: workspace.penHighlighter, arrow: workspace.tool != .pen)
+        let color: NSColor = workspace.tool == .signature ? .black : NSColor(workspace.annotationColor)
+        let signature = workspace.tool == .signature
+        let drawn = signature ? PenStyle(width: 1.6, alpha: 1) : style
+        guard let annotation = AnnotationShapes.make(tool: workspace.tool, points: points, style: drawn, color: color, fill: workspace.shapeFill,
+                                                       constrained: event.modifierFlags.contains(.shift)) else { return }
+        if signature { annotation.userName = "KongFolio Signature" }
         page.addAnnotation(annotation)
         provisional = annotation
         needsDisplay = true

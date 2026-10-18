@@ -69,4 +69,23 @@ final class RestrictedPDFTests: XCTestCase {
         XCTAssertFalse(again.isLocked)
         XCTAssertEqual(again.pageCount, 1)
     }
+
+    /// The way the app opens a PDF: the file's own bytes go through `Workspace.load`.
+    @MainActor func testAnAnnotationSurvivesWhenTheFileIsOpenedTheWayTheAppDoesIt() throws {
+        let candidates = [
+            URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/framed-vertical-page.pdf"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Tests/KongFolioTests/Fixtures/framed-vertical-page.pdf"),
+        ]
+        guard let url = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else { return }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let workspace = Workspace(storage: directory)
+        workspace.load([url], prepared: .documents([try Data(contentsOf: url)]))
+        XCTAssertEqual(workspace.count, 1)
+        let page = try workspace.document.page(at: 0).unwrap("无页面")
+        let note = PDFAnnotation(bounds: CGRect(x: 100, y: 100, width: 80, height: 40), forType: .square, withProperties: nil)
+        page.addAnnotation(note)
+        let saved = try PDFDocument(data: workspace.pdfData()).unwrap("保存结果无法读取")
+        XCTAssertEqual(saved.page(at: 0)?.annotations.filter { $0.type == "Square" }.count ?? 0, 1)
+    }
 }

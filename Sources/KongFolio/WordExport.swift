@@ -152,7 +152,7 @@ enum WordExport {
         return result
     }
 
-    private static func textParagraph(_ text: String, style: String? = nil, size: Int = 24, bold: Bool = false, gray: Bool = false, centered: Bool = false) -> String {
+    static func textParagraph(_ text: String, style: String? = nil, size: Int = 24, bold: Bool = false, gray: Bool = false, centered: Bool = false) -> String {
         var properties = ""
         if let style { properties += "<w:pStyle w:val=\"\(style)\"/>" }
         if centered { properties += "<w:jc w:val=\"center\"/>" }
@@ -170,13 +170,13 @@ enum WordExport {
         """
     }
 
-    private static let header = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+    static let header = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
 
-    private static let contentTypes = header + """
+    static let contentTypes = header + """
     <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="jpg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>
     """
 
-    private static let rootRelationships = header + """
+    static let rootRelationships = header + """
     <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>
     """
 
@@ -184,7 +184,7 @@ enum WordExport {
         "<w:style w:type=\"paragraph\" w:styleId=\"Heading\(level)\"><w:name w:val=\"heading \(level)\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before=\"240\" w:after=\"120\"/><w:outlineLvl w:val=\"\(level - 1)\"/></w:pPr><w:rPr><w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"黑体\"/><w:b/><w:sz w:val=\"\(size)\"/><w:szCs w:val=\"\(size)\"/></w:rPr></w:style>"
     }
 
-    private static let styles = header + "<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"宋体\"/><w:sz w:val=\"24\"/><w:szCs w:val=\"24\"/><w:lang w:val=\"en-US\" w:eastAsia=\"zh-CN\"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/></w:style>"
+    static let styles = header + "<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"宋体\"/><w:sz w:val=\"24\"/><w:szCs w:val=\"24\"/><w:lang w:val=\"en-US\" w:eastAsia=\"zh-CN\"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/></w:style>"
         + headingStyle(1, size: 36) + headingStyle(2, size: 32) + headingStyle(3, size: 28) + "</w:styles>"
 
     private static func jpeg(_ image: CGImage, quality: Double) -> Data? {
@@ -197,7 +197,11 @@ enum WordExport {
         var report = WordExportReport()
         let zip = try ZipWriter(url: url)
         do {
-            var body = "", relationships = "", media: [(name: String, data: Data)] = []
+            var body = "", relationships = ""
+            var pictureCount = 0
+            try zip.add("[Content_Types].xml", Data(contentTypes.utf8))
+            try zip.add("_rels/.rels", Data(rootRelationships.utf8))
+            try zip.add("word/styles.xml", Data(styles.utf8))
             let maxWidth = 5_580_000.0, maxHeight = 7_200_000.0           // 15.5 cm x 20 cm in EMU
             for (offset, index) in pages.enumerated() {
                 try Task.checkCancellation()
@@ -210,12 +214,14 @@ enum WordExport {
                     if options.content != .textOnly {
                         let image = try DocumentServices.render(page, maxDimension: options.imageSize.pixels)
                         if let data = jpeg(image, quality: options.imageSize.quality) {
-                            let id = media.count + 1
+                            pictureCount += 1
+                            let id = pictureCount
                             let name = String(format: "page-%04d.jpg", index + 1)
                             let aspect = Double(image.height) / Double(max(image.width, 1))
                             var width = maxWidth, height = maxWidth * aspect
                             if height > maxHeight { height = maxHeight; width = maxHeight / max(aspect, 0.01) }
-                            media.append((name, data))
+                            // Each picture goes straight into the file, so a book of hundreds of pages never holds them all in memory.
+                            try zip.add("word/media/\(name)", data)
                             relationships += "<Relationship Id=\"rId\(id + 1)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/\(name)\"/>"
                             body += picture(id: id, relationship: "rId\(id + 1)", name: name, width: Int(width), height: Int(height))
                             report.pictures += 1
@@ -235,12 +241,8 @@ enum WordExport {
             let documentXML = header + "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><w:body>"
                 + body + "<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:top=\"1417\" w:right=\"1417\" w:bottom=\"1417\" w:left=\"1417\" w:header=\"708\" w:footer=\"708\" w:gutter=\"0\"/></w:sectPr></w:body></w:document>"
             let documentRelationships = header + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>" + relationships + "</Relationships>"
-            try zip.add("[Content_Types].xml", Data(contentTypes.utf8))
-            try zip.add("_rels/.rels", Data(rootRelationships.utf8))
             try zip.add("word/document.xml", Data(documentXML.utf8))
             try zip.add("word/_rels/document.xml.rels", Data(documentRelationships.utf8))
-            try zip.add("word/styles.xml", Data(styles.utf8))
-            for item in media { try zip.add("word/media/\(item.name)", item.data) }
             try zip.finish()
         } catch {
             zip.abandon()

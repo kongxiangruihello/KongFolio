@@ -234,6 +234,8 @@ enum ReadingServices {
                 case "FreeText": kind = "文字框"
                 case "Ink": kind = "手写"
                 case "Line": kind = "箭头/线条"
+                case "Square": kind = "矩形"
+                case "Circle": kind = "椭圆"
                 default: kind = annotation.type ?? "标注"
                 }
                 let markup = ["Highlight", "Underline", "StrikeOut"].contains(annotation.type ?? "")

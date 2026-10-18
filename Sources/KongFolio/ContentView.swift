@@ -241,7 +241,10 @@ struct ContentView: View {
     }
 
     @ViewBuilder private var exportItems: some View {
+        Button("KongFolio 项目…（含标注、识别、目录，可再次打开）") { workspace.saveProject(asNew: true) }
+        Divider()
         Button("PDF · 全部页面") { workspace.exportPDF() }
+        Button("PDF · 固化标注，可附摘要页…") { workspace.openExport(format: .pdf, scope: .all, pdfMode: .flatten) }
         Button("PDF · 提取选中页") { workspace.exportPDF(currentOnly: true) }
         Button("PDF · 压缩体积…") { workspace.compress() }
         Divider()
@@ -255,6 +258,10 @@ struct ContentView: View {
         Button("TXT") { workspace.exportText(markdown: false) }
         Button("Markdown · 全文") { workspace.exportText(markdown: true) }
         Button("Markdown · 摘录与笔记") { workspace.exportNotes() }
+        Divider()
+        Button("笔记大纲 · Word（按目录分章）…") { workspace.exportNotesOutline(.word) }
+        Button("笔记大纲 · Markdown…") { workspace.exportNotesOutline(.markdown) }
+        Button("笔记大纲 · 文本…") { workspace.exportNotesOutline(.text) }
     }
 
     private func exportMenu(iconOnly: Bool) -> some View {
@@ -349,6 +356,9 @@ struct ContentView: View {
             ImageCanvas(workspace: workspace)
         } else {
             PDFCanvas(workspace: workspace)
+                .overlay(alignment: .top) {
+                    if workspace.showAnnotationBar { AnnotationBar(workspace: workspace).padding(.top, 10) }
+                }
         }
     }
 
@@ -459,7 +469,8 @@ struct ContentView: View {
             Picker("工具", selection: $workspace.tool) { ForEach(AnnotationTool.allCases) { Text($0.title).tag($0) } }.labelsHidden()
             TextField("批注 / 文字框 / 笔记内容", text: $workspace.note, axis: .vertical).lineLimit(3...5)
             ColorPicker("标注颜色", selection: $workspace.annotationColor, supportsOpacity: false)
-            if workspace.tool == .pen || workspace.tool == .arrow {
+            Toggle("在页面上方显示标注工具栏", isOn: $workspace.showAnnotationBar).font(.caption)
+            if [.pen, .line, .arrow, .rectangle, .ellipse].contains(workspace.tool) {
                 HStack {
                     Text("线宽 \(workspace.penWidth, format: .number.precision(.fractionLength(1)))")
                     Slider(value: $workspace.penWidth, in: 0.5...12)

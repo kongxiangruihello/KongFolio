@@ -19,12 +19,15 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
     case note = "批注"
     case textBox = "文字框"
     case pen = "画笔"
+    case line = "直线"
     case arrow = "箭头"
+    case rectangle = "矩形"
+    case ellipse = "椭圆"
     case signature = "签名"
     case region = "区域摘录"
     var id: String { rawValue }
     var title: String { rawValue }
-    var draws: Bool { self == .pen || self == .arrow || self == .signature }
+    var draws: Bool { [.pen, .line, .arrow, .rectangle, .ellipse, .signature].contains(self) }
 }
 
 /// How a pen or arrow stroke looks, from the width and highlighter settings.
@@ -86,12 +89,14 @@ enum PDFExportMode: String, Codable, CaseIterable, Identifiable {
     case preserve = "保留原始内容"
     case optimized = "压缩图片（保留文字）"
     case raster = "图片型 PDF"
+    case flatten = "固化标注（保留文字）"
     var id: String { rawValue }
     var detail: String {
         switch self {
         case .preserve: return "保留页面原始内容、尺寸、目录和可编辑标注，不重新采样。"
         case .optimized: return "用 PDFKit 把页面中的图片重新编码为适合屏幕的 JPEG；文字、矢量内容、链接和目录保留。不保证每个文件都会变小。"
         case .raster: return "整页重新渲染为图片；文字、链接和标注固化，体积由 DPI 和质量决定。"
+        case .flatten: return "把高亮、画线、批注等标注画进页面，在任何阅读器、打印和分享时都看得见，不能再编辑；页面文字和目录保留，链接不再可点，旋转会固化。"
         }
     }
 }

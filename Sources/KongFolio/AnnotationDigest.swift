@@ -19,7 +19,7 @@ extension MarkupColor {
 
 /// Narrows the annotation list of a document (sidebar and Markdown export).
 struct AnnotationFilter: Equatable {
-    static let kinds = ["高亮", "下划线", "删除线", "批注", "文字框", "手写", "箭头/线条"]
+    static let kinds = ["高亮", "下划线", "删除线", "批注", "文字框", "手写", "箭头/线条", "矩形", "椭圆"]
     static let colors = MarkupColor.allCases.map(\.rawValue)
 
     var kind: String? = nil

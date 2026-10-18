@@ -112,6 +112,12 @@ import UniformTypeIdentifiers
     /// Pen and arrow line width in points; the highlighter draws a wide translucent stroke instead.
     @Published var penWidth = 2.0
     @Published var penHighlighter = false
+    /// Rectangles and ellipses get a translucent fill.
+    @Published var shapeFill = false
+    /// The drawing tools floating over the page (shown unless the reader closes them).
+    @Published var showAnnotationBar = UserDefaults.standard.object(forKey: "KongFolio.annotationBar") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showAnnotationBar, forKey: "KongFolio.annotationBar") }
+    }
     @Published var signatures: [SignatureTemplate] = []
     @Published var signaturePositions: [SignaturePosition] = []
     @Published var placingSignature: SignatureTemplate?
@@ -144,6 +150,8 @@ import UniformTypeIdentifiers
     var activeJob: Task<JobResult, Error>?
     var lastJob: JobSpec?
     var ocrChain: OCRChain?
+    /// Pages per OCR job (a test makes it small).
+    var ocrChunk = Workspace.ocrChunkSize
     /// How long the last full PDF serialization took; autosave backs off on large documents.
     var lastSerializationSeconds = 0.0
     var previewIsProxy = false
@@ -761,7 +769,14 @@ import UniformTypeIdentifiers
             }
             guard case .documents(let data) = prepared else { throw FolioError(message: "文档读取失败") }
             var openedBytes: Data?
-            let loaded = try data.map { try PDFDocument(data: $0).unwrap("文档读取失败") }
+            // A file marked "no modification" would silently drop annotations on saving; it is rebuilt as an unrestricted copy.
+            var rebuilt = false
+            let loaded = try data.map { bytes -> PDFDocument in
+                let original = try PDFDocument(data: bytes).unwrap("文档读取失败")
+                let usable = DocumentServices.unrestricted(original)
+                if usable !== original { rebuilt = true }
+                return usable
+            }
             guard insert || confirmReplace() else { return }
             if insert {
                 checkpoint()
@@ -810,7 +825,7 @@ import UniformTypeIdentifiers
                 future.removeAll()
                 projectURL = nil
                 mode = urls.count == 1 && urls[0].pathExtension.lowercased() != "pdf" && !TextImport.handles(urls[0]) ? .image : .document
-                if loaded.count == 1 { openedBytes = data.first }
+                if loaded.count == 1, !rebuilt { openedBytes = data.first }
                 sourceURL = loaded.count == 1 ? urls[0] : nil
             }
             readingPoint = nil
@@ -821,6 +836,7 @@ import UniformTypeIdentifiers
             changed()
             // The opened bytes are the document. Without this, the first autosave (and the first search)
             // serialized the whole file on the main thread. `changed()` clears the cache, so set it afterwards.
+            if rebuilt { status = "这个文件带有“禁止修改”的限制，已转成可编辑的副本；保存时请另存，原文件不会被改动" }
             if let openedBytes {
                 cachedPDF = openedBytes
                 // Opening one file changes nothing yet: the file on disk is the original. Without this every
