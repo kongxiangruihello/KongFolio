@@ -15,28 +15,6 @@ final class VersionThreeTests: XCTestCase {
         ReadingServices.applyOutline([OutlineEntry(page: 0, label: "First", depth: 0), OutlineEntry(page: 2, label: "Last", depth: 1)], to: doc)
         return doc
     }
-    func testMouseCropGeometry() {
-        let box = CropGeometry.selection(from: CGPoint(x: 90, y: 80), to: CGPoint(x: 10, y: -20), size: CGSize(width: 100, height: 100))
-        XCTAssertEqual(box, CGRect(x: 0.1, y: 0, width: 0.8, height: 0.8))
-        let moved = CropGeometry.move(box, dx: 3, dy: -1)
-        XCTAssertEqual(Double(moved.minX), 0.2, accuracy: 0.00001); XCTAssertEqual(moved.minY, 0)
-        let resized = CropGeometry.resize(box, anchorX: -1, anchorY: 1, dx: 2, dy: 2)
-        XCTAssertEqual(Double(resized.width), 0.02, accuracy: 0.00001); XCTAssertEqual(resized.maxY, 1)
-        let flipped = CropGeometry.imageCoordinates(CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.3))
-        XCTAssertEqual(flipped, CGRect(x: 0.1, y: 0.5, width: 0.5, height: 0.3))
-    }
-    @MainActor func testComposedCropAndUndo() throws {
-        let w = Workspace(); w.document = DocumentServicesTests().fixture(); w.mode = .image
-        w.adjustments.crop = 0.1; w.updatePreview(); let before = w.preview!.size
-        w.setCrop(CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5))
-        XCTAssertEqual(w.adjustments.crop, 0)
-        XCTAssertEqual(Double(w.preview!.size.width), Double(before.width) / 2, accuracy: 2)
-        XCTAssertEqual(Double(w.preview!.size.height), Double(before.height) / 2, accuracy: 2)
-        w.applyImage(); let cropped = w.page!.bounds(for: .cropBox)
-        XCTAssertTrue(cropped.width < 300 && cropped.height < 400)
-        w.undo(); XCTAssertEqual(w.page!.bounds(for: .cropBox).size, CGSize(width: 300, height: 400))
-        w.redo(); XCTAssertEqual(w.page!.bounds(for: .cropBox), cropped)
-    }
     @MainActor func testProjectMigrationAndReadingRemapping() throws {
         let w = Workspace(); w.document = try fixture(); w.bookmarks = [PageBookmark(page: 2, label: "Later")]; w.outlineEntries = ReadingServices.outline(w.document)
         w.readingLayout = .twoUp; w.readingPoint = CGPoint(x: 20, y: 200); w.readingScale = 1.2
@@ -69,19 +47,11 @@ final class VersionThreeTests: XCTestCase {
     func testConfiguredExportDimensionsAndMetadata() throws {
         let folder = try VersionTwoTests().temporary(); defer { try? FileManager.default.removeItem(at: folder) }
         let doc = try fixture(); doc.page(at: 0)!.rotation = 90
-        var options = ExportOptions(); options.format = .png; options.dpi = 150
+        var options = ExportOptions(); options.dpi = 150
         let cg = try ExportServices.render(doc.page(at: 0)!, dpi: 150)
         XCTAssertEqual(cg.width, 834); XCTAssertEqual(cg.height, 625)
-        let encoded = try ExportServices.encode(cg, options: options)
-        let properties = CGImageSourceCopyPropertiesAtIndex(CGImageSourceCreateWithData(encoded as CFData, nil)!, 0, nil)! as NSDictionary
-        XCTAssertEqual((properties[kCGImagePropertyPixelWidth] as! NSNumber).intValue, 834)
-        XCTAssertEqual((properties[kCGImagePropertyDPIWidth] as! NSNumber).doubleValue, 150, accuracy: 0.1)
         let source = doc.dataRepresentation()!
-        let estimate = try ExportServices.estimate(data: source, pages: [0], options: options)
-        let target = folder.appendingPathComponent("test.png")
-        _ = try ExportServices.run(JobSpec(operation: .configured, source: source, pages: [0], destination: target, revision: UUID(), exportOptions: options)) { _ in }
-        XCTAssertEqual(try Data(contentsOf: target).count, estimate.bytes)
-        options.format = .pdf; options.rasterPDF = true; options.dpi = 72
+        options.rasterPDF = true; options.dpi = 72
         let pdfURL = folder.appendingPathComponent("raster.pdf")
         _ = try ExportServices.run(JobSpec(operation: .configured, source: source, pages: [0], destination: pdfURL, revision: UUID(), exportOptions: options)) { _ in }
         let raster = PDFDocument(url: pdfURL)!
@@ -89,16 +59,6 @@ final class VersionThreeTests: XCTestCase {
         let kept = PDFDocument(data: try ExportServices.preservedPDF(doc, pages: [0, 1, 2]))!
         XCTAssertTrue(kept.string!.contains("KongFolio")); XCTAssertEqual(ReadingServices.outline(kept).count, 2)
         XCTAssertThrowsError(try ExportServices.pixels(doc.page(at: 0)!, dpi: 0))
-    }
-    func testConfiguredBatchCancellation() async throws {
-        let folder = try VersionTwoTests().temporary(); defer { try? FileManager.default.removeItem(at: folder) }
-        var options = ExportOptions(); options.format = .png; options.dpi = 72
-        let spec = JobSpec(operation: .configured, source: try fixture().dataRepresentation()!, pages: [0, 1, 2], destination: folder, revision: UUID(), exportOptions: options)
-        let gate = TestGate(), box = TestTaskBox()
-        let task = Task.detached { () throws -> JobResult in await gate.wait(); return try ExportServices.run(spec) { _ in box.cancel() } }
-        box.task = task; await gate.open()
-        do { _ = try await task.value; XCTAssertTrue(false) } catch is CancellationError {} catch { throw error }
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).count, 0)
     }
     func testOCRReviewAndReRecognition() throws {
         let doc = try fixture(), raster = PDFDocument()

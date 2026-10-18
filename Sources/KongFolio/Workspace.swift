@@ -53,7 +53,6 @@ import UniformTypeIdentifiers
     @Published var rangeText = ""
     @Published var revision = UUID()
     @Published var title = "未命名文档"
-    @Published var mode = WorkspaceMode.document
     @Published var tool = AnnotationTool.select
     @Published var note = ""
     @Published var status = "所有处理均在本机完成"
@@ -63,10 +62,6 @@ import UniformTypeIdentifiers
     @Published var taskLabel = ""
     @Published var dirty = false
     @Published var showTools = false
-    @Published var adjustments = ImageAdjustments()
-    @Published var preview: NSImage?
-    @Published var showOriginal = false
-    @Published var cropMode = false
     @Published var comparison: PDFDocument?
     @Published var recognizedText = ""
     @Published var search = ""
@@ -182,17 +177,13 @@ import UniformTypeIdentifiers
     var ocrChunk = Workspace.ocrChunkSize
     /// How long the last full PDF serialization took; autosave backs off on large documents.
     var lastSerializationSeconds = 0.0
-    var previewIsProxy = false
     /// Tests and scripts replace this to answer confirmation dialogs.
     static var confirmationHandler: ((_ title: String, _ detail: String) -> Bool)?
     var cachedPDF: Data?
-    private var imageBase: CGImage?
-    private var proxyBase: CGImage?
     private var displayCache: (key: String, image: NSImage)?
     private var importAsInsert = false
     private var deferredOpen: (urls: [URL], insert: Bool)?
     private var autoTask: Task<Void, Never>?
-    private var previewTask: Task<Void, Never>?
     private var started = false
     private(set) var discarded = false
     private let writer = RecoveryWriter.shared
@@ -243,9 +234,6 @@ import UniformTypeIdentifiers
     var canUndo: Bool { !history.isEmpty }
     var canRedo: Bool { !future.isEmpty }
     var canRetry: Bool { lastJob != nil && !busy }
-    var hasImageDraft: Bool { meta(selection).draft != nil }
-    var hasPendingDrafts: Bool { pageMeta.contains { $0.draft != nil } }
-    var originalPreview: NSImage? { imageBase.map { NSImage(cgImage: $0, size: .zero) } }
     var currentAnnotations: [PDFAnnotation] { page.map(Workspace.visibleAnnotations) ?? [] }
 
     nonisolated static func visibleAnnotations(on page: PDFPage) -> [PDFAnnotation] {
@@ -283,14 +271,6 @@ import UniformTypeIdentifiers
         change(&pageMeta[index])
     }
 
-    var recipes: [Int: ImageRecipe] {
-        get { metaDictionary(\.recipe) }
-        set { setMetaDictionary(\.recipe, newValue) }
-    }
-    var imageDrafts: [Int: ImageAdjustments] {
-        get { metaDictionary(\.draft) }
-        set { setMetaDictionary(\.draft, newValue) }
-    }
     var ocrOriginals: [Int: Data] {
         get { metaDictionary(\.ocrOriginal) }
         set { setMetaDictionary(\.ocrOriginal, newValue) }
@@ -334,7 +314,7 @@ import UniformTypeIdentifiers
         let pdf = try pdfData()
         alignMeta()
         let reading = ReadingState(bookmarks: bookmarks, outline: outlineEntries, layout: readingLayout, point: readingPoint, scale: readingScale, bibliography: bibliography.isEmpty ? nil : bibliography)
-        return ProjectArchive(reading: reading, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: mode, recipes: recipes, drafts: imageDrafts, dirty: dirty, projectPath: projectURL?.path)
+        return ProjectArchive(reading: reading, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: .document, recipes: [:], drafts: [:], dirty: dirty, projectPath: projectURL?.path)
     }
 
     func restore(_ archive: ProjectArchive, keepProjectURL: Bool = false) throws {
@@ -348,7 +328,7 @@ import UniformTypeIdentifiers
         readingScale = archive.reading?.scale
         bibliography = archive.reading?.bibliography ?? Bibliography()
         pageMeta = (0..<document.pageCount).map { index in
-            PageMeta(recipe: archive.recipes[index], draft: archive.drafts[index], ocrOriginal: archive.ocrOriginals?[index], ocrRegions: archive.ocrRegions?[index])
+            PageMeta(ocrOriginal: archive.ocrOriginals?[index], ocrRegions: archive.ocrRegions?[index])
         }
         navigationToken = UUID()
         layoutRevision = UUID()
@@ -361,13 +341,10 @@ import UniformTypeIdentifiers
         if !keepProjectURL { sourceURL = archive.sourcePath.map { URL(fileURLWithPath: $0) } }
         selection = archive.selection
         selectedPages = archive.selectedPages
-        mode = archive.mode
         dirty = archive.dirty
         if !keepProjectURL { projectURL = archive.projectPath.map { URL(fileURLWithPath: $0) } }
         revision = UUID()
         selectedAnnotation = nil
-        resetImage()
-        if mode == .image, meta(selection).draft != nil { updatePreview(markDirty: false) }
     }
 
     func bootstrap() {
@@ -483,7 +460,6 @@ import UniformTypeIdentifiers
         selectedPages = Set(effectivePages)
         if reset {
             selectedAnnotation = nil
-            resetImage()
         }
         scheduleRecovery()
     }
@@ -570,7 +546,7 @@ import UniformTypeIdentifiers
         guard dirty else { return true }
         let alert = NSAlert()
         alert.messageText = "保存当前工作？"
-        alert.informativeText = "保存为 KongFolio 项目可保留页面、标注、原始图片和未应用的调整；保存为 PDF 得到一份普通 PDF（页面、标注和已识别的文字都在，标注仍可编辑）。"
+        alert.informativeText = "保存为 KongFolio 项目可保留页面、标注和 OCR 前的原页；保存为 PDF 得到一份普通 PDF（页面、标注和已识别的文字都在，标注仍可编辑）。"
         alert.addButton(withTitle: "保存项目")
         alert.addButton(withTitle: "保存为 PDF…")
         alert.addButton(withTitle: "取消")
@@ -647,10 +623,10 @@ import UniformTypeIdentifiers
 
     /// Empties the workspace. With `keepingSource` the file it came from stays known, so the tab can load it again.
     private func clearDocument(keepingSource: Bool) {
-        searchTask?.cancel(); previewTask?.cancel(); estimateTask?.cancel()
+        searchTask?.cancel(); estimateTask?.cancel()
         document = PDFDocument(); cachedPDF = nil
         pageMeta = []; selection = 0; selectedPages = [0]; rangeText = ""
-        title = "未命名文档"; mode = .document; tool = .select; note = ""
+        title = "未命名文档"; tool = .select; note = ""
         bookmarks = []; bookmarkName = ""; outlineEntries = []; bibliography = Bibliography()
         search = ""; searchResults = []; searchMessage = ""; annotationNotes = []
         readingPoint = nil; readingScale = nil
@@ -661,7 +637,6 @@ import UniformTypeIdentifiers
         dirty = false; discarded = false
         thumbnails.clear(); pageVersions = [:]
         layoutRevision = UUID(); navigationToken = UUID(); revision = UUID()
-        resetImage()
         recoveryStatus = ""
     }
 
@@ -752,7 +727,7 @@ import UniformTypeIdentifiers
 
     func pickFiles() -> [URL] {
         let panel = NSOpenPanel()
-        var types: [UTType] = [.pdf, .jpeg, .png, .heic, .tiff, .plainText, UTType(exportedAs: "com.kongfolio.project")]
+        var types: [UTType] = [.pdf, .plainText, UTType(exportedAs: "com.kongfolio.project")]
         types += TextImport.markdownExtensions.compactMap { UTType(filenameExtension: $0) }
         panel.allowedContentTypes = types
         panel.allowsMultipleSelection = true
@@ -784,8 +759,8 @@ import UniformTypeIdentifiers
 
     /// Files dropped on the window: open them, or insert after the current page when a document is open.
     func openDropped(_ urls: [URL]) {
-        let files = urls.filter { $0.isFileURL && (["pdf", "jpg", "jpeg", "png", "heic", "tif", "tiff", "kongfolio"].contains($0.pathExtension.lowercased()) || TextImport.handles($0)) }
-        guard !files.isEmpty else { error = "只能拖入 PDF、图片、Markdown、TXT 或 KongFolio 项目。"; return }
+        let files = urls.filter { $0.isFileURL && (["pdf", "kongfolio"].contains($0.pathExtension.lowercased()) || TextImport.handles($0)) }
+        guard !files.isEmpty else { error = "只能拖入 PDF、Markdown、TXT 或 KongFolio 项目。"; return }
         let isProject = files.contains { $0.pathExtension.lowercased() == "kongfolio" }
         var insert = false
         if count > 0, !isProject, AppEnvironment.isInteractive {
@@ -816,12 +791,12 @@ import UniformTypeIdentifiers
         pendingImports = []
     }
 
-    func load(_ urls: [URL], insert: Bool = false, scanAfter: Bool = false, prepared: ImportPayload? = nil) {
+    func load(_ urls: [URL], insert: Bool = false, prepared: ImportPayload? = nil) {
         guard !urls.isEmpty else { return }
         // A document that is already open stays open: new files go to a new tab. Inserting pages and the
         // prepared (already read) payload of a tab's own import are not routed.
         if !insert, prepared == nil, count > 0, let store {
-            store.openInNewTab(urls, scanAfter: scanAfter)
+            store.openInNewTab(urls)
             return
         }
         if busy {
@@ -830,10 +805,10 @@ import UniformTypeIdentifiers
             status = "当前任务完成后将打开：\(urls.map(\.lastPathComponent).joined(separator: "、"))"
             return
         }
-        if prepared == nil { startImport(urls, insert: insert, scanAfter: scanAfter); return }
+        if prepared == nil { startImport(urls, insert: insert); return }
         report {
             if urls.contains(where: { $0.pathExtension.lowercased() == "kongfolio" }) {
-                guard urls.count == 1, !insert else { throw FolioError(message: "请单独打开 KongFolio 项目；合并时使用 PDF 或图片。") }
+                guard urls.count == 1, !insert else { throw FolioError(message: "请单独打开 KongFolio 项目；合并时使用 PDF。") }
                 guard case .project(let archive) = prepared else { throw FolioError(message: "项目读取失败") }
                 guard confirmReplace() else { return }
                 try restore(archive)
@@ -906,7 +881,6 @@ import UniformTypeIdentifiers
                 history.removeAll()
                 future.removeAll()
                 projectURL = nil
-                mode = urls.count == 1 && urls[0].pathExtension.lowercased() != "pdf" && !TextImport.handles(urls[0]) ? .image : .document
                 if loaded.count == 1, !rebuilt { openedBytes = data.first }
                 sourceURL = loaded.count == 1 ? urls[0] : nil
             }
@@ -924,11 +898,6 @@ import UniformTypeIdentifiers
             // whether to save.
             if !insert, loaded.count == 1 { dirty = false }
             applyPendingView()
-            if scanAfter {
-                mode = .image
-                adjustments.scan = true
-                updatePreview()
-            }
             remember(urls)
             status = "已载入 \(count) 页" + (rebuilt ? "（此文件带“禁止修改”限制，已转成可编辑副本；原文件不会被改动）" : "")
             store?.loadedTabsChanged()
@@ -950,7 +919,6 @@ import UniformTypeIdentifiers
         navigationToken = UUID()
         selection = index
         selectedAnnotation = nil
-        resetImage()
         scheduleRecovery()
     }
 
@@ -960,7 +928,6 @@ import UniformTypeIdentifiers
             navigationToken = UUID()
             selectedPages = Set(try PageRange.parse(rangeText, count: count))
             selection = effectivePages.first ?? 0
-            resetImage()
             scheduleRecovery()
         }
     }
@@ -1039,163 +1006,9 @@ import UniformTypeIdentifiers
                     rotated.box = CGRect(x: line.box.minY, y: 1 - line.box.maxX, width: line.box.height, height: line.box.width)
                     return rotated
                 }
-                meta.recipe?.adjustments.rotation += 1
-                meta.draft?.rotation += 1
             }
             if let page = document.page(at: i) { page.rotation = (page.rotation + 90) % 360 }
         }
-        changed()
-    }
-
-    // MARK: Image mode
-
-    func resetImage() {
-        imageBase = nil
-        proxyBase = nil
-        previewTask?.cancel()
-        previewIsProxy = false
-        preview = nil
-        showOriginal = false
-        cropMode = false
-        let current = meta(selection)
-        adjustments = current.draft ?? current.recipe?.adjustments ?? ImageAdjustments()
-        if mode == .image, current.draft != nil || current.recipe != nil { updatePreview(markDirty: false) }
-    }
-
-    func sourceImage() throws -> CGImage {
-        if let imageBase { return imageBase }
-        let result: CGImage
-        if let recipe = meta(selection).recipe, let source = PDFDocument(data: recipe.originalPDF), let page = source.page(at: 0) {
-            result = try DocumentServices.render(page, maxDimension: 3000)
-        } else if let page {
-            result = try DocumentServices.render(page, maxDimension: 3000)
-        } else {
-            throw FolioError(message: "没有可处理的页面。")
-        }
-        imageBase = result
-        return result
-    }
-
-    /// Small working image used while a slider is being dragged.
-    private func proxyImage() throws -> CGImage {
-        if let proxyBase { return proxyBase }
-        let result = try DocumentServices.downscale(sourceImage(), maxDimension: 1100)
-        proxyBase = result
-        return result
-    }
-
-    /// `interactive` renders a fast low-resolution preview and schedules the full render shortly after.
-    func updatePreview(markDirty: Bool = true, interactive: Bool = false) {
-        report {
-            if interactive {
-                preview = NSImage(cgImage: try DocumentServices.adjusted(proxyImage(), adjustments), size: .zero)
-                previewIsProxy = true
-                previewTask?.cancel()
-                previewTask = Task { [weak self] in
-                    do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
-                    guard let self, !Task.isCancelled else { return }
-                    self.updatePreview(markDirty: false)
-                }
-            } else {
-                previewTask?.cancel()
-                preview = NSImage(cgImage: try DocumentServices.adjusted(sourceImage(), adjustments), size: .zero)
-                previewIsProxy = false
-            }
-            if markDirty {
-                let values = adjustments
-                updateMeta(selection) { $0.draft = values }
-                dirty = true
-                scheduleRecovery()
-            }
-        }
-    }
-
-    func setCrop(_ rect: CGRect) {
-        // Crop gesture coordinates refer to the currently displayed, already-cropped image.
-        let previous = adjustments.cropRect ?? CGRect(x: 0, y: 0, width: 1, height: 1)
-        let inset = min(0.4, max(0, adjustments.crop))
-        let base = previous.insetBy(dx: previous.width * inset, dy: previous.height * inset)
-        adjustments.crop = 0
-        adjustments.cropRect = CGRect(x: base.minX + rect.minX * base.width, y: base.minY + rect.minY * base.height, width: rect.width * base.width, height: rect.height * base.height)
-        cropMode = false
-        updatePreview()
-    }
-
-    func resetAdjustments() {
-        adjustments = ImageAdjustments()
-        updatePreview()
-    }
-
-    func detectPaper() {
-        guard !busy else { return }
-        report {
-            let image = try sourceImage()
-            busy = true
-            taskLabel = "识别纸张边缘"
-            progress = 0
-            Task {
-                do {
-                    let corners = try await Task.detached { try DocumentServices.detectPaper(image) }.value
-                    adjustments.perspective = corners
-                    adjustments.cropRect = nil
-                    updatePreview()
-                    status = "已校正纸张透视，请检查预览"
-                } catch {
-                    self.error = error.localizedDescription
-                }
-                busy = false
-            }
-        }
-    }
-
-    func applyImage() {
-        if previewIsProxy || preview == nil { updatePreview(markDirty: false) }
-        guard let image = preview, let original = page else { return }
-        let current = meta(selection)
-        let hasText = !(original.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let annotationCount = Workspace.visibleAnnotations(on: original).count
-        if current.recipe == nil && hasText {
-            guard confirm("此页含有可搜索的文字", "应用图片调整会把整页转换为图片，文字层和链接将不再保留（之后可重新 OCR）。项目会保留原始页面，操作可撤销。", action: "继续应用") else { return }
-        }
-        if annotationCount > 0 {
-            let detail = current.recipe == nil
-                ? "此页的 \(annotationCount) 个标注不会出现在转换后的图片页面上。操作可撤销。"
-                : "重新应用原图调整将替换当前页面上后来添加的 \(annotationCount) 个标注。原始图像会保留，操作可撤销。"
-            guard confirm("页面上的标注将被移除", detail, action: "继续") else { return }
-        }
-        report {
-            let sourceData = try current.recipe?.originalPDF ?? DocumentServices.subset(document, indexes: [selection]).dataRepresentation().unwrap("原图保存失败")
-            let baseDoc = try PDFDocument(data: sourceData).unwrap("原图读取失败")
-            let bounds = try baseDoc.page(at: 0).unwrap("原图读取失败").bounds(for: .cropBox)
-            let maxPoints = max(bounds.width, bounds.height)
-            let source = try sourceImage()
-            let pointsPerPixel = maxPoints / CGFloat(max(source.width, source.height))
-            guard let pixels = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { throw FolioError(message: "无法读取裁剪预览") }
-            image.size = CGSize(width: CGFloat(pixels.width) * pointsPerPixel, height: CGFloat(pixels.height) * pointsPerPixel)
-            guard let newPage = PDFPage(image: image) else { return }
-            checkpoint()
-            let values = adjustments
-            updateMeta(selection) { meta in
-                meta.recipe = ImageRecipe(originalPDF: sourceData, adjustments: values)
-                meta.draft = nil
-                meta.ocrOriginal = nil
-                meta.ocrRegions = nil
-            }
-            document.removePage(at: selection)
-            document.insert(newPage, at: selection)
-            ReadingServices.applyOutline(outlineEntries, to: document)
-            changed()
-            status = "已应用；项目保留原始页面，可重新调整"
-        }
-    }
-
-    func restoreOriginalPage() {
-        guard let recipe = meta(selection).recipe, let original = PDFDocument(data: recipe.originalPDF)?.page(at: 0) else { return }
-        checkpoint()
-        updateMeta(selection) { $0 = PageMeta() }
-        document.removePage(at: selection)
-        document.insert(original, at: selection)
-        ReadingServices.applyOutline(outlineEntries, to: document)
         changed()
     }
 
@@ -1209,17 +1022,12 @@ import UniformTypeIdentifiers
     }
 
     func checkDraftsForExport() -> Bool {
-        guard !hasPendingDrafts else {
-            error = "有图片调整尚未应用。请先应用到页面，再导出；保存项目可以保留这些调整。"
-            return false
-        }
         // Whatever is exported, hidden annotation types come back first: a layer is only a view setting.
         showAllLayers()
         return true
     }
 
     func exportPDF(currentOnly: Bool = false) { openExport(format: .pdf, scope: currentOnly ? .selected : .all) }
-    func exportImage(_ format: ExportFormat) { openExport(format: format, scope: .current) }
 
     func exportText(markdown: Bool) {
         guard checkDraftsForExport() else { return }
@@ -1283,14 +1091,7 @@ import UniformTypeIdentifiers
         case .merge: open(insert: count > 0)
         case .compress: compress()
         case .ocr: ocr()
-        case .imagesToPDF: open()
-        case .pdfToImages: exportBatch(split: false)
-        case .scan:
-            let urls = pickFiles()
-            guard !urls.isEmpty else { return }
-            load(urls, insert: count > 0, scanAfter: true)
         case .sign:
-            mode = .document
             tool = .signature
             status = "在页面上拖动手写签名；可将当前页墨迹保存到签名库"
         case .compare: compare()
@@ -1302,9 +1103,6 @@ enum QuickTool: String, CaseIterable, Identifiable {
     case merge = "合并 PDF"
     case compress = "压缩 PDF"
     case ocr = "OCR 识别"
-    case imagesToPDF = "图片转 PDF"
-    case pdfToImages = "PDF 转图片"
-    case scan = "导入扫描件"
     case sign = "手写签名"
     case compare = "对照阅读"
     var id: String { rawValue }
@@ -1313,14 +1111,11 @@ enum QuickTool: String, CaseIterable, Identifiable {
         case .merge: return "多选文件，按选择顺序插入页面"
         case .compress: return "重新编码图片，保留文字与目录"
         case .ocr: return "按所选语言识别并加入可搜索文本层"
-        case .imagesToPDF: return "打开图片后导出为 PDF"
-        case .pdfToImages: return "全部页面导出为 PNG"
-        case .scan: return "导入扫描图片，调整与增强"
         case .sign: return "在画布上手写签名"
         case .compare: return "双栏阅读，可同步翻页"
         }
     }
-    var availableWithoutDocument: Bool { self == .merge || self == .imagesToPDF || self == .scan }
+    var availableWithoutDocument: Bool { self == .merge }
 }
 
 extension Optional {

@@ -23,8 +23,8 @@ struct ExportOptions: Equatable, Codable {
         get { format == .pdf && pdfMode == .raster }
         set { pdfMode = newValue ? .raster : .preserve }
     }
-    /// True when pages are rendered to pixels (image formats and image-based PDF).
-    var rendersPixels: Bool { format != .pdf || pdfMode == .raster }
+    /// True when pages are redrawn as pictures inside the PDF (the image-based PDF type).
+    var rendersPixels: Bool { pdfMode == .raster }
 }
 struct ExportEstimate { var bytes: Int; var sampled: Int; var total: Int; var exact: Bool }
 enum ExportServices {
@@ -145,8 +145,8 @@ enum ExportServices {
             return ExportEstimate(bytes: size, sampled: pages.count, total: pages.count, exact: true)
         }
         let sample = Array(pages.prefix(3)); var bytes = 0
-        for index in sample { try Task.checkCancellation(); bytes += try autoreleasepool { try encode(render(doc.page(at: index).unwrap("页面读取失败"), dpi: options.dpi), options: options, pdfJPEG: options.format == .pdf).count } }
-        return ExportEstimate(bytes: Int(Double(bytes) / Double(sample.count) * Double(pages.count) * (options.format == .pdf ? 1.03 : 1)), sampled: sample.count, total: pages.count, exact: options.format != .pdf && sample.count == pages.count)
+        for index in sample { try Task.checkCancellation(); bytes += try autoreleasepool { try encode(render(doc.page(at: index).unwrap("页面读取失败"), dpi: options.dpi), options: options, pdfJPEG: true).count } }
+        return ExportEstimate(bytes: Int(Double(bytes) / Double(sample.count) * Double(pages.count) * 1.03), sampled: sample.count, total: pages.count, exact: false)
     }
     static func run(_ spec: JobSpec, progress: @escaping @Sendable (Double) -> Void) throws -> JobResult {
         guard let options = spec.exportOptions, let doc = PDFDocument(data: spec.source), !spec.pages.isEmpty,
@@ -197,33 +197,21 @@ enum ExportServices {
             return JobResult(message: after < before ? "已压缩并保留文字：\(sizes)" : "已导出，但此文件没有变小（\(sizes)）；可改用图片型 PDF")
         }
         let output = PDFDocument()
-        let batch = options.format != .pdf && spec.pages.count > 1
-        let staging = batch ? target.appendingPathComponent(".KongFolio-\(UUID().uuidString).partial", isDirectory: true) : nil
-        if let staging { try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true) }
-        defer { if let staging { try? FileManager.default.removeItem(at: staging) } }
         for (offset, index) in spec.pages.enumerated() {
             try Task.checkCancellation()
             try autoreleasepool {
                 let page = try doc.page(at: index).unwrap("页面读取失败"), cg = try render(page, dpi: options.dpi)
-                let data = try encode(cg, options: options, pdfJPEG: options.format == .pdf)
+                let data = try encode(cg, options: options, pdfJPEG: true)
                 try Task.checkCancellation()
-                if options.format == .pdf {
-                    let image = try NSImage(data: data).unwrap("压缩图像无效")
-                    let b = page.bounds(for: .cropBox)
-                    image.size = abs(page.rotation % 180) == 90 ? CGSize(width: b.height, height: b.width) : b.size
-                    output.insert(try PDFPage(image: image).unwrap("页面生成失败"), at: output.pageCount)
-                } else if let staging { try data.write(to: staging.appendingPathComponent(String(format: "page-%04d", index + 1) + "." + options.suffix), options: .atomic) }
-                else { try data.write(to: target, options: .atomic) }
+                let image = try NSImage(data: data).unwrap("压缩图像无效")
+                let b = page.bounds(for: .cropBox)
+                image.size = abs(page.rotation % 180) == 90 ? CGSize(width: b.height, height: b.width) : b.size
+                output.insert(try PDFPage(image: image).unwrap("页面生成失败"), at: output.pageCount)
             }
             progress(Double(offset + 1) / Double(spec.pages.count))
         }
-        if options.format == .pdf {
-            try Task.checkCancellation(); try output.dataRepresentation().unwrap("导出失败").write(to: target, options: .atomic)
-        } else if let staging {
-            try Task.checkCancellation(); let folder = target.appendingPathComponent("KongFolio-\(UUID().uuidString.prefix(8))")
-            try FileManager.default.moveItem(at: staging, to: folder); return JobResult(destination: folder, message: "已导出 \(spec.pages.count) 张 \(options.format)，\(options.dpi) DPI")
-        }
-        return JobResult(message: "已导出 \(options.format)，\(options.dpi) DPI")
+        try Task.checkCancellation(); try output.dataRepresentation().unwrap("导出失败").write(to: target, options: .atomic)
+        return JobResult(message: "已导出图片型 PDF，\(options.dpi) DPI")
     }
 }
 extension Workspace {
@@ -256,8 +244,7 @@ extension Workspace {
         let options = exportOptions, pages = exportPages
         invalidateEstimate(); showExport = false
         let destination: URL?
-        if options.format == .pdf || pages.count == 1 { destination = saveURL(type: options.type, suffix: options.suffix) }
-        else { let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true; destination = panel.runModal() == .OK ? panel.url : nil }
+        destination = saveURL(type: options.type, suffix: options.suffix)
         guard let destination else { return }
         runJob(JobSpec(operation: .configured, source: data, pages: pages, destination: destination, revision: revision, exportOptions: options))
     }

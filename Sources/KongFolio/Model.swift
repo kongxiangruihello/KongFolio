@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 // Typed replacements for the string flags used before 0.4. Raw values keep the
 // exact strings that 0.2/0.3 project files contain, so old projects still decode.
 
+/// Kept only so projects saved while there was an image mode still open; everything now is a document.
 enum WorkspaceMode: String, Codable, CaseIterable, Identifiable {
     case document = "Document"
     case image = "Image"
@@ -62,21 +63,14 @@ enum ReadingLayout: String, Codable, CaseIterable, Identifiable {
     var title: String { rawValue }
 }
 
+/// Only PDF is written now; the type stays so exports and saved batch settings keep one shape.
 enum ExportFormat: String, Codable, CaseIterable, Identifiable {
     case pdf = "PDF"
-    case png = "PNG"
-    case jpg = "JPG"
-    case tiff = "TIFF"
+    /// Settings saved when images could also be exported (PNG, JPG, TIFF) read as PDF.
+    init(from decoder: Decoder) throws { self = .pdf }
     var id: String { rawValue }
-    var type: UTType {
-        switch self {
-        case .pdf: return .pdf
-        case .png: return .png
-        case .jpg: return .jpeg
-        case .tiff: return .tiff
-        }
-    }
-    var suffix: String { self == .jpg ? "jpg" : rawValue.lowercased() }
+    var type: UTType { .pdf }
+    var suffix: String { "pdf" }
 }
 
 enum ExportScope: String, Codable, CaseIterable, Identifiable {
@@ -135,8 +129,6 @@ enum MarkupColor: String, CaseIterable, Identifiable {
 /// Everything KongFolio keeps per page, stored in one array aligned with the document.
 /// Page operations remap this array once instead of rewriting several index-keyed dictionaries.
 struct PageMeta {
-    var recipe: ImageRecipe?
-    var draft: ImageAdjustments?
     var ocrOriginal: Data?
     var ocrRegions: [RecognizedLine]?
 }

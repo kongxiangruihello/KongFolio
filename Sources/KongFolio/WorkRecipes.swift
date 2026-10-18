@@ -35,8 +35,6 @@ struct WorkRecipe: Codable, Equatable, Identifiable {
     var name: String
     /// Cut margins found from the content, one setting for odd and one for even pages.
     var autoCrop = false
-    /// Scan enhancement and other image settings; nil leaves the pages alone.
-    var cleanup: ImageAdjustments? = nil
     /// nil skips recognition (the files may already have text).
     var ocr: OCRSettings? = nil
     /// nil writes no Word file.
@@ -53,9 +51,9 @@ struct WorkRecipe: Codable, Equatable, Identifiable {
     /// 0 splits at volumes (卷, 篇…), 1 also at chapters.
     var chapterDepth = 0
 
-    init(id: UUID = UUID(), name: String, autoCrop: Bool = false, cleanup: ImageAdjustments? = nil, ocr: OCRSettings? = nil, word: WordExportOptions? = nil,
+    init(id: UUID = UUID(), name: String, autoCrop: Bool = false, ocr: OCRSettings? = nil, word: WordExportOptions? = nil,
          useReplacementRules: Bool = true, writePDF: Bool = true, pageRange: String = "", splitChapters: Bool = false, detectHeadings: Bool = true, chapterDepth: Int = 0) {
-        self.id = id; self.name = name; self.autoCrop = autoCrop; self.cleanup = cleanup; self.ocr = ocr; self.word = word
+        self.id = id; self.name = name; self.autoCrop = autoCrop; self.ocr = ocr; self.word = word
         self.useReplacementRules = useReplacementRules; self.writePDF = writePDF
         self.pageRange = pageRange; self.splitChapters = splitChapters; self.detectHeadings = detectHeadings; self.chapterDepth = chapterDepth
     }
@@ -66,7 +64,6 @@ struct WorkRecipe: Codable, Equatable, Identifiable {
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         name = try c.decode(String.self, forKey: .name)
         autoCrop = try c.decodeIfPresent(Bool.self, forKey: .autoCrop) ?? false
-        cleanup = try c.decodeIfPresent(ImageAdjustments.self, forKey: .cleanup)
         ocr = try c.decodeIfPresent(OCRSettings.self, forKey: .ocr)
         word = try c.decodeIfPresent(WordExportOptions.self, forKey: .word)
         useReplacementRules = try c.decodeIfPresent(Bool.self, forKey: .useReplacementRules) ?? true
@@ -77,12 +74,11 @@ struct WorkRecipe: Codable, Equatable, Identifiable {
         chapterDepth = try c.decodeIfPresent(Int.self, forKey: .chapterDepth) ?? 0
     }
 
-    var isEmpty: Bool { !autoCrop && cleanup == nil && ocr == nil && word == nil && !writePDF && !splitChapters }
+    var isEmpty: Bool { !autoCrop && ocr == nil && word == nil && !writePDF && !splitChapters }
 
     var summary: String {
         var steps: [String] = []
         if !pageRange.trimmingCharacters(in: .whitespaces).isEmpty { steps.append("只取第 \(pageRange) 页") }
-        if cleanup != nil { steps.append("扫描增强") }
         if autoCrop { steps.append("自动裁边") }
         if let ocr { steps.append("OCR（\(ocr.vertical ? "竖排" : "横排")\(ocr.ignoresTextLayer ? "，忽略旧文字层" : "")）") }
         if writePDF { steps.append("输出 PDF") }
@@ -95,7 +91,7 @@ struct WorkRecipe: Codable, Equatable, Identifiable {
         WorkRecipe(name: "繁体竖排古籍 → 可搜索 PDF + Word", autoCrop: true,
                    ocr: { var s = OCRSettings(); s.languages = ["zh-Hant", "en-US"]; s.vertical = true; s.ignoresTextLayer = true; return s }(),
                    word: WordExportOptions(), writePDF: true),
-        WorkRecipe(name: "只裁边并整理（不做 OCR）", autoCrop: true, cleanup: { var a = ImageAdjustments(); a.scan = true; return a }(), writePDF: true),
+        WorkRecipe(name: "只裁边（不做 OCR）", autoCrop: true, writePDF: true),
     ]
 }
 
@@ -142,23 +138,10 @@ enum BatchPipeline {
         let count = document.pageCount
         var output = BatchOutput(pages: count)
         var regions: [Int: [RecognizedLine]] = [:]
-        let steps = Double((recipe.cleanup != nil ? 1 : 0) + (recipe.autoCrop ? 1 : 0) + (recipe.ocr != nil ? 4 : 0) + (recipe.word != nil ? 2 : 0))
+        let steps = Double((recipe.autoCrop ? 1 : 0) + (recipe.ocr != nil ? 4 : 0) + (recipe.word != nil ? 2 : 0))
         var done = 0.0
         func step(_ weight: Double, _ fraction: Double) { progress(steps == 0 ? 1 : (done + weight * fraction) / steps) }
 
-        if let adjustments = recipe.cleanup {
-            for index in 0..<count {
-                try Task.checkCancellation()
-                try autoreleasepool {
-                    let page = try document.page(at: index).unwrap("无法读取页面")
-                    let replacement = try DocumentServices.cleanedPage(page, adjustments)
-                    document.removePage(at: index)
-                    document.insert(replacement, at: index)
-                }
-                step(1, Double(index + 1) / Double(count))
-            }
-            done += 1
-        }
         if recipe.autoCrop {
             var odd: [CropMargins] = [], even: [CropMargins] = []
             for index in 0..<count {

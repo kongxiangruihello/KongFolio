@@ -41,7 +41,6 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showTools) { quickTools }
         .sheet(isPresented: $workspace.showImportOrder) { importOrder }
         .sheet(isPresented: Binding(get: { workspace.comparison != nil }, set: { if !$0 { workspace.comparison = nil } })) { comparisonSheet }
-        .onChange(of: workspace.mode) { _, _ in workspace.resetImage(); workspace.scheduleRecovery() }
     }
 
     private func splitShown(width: CGFloat) -> Bool {
@@ -165,11 +164,6 @@ struct ContentView: View {
                     }
             }
             .frame(minWidth: 40, idealWidth: 175, maxWidth: style == .full ? 220 : 260, alignment: .leading)
-            Picker("模式", selection: $workspace.mode) {
-                ForEach(WorkspaceMode.allCases) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: style == .full ? 160 : 110)
             Spacer(minLength: 0)
             switch style {
             case .full:
@@ -248,7 +242,7 @@ struct ContentView: View {
         Button { workspace.closeTab() } label: {
             if iconOnly { Image(systemName: "xmark.circle") } else { Text("关闭") }
         }
-        .disabled(workspace.count == 0 || workspace.busy).help("关闭当前文档或图片（⇧⌘W）")
+        .disabled(workspace.count == 0 || workspace.busy).help("关闭当前文档（⇧⌘W）")
     }
 
     @ViewBuilder private var exportItems: some View {
@@ -259,12 +253,7 @@ struct ContentView: View {
         Button("PDF · 提取选中页") { workspace.exportPDF(currentOnly: true) }
         Button("PDF · 压缩体积…") { workspace.compress() }
         Divider()
-        Button("JPG · 当前页") { workspace.exportImage(.jpg) }
-        Button("PNG · 当前页") { workspace.exportImage(.png) }
-        Button("TIFF · 当前页") { workspace.exportImage(.tiff) }
-        Button("PNG · 全部页面") { workspace.exportBatch(split: false) }
-        Divider()
-        Button("Word（.docx）· 文字与页面图片…") { workspace.openWordExport() }
+        Button("Word（.docx）· 文字与页面…") { workspace.openWordExport() }
         Button("文件夹批处理（配方）…") { workspace.showBatch = true }
         Button("TXT") { workspace.exportText(markdown: false) }
         Button("Markdown · 全文") { workspace.exportText(markdown: true) }
@@ -364,13 +353,11 @@ struct ContentView: View {
             VStack(spacing: 20) {
                 Image(systemName: "doc.richtext").font(.system(size: 64, weight: .ultraLight)).foregroundStyle(Brand.accent)
                 Text("每一页，都井井有条。").font(.system(size: 28, weight: .medium))
-                Text("PDF、图片、Markdown 与扫描文档的个人工作台").foregroundStyle(.secondary)
-                Button("打开文档或图片…") { workspace.open() }.buttonStyle(.borderedProminent).controlSize(.large)
-                Text("PDF · JPG · PNG · HEIC · TIFF · 也可以直接拖入窗口").font(.caption).foregroundStyle(.tertiary)
+                Text("PDF 与文本文档的阅读、批注、整理工作台").foregroundStyle(.secondary)
+                Button("打开文档…") { workspace.open() }.buttonStyle(.borderedProminent).controlSize(.large)
+                Text("PDF · Markdown · TXT · 也可以直接拖入窗口").font(.caption).foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if workspace.mode == .image {
-            ImageCanvas(workspace: workspace)
         } else {
             PDFCanvas(workspace: workspace)
                 .overlay(alignment: .top) {
@@ -385,12 +372,12 @@ struct ContentView: View {
     private var inspector: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text(workspace.mode == .image ? "图片属性" : "文档属性").font(.headline)
+                Text("文档属性").font(.headline)
                 HStack {
                     Button { workspace.undo() } label: { Label("撤销", systemImage: "arrow.uturn.backward") }.disabled(!workspace.canUndo)
                     Button { workspace.redo() } label: { Image(systemName: "arrow.uturn.forward") }.disabled(!workspace.canRedo)
                 }
-                if workspace.mode == .document { documentControls } else { imageControls }
+                documentControls
                 Divider()
                 ocrControls
             }
@@ -475,10 +462,10 @@ struct ContentView: View {
                 Button("删除页面", role: .destructive) { workspace.remove() }.disabled(workspace.effectivePages.count >= workspace.count)
             }
             Button("裁边…") { workspace.openCrop() }
-            Button("插入 PDF / 图片…") { workspace.open(insert: true) }
+            Button("插入 PDF…") { workspace.open(insert: true) }
             HStack {
                 Button("提取选中页") { workspace.exportPDF(currentOnly: true) }
-                Button("拆分选中页") { workspace.exportBatch(split: true, selectedOnly: true) }
+                Button("拆分选中页") { workspace.splitPages(selectedOnly: true) }
             }
             Divider()
             Text("摘录").font(.subheadline.bold())
@@ -580,58 +567,6 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showSignatureImport) { SignatureImportSheet(workspace: workspace) }
-    }
-
-    private var imageControls: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Button("旋转") { workspace.adjustments.rotation += 1; workspace.updatePreview() }
-                Button("水平翻转") { workspace.adjustments.flip.toggle(); workspace.updatePreview() }
-            }
-            slider("亮度", value: $workspace.adjustments.brightness, range: -0.5...0.5)
-            slider("对比度", value: $workspace.adjustments.contrast, range: 0.5...2)
-            slider("饱和度", value: $workspace.adjustments.saturation, range: 0...2)
-            slider("锐化", value: $workspace.adjustments.sharpness, range: 0...2)
-            slider("倾斜校正（度）", value: $workspace.adjustments.straighten, range: -15...15)
-            HStack {
-                Button(workspace.cropMode ? "取消框选" : "鼠标选区裁剪") {
-                    workspace.showOriginal = false
-                    if workspace.preview == nil { workspace.updatePreview(markDirty: false) }
-                    workspace.cropMode.toggle()
-                }
-                Button("清除裁剪") { workspace.adjustments.cropRect = nil; workspace.adjustments.crop = 0; workspace.updatePreview() }
-            }
-            Button("自动识别纸张与透视校正") { workspace.detectPaper() }
-            Toggle("扫描增强", isOn: $workspace.adjustments.scan).onChange(of: workspace.adjustments.scan) { _, _ in workspace.updatePreview() }
-            Button("黑白") { workspace.adjustments.saturation = 0; workspace.updatePreview() }
-            Divider()
-            Text("批量应用").font(.subheadline.bold())
-            Text("用上面的亮度、对比度、饱和度、锐化、倾斜、扫描增强和旋转处理多页。裁剪与透视因页而异，不会带入；裁边请用页面管理里的“裁边”。").font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button("应用到选中页") { workspace.cleanPages(scope: .selected) }
-                Button("应用到全部页") { workspace.cleanPages(scope: .all) }
-            }
-            Divider()
-            Text("项目保留原始页面和调整参数。应用会把页面转为图片（含文字的页面会先提示）；导出前请先应用。").font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button("重置参数") { workspace.resetAdjustments() }
-                Button("应用到页面") { workspace.applyImage() }.buttonStyle(.borderedProminent).disabled(workspace.preview == nil)
-            }
-            if workspace.meta(workspace.selection).recipe != nil { Button("恢复原始页面") { workspace.restoreOriginalPage() } }
-        }
-    }
-
-    private func slider(_ name: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(name)
-                Spacer()
-                Text(value.wrappedValue, format: .number.precision(.fractionLength(2))).foregroundStyle(.secondary)
-            }
-            .font(.caption)
-            // While dragging, a low-resolution preview keeps the slider responsive; the full render follows.
-            Slider(value: value, in: range).onChange(of: value.wrappedValue) { _, _ in workspace.updatePreview(interactive: true) }
-        }
     }
 
     private var quickTools: some View {

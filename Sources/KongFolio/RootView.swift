@@ -54,7 +54,7 @@ struct TabBar: View {
             .frame(width: 28)
             .help("所有已打开的文件（共 \(store.tabs.count) 个）")
             Menu {
-                Button("打开文档或图片…") { store.open() }
+                Button("打开文档…") { store.open() }
                 Divider()
                 Button("新建 Markdown 笔记") { store.newNote() }
                 Button("编辑 Markdown 文件…") { store.editMarkdownFile() }
@@ -100,7 +100,7 @@ private struct DocumentTab: View {
     var body: some View {
         let known = workspace.sourceURL != nil || workspace.projectURL != nil
         let loading = workspace.count == 0 && workspace.busy
-        TabChip(icon: loading ? "arrow.down.circle" : (workspace.count == 0 ? (known ? "doc" : "tray") : (workspace.mode == .image ? "photo" : "doc.richtext")),
+        TabChip(icon: loading ? "arrow.down.circle" : (workspace.count == 0 ? (known ? "doc" : "tray") : "doc.richtext"),
                 title: workspace.count == 0 && !known ? "新标签页" : workspace.displayName,
                 tooltip: workspace.displayPath ?? "",
                 dirty: workspace.dirty && workspace.count > 0, selected: selected, compact: compact,

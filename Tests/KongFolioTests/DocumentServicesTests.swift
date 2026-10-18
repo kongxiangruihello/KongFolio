@@ -28,22 +28,6 @@ final class DocumentServicesTests: XCTestCase {
         let roundtrip = PDFDocument(data: subset.dataRepresentation()!)!
         XCTAssertEqual(roundtrip.pageCount, 2)
     }
-    func testImageAdjustmentGeometryAndExport() throws {
-        let doc = fixture()
-        let input = try withExtendedLifetime(doc) { try DocumentServices.render(doc.page(at: 0)!, maxDimension: 400) }
-        var adjustment = ImageAdjustments(); adjustment.rotation = 1; adjustment.crop = 0.1; adjustment.scan = true
-        let output = try DocumentServices.adjusted(input, adjustment)
-        XCTAssertEqual(Double(output.width), Double(input.height) * 0.8, accuracy: 2)
-        XCTAssertEqual(Double(output.height), Double(input.width) * 0.8, accuracy: 2)
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        for (ext, type) in [("png", UTType.png), ("jpg", .jpeg), ("tiff", .tiff)] {
-            let url = folder.appendingPathComponent("test.\(ext)")
-            try DocumentServices.writeImage(output, to: url, type: type)
-            XCTAssertEqual(try DocumentServices.load(url).pageCount, 1)
-        }
-    }
     func testSearchableLayerSurvivesSaveAndRotation() throws {
         let source = fixture()
         let page = source.page(at: 0)!; page.rotation = 90

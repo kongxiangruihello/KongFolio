@@ -67,8 +67,6 @@ struct BatchSheet: View {
                 TextField("名称", text: $recipes[index].name)
                 Text(recipes[index].summary).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 TextField("只处理这些页（如 3-400；留空为全部）", text: $recipes[index].pageRange)
-                Toggle("扫描增强（去底色、提高对比）", isOn: Binding(get: { recipes[index].cleanup != nil }, set: { on in
-                    recipes[index].cleanup = on ? { var a = ImageAdjustments(); a.scan = true; return a }() : nil }))
                 Toggle("自动裁边（奇偶页分别）", isOn: $recipes[index].autoCrop)
                 Toggle("OCR 识别文字", isOn: Binding(get: { recipes[index].ocr != nil }, set: { recipes[index].ocr = $0 ? OCRSettings() : nil }))
                 if recipes[index].ocr != nil {

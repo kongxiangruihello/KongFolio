@@ -26,11 +26,11 @@ enum ImportServices {
     }
 }
 extension Workspace {
-    func startImport(_ urls: [URL], insert: Bool, scanAfter: Bool) {
+    func startImport(_ urls: [URL], insert: Bool) {
         busy = true; progress = 0; taskLabel = "读取文件…"
         let worker = Task.detached { try ImportServices.read(urls) }; cancelAuxiliary = { worker.cancel() }
         Task {
-            do { let payload = try await worker.value; try Task.checkCancellation(); guard !worker.isCancelled else { throw CancellationError() }; busy = false; cancelAuxiliary = nil; load(urls, insert: insert, scanAfter: scanAfter, prepared: payload) }
+            do { let payload = try await worker.value; try Task.checkCancellation(); guard !worker.isCancelled else { throw CancellationError() }; busy = false; cancelAuxiliary = nil; load(urls, insert: insert, prepared: payload) }
             catch is CancellationError { busy = false; cancelAuxiliary = nil; status = "已取消导入" }
             catch { busy = false; cancelAuxiliary = nil; self.error = error.localizedDescription }
         }

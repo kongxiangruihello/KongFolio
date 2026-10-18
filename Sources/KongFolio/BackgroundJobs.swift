@@ -2,7 +2,7 @@ import AppKit
 import PDFKit
 import UniformTypeIdentifiers
 
-enum JobOperation { case ocr, compress, split, images, configured, inspectOCR, chapters, cleanup, word }
+enum JobOperation { case ocr, compress, split, configured, inspectOCR, chapters, word }
 
 struct JobSpec {
     var operation: JobOperation
@@ -21,8 +21,6 @@ struct JobSpec {
     var compressKeepMarked = true
     /// Size to reach, in bytes; when set, the level is ignored and stronger settings are tried until the file fits.
     var compressTarget: Int? = nil
-    /// Image settings applied to every page of a `cleanup` job.
-    var cleanup = ImageAdjustments()
     /// Settings and table of contents for a `word` job.
     var word = WordExportOptions()
     var outline: [OutlineEntry] = []
@@ -94,7 +92,7 @@ enum BackgroundJobs {
         var recognizedCount = 0, skipped = 0
         var staging: URL?
         var finalFolder: URL?
-        if spec.operation == .split || spec.operation == .images {
+        if spec.operation == .split {
             let parent = try spec.destination.unwrap("未选择导出目录")
             let id = UUID().uuidString
             staging = parent.appendingPathComponent(".KongFolio-\(id).partial", isDirectory: true)
@@ -130,18 +128,11 @@ enum BackgroundJobs {
                     }
                 case .inspectOCR:
                     regions[index] = try recognize(page, settings: spec.ocr)
-                case .cleanup:
-                    let replacement = try DocumentServices.cleanedPage(page, spec.cleanup)
-                    doc.removePage(at: index)
-                    doc.insert(replacement, at: index)
                 case .configured, .chapters, .compress, .word:
                     break
                 case .split:
                     let url = staging!.appendingPathComponent(String(format: "page-%04d.pdf", index + 1))
                     try DocumentServices.subset(doc, indexes: [index]).dataRepresentation().unwrap("拆分失败").write(to: url, options: .atomic)
-                case .images:
-                    let url = staging!.appendingPathComponent(String(format: "page-%04d.png", index + 1))
-                    try DocumentServices.writeImage(DocumentServices.render(page), to: url, type: .png)
                 }
             }
             progress(Double(offset + 1) / Double(spec.pages.count))
@@ -154,11 +145,9 @@ enum BackgroundJobs {
             return JobResult(pdf: try doc.dataRepresentation().unwrap("OCR 保存失败"), text: doc.string ?? "", message: "OCR 完成，识别 \(recognizedCount) 页，跳过 \(skipped) 个已有文字的页面\(note)", regions: regions, originals: originals, recognized: recognizedCount, skipped: skipped)
         case .inspectOCR:
             return JobResult(message: "识别区域检查完成，未修改页面文字", regions: regions)
-        case .cleanup:
-            return JobResult(pdf: try doc.dataRepresentation().unwrap("保存失败"), text: doc.string ?? "", message: "已处理 \(spec.pages.count) 页（可撤销）")
         case .configured, .chapters, .compress, .word:
             throw FolioError(message: "导出任务未执行")
-        case .split, .images:
+        case .split:
             try FileManager.default.moveItem(at: staging!, to: finalFolder!)
             return JobResult(destination: finalFolder, message: "已导出 \(spec.pages.count) 个文件")
         }
@@ -220,10 +209,8 @@ extension Workspace {
         case .compress: taskLabel = "压缩 PDF"
         case .split: taskLabel = "拆分 PDF"
         case .chapters: taskLabel = "按章节拆分"
-        case .images: taskLabel = "导出图片"
         case .configured: taskLabel = "按设置导出"
         case .inspectOCR: taskLabel = "检查 OCR 区域"
-        case .cleanup: taskLabel = "批量处理页面"
         case .word: taskLabel = "导出 Word"
         }
         status = taskLabel
@@ -245,7 +232,6 @@ extension Workspace {
                 } else {
                     for (index, data) in result.originals { updateMeta(index) { $0.ocrOriginal = data } }
                     for (index, lines) in result.regions { updateMeta(index) { $0.ocrRegions = lines } }
-                    if spec.operation == .cleanup { for index in spec.pages { updateMeta(index) { $0 = PageMeta() } } }
                     if let pdf = result.pdf, let updated = PDFDocument(data: pdf) {
                         document = updated
                         ReadingServices.applyOutline(outlineEntries, to: document)
@@ -303,7 +289,7 @@ extension Workspace {
 
     func retryJob() {
         guard let job = lastJob else { return }
-        guard ![JobOperation.ocr, .inspectOCR, .cleanup].contains(job.operation) || job.revision == revision else {
+        guard ![JobOperation.ocr, .inspectOCR].contains(job.operation) || job.revision == revision else {
             error = "文档已更改，请重新发起 OCR。"
             lastJob = nil
             return
@@ -386,14 +372,14 @@ extension Workspace {
                          compressTarget: compressUseTarget ? Int(max(compressTargetMB, 0.1) * 1_000_000) : nil))
     }
 
-    func exportBatch(split: Bool, selectedOnly: Bool = false) {
-        if !split { openExport(format: .png, scope: selectedOnly ? .selected : .all); return }
+    /// Writes the chosen pages as one PDF each into a folder.
+    func splitPages(selectedOnly: Bool = false) {
         guard count > 0, !busy, checkDraftsForExport(), let source = try? pdfData() else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let folder = panel.url else { return }
-        runJob(JobSpec(operation: split ? .split : .images, source: source, pages: selectedOnly ? effectivePages : Array(0..<count), destination: folder, revision: revision))
+        runJob(JobSpec(operation: .split, source: source, pages: selectedOnly ? effectivePages : Array(0..<count), destination: folder, revision: revision))
     }
 }

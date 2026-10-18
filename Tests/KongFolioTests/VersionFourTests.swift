@@ -52,7 +52,7 @@ final class VersionFourTests: XCTestCase {
         let folder = try VersionTwoTests().temporary(); defer { try? FileManager.default.removeItem(at: folder) }
         let w = Workspace(storage: folder); w.document = fixture()
         let original = DocumentServices.subset(w.document, indexes: [1]).dataRepresentation()!
-        w.recipes[1] = ImageRecipe(originalPDF: original, adjustments: ImageAdjustments())
+        w.ocrOriginals[1] = original
         w.bibliography = Bibliography(author: "孔子", title: "论语")
         let archive = try w.snapshot()
         let file = folder.appendingPathComponent("project.kongfolio"); try archive.write(file)
@@ -61,7 +61,7 @@ final class VersionFourTests: XCTestCase {
         print("probe: project size binary \(data.count) bytes vs legacy JSON \(legacy.count) bytes")
         XCTAssertTrue(data.count < legacy.count)
         let read = try ProjectArchive.read(file)
-        XCTAssertEqual(read.pdf, archive.pdf); XCTAssertEqual(read.recipes[1]!.originalPDF, original); XCTAssertEqual(read.reading?.bibliography, w.bibliography)
+        XCTAssertEqual(read.pdf, archive.pdf); XCTAssertEqual(read.ocrOriginals?[1], original); XCTAssertEqual(read.reading?.bibliography, w.bibliography)
         let legacyFile = folder.appendingPathComponent("old.kongfolio"); try legacy.write(to: legacyFile)
         XCTAssertEqual(try ProjectArchive.read(legacyFile).title, archive.title)
         let recovery = folder.appendingPathComponent("R.kfrecovery")
@@ -185,16 +185,6 @@ final class VersionFourTests: XCTestCase {
         return data as Data
     }
 
-    // P3: converting a page with text to an image asks first, and declining leaves the page untouched.
-    @MainActor func testLossyImageApplyAsksFirst() throws {
-        var asked: [String] = []
-        Workspace.confirmationHandler = { title, _ in asked.append(title); return false }
-        defer { Workspace.confirmationHandler = nil }
-        let w = Workspace(); w.document = try VersionThreeTests().fixture(); w.mode = .image
-        w.adjustments.brightness = 0.1; w.updatePreview()
-        w.applyImage()
-        XCTAssertEqual(asked.count, 1); XCTAssertTrue(w.recipes.isEmpty); XCTAssertTrue(w.page!.string!.contains("KongFolio"))
-    }
 
     // P4: search ignores line breaks inside CJK text and matches traditional with simplified.
     func testSearchAcrossLineBreaksAndScripts() {
@@ -234,9 +224,8 @@ final class VersionFourTests: XCTestCase {
     @MainActor func testPageMetaFollowsPages() throws {
         let w = Workspace(); w.document = fixture()
         w.ocrRegions[2] = [RecognizedLine(text: "x", box: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.1))]
-        w.imageDrafts[0] = ImageAdjustments()
         w.selectedPages = [2]; w.selection = 2; w.movePages(before: 0, dragged: 2)
-        XCTAssertTrue(w.ocrRegions[0] != nil); XCTAssertTrue(w.imageDrafts[1] != nil); XCTAssertEqual(w.pageMeta.count, 3)
+        XCTAssertTrue(w.ocrRegions[0] != nil); XCTAssertEqual(w.pageMeta.count, 3)
         w.remove(); XCTAssertEqual(w.pageMeta.count, 2); XCTAssertTrue(w.ocrRegions.isEmpty)
     }
 
