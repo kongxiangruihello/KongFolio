@@ -17,3 +17,15 @@ enum AppLanguage {
         if wanted != current { defaults.set(wanted, forKey: key) }
     }
 }
+
+/// Interface timing that is not the system default.
+enum AppInterface {
+    /// How long the pointer rests on something before its tooltip appears, in milliseconds (the system waits about a second).
+    static let tooltipDelayKey = "NSInitialToolTipDelay"
+    static let tooltipDelay = 150
+
+    /// Registered, not stored: a value the reader set themselves still wins.
+    static func registerDefaults(in defaults: UserDefaults = .standard) {
+        defaults.register(defaults: [tooltipDelayKey: tooltipDelay])
+    }
+}

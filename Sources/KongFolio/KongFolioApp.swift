@@ -8,7 +8,10 @@ import AppKit
     @AppStorage(LayoutKeys.inspector) private var showInspector = true
     @AppStorage(LayoutKeys.board) private var showBoard = false
 
-    init() { AppLanguage.apply() }
+    init() {
+        AppLanguage.apply()
+        AppInterface.registerDefaults()
+    }
 
     var body: some Scene {
         Window("KongFolio", id: "workspace") {

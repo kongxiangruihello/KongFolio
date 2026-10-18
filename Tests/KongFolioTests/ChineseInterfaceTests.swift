@@ -30,4 +30,15 @@ final class ChineseInterfaceTests: XCTestCase {
         XCTAssertEqual(plist["CFBundleDevelopmentRegion"] as? String, "zh-Hans")
         XCTAssertTrue((plist["CFBundleLocalizations"] as? [String] ?? []).contains("zh-Hans"))
     }
+
+    func testTooltipsComeUpQuicklyUnlessTheReaderChoseOtherwise() throws {
+        let fresh = try UserDefaults(suiteName: "kongfolio-tip-" + UUID().uuidString).unwrap("无法创建设置")
+        AppInterface.registerDefaults(in: fresh)
+        XCTAssertEqual(fresh.integer(forKey: AppInterface.tooltipDelayKey), AppInterface.tooltipDelay)
+        XCTAssertTrue(AppInterface.tooltipDelay < 500)
+        let chosen = try UserDefaults(suiteName: "kongfolio-tip-" + UUID().uuidString).unwrap("无法创建设置")
+        chosen.set(900, forKey: AppInterface.tooltipDelayKey)
+        AppInterface.registerDefaults(in: chosen)
+        XCTAssertEqual(chosen.integer(forKey: AppInterface.tooltipDelayKey), 900)
+    }
 }
