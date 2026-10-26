@@ -25,8 +25,10 @@ struct ContentView: View {
         .alert("无法完成操作", isPresented: Binding(get: { workspace.error != nil }, set: { if !$0 { workspace.error = nil } })) {
             Button("好") { workspace.error = nil }
         } message: { Text(workspace.error ?? "") }
+        .sheet(isPresented: $showSignatureImport) { SignatureImportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showExport) { ExportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showCompress) { CompressSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showScanWorkshop) { ScanWorkshop(workspace: workspace) }
         .sheet(isPresented: $workspace.showCrop) { CropSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showWordExport) { WordExportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showBatch) { BatchSheet(workspace: workspace) }
@@ -187,7 +189,7 @@ struct ContentView: View {
                     Button(workspace.showAnnotationBar ? "收起标注工具栏" : "打开标注工具栏") { workspace.showAnnotationBar.toggle() }.disabled(workspace.count == 0)
                     Button("快捷工具") { workspace.showTools = true }
                     Menu("打开") { openItems }
-                    Button("保存") { workspace.saveProject() }.disabled(workspace.count == 0)
+                    Button("保存") { workspace.saveDirectly() }.disabled(workspace.count == 0)
                     Button("关闭") { workspace.closeTab() }.disabled(workspace.count == 0 || workspace.busy)
                     Menu("导出") { exportItems }.disabled(workspace.count == 0)
                 } label: { Image(systemName: "ellipsis.circle") }
@@ -226,6 +228,7 @@ struct ContentView: View {
 
     @ViewBuilder private var openItems: some View {
         Button("打开文档或项目…（可多选，各占一个标签页）") { workspace.open() }
+        Button("导入图片签名…") { showSignatureImport = true }
         Button("合并多个文件为一个文档…") { workspace.open(merge: true) }
         if !workspace.recentFiles.isEmpty {
             Divider()
@@ -245,10 +248,10 @@ struct ContentView: View {
     }
 
     @ViewBuilder private func saveButton(iconOnly: Bool) -> some View {
-        Button { workspace.saveProject() } label: {
+        Button { workspace.saveDirectly() } label: {
             if iconOnly { Image(systemName: "square.and.arrow.down") } else { Text("保存") }
         }
-        .disabled(workspace.count == 0).help("保存 KongFolio 项目（⌘S）")
+        .disabled(workspace.count == 0).help("保存当前文件（⌘S）；已有 PDF 自动保存标注")
     }
 
     @ViewBuilder private func closeButton(iconOnly: Bool) -> some View {
@@ -368,7 +371,7 @@ struct ContentView: View {
                 Text("每一页，都井井有条。").font(.system(size: 28, weight: .medium))
                 Text("PDF 与文本文档的阅读、批注、整理工作台").foregroundStyle(.secondary)
                 Button("打开文档…") { workspace.open() }.buttonStyle(.borderedProminent).controlSize(.large)
-                Text("PDF · Markdown · TXT · 也可以直接拖入窗口").font(.caption).foregroundStyle(.tertiary)
+                Text("PDF · 图片 · Markdown · HTML · TXT · 可直接拖入窗口").font(.caption).foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -479,8 +482,9 @@ struct ContentView: View {
                 Button("反转选中页顺序") { workspace.reverseSelectedPages() }
                 Button("还原双面扫描页序…") { workspace.restoreDuplexOrder() }
             }.disabled(workspace.busy || workspace.count < 2)
+            Button("扫描整理：切分 / 纠偏 / 检查…") { workspace.showScanWorkshop = true }
             Button("裁边…") { workspace.openCrop() }
-            Button("插入 PDF…") { workspace.open(insert: true) }
+            Button("插入图片 / PDF…") { workspace.open(insert: true) }
             HStack {
                 Button("提取选中页") { workspace.exportPDF(currentOnly: true) }
                 Button("拆分选中页") { workspace.splitPages(selectedOnly: true) }
@@ -584,7 +588,7 @@ struct ContentView: View {
                 Button("+") { workspace.pdfView?.zoomIn(nil); workspace.captureReadingPosition() }
             }
         }
-        .sheet(isPresented: $showSignatureImport) { SignatureImportSheet(workspace: workspace) }
+
     }
 
     private var quickTools: some View {

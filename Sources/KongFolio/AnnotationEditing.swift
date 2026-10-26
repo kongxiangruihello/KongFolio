@@ -4,17 +4,21 @@ import PDFKit
 extension Workspace {
     /// Switches the drawing tool; each tool keeps its own colour and width, starting from sensible ones.
     func selectTool(_ next: AnnotationTool, highlighter: Bool = false) {
-        let current = AnnotationStyleDefaults.key(tool: tool, highlighter: penHighlighter)
-        if AnnotationStyleDefaults.style(for: current) != nil, let rgb = NSColor(annotationColor).usingColorSpace(.sRGB) {
-            toolStyles[current] = ([Double(rgb.redComponent), Double(rgb.greenComponent), Double(rgb.blueComponent)], penWidth)
-        }
+        rememberDrawingStyle()
+        restoringDrawingStyle = true
         tool = next
         penHighlighter = next == .pen && highlighter
         let key = AnnotationStyleDefaults.key(tool: next, highlighter: penHighlighter)
-        if let style = toolStyles[key] ?? AnnotationStyleDefaults.style(for: key) {
+        let stored = SavedDrawingStyle.load(drawingDefaults)[key] ?? toolStyles[key]
+        if let style = stored {
             annotationColor = Color(.sRGB, red: style.rgb[0], green: style.rgb[1], blue: style.rgb[2], opacity: 1)
-            penWidth = style.width
+            penWidth = style.width; shapeFill = style.fill; lineDashed = style.dashed
+        } else if let style = AnnotationStyleDefaults.style(for: key) {
+            annotationColor = Color(.sRGB, red: style.rgb[0], green: style.rgb[1], blue: style.rgb[2], opacity: 1)
+            penWidth = style.width; shapeFill = false; lineDashed = false
         }
+        restoringDrawingStyle = false
+        rememberDrawingStyle()
     }
 
     /// A colour picked in the bar: it becomes the drawing colour, and recolours the selected mark when one is being edited.

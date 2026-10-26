@@ -37,7 +37,7 @@ struct AnnotationBar: View {
     @State private var hovered: String?
 
     var body: some View {
-        VStack(spacing: 6) { bar; caption }
+        bar
     }
 
     /// The name of whatever the pointer is over, shown at once (the system tooltip waits a second or more).
@@ -175,9 +175,7 @@ private struct HintModifier: ViewModifier {
         content
             .contentShape(Rectangle())
             .help(text)
-            .onHover { inside in
-                if inside { current = text } else if current == text { current = nil }
-            }
+
     }
 }
 

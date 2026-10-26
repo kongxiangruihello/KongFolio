@@ -122,6 +122,13 @@ enum ReadingServices {
         return result
     }
     static func applyOutline(_ entries: [OutlineEntry], to doc: PDFDocument) {
+        // PDFKit can return the original backing bytes after only outlineRoot changes (macOS 27).
+        // A reversible page-tree edit marks the document modified, preserving added/deleted outlines on save.
+        defer {
+            if !doc.isEncrypted || doc.allowsDocumentChanges, let first = doc.page(at: 0) {
+                doc.removePage(at: 0); doc.insert(first, at: 0)
+            }
+        }
         guard !entries.isEmpty else { doc.outlineRoot = nil; return }
         let root = PDFOutline(); var stack: [(Int, PDFOutline)] = [(-1, root)]
         for entry in entries {

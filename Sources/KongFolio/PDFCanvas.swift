@@ -43,7 +43,7 @@ struct PDFCanvas: NSViewRepresentable {
                 Task { @MainActor in workspace?.captureReadingPosition() }
             }
         }
-        view.needsDisplay = true
+        if replaced || layoutChanged { view.needsDisplay = true }
     }
     func makeCoordinator() -> Coordinator { Coordinator() }
     class Coordinator {
@@ -59,6 +59,7 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
     private var points: [CGPoint] = []
     private weak var drawingPage: PDFPage?
     private var provisional: PDFAnnotation?
+    private lazy var strokePreview = StrokePreviewView(pdfView: self)
     private var moving: PDFAnnotation?
     private var pendingMove: [PendingAnnotationEdit] = []
     private var moveStart = CGPoint.zero
@@ -82,6 +83,11 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if regionView.superview == nil { addSubview(regionView) }
+        if strokePreview.superview == nil {
+            strokePreview.frame = bounds
+            strokePreview.autoresizingMask = [.width, .height]
+            addSubview(strokePreview)
+        }
     }
 
     // MARK: Signature placement
@@ -124,6 +130,12 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, drawingPage != nil, moving == nil {
+            provisional = nil; points = []; drawingPage = nil
+            workspace?.drawingInProgress = false
+            strokePreview.annotation = nil; strokePreview.needsDisplay = true
+            return
+        }
         if placement != nil, let workspace {
             switch event.keyCode {
             case 36, 76: workspace.confirmSignaturePlacement(); return
@@ -292,6 +304,7 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
             workspace.recordAnnotationsAdded([annotation])
             needsDisplay = true
         case .pen, .line, .arrow, .rectangle, .ellipse, .signature:
+            workspace.drawingInProgress = true
             // Nothing is recorded until the stroke ends; mouseDown no longer serializes the document.
             drawingPage = page
             points = [point]
@@ -327,7 +340,7 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
         guard let workspace, workspace.tool.draws, let page = drawingPage else { super.mouseDragged(with: event); return }
         let point = convert(convert(event.locationInWindow, from: nil), to: page)
         points.append(point)
-        if let provisional { page.removeAnnotation(provisional) }
+
         let style = PenStyle.make(width: workspace.penWidth, highlighter: workspace.penHighlighter, arrow: workspace.tool != .pen)
         let color: NSColor = workspace.tool == .signature ? .black : NSColor(workspace.annotationColor)
         let signature = workspace.tool == .signature
@@ -335,9 +348,10 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
         guard let annotation = AnnotationShapes.make(tool: workspace.tool, points: points, style: drawn, color: color, fill: workspace.shapeFill,
                                                        constrained: event.modifierFlags.contains(.shift), dashed: workspace.lineDashed) else { return }
         if signature { annotation.userName = "KongFolio Signature" }
-        page.addAnnotation(annotation)
         provisional = annotation
-        needsDisplay = true
+        strokePreview.annotation = annotation
+        strokePreview.page = page
+        strokePreview.needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -366,7 +380,13 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
             return
         }
         if drawingPage != nil {
-            if let provisional { workspace?.recordAnnotationsAdded([provisional]) }
+            workspace?.drawingInProgress = false
+            if let provisional, let page = drawingPage {
+                page.addAnnotation(provisional)
+                workspace?.recordAnnotationsAdded([provisional])
+            }
+            strokePreview.annotation = nil
+            strokePreview.needsDisplay = true
             provisional = nil
             points = []
             drawingPage = nil
@@ -503,4 +523,25 @@ final class ActionButton: NSButton {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     @objc private func run() { handler() }
+}
+
+/// A live stroke is painted above PDFKit. PDF page contents change once, on mouse-up.
+@MainActor final class StrokePreviewView: NSView {
+    weak var pdfView: PDFView?
+    weak var page: PDFPage?
+    var annotation: PDFAnnotation?
+    init(pdfView: PDFView) { self.pdfView = pdfView; super.init(frame: .zero); wantsLayer = true }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) {
+        guard let pdfView, let page, let annotation, let context = NSGraphicsContext.current?.cgContext else { return }
+        let origin = convert(pdfView.convert(CGPoint.zero, from: page), from: pdfView)
+        let x = convert(pdfView.convert(CGPoint(x: 1, y: 0), from: page), from: pdfView)
+        let y = convert(pdfView.convert(CGPoint(x: 0, y: 1), from: page), from: pdfView)
+        context.saveGState()
+        context.concatenate(CGAffineTransform(a: x.x-origin.x, b: x.y-origin.y, c: y.x-origin.x, d: y.y-origin.y, tx: origin.x, ty: origin.y))
+        context.clip(to: page.bounds(for: .cropBox))
+        annotation.draw(with: .cropBox, in: context)
+        context.restoreGState()
+    }
 }

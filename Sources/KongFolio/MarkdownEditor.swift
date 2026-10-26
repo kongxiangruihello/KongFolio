@@ -39,9 +39,12 @@ struct MarkdownEditorView: View {
 
     private var toolbarButtons: some View {
         HStack(spacing: 6) {
-            Button("保存") { note.save() }.help("保存为 .md 文件（⌘S）")
+            Button("保存") { note.save() }.help("保存当前文件（⌘S）")
             Button("另存为…") { note.save(asNew: true) }
+            Text(note.format.rawValue).font(.caption).foregroundStyle(.secondary)
+            Button("打印…") { do { DocumentPrinting.printDocument(try note.renderDocument()) } catch { note.error = error.localizedDescription } }
             Divider().frame(height: 18)
+            Group {
             Menu("标题") {
                 Button("一级标题") { note.prefixLines("# ") }
                 Button("二级标题") { note.prefixLines("## ") }
@@ -55,6 +58,7 @@ struct MarkdownEditorView: View {
             Button { note.prefixLines("1. ") } label: { Image(systemName: "list.number") }.help("有序列表")
             Button { note.prefixLines("> ") } label: { Image(systemName: "text.quote") }.help("引用")
             Button { note.wrap("```\n", "\n```", placeholder: "代码") } label: { Image(systemName: "curlybraces") }.help("代码块")
+            }.disabled(note.format != .markdown)
             Spacer()
             Toggle("预览", isOn: $note.showPreview).toggleStyle(.switch).controlSize(.small)
             Button("导出 PDF…") { note.exportPDF() }.help("按预览的版式导出为 PDF（⌘E）")
