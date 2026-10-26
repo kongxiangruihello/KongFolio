@@ -143,7 +143,8 @@ enum ProjectContainer {
         let blobStart = manifestEnd
         return try manifest.archive.joined { key in
             guard let range = manifest.blobs[key], range.offset >= 0, range.length >= 0,
-                  blobStart + range.offset + range.length <= data.endIndex else { throw corrupt }
+                  range.offset <= data.endIndex - blobStart,
+                  range.length <= data.endIndex - blobStart - range.offset else { throw corrupt }
             return data.subdata(in: (blobStart + range.offset)..<(blobStart + range.offset + range.length))
         }
     }
@@ -165,12 +166,19 @@ enum ProjectBackup {
         guard manager.fileExists(atPath: url.path), let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         let head = (try? handle.read(upToCount: ProjectContainer.magic.count)) ?? Data()
         try? handle.close()
-        guard head == ProjectContainer.magic || head.first == UInt8(ascii: "{") else { return nil }
+        guard head == ProjectContainer.magic || head.first == UInt8(ascii: "{"),
+              (try? ProjectArchive.read(url)) != nil else { return nil }
         do {
             try manager.createDirectory(at: folder, withIntermediateDirectories: true)
             let backup = location(for: url, in: folder)
-            if manager.fileExists(atPath: backup.path) { try manager.removeItem(at: backup) }
-            try manager.copyItem(at: url, to: backup)
+            let staging = folder.appendingPathComponent(".backup-\(UUID().uuidString).partial")
+            defer { try? manager.removeItem(at: staging) }
+            try manager.copyItem(at: url, to: staging)
+            if manager.fileExists(atPath: backup.path) {
+                _ = try manager.replaceItemAt(backup, withItemAt: staging)
+            } else {
+                try manager.moveItem(at: staging, to: backup)
+            }
             return nil
         } catch {
             return error

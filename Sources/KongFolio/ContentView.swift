@@ -464,13 +464,21 @@ struct ContentView: View {
                 Button("选取") { workspace.selectRange() }
             }
             HStack {
-                Button("全选") { workspace.selectedPages = Set(0..<workspace.count) }
+                Menu("选择页面") {
+                    ForEach(PageSelectionKind.allCases) { kind in
+                        Button(kind.rawValue) { workspace.selectPages(kind) }
+                    }
+                }.disabled(workspace.busy || workspace.count == 0)
                 Button("复制选中页") { workspace.duplicatePages() }
             }
             HStack {
                 Button("旋转 90°") { workspace.rotate() }
                 Button("删除页面", role: .destructive) { workspace.remove() }.disabled(workspace.effectivePages.count >= workspace.count)
             }
+            Menu("整理页序") {
+                Button("反转选中页顺序") { workspace.reverseSelectedPages() }
+                Button("还原双面扫描页序…") { workspace.restoreDuplexOrder() }
+            }.disabled(workspace.busy || workspace.count < 2)
             Button("裁边…") { workspace.openCrop() }
             Button("插入 PDF…") { workspace.open(insert: true) }
             HStack {

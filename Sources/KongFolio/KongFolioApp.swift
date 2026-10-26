@@ -83,6 +83,16 @@ import AppKit
                     .keyboardShortcut("n", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
             }
             CommandMenu("编辑页面") {
+                Menu("选择页面") {
+                    ForEach(PageSelectionKind.allCases) { kind in
+                        Button(kind.rawValue) { store.commandWorkspace?.selectPages(kind) }
+                    }
+                }.disabled(store.commandWorkspace?.busy != false || (store.commandWorkspace?.count ?? 0) == 0)
+                Button("反转选中页顺序") { store.commandWorkspace?.reverseSelectedPages() }
+                    .disabled(store.commandWorkspace?.busy != false || (store.commandWorkspace?.count ?? 0) < 2)
+                Button("还原双面扫描页序…") { store.commandWorkspace?.restoreDuplexOrder() }
+                    .disabled(store.commandWorkspace?.busy != false || (store.commandWorkspace?.count ?? 0) < 2)
+                Divider()
                 Button("在当前页后插入空白页") { store.commandWorkspace?.insertBlankPage() }.disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Button("在当前页前插入空白页") { store.commandWorkspace?.insertBlankPage(before: true) }.disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Divider()

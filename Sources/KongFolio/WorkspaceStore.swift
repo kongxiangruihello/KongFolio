@@ -295,6 +295,7 @@ import UniformTypeIdentifiers
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         switch tabs[index] {
         case .document(let workspace):
+            guard !workspace.busy else { workspace.status = "请等待任务完成或点击取消任务"; return }
             if workspace.count > 0 { if !workspace.closeDocument() { return } } else { workspace.forgetSource() }
             if tabs.count == 1 { return }
         case .note(let note):
