@@ -42,6 +42,7 @@ import AppKit
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
             CommandMenu("任务与历史") {
+                Button("跨文件全文搜索…") { store.showFolderSearch=true }.keyboardShortcut("f",modifiers:[.command,.shift])
                 Button("任务中心与扫描配方…") { store.showTaskCenter = true }.keyboardShortcut("j", modifiers: [.command, .option])
                 Button("当前文档的保存历史…") { store.activeWorkspace?.showVersionHistory = true }
                     .disabled(store.activeWorkspace?.historySource == nil || store.activeWorkspace?.busy == true)

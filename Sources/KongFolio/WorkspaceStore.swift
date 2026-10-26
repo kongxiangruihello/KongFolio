@@ -34,7 +34,10 @@ import UniformTypeIdentifiers
     /// The workspace shared by every tab: excerpts from any open document gather here.
     let board: Board
     let batchQueue: BatchQueue
+    let folderSearch: FolderSearchModel
     @Published var showTaskCenter = false
+    @Published var showFolderSearch = false
+    var showOCRTasksAfterSearch = false
     private var forwarding: AnyCancellable?
 
     init(storage: URL? = nil) {
@@ -42,6 +45,7 @@ import UniformTypeIdentifiers
         self.storage = folder
         self.board = Board(storage: folder)
         self.batchQueue = BatchQueue(storage: AppEnvironment.isTestRun && storage == nil ? nil : folder)
+        self.folderSearch = FolderSearchModel(storage:folder)
         connectBoardToDocuments()
     }
 
@@ -322,6 +326,7 @@ import UniformTypeIdentifiers
 
     /// Called when the window closes or the app quits. Walks through every tab; any cancel stops the quit.
     func prepareToClose() -> Bool {
+        folderSearch.cancel()
         if batchQueue.running {
             batchQueue.cancel()
             batchQueue.summary = "正在暂停任务；当前页结束后可再次关闭。未完成项会保留。"

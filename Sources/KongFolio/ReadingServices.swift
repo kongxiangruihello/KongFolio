@@ -142,13 +142,13 @@ enum ReadingServices {
     }
     /// Finds `query` in `text`, ignoring line breaks inside CJK text, case and (optionally) 繁简 differences.
     /// Returned ranges refer to the original text, so PDFKit selections land on the right characters.
-    static func matches(in text: String, query: String, simplify: Bool = true, cache: inout [String: String]) -> [NSRange] {
+    static func matches(in text: String, query: String, simplify: Bool = true, cache: inout [String: String], limit: Int = Int.max) -> [NSRange] {
         let needle = FoldedText(query, simplify: simplify, cache: &cache).text
         guard needle.length > 0 else { return [] }
         let haystack = FoldedText(text, simplify: simplify, cache: &cache)
         var result: [NSRange] = []
         var start = 0
-        while start < haystack.text.length {
+        while start < haystack.text.length && result.count < max(0,limit) {
             let found = haystack.text.range(of: needle as String, options: [.literal], range: NSRange(location: start, length: haystack.text.length - start))
             guard found.location != NSNotFound, found.length > 0 else { break }
             result.append(haystack.originalRange(of: found))

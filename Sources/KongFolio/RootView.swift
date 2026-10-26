@@ -19,6 +19,9 @@ struct RootView: View {
         }
         .sheet(isPresented: $store.showTaskCenter) { TaskCenterPanel(queue: store.batchQueue, replacements: []) }
         .sheet(isPresented: $store.showSwitcher) { TabSwitcherView(store: store) }
+        .sheet(isPresented: $store.showFolderSearch,onDismiss:{
+            if store.showOCRTasksAfterSearch { store.showOCRTasksAfterSearch=false;store.showTaskCenter=true }
+        }) { FolderSearchView(store:store,model:store.folderSearch) }
     }
 }
 
@@ -56,6 +59,7 @@ struct TabBar: View {
             .help("所有已打开的文件（共 \(store.tabs.count) 个）")
             Menu {
                 Button("打开文档…") { store.open() }
+                Button("跨文件全文搜索…") { store.showFolderSearch=true }
                 Divider()
                 Button("新建 Markdown 笔记") { store.newNote() }
                 Button("新建 HTML 文件") { store.newNote(format: .html) }
