@@ -711,9 +711,14 @@ struct ContentView: View {
             Task { @MainActor in
                 if let insertion { _ = workspace.receivePageDrag(value, before: insertion) }
                 else if let drag = PageDrag.decode(value), drag.source != workspace.id {
-                    workspace.store?.select(workspace.id)
-                    if workspace.busy || workspace.count == 0 { workspace.status = "等待目标文档打开后，再拖入页面"; return }
-                    _ = workspace.store?.preparePageTransfer(drag, to: workspace, at: min(workspace.count, workspace.selection + 1))
+                    guard let store = workspace.store else { return }
+                    store.select(workspace.id)
+                    while workspace.busy {
+                        do { try await Task.sleep(nanoseconds: 50_000_000) } catch { return }
+                        guard store.tabs.contains(where: { $0.id == workspace.id }) else { return }
+                    }
+                    guard workspace.count > 0 else { workspace.status = "目标文档无法读取，页面未传送"; return }
+                    _ = store.preparePageTransfer(drag, to: workspace, at: min(workspace.count, workspace.selection + 1))
                 }
             }
         }
