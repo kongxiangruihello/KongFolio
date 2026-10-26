@@ -61,6 +61,7 @@ struct MarkdownEditorView: View {
             }.disabled(note.format != .markdown)
             Spacer()
             Toggle("预览", isOn: $note.showPreview).toggleStyle(.switch).controlSize(.small)
+            Button("导出 Word…") { note.exportWord() }.help("导出为可编辑的 Word 文档（.docx）")
             Button("导出 PDF…") { note.exportPDF() }.help("按预览的版式导出为 PDF（⌘E）")
         }
         .padding(.horizontal, 12).padding(.vertical, 6)

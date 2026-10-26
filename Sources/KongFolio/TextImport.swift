@@ -195,7 +195,8 @@ enum TextImport {
         for run in parsed.runs {
             let intent = run.inlinePresentationIntent ?? []
             var style = attributes(bold: bold || intent.contains(.stronglyEmphasized), italic: italic || intent.contains(.emphasized), code: intent.contains(.code))
-            if run.link != nil {
+            if let link = run.link {
+                style[.link] = link
                 style[colorKey] = CGColor(red: 0.12, green: 0.36, blue: 0.85, alpha: 1)
                 style[underlineKey] = NSNumber(value: CTUnderlineStyle.single.rawValue)
             }
@@ -219,6 +220,7 @@ enum TextImport {
             let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: location, length: 0), path, nil)
             context.beginPDFPage(nil)
             CTFrameDraw(frame, context)
+            addLinks(in: frame, path: path, to: context)
             context.endPDFPage()
             pages += 1
             // A frame that shows nothing would loop forever; always move on by at least one character.
@@ -228,4 +230,24 @@ enum TextImport {
         guard let document = PDFDocument(data: data as Data), document.pageCount > 0 else { throw failure }
         return document
     }
+    /// CoreText paints link text; PDF link annotations make it usable in the preview and exported file.
+    static func addLinks(in frame: CTFrame, path: CGPath, to context: CGContext) {
+        let lines = CTFrameGetLines(frame) as! [CTLine]
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        for (index, line) in lines.enumerated() {
+            for run in CTLineGetGlyphRuns(line) as! [CTRun] {
+                let attributes = CTRunGetAttributes(run) as NSDictionary
+                guard let value = attributes[NSAttributedString.Key.link.rawValue],
+                      let url = (value as? URL) ?? URL(string: String(describing: value)) else { continue }
+                let range = CTRunGetStringRange(run)
+                var ascent: CGFloat = 0, descent: CGFloat = 0
+                let width = CTRunGetTypographicBounds(run, CFRange(location: 0, length: 0), &ascent, &descent, nil)
+                let x = CTLineGetOffsetForStringIndex(line, range.location, nil)
+                let rect = CGRect(x: path.boundingBox.minX + origins[index].x + x, y: path.boundingBox.minY + origins[index].y - descent, width: width, height: ascent + descent)
+                context.setURL(url as CFURL, for: rect)
+            }
+        }
+    }
+
 }

@@ -87,7 +87,7 @@ enum FolderSearchService {
             return SearchHit(page:page.index,range:found,snippet:ReadingServices.repairIdeographs(snippet),label:page.label,strips:strips)
         }
     }
-    static func run(folder:URL,query:String,recursive:Bool,indexURL:URL,limit:Int=resultLimit,event:@escaping @Sendable (Event)->Void = { _ in }) throws -> FolderSearchSummary {
+    static func run(folder:URL,query:String,recursive:Bool,indexURL:URL,limit:Int=resultLimit,terms:FolderSearchTerms = FolderSearchTerms(),event:@escaping @Sendable (Event)->Void = { _ in }) throws -> FolderSearchSummary {
         let query=query.trimmingCharacters(in:.whitespacesAndNewlines)
         guard !query.isEmpty else { throw FolioError(message:"请输入要搜索的文字") }
         guard limit>0 else { throw FolioError(message:"搜索结果上限必须大于零") }
@@ -102,7 +102,7 @@ enum FolderSearchService {
             try Task.checkCancellation()
             let file:FolderSearchFile=try autoreleasepool {
                 do {
-                    return try searchFile(url,folder:folder,query:query,index:index,limit:max(0,limit-totalHits),cache:&foldingCache,event:event)
+                    return try searchFile(url,folder:folder,query:query,index:index,limit:max(0,limit-totalHits),cache:&foldingCache,terms:terms,event:event)
                 } catch is CancellationError { throw CancellationError() }
                 catch { return FolderSearchFile(url:url,error:error.localizedDescription) }
             }
@@ -112,7 +112,7 @@ enum FolderSearchService {
         try Task.checkCancellation()
         return result
     }
-    private static func searchFile(_ url:URL,folder:URL,query:String,index:FolderSearchIndex?,limit:Int,cache:inout [String:String],event:@escaping @Sendable (Event)->Void) throws -> FolderSearchFile {
+    private static func searchFile(_ url:URL,folder:URL,query:String,index:FolderSearchIndex?,limit:Int,cache:inout [String:String],terms:FolderSearchTerms,event:@escaping @Sendable (Event)->Void) throws -> FolderSearchFile {
         event(.reading(url.lastPathComponent))
         let data=try Data(contentsOf:url),digest=OCRPageCache.digest(data)
         let indexDigest=digest+"|"+ProcessInfo.processInfo.operatingSystemVersionString
@@ -122,6 +122,7 @@ enum FolderSearchService {
             try Task.checkCancellation()
             file.pages+=1
             if !page.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { file.textPages+=1 }
+            guard terms.accepts(page.text,cache:&cache) else { return }
             file.hits += matches(page,query:query,limit:max(0,limit-file.hits.count),cache:&cache).map {
                 FolderSearchHit(url:url,relativePath:relativePath(url,in:folder),fingerprint:digest,query:query,hit:$0)
             }
@@ -167,7 +168,27 @@ enum FolderSearchService {
         try Task.checkCancellation()
         let data=try Data(contentsOf:result.url)
         guard OCRPageCache.digest(data)==result.fingerprint else { throw FolioError(message:"文件在搜索后已变化，请重新搜索后打开") }
-        guard let document=PDFDocument(data:data),let page=document.page(at:result.hit.page) else { throw FolioError(message:"命中页面已无法读取") }
+        guard let document=PDFDocument(data:data) else { throw FolioError(message:"命中页面已无法读取") }
+        return Verified(data:data,source:try source(result,in:document))
+    }
+    /// A file is read, hashed and parsed once even when hundreds of its matches are selected.
+    static func verifiedExcerpts(_ results:[FolderSearchHit]) throws -> [(String,SourceRef)] {
+        var references:[UUID:SourceRef]=[:]
+        for (_,values) in Dictionary(grouping:results,by:{ $0.url.standardizedFileURL.path }) {
+            try Task.checkCancellation()
+            guard let first=values.first else { continue }
+            let data=try Data(contentsOf:first.url),fingerprint=OCRPageCache.digest(data)
+            guard values.allSatisfy({ $0.fingerprint==fingerprint }) else { throw FolioError(message:"文件在搜索后已变化，请重新搜索后摘录") }
+            guard let document=PDFDocument(data:data) else { throw FolioError(message:"无法读取来源 PDF") }
+            for value in values { try Task.checkCancellation();references[value.id]=try source(value,in:document) }
+        }
+        return try results.map { value in
+            let reference=try references[value.id].unwrap("无法定位摘录来源")
+            return (value.hit.snippet,reference)
+        }
+    }
+    private static func source(_ result:FolderSearchHit,in document:PDFDocument) throws -> SourceRef {
+        guard let page=document.page(at:result.hit.page) else { throw FolioError(message:"命中页面已无法读取") }
         var rects:[CGRect]
         if let strips=result.hit.strips {
             rects=strips.map { OrderedText.pageRect(forFraction:$0,cropBox:page.bounds(for:.cropBox),rotation:page.rotation) }
@@ -177,6 +198,12 @@ enum FolderSearchService {
         }
         rects=rects.filter { !$0.isEmpty && !$0.isInfinite && !$0.isNull }
         try Task.checkCancellation()
-        return Verified(data:data,source:SourceRef(path:result.url.path,fileName:result.url.lastPathComponent,page:result.hit.page,pageLabel:result.hit.label,rects:rects))
+        // Keep the actual source spelling, not the folded search phrase: otherwise a simplified query could
+        // relocate a traditional-text excerpt to a different page containing the same words in simplified form.
+        var anchor:String?
+        if result.hit.strips==nil,let text=page.string as NSString?,result.hit.range.location>=0,NSMaxRange(result.hit.range)<=text.length {
+            anchor=text.substring(with:result.hit.range)
+        }
+        return SourceRef(path:result.url.path,fileName:result.url.lastPathComponent,page:result.hit.page,pageLabel:result.hit.label,rects:rects,anchor:anchor)
     }
 }

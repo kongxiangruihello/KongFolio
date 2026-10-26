@@ -5,6 +5,7 @@ struct BoardView: View {
     @ObservedObject var board: Board
     @ObservedObject var workspace: Workspace
     @State private var connecting = false
+    @State private var showNotebook = false
     @State private var firstEnd: UUID?
     @AppStorage(LayoutKeys.tintSources) private var tintSources = true
     @AppStorage(LayoutKeys.cardsBeside) private var cardsBeside = true
@@ -43,6 +44,7 @@ struct BoardView: View {
                     .font(.caption).foregroundStyle(.secondary).padding(6)
             }
         }
+        .sheet(isPresented: $showNotebook) { ExcerptNotebookView(board: board, store: workspace.store) }
         .alert("无法完成操作", isPresented: Binding(get: { board.error != nil }, set: { if !$0 { board.error = nil } })) {
             Button("好") { board.error = nil }
         } message: { Text(board.error ?? "") }
@@ -63,6 +65,7 @@ struct BoardView: View {
                 Button { board.addNote() } label: { Label("便签", systemImage: "note.text.badge.plus") }.help("新建一张自由笔记")
                 Toggle(isOn: $connecting) { Label("连线", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
                     .toggleStyle(.button).help("在两张卡片之间画线")
+                Button("生成笔记…") { showNotebook = true }.disabled(!board.hasContent)
                 Menu {
                     Button("按原文顺序整理") { board.arrangeBySource() }.disabled(!board.hasContent)
                     Button("撤销整理") { board.undoArrangement() }.disabled(!board.canUndoArrangement)

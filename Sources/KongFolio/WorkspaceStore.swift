@@ -1,4 +1,5 @@
 import AppKit
+import PDFKit
 import Combine
 import Foundation
 import UniformTypeIdentifiers
@@ -403,5 +404,23 @@ extension OpenTab {
         case .document(let workspace): return workspace.lastActive
         case .note(let note): return note.lastActive
         }
+    }
+}
+
+extension WorkspaceStore {
+    @discardableResult func newPDF() -> Workspace {
+        let workspace = addWorkspace()
+        let page = PDFPage()
+        page.setBounds(CGRect(origin: .zero, size: TextImport.pageSize), for: .mediaBox)
+        let document = PDFDocument(); document.insert(page, at: 0)
+        workspace.document = document
+        workspace.title = "未命名 PDF"
+        workspace.edited(reset: true)
+        workspace.status = "已新建 A4 PDF，可添加文字、图片和标注"
+        return workspace
+    }
+    func exportWordActive() {
+        if let note = activeNote { note.exportWord() }
+        else { activeWorkspace?.showWordExport = true }
     }
 }
