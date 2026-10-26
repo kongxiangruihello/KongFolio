@@ -33,12 +33,15 @@ import UniformTypeIdentifiers
     let storage: URL
     /// The workspace shared by every tab: excerpts from any open document gather here.
     let board: Board
+    let batchQueue: BatchQueue
+    @Published var showTaskCenter = false
     private var forwarding: AnyCancellable?
 
     init(storage: URL? = nil) {
         let folder = storage ?? ProcessInfo.processInfo.environment["KONGFOLIO_STORAGE"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
         self.storage = folder
         self.board = Board(storage: folder)
+        self.batchQueue = BatchQueue(storage: AppEnvironment.isTestRun && storage == nil ? nil : folder)
         connectBoardToDocuments()
     }
 
@@ -319,6 +322,12 @@ import UniformTypeIdentifiers
 
     /// Called when the window closes or the app quits. Walks through every tab; any cancel stops the quit.
     func prepareToClose() -> Bool {
+        if batchQueue.running {
+            batchQueue.cancel()
+            batchQueue.summary = "正在暂停任务；当前页结束后可再次关闭。未完成项会保留。"
+            showTaskCenter = true
+            return false
+        }
         if board.dirty, board.hasContent, !board.confirmClose() { return false }
         for tab in tabs {
             switch tab {

@@ -26,6 +26,7 @@ struct ContentView: View {
             Button("好") { workspace.error = nil }
         } message: { Text(workspace.error ?? "") }
         .sheet(isPresented: $showSignatureImport) { SignatureImportSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showVersionHistory) { VersionHistoryView(workspace: workspace) }
         .sheet(isPresented: $workspace.showExport) { ExportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showCompress) { CompressSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showScanWorkshop) { ScanWorkshop(workspace: workspace) }
@@ -270,7 +271,8 @@ struct ContentView: View {
         Button("PDF · 压缩体积…") { workspace.compress() }
         Divider()
         Button("Word（.docx）· 文字与页面…") { workspace.openWordExport() }
-        Button("文件夹批处理（配方）…") { workspace.showBatch = true }
+        Button("保存历史与恢复…") { workspace.showVersionHistory = true }.disabled(workspace.historySource == nil)
+        Button("任务中心与扫描配方…") { workspace.showBatch = true }
         Button("TXT") { workspace.exportText(markdown: false) }
         Button("Markdown · 全文") { workspace.exportText(markdown: true) }
         Button("Markdown · 摘录与笔记") { workspace.exportNotes() }
