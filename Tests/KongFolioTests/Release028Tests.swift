@@ -18,7 +18,11 @@ final class Release028Tests: XCTestCase {
         XCTAssertFalse(first.files[0].cached)
         let second = try FolderSearchService.run(folder: root, query: "history", recursive: true, indexURL: index, terms: FolderSearchTerms(excluded: ["繁体资料"]))
         XCTAssertEqual(second.hits.map { $0.hit.page }, [1]); XCTAssertTrue(second.files[0].cached)
-        XCTAssertEqual(try FolderSearchService.verify(first.hits[0]).source.page, 0)
+        let verified = try FolderSearchService.verify(first.hits[0])
+        XCTAssertEqual(verified.source.page, 0); XCTAssertEqual(verified.source.anchor, "history")
+        let traditional = try FolderSearchService.run(folder: root, query: "繁体资料", recursive: true, indexURL: index)
+        let reference = try FolderSearchService.verifiedExcerpts(traditional.hits)[0].1
+        XCTAssertEqual(reference.anchor, "繁體資料")
     }
     func testTermParsingPreservesSpacesWithinPhrases() {
         XCTAssertEqual(FolderSearchTerms.parse(" modern history，繁体；\n ,档案 "), ["modern history", "繁体", "档案"])

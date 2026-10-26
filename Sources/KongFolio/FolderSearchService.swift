@@ -183,8 +183,7 @@ enum FolderSearchService {
             for value in values { try Task.checkCancellation();references[value.id]=try source(value,in:document) }
         }
         return try results.map { value in
-            var reference=try references[value.id].unwrap("无法定位摘录来源")
-            reference.anchor=value.query
+            let reference=try references[value.id].unwrap("无法定位摘录来源")
             return (value.hit.snippet,reference)
         }
     }
@@ -199,6 +198,12 @@ enum FolderSearchService {
         }
         rects=rects.filter { !$0.isEmpty && !$0.isInfinite && !$0.isNull }
         try Task.checkCancellation()
-        return SourceRef(path:result.url.path,fileName:result.url.lastPathComponent,page:result.hit.page,pageLabel:result.hit.label,rects:rects)
+        // Keep the actual source spelling, not the folded search phrase: otherwise a simplified query could
+        // relocate a traditional-text excerpt to a different page containing the same words in simplified form.
+        var anchor:String?
+        if result.hit.strips==nil,let text=page.string as NSString?,result.hit.range.location>=0,NSMaxRange(result.hit.range)<=text.length {
+            anchor=text.substring(with:result.hit.range)
+        }
+        return SourceRef(path:result.url.path,fileName:result.url.lastPathComponent,page:result.hit.page,pageLabel:result.hit.label,rects:rects,anchor:anchor)
     }
 }
