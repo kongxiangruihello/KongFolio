@@ -21,6 +21,13 @@ enum PageOrganization {
 }
 
 extension Workspace {
+    func selectSidebarPages(_ pages:Set<Int>) {
+        let valid=pages.filter { (0..<count).contains($0) }
+        guard !busy,!valid.isEmpty,valid != selectedPages else { return }
+        let added=valid.subtracting(selectedPages)
+        selection=added.min() ?? (valid.contains(selection) ? selection : valid.min()!)
+        selectedPages=valid;readingPoint=nil;navigationToken=UUID();scheduleRecovery()
+    }
     func selectPages(_ kind: PageSelectionKind) {
         guard !busy, count > 0 else { return }
         let pages = Set(0..<count)
