@@ -13,6 +13,7 @@ struct ProjectArchive: Codable {
     static let currentVersion = 4
     var version = ProjectArchive.currentVersion
     var reading: ReadingState? = nil
+    var signatureEdits: [Int: SignatureEditArchive]? = nil
     var ocrOriginals: [Int: Data]? = nil
     var ocrRegions: [Int: [RecognizedLine]]? = nil
     /// The file this document was opened from (not a project), so a restored tab still shows its file name.
@@ -34,11 +35,12 @@ struct ProjectArchive: Codable {
         let pages = 0..<doc.pageCount
         let indexSets: [[Int]] = [
             [selection], Array(selectedPages), Array(recipes.keys), Array(drafts.keys),
-            Array((ocrOriginals ?? [:]).keys), Array((ocrRegions ?? [:]).keys),
+            Array((ocrOriginals ?? [:]).keys), Array((ocrRegions ?? [:]).keys), Array((signatureEdits ?? [:]).keys),
         ]
         guard indexSets.allSatisfy({ $0.allSatisfy(pages.contains) }) else {
             throw FolioError(message: "项目格式不受支持或数据已损坏。")
         }
+        for edit in (signatureEdits ?? [:]).values { try edit.validate() }
         for recipe in recipes.values {
             guard PDFDocument(data: recipe.originalPDF)?.pageCount == 1 else { throw FolioError(message: "原始图片数据损坏。") }
         }
@@ -81,6 +83,14 @@ struct ProjectArchive: Codable {
                 manifest.ocrOriginals?[page] = Data()
             }
         }
+        for (page, edit) in signatureEdits ?? [:] {
+            blobs.append(("signature/\(page)/base", edit.base))
+            manifest.signatureEdits?[page]?.base = Data()
+            for (index, item) in edit.items.enumerated() {
+                blobs.append(("signature/\(page)/\(index)", item.png))
+                manifest.signatureEdits?[page]?.items[index].png = Data()
+            }
+        }
         return (manifest, blobs)
     }
 
@@ -91,6 +101,10 @@ struct ProjectArchive: Codable {
         for page in recipes.keys { archive.recipes[page]?.originalPDF = try blob("recipe/\(page)") }
         if let originals = ocrOriginals {
             for page in originals.keys { archive.ocrOriginals?[page] = try blob("ocr/\(page)") }
+        }
+        for (page, edit) in signatureEdits ?? [:] {
+            archive.signatureEdits?[page]?.base = try blob("signature/\(page)/base")
+            for index in edit.items.indices { archive.signatureEdits?[page]?.items[index].png = try blob("signature/\(page)/\(index)") }
         }
         return archive
     }

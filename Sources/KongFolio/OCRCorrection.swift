@@ -16,10 +16,16 @@ extension Workspace {
                 if before.text != after.text { result.originalText = before.originalText ?? before.text; result.confidence = 1 }
                 return result
             }
-            let replacement = try withExtendedLifetime(original) { try DocumentServices.searchablePage(source, lines: lines.filter { !$0.text.isEmpty }) }
+            var replacement = try withExtendedLifetime(original) { try DocumentServices.searchablePage(source, lines: lines.filter { !$0.text.isEmpty }) }
+            var signatureEdit: SignatureEditArchive?
+            if let edit = signatureEditArchives[index] {
+                let rebased = try SignatureRebase.prepare(edit, on: replacement)
+                replacement = rebased.page; signatureEdit = rebased.archive
+            }
             for annotation in old.annotations { if let copy = annotation.copy() as? PDFAnnotation { replacement.addAnnotation(copy) } }
             checkpoint()
             document.removePage(at: index); document.insert(replacement, at: index)
+            if let signatureEdit { var all = signatureEditArchives; all[index] = signatureEdit; restoreSignatureEdits(all) }
             updateMeta(index) { $0.ocrRegions = lines }
             ReadingServices.applyOutline(outlineEntries, to: document)
             recognizedText = lines.map(\.text).joined(separator: "\n")

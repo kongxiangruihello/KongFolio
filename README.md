@@ -1,5 +1,8 @@
 # KongFolio 0.22
 
+**0.29.0**：完善 Markdown/HTML 的图片、表格与 PDF/Word 导出；跨文件页面拖放；OCR 批量纠错；保存后继续编辑签名；自定工具栏及窄窗口固定“标注／快捷工具”入口。功能范围和操作见 [0.29 发布说明](RELEASE-0.29.0.md)。
+
+
 原生 macOS 个人文档工作台。SwiftUI / AppKit + PDFKit + Core Image + Vision + Core Graphics，全程本地处理，无第三方依赖。
 
 ## 运行

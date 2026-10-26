@@ -164,7 +164,7 @@ enum WordExport {
         return "<w:p><w:pPr>\(properties)</w:pPr><w:r><w:rPr>\(run)</w:rPr><w:t xml:space=\"preserve\">\(escape(text))</w:t></w:r></w:p>"
     }
 
-    private static func picture(id: Int, relationship: String, name: String, width: Int, height: Int) -> String {
+    static func picture(id: Int, relationship: String, name: String, width: Int, height: Int) -> String {
         """
         <w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="\(width)" cy="\(height)"/><wp:docPr id="\(id)" name="\(name)"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="\(id)" name="\(name)"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="\(relationship)"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="\(width)" cy="\(height)"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>
         """

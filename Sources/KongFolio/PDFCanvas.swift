@@ -163,6 +163,8 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
                 contextSignature = hit
                 let move = NSMenuItem(title: "移动或缩放此签名", action: #selector(moveHitSignature), keyEquivalent: "")
                 move.target = self
+                let replace = NSMenuItem(title: "替换此签名图片…", action: #selector(replaceHitSignature), keyEquivalent: "")
+                replace.target = self; menu.insertItem(replace, at: 0)
                 let remove = NSMenuItem(title: "删除此签名", action: #selector(removeHitSignature), keyEquivalent: "")
                 remove.target = self
                 menu.insertItem(move, at: 0)
@@ -191,6 +193,7 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
     @objc private func deleteHitAnnotation() { workspace?.deleteAnnotation() }
     private var contextSignature: (layer: SignatureLayer, item: PlacedSignature)?
     @objc private func moveHitSignature() { if let hit = contextSignature { workspace?.beginMovingSignature(hit.item, in: hit.layer) } }
+    @objc private func replaceHitSignature() { if let hit = contextSignature { workspace?.replacePlacedSignature(hit.item, in: hit.layer) } }
     @objc private func removeHitSignature() { if let hit = contextSignature { workspace?.removePlacedSignature(hit.item, in: hit.layer) } }
 
     // MARK: Floating toolbar over a text selection

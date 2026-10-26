@@ -5,6 +5,7 @@ import SwiftUI
 struct MarkdownEditorView: View {
     @ObservedObject var note: MarkdownNote
     var store: WorkspaceStore? = nil
+    @State private var showLayout = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -14,7 +15,10 @@ struct MarkdownEditorView: View {
                 HSplitView {
                     MarkdownTextView(note: note).frame(minWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
                     if LayoutMetrics.showsPreview(preferred: note.showPreview, width: proxy.size.width) {
-                        MarkdownPreview(note: note).frame(minWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
+                        VStack(spacing: 0) {
+                            if !note.previewMessage.isEmpty { Text(note.previewMessage).font(.caption).foregroundStyle(.orange).padding(8) }
+                            MarkdownPreview(note: note)
+                        }.frame(minWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
                 Divider()
@@ -28,6 +32,7 @@ struct MarkdownEditorView: View {
             }
             .frame(width: proxy.size.width)
         }
+        .sheet(isPresented: $showLayout) { TextLayoutSheet(note: note) }
         .alert("无法完成操作", isPresented: Binding(get: { note.error != nil }, set: { if !$0 { note.error = nil } })) {
             Button("好") { note.error = nil }
         } message: { Text(note.error ?? "") }
@@ -66,6 +71,9 @@ struct MarkdownEditorView: View {
             Button { note.prefixLines("> ") } label: { Image(systemName: "text.quote") }.help("引用")
             Button { note.wrap("```\n", "\n```", placeholder: "代码") } label: { Image(systemName: "curlybraces") }.help("代码块")
             }.disabled(note.format != .markdown)
+            Button { note.chooseImage() } label: { Image(systemName: "photo.badge.plus") }.help("插入本地图片（也可粘贴截图或拖入图片）").disabled(note.format == .plain)
+            Button { note.insertTable() } label: { Image(systemName: "tablecells") }.help("插入表格").disabled(note.format == .plain)
+            Button("排版…") { showLayout = true }.help("字体、行距与页边距；用于预览、导出和打印")
             Spacer()
             Toggle("预览", isOn: $note.showPreview).toggleStyle(.switch).controlSize(.small)
             Button("导出 Word…") { note.exportWord() }.help("导出为可编辑的 Word 文档（.docx）")
@@ -82,8 +90,17 @@ struct MarkdownTextView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(note: note) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSTextView.scrollableTextView()
-        guard let view = scroll.documentView as? NSTextView else { return scroll }
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
+        scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
+        let view = NoteTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
+        view.note = note
+        view.minSize = NSSize(width: 0, height: 400); view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        view.isVerticallyResizable = true; view.isHorizontallyResizable = false
+        view.autoresizingMask = [.width]
+        view.textContainer?.containerSize = NSSize(width: scroll.contentSize.width, height: .greatestFiniteMagnitude)
+        view.textContainer?.widthTracksTextView = true
+        scroll.documentView = view
+        view.registerForDraggedTypes([.fileURL, .png, .tiff])
         view.delegate = context.coordinator
         view.isRichText = false
         view.allowsUndo = true
@@ -100,6 +117,8 @@ struct MarkdownTextView: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let view = scroll.documentView as? NSTextView else { return }
         note.textView = view
+        view.minSize = NSSize(width: 0, height: max(1, scroll.contentSize.height))
+        if view.frame.height < scroll.contentSize.height { view.setFrameSize(NSSize(width: scroll.contentSize.width, height: scroll.contentSize.height)) }
         // Only an outside change (such as a restored backup) differs from the view; typing already matches.
         if view.string != note.text { view.string = note.text }
     }

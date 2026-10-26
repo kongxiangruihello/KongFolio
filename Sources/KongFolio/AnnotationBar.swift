@@ -118,7 +118,19 @@ struct AnnotationBar: View {
     }
 
     private var bar: some View {
-        HStack(spacing: 6) {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) { controls }.fixedSize(horizontal: true, vertical: false)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 28, maximum: 34), spacing: 6)], spacing: 8) { controls }
+                .frame(maxWidth: .infinity)
+        }
+
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.15), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
+    }
+
+    @ViewBuilder private var controls: some View {
             ForEach(entries) { entry in
                 Button {
                     workspace.selectTool(entry.tool, highlighter: entry.highlighter)
@@ -158,11 +170,6 @@ struct AnnotationBar: View {
             Button { workspace.undo() } label: { Image(systemName: "arrow.uturn.backward") }.buttonStyle(.plain).disabled(!workspace.canUndo).hint("撤销（⌘Z）", $hovered)
             Button { workspace.redo() } label: { Image(systemName: "arrow.uturn.forward") }.buttonStyle(.plain).disabled(!workspace.canRedo).hint("重做（⇧⌘Z）", $hovered)
             Button { workspace.showAnnotationBar = false } label: { Image(systemName: "xmark") }.buttonStyle(.plain).hint("收起工具栏，回到阅读", $hovered)
-        }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(Color.primary.opacity(0.15), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
     }
 }
 
