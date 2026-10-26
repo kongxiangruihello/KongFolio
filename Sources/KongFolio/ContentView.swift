@@ -37,6 +37,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showOCRQuality) { OCRQualitySheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOutlineText) { OutlineTextSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOutlineCandidates) { OutlineCandidatesSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showPageInspection) { PageInspectionView(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRReview) { OCRReview(workspace: workspace) }
         .sheet(isPresented: $workspace.showProofreading) { ColumnProofView(workspace: workspace) }
         .sheet(isPresented: $workspace.showOutlineEditor) { OutlineEditorView(workspace: workspace) }
@@ -415,6 +416,7 @@ struct ContentView: View {
 
     private var ocrControls: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Button("空白页与重复页检查…") { workspace.showPageInspection = true }.disabled(workspace.count == 0)
             Text("文本识别（本地 Vision）").font(.subheadline.bold())
             Picker("语言", selection: Binding(get: { workspace.ocrSettings.presetID }, set: { id in
                 if let preset = OCRSettings.presets.first(where: { $0.id == id }) { workspace.ocrSettings.languages = preset.languages }
@@ -443,7 +445,7 @@ struct ContentView: View {
                 Button("OCR 质量检查…") { workspace.openOCRQuality() }
                 Toggle("标出低置信度的列", isOn: Binding(get: { workspace.showLowConfidence }, set: { workspace.showLowConfidence = $0; workspace.refreshConfidenceMarks() }))
                 if workspace.meta(workspace.selection).ocrRegions != nil {
-                    Button("查看") { workspace.reviewSelection = -1; workspace.showOCRReview = true }
+                    Button("对照校正…") { workspace.reviewSelection = -1; workspace.showOCRReview = true }
                 }
                 if ColumnProofreading.columns(workspace.meta(workspace.selection).ocrRegions ?? []) != nil {
                     Button("逐列校对…") { workspace.showProofreading = true }.help("竖排页：每一列的原图与识别文字上下对照，直接改字")

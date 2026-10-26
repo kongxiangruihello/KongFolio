@@ -16,6 +16,8 @@ struct RecognizedLine: Codable, Equatable {
     var confidence: Float = 1
     /// True when the box is a placeholder (vertical-text mode has no per-line geometry).
     var approximate: Bool? = nil
+    /// Original recognition text retained when proofreading changes this region.
+    var originalText: String? = nil
 }
 struct ImageAdjustments: Equatable, Codable {
     var cropRect: CGRect?

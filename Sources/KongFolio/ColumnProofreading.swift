@@ -59,10 +59,10 @@ enum ColumnProofreading {
             guard !text.isEmpty else { continue }
             if column.perCharacter, column.pieces.count == text.count {
                 for (piece, character) in zip(column.pieces, text) {
-                    result.append(RecognizedLine(text: String(character), box: piece.box, confidence: 1))
+                    result.append(RecognizedLine(text: String(character), box: piece.box, confidence: 1, originalText: piece.originalText ?? piece.text))
                 }
             } else {
-                result.append(RecognizedLine(text: text, box: column.box, confidence: 1, approximate: true))
+                result.append(RecognizedLine(text: text, box: column.box, confidence: 1, approximate: true, originalText: column.original))
             }
         }
         return result
@@ -93,8 +93,8 @@ extension Workspace {
         checkpoint()
         updateMeta(index) { $0.ocrRegions = lines }
         var layerNote = "文字层已同步"
-        if let data = meta(index).ocrOriginal, let source = PDFDocument(data: data)?.page(at: 0),
-           let replacement = try? DocumentServices.searchablePage(source, lines: lines), let old = document.page(at: index) {
+        if let data = meta(index).ocrOriginal, let original = PDFDocument(data: data), let source = original.page(at: 0),
+           let replacement = try? withExtendedLifetime(original, { try DocumentServices.searchablePage(source, lines: lines) }), let old = document.page(at: index) {
             for annotation in old.annotations { if let copy = annotation.copy() as? PDFAnnotation { replacement.addAnnotation(copy) } }
             document.removePage(at: index)
             document.insert(replacement, at: index)

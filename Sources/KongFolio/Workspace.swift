@@ -26,6 +26,7 @@ import UniformTypeIdentifiers
     @Published var exportEstimate: ExportEstimate?
     @Published var estimating = false
     @Published var showOCRReview = false
+    @Published var showPageInspection = false
     @Published var showProofreading = false
     @Published var showOutlineEditor = false
     @Published var nightReading = UserDefaults.standard.bool(forKey: Workspace.nightKey) {

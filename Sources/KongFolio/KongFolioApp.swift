@@ -20,7 +20,8 @@ import AppKit
                 .background(WindowAccessor { window in delegate.attach(window) })
                 .onAppear { delegate.store = store; store.bootstrap() }
                 .onOpenURL { url in
-                    if TextImport.handles(url) { store.openNote(url) }
+                    if let source = SourceLink.source(url) { store.reveal(source, beside: false) }
+                    else if TextImport.handles(url) { store.openNote(url) }
                     else { store.openInNewTab([url]) }
                 }
         }
@@ -30,6 +31,7 @@ import AppKit
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("打开…") { store.open() }.keyboardShortcut("o")
+                Button("新建 PDF") { store.newPDF() }
                 Button("新建 Markdown 笔记") { store.newNote() }.keyboardShortcut("n")
                 Button("新建 HTML 文件") { store.newNote(format: .html) }
                 Button("新建文本文件") { store.newNote(format: .plain) }
@@ -39,10 +41,12 @@ import AppKit
                 Button("保存") { store.saveActive() }.keyboardShortcut("s").disabled(!store.canSave)
                 Button("另存为…") { store.saveActive(asNew: true) }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(!store.canSave)
                 Button("导出 PDF…") { store.exportActive() }.keyboardShortcut("e").disabled(!store.canSave)
+                Button("导出 Word…") { store.exportWordActive() }.disabled(!store.canSave)
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
             CommandMenu("任务与历史") {
                 Button("跨文件全文搜索…") { store.showFolderSearch=true }.keyboardShortcut("f",modifiers:[.command,.shift])
+                Button("空白页与重复页检查…") { store.activeWorkspace?.showPageInspection = true }.disabled((store.activeWorkspace?.count ?? 0) == 0)
                 Button("任务中心与扫描配方…") { store.showTaskCenter = true }.keyboardShortcut("j", modifiers: [.command, .option])
                 Button("当前文档的保存历史…") { store.activeWorkspace?.showVersionHistory = true }
                     .disabled(store.activeWorkspace?.historySource == nil || store.activeWorkspace?.busy == true)

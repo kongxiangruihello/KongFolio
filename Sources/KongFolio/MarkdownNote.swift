@@ -106,8 +106,7 @@ struct TextEdit: Equatable {
         panel.nameFieldStringValue = title + ".pdf"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let data = try renderDocument().dataRepresentation().unwrap("PDF 生成失败")
-            try data.write(to: url, options: .atomic)
+            try writePDF(to: url)
             status = "已导出 PDF"
         } catch {
             self.error = "导出失败：\(error.localizedDescription)"

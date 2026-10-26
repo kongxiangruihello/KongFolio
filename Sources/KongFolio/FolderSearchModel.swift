@@ -2,15 +2,26 @@ import AppKit
 import Foundation
 
 @MainActor final class FolderSearchModel: ObservableObject {
-    struct Settings: Codable { var folder:URL?;var recursive=true;var query="" }
+    struct Settings: Codable {
+        var folder: URL?; var recursive = true; var query = ""
+        var savedFolders: [URL]?; var required: String?; var excluded: String?
+    }
     @Published var folder:URL?
     @Published var recursive=true
     @Published var query=""
+    @Published var savedFolders: [URL] = []
+    @Published var requiredTerms = ""
+    @Published var excludedTerms = ""
+    @Published var fileFilter = ""
+    @Published var pageFilter = ""
+    @Published var grouped = true
+    @Published private(set) var searchedTerms = FolderSearchTerms()
+    var openWorkerForExcerpts: Task<[(String, SourceRef)], Error>?
     @Published private(set) var searchedQuery=""
     @Published private(set) var searchedFolder:URL?
     @Published private(set) var running=false
     @Published private(set) var stopping=false
-    @Published private(set) var openingID:UUID?
+    @Published var openingID:UUID?
     @Published private(set) var results:[FolderSearchHit]=[]
     @Published private(set) var files:[FolderSearchFile]=[]
     @Published private(set) var scanned=0
@@ -30,6 +41,8 @@ import Foundation
         self.storage=storage
         if let data=try? Data(contentsOf:settingsURL),let saved=try? JSONDecoder().decode(Settings.self,from:data) {
             folder=saved.folder;recursive=saved.recursive;query=saved.query
+            savedFolders=saved.savedFolders ?? saved.folder.map { [$0] } ?? []
+            requiredTerms=saved.required ?? "";excludedTerms=saved.excluded ?? ""
         }
     }
     var noTextFiles:[URL] { files.filter(\.needsOCR).map(\.url) }
@@ -41,7 +54,7 @@ import Foundation
     func remember() {
         do {
             try FileManager.default.createDirectory(at:settingsURL.deletingLastPathComponent(),withIntermediateDirectories:true)
-            try JSONEncoder().encode(Settings(folder:folder,recursive:recursive,query:query)).write(to:settingsURL,options:.atomic)
+            try JSONEncoder().encode(Settings(folder:folder,recursive:recursive,query:query,savedFolders:savedFolders,required:requiredTerms,excluded:excludedTerms)).write(to:settingsURL,options:.atomic)
         } catch { message="搜索设置未保存："+error.localizedDescription }
     }
     func start() {
@@ -50,11 +63,14 @@ import Foundation
         let query=query.trimmingCharacters(in:.whitespacesAndNewlines)
         guard !query.isEmpty else { message="请输入要搜索的文字";return }
         remember()
+        let terms = FolderSearchTerms(required: FolderSearchTerms.parse(requiredTerms), excluded: FolderSearchTerms.parse(excludedTerms))
+        searchedTerms = terms
+        fileFilter="";pageFilter=""
         generation=UUID();let token=generation,indexURL=indexURL,recursive=recursive
         delivered=[];results=[];files=[];discoveryErrors=[];scanned=0;total=0;message="";progressText="正在查找 PDF…"
         searchedQuery=query;searchedFolder=folder;running=true;stopping=false
         let job=Task.detached(priority:.userInitiated) { [weak self] in
-            try FolderSearchService.run(folder:folder,query:query,recursive:recursive,indexURL:indexURL) { event in
+            try FolderSearchService.run(folder:folder,query:query,recursive:recursive,indexURL:indexURL,terms:terms) { event in
                 Task { @MainActor [weak self] in self?.receive(event,token:token) }
             }
         }
@@ -89,6 +105,7 @@ import Foundation
     func cancel() {
         if running { stopping=true;worker?.cancel() }
         openWorker?.cancel()
+        openWorkerForExcerpts?.cancel()
     }
     func clearIndex() {
         guard !running,openingID==nil else { return }
@@ -117,7 +134,10 @@ import Foundation
     }
     func report() -> String {
         var lines=["KongFolio 跨文件搜索","文件夹：\(searchedFolder?.path ?? "")","搜索：\(searchedQuery)","已检查 \(scanned) / \(total) 份 PDF，\(results.count) 处匹配",message,""]
-        for result in results {
+        lines.append("同页包含：" + searchedTerms.required.joined(separator: "、"))
+        lines.append("同页排除：" + searchedTerms.excluded.joined(separator: "、"))
+        lines.append("文件筛选：" + fileFilter + "；页码筛选：" + pageFilter)
+        for result in visibleResults {
             lines.append(result.url.path+" · 第 \(result.hit.page+1) 页"+(result.hit.label.map { "（印刷页码 \($0)）" } ?? ""))
             lines.append(result.hit.snippet);lines.append("")
         }
