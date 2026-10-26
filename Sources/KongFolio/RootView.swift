@@ -6,14 +6,12 @@ struct RootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NewFileBar(store: store)
-            Divider()
             TabBar(store: store)
             Divider()
             if let tab = store.activeTab {
                 switch tab {
                 case .document(let workspace): ContentView(workspace: workspace).id(workspace.id)
-                case .note(let note): MarkdownEditorView(note: note).id(note.id)
+                case .note(let note): MarkdownEditorView(note: note, store: store).id(note.id)
                 }
             } else {
                 Color.clear
@@ -174,19 +172,3 @@ private struct TabChip: View {
     }
 }
 
-struct NewFileBar: View {
-    @ObservedObject var store: WorkspaceStore
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                Button { store.newPDF() } label: { Label("新建 PDF", systemImage: "doc.badge.plus") }
-                Button { store.newNote() } label: { Label("新建 Markdown", systemImage: "square.and.pencil") }
-                Button { store.newNote(format: .plain) } label: { Label("新建文本文件", systemImage: "doc.text") }
-                Button { store.newNote(format: .html) } label: { Label("新建 HTML", systemImage: "chevron.left.forwardslash.chevron.right") }
-                Divider().frame(height: 18)
-                Button { store.open() } label: { Label("打开", systemImage: "folder") }
-                Button { store.showFolderSearch = true } label: { Label("搜索资料", systemImage: "magnifyingglass") }
-            }.padding(.horizontal, 12).padding(.vertical, 7)
-        }.background(.bar)
-    }
-}
