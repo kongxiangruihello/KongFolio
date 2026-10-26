@@ -5,6 +5,7 @@ import SwiftUI
 /// The drawing tools within reach of the page, so lines and marks do not depend on the side panel.
 struct AnnotationBar: View {
     @ObservedObject var workspace: Workspace
+    var availableWidth: CGFloat = 900
 
     private struct Entry: Identifiable {
         let id: String
@@ -67,7 +68,7 @@ struct AnnotationBar: View {
                 }
             }
         } label: { Image(systemName: "star.square") }
-            .menuStyle(.borderlessButton).frame(width: 34).hint("样式预设：颜色、线宽、虚线、填充一键套用", $hovered)
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 34).hint("样式预设：颜色、线宽、虚线、填充一键套用", $hovered)
     }
 
     private var textBoxMenu: some View {
@@ -87,7 +88,7 @@ struct AnnotationBar: View {
                 Button("粗（2 磅）") { workspace.styleTextBoxes(border: 2) }
             }
         } label: { Image(systemName: "textformat.size") }
-            .menuStyle(.borderlessButton).frame(width: 34).hint("文字框样式：先用“编辑标注”点选一个文字框，或在标注列表里勾选", $hovered)
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 34).hint("文字框样式：先用“编辑标注”点选一个文字框，或在标注列表里勾选", $hovered)
     }
 
     private var layersMenu: some View {
@@ -100,7 +101,7 @@ struct AnnotationBar: View {
             Divider()
             Button("全部显示") { workspace.showAllLayers() }.disabled(workspace.hiddenKinds.isEmpty)
         } label: { Image(systemName: workspace.hiddenKinds.isEmpty ? "square.3.layers.3d" : "square.3.layers.3d.slash") }
-            .menuStyle(.borderlessButton).frame(width: 34).hint("按类型隐藏或显示标注（只影响显示，保存和导出时一律完整）", $hovered)
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 34).hint("按类型隐藏或显示标注（只影响显示，保存和导出时一律完整）", $hovered)
     }
 
     private static func askName() -> String? {
@@ -118,11 +119,11 @@ struct AnnotationBar: View {
     }
 
     private var bar: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) { controls }.fixedSize(horizontal: true, vertical: false)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 28, maximum: 34), spacing: 6)], spacing: 8) { controls }
-                .frame(maxWidth: .infinity)
+        Group {
+            if availableWidth >= 900 { HStack(spacing: 6) { controls } }
+            else { LazyVGrid(columns: [GridItem(.adaptive(minimum: 34, maximum: 34), spacing: 6)], spacing: 8) { controls } }
         }
+        .frame(width: max(120, availableWidth - 20))
 
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
@@ -151,7 +152,7 @@ struct AnnotationBar: View {
                 .buttonStyle(.plain)
                 .hint("颜色：\(swatch.name)", $hovered)
             }
-            ColorPicker("", selection: Binding(get: { workspace.annotationColor }, set: { workspace.chooseAnnotationColor($0) }), supportsOpacity: false).labelsHidden().frame(width: 28)
+            ColorPicker("", selection: Binding(get: { workspace.annotationColor }, set: { workspace.chooseAnnotationColor($0) }), supportsOpacity: false).labelsHidden().frame(width: 28).clipped()
                 .hint("更多颜色…", $hovered)
             presetsMenu
             textBoxMenu
@@ -161,7 +162,7 @@ struct AnnotationBar: View {
                     Button("\(Int(width)) 磅") { workspace.penWidth = width }
                 }
             } label: { Image(systemName: "lineweight") }
-                .menuStyle(.borderlessButton).frame(width: 34).hint(String(format: "线宽（现在 %.1f 磅）", workspace.penWidth), $hovered)
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 34).hint(String(format: "线宽（现在 %.1f 磅）", workspace.penWidth), $hovered)
             Toggle(isOn: $workspace.shapeFill) { Image(systemName: "square.fill") }
                 .toggleStyle(.button).buttonStyle(.plain).hint("矩形、椭圆填充半透明颜色", $hovered)
             Toggle(isOn: $workspace.lineDashed) { Image(systemName: "line.3.horizontal") }

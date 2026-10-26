@@ -422,7 +422,12 @@ struct ContentView: View {
         } else {
             PDFCanvas(workspace: workspace)
                 .overlay(alignment: .top) {
-                    if workspace.showAnnotationBar { AnnotationBar(workspace: workspace).padding(.top, 10) }
+                    if workspace.showAnnotationBar {
+                        GeometryReader { proxy in
+                            AnnotationBar(workspace: workspace, availableWidth: max(140, proxy.size.width - 20))
+                                .padding(.horizontal, 10).padding(.top, 10)
+                        }
+                    }
                 }
         }
     }

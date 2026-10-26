@@ -31,7 +31,8 @@ enum RichTextWord {
             let headingStyle = heading > 0 ? "<w:pStyle w:val=\"Heading\(min(heading, 3))\"/><w:keepNext/>" : ""
             return "<w:p><w:pPr>\(headingStyle)<w:spacing w:after=\"120\" w:line=\"\(Int(document.options.lineHeight * 240))\" w:lineRule=\"auto\"/></w:pPr>\(runs)</w:p>"
         }
-        let contentWidth = TextImport.pageSize.width - document.options.margin * 2
+        let contentWidth: Double = Double(TextImport.pageSize.width) - document.options.margin * 2
+        let printableHeight: Double = Double(TextImport.pageSize.height) - document.options.margin * 2 - 12
         for block in document.blocks {
             switch block {
             case .paragraph(let content, let heading): body += paragraph(content, heading: heading)
@@ -47,7 +48,9 @@ enum RichTextWord {
                 body += "</w:tbl><w:p/>"
             case .image(let data, let alt):
                 let image = try SignatureImage.loadData(data).unwrap("图片失效")
-                let scale = min(contentWidth / Double(image.width), (TextImport.pageSize.height - document.options.margin * 2 - 12) / Double(image.height), 1)
+                let widthScale: Double = contentWidth / Double(image.width)
+                let heightScale: Double = printableHeight / Double(image.height)
+                let scale: Double = min(1.0, min(widthScale, heightScale))
                 let number = media.count + 1, name = "image\(number).png", id = "image\(number)"
                 media.append((name, data))
                 relationships += "<Relationship Id=\"\(id)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/\(name)\"/>"
