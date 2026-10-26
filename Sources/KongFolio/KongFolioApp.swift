@@ -41,6 +41,11 @@ import AppKit
                 Button("导出 PDF…") { store.exportActive() }.keyboardShortcut("e").disabled(!store.canSave)
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
+            CommandMenu("任务与历史") {
+                Button("任务中心与扫描配方…") { store.showTaskCenter = true }.keyboardShortcut("j", modifiers: [.command, .option])
+                Button("当前文档的保存历史…") { store.activeWorkspace?.showVersionHistory = true }
+                    .disabled(store.activeWorkspace?.historySource == nil || store.activeWorkspace?.busy == true)
+            }
             CommandGroup(replacing: .printItem) {
                 Button("打印…") { store.printActive() }.keyboardShortcut("p").disabled(!store.canSave)
             }

@@ -35,6 +35,11 @@ struct WorkRecipe: Codable, Equatable, Identifiable {
     var name: String
     /// Cut margins found from the content, one setting for odd and one for even pages.
     var autoCrop = false
+    var splitSpreads = false
+    var splitFraction = 0.5
+    var rightPageFirst = false
+    var autoStraighten = false
+    var compress: CompressLevel? = nil
     /// nil skips recognition (the files may already have text).
     var ocr: OCRSettings? = nil
     /// nil writes no Word file.
@@ -58,6 +63,11 @@ struct WorkRecipe: Codable, Equatable, Identifiable {
         self.pageRange = pageRange; self.splitChapters = splitChapters; self.detectHeadings = detectHeadings; self.chapterDepth = chapterDepth
     }
 
+    enum CodingKeys: String, CodingKey {
+        case id, name, autoCrop, ocr, word, useReplacementRules, writePDF, pageRange, splitChapters, detectHeadings, chapterDepth
+        case splitSpreads, splitFraction, rightPageFirst, autoStraighten, compress
+    }
+
     /// Recipes saved by 0.13 have none of the newer fields.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -72,6 +82,11 @@ struct WorkRecipe: Codable, Equatable, Identifiable {
         splitChapters = try c.decodeIfPresent(Bool.self, forKey: .splitChapters) ?? false
         detectHeadings = try c.decodeIfPresent(Bool.self, forKey: .detectHeadings) ?? true
         chapterDepth = try c.decodeIfPresent(Int.self, forKey: .chapterDepth) ?? 0
+        splitSpreads = try c.decodeIfPresent(Bool.self, forKey: .splitSpreads) ?? false
+        splitFraction = try c.decodeIfPresent(Double.self, forKey: .splitFraction) ?? 0.5
+        rightPageFirst = try c.decodeIfPresent(Bool.self, forKey: .rightPageFirst) ?? false
+        autoStraighten = try c.decodeIfPresent(Bool.self, forKey: .autoStraighten) ?? false
+        compress = try c.decodeIfPresent(CompressLevel.self, forKey: .compress)
     }
 
     var isEmpty: Bool { !autoCrop && ocr == nil && word == nil && !writePDF && !splitChapters }
@@ -79,8 +94,11 @@ struct WorkRecipe: Codable, Equatable, Identifiable {
     var summary: String {
         var steps: [String] = []
         if !pageRange.trimmingCharacters(in: .whitespaces).isEmpty { steps.append("只取第 \(pageRange) 页") }
+        if splitSpreads { steps.append("跨页切分") }
+        if autoStraighten { steps.append("自动纠偏") }
         if autoCrop { steps.append("自动裁边") }
         if let ocr { steps.append("OCR（\(ocr.vertical ? "竖排" : "横排")\(ocr.ignoresTextLayer ? "，忽略旧文字层" : "")）") }
+        if compress != nil { steps.append("压缩图片") }
         if writePDF { steps.append("输出 PDF") }
         if word != nil { steps.append("输出 Word") }
         if splitChapters { steps.append("按章节拆分") }
@@ -92,6 +110,7 @@ struct WorkRecipe: Codable, Equatable, Identifiable {
                    ocr: { var s = OCRSettings(); s.languages = ["zh-Hant", "en-US"]; s.vertical = true; s.ignoresTextLayer = true; return s }(),
                    word: WordExportOptions(), writePDF: true),
         WorkRecipe(name: "只裁边（不做 OCR）", autoCrop: true, writePDF: true),
+        { var r = WorkRecipe(name: "双页扫描 → 整理、识别、压缩", autoCrop: true, ocr: OCRSettings()); r.splitSpreads = true; r.autoStraighten = true; r.compress = .standard; return r }(),
     ]
 }
 
@@ -128,19 +147,50 @@ enum BatchPipeline {
         guard let keep = PageSpan.parse(recipe.pageRange, pageCount: document.pageCount) else { throw FolioError(message: "页码范围“\(recipe.pageRange)”无法理解，请写成 1-20, 25, 40- 这样。") }
         guard !keep.isEmpty else { throw FolioError(message: "页码范围“\(recipe.pageRange)”超出了这个文件的页数（\(document.pageCount) 页）。") }
         // The outline is read before the pages are picked, and follows them to their new places.
-        let sourceOutline = ReadingServices.outline(document)
+        var sourceOutline = ReadingServices.outline(document)
         if keep.count < document.pageCount {
             let picked = DocumentServices.subset(document, indexes: keep)
             document = picked
         }
         var newIndex: [Int: Int] = [:]
         for (offset, page) in keep.enumerated() { newIndex[page] = offset }
+        if recipe.splitSpreads {
+            guard recipe.splitFraction.isFinite, (0.2...0.8).contains(recipe.splitFraction) else { throw FolioError(message: "切分中缝必须在 20%–80% 之间。") }
+            let divided = PDFDocument()
+            for index in 0..<document.pageCount {
+                try Task.checkCancellation()
+                let page = try document.page(at: index).unwrap("无法读取页面")
+                for half in try ScanProcessing.halves(page, fraction: recipe.splitFraction, rightFirst: recipe.rightPageFirst) { divided.insert(half, at: divided.pageCount) }
+            }
+            for (old, index) in newIndex { newIndex[old] = index * 2 }
+            document = divided
+        }
+        sourceOutline = sourceOutline.compactMap { entry -> OutlineEntry? in
+            guard let moved = newIndex[entry.page] else { return nil }
+            var copy = entry; copy.page = moved; return copy
+        }
+        ReadingServices.applyOutline(sourceOutline, to: document)
         let count = document.pageCount
+        if recipe.autoStraighten {
+            for index in 0..<count {
+                try Task.checkCancellation()
+                try autoreleasepool {
+                    let page = try document.page(at: index).unwrap("无法读取页面")
+                    let correction = try ScanProcessing.angle(page)
+                    if abs(correction) >= 0.15 {
+                        let replacement = try ScanProcessing.straightened(page, angle: correction)
+                        document.removePage(at: index); document.insert(replacement, at: index)
+                    }
+                }
+                progress(0.15 * Double(index + 1) / Double(count))
+            }
+            ReadingServices.applyOutline(sourceOutline, to: document)
+        }
         var output = BatchOutput(pages: count)
         var regions: [Int: [RecognizedLine]] = [:]
         let steps = Double((recipe.autoCrop ? 1 : 0) + (recipe.ocr != nil ? 4 : 0) + (recipe.word != nil ? 2 : 0))
         var done = 0.0
-        func step(_ weight: Double, _ fraction: Double) { progress(steps == 0 ? 1 : (done + weight * fraction) / steps) }
+        func step(_ weight: Double, _ fraction: Double) { progress(0.15 + 0.7 * (steps == 0 ? 1 : (done + weight * fraction) / steps)) }
 
         if recipe.autoCrop {
             var odd: [CropMargins] = [], even: [CropMargins] = []
@@ -180,6 +230,15 @@ enum BatchPipeline {
             }
             done += 4
         }
+        ReadingServices.applyOutline(sourceOutline, to: document)
+        if let level = recipe.compress {
+            let original = try document.dataRepresentation().unwrap("无法准备压缩数据")
+            let compressed = try PDFCompressor.compress(document, level: level, original: original.count, keepMarked: true) { progress(0.85 + 0.1 * $0) }
+            if compressed.report.smaller {
+                document = try PDFDocument(data: compressed.data).unwrap("压缩结果无法读取")
+                ReadingServices.applyOutline(sourceOutline, to: document)
+            }
+        }
         if let options = recipe.word, let wordURL {
             var chosen = options
             chosen.replacements = recipe.useReplacementRules ? replacements : []
@@ -188,16 +247,13 @@ enum BatchPipeline {
             done += 2
         }
         if recipe.splitChapters {
-            var entries = sourceOutline.compactMap { entry -> OutlineEntry? in
-                guard let moved = newIndex[entry.page] else { return nil }
-                var copy = entry; copy.page = moved
-                return copy
-            }
+            var entries = sourceOutline
             if entries.isEmpty, recipe.detectHeadings {
                 let pages = (0..<count).map { (page: $0, lines: openingLines(of: $0, document: document, regions: regions)) }
                 entries = OutlineDetect.merged([], adding: OutlineDetect.candidates(pages: pages))
             }
             let parts = ChapterSplit.parts(entries: entries, pageCount: count, depth: recipe.chapterDepth)
+            guard !parts.isEmpty else { throw FolioError(message: "未找到可拆分的章节目录或标题。") }
             for (offset, part) in parts.enumerated() {
                 try Task.checkCancellation()
                 try autoreleasepool {
@@ -221,118 +277,3 @@ extension BatchPipeline {
     }
 }
 
-/// One file of a folder run.
-struct BatchItem: Identifiable, Equatable {
-    enum State: Equatable { case waiting, running, done(String), skipped(String), failed(String) }
-    let id = UUID()
-    var url: URL
-    var state = State.waiting
-}
-
-/// Works through a folder of PDFs one file at a time and writes the results into another folder. Files whose
-/// results already exist are skipped, so a stopped run picks up where it left off.
-@MainActor final class BatchQueue: ObservableObject {
-    @Published var items: [BatchItem] = []
-    @Published var running = false
-    @Published var fileProgress = 0.0
-    @Published var summary = ""
-    private var task: Task<Void, Never>?
-
-    static func pdfFiles(in folder: URL) -> [URL] {
-        let names = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-        return names.filter { $0.pathExtension.lowercased() == "pdf" }.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-    }
-
-    /// The files a recipe would write for an input name.
-    static func outputs(for input: URL, in folder: URL, recipe: WorkRecipe) -> (pdf: URL?, word: URL?, chapters: URL?) {
-        let stem = input.deletingPathExtension().lastPathComponent
-        return (recipe.writePDF ? folder.appendingPathComponent(stem + ".pdf") : nil, recipe.word != nil ? folder.appendingPathComponent(stem + ".docx") : nil,
-                recipe.splitChapters ? folder.appendingPathComponent(stem + "-章节", isDirectory: true) : nil)
-    }
-
-    func load(_ folder: URL) {
-        items = Self.pdfFiles(in: folder).map { BatchItem(url: $0) }
-        summary = items.isEmpty ? "这个文件夹里没有 PDF。" : "找到 \(items.count) 个 PDF。"
-    }
-
-    func start(recipe: WorkRecipe, output: URL, replacements: [ReplacementRule]) {
-        guard !running, !items.isEmpty else { return }
-        guard !recipe.isEmpty else { summary = "配方没有任何步骤。"; return }
-        if let first = items.first?.url.deletingLastPathComponent().standardizedFileURL, first == output.standardizedFileURL {
-            summary = "输出文件夹不能和原文件夹相同，以免覆盖原件。"
-            return
-        }
-        running = true
-        summary = ""
-        for index in items.indices { items[index].state = .waiting }
-        let queue = items
-        task = Task {
-            var done = 0, skipped = 0, failed = 0
-            for (offset, item) in queue.enumerated() {
-                if Task.isCancelled { break }
-                let target = Self.outputs(for: item.url, in: output, recipe: recipe)
-                let wanted = [target.pdf, target.word, target.chapters].compactMap { $0 }
-                if wanted.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) {
-                    items[offset].state = .skipped("结果已存在")
-                    skipped += 1
-                    continue
-                }
-                items[offset].state = .running
-                fileProgress = 0
-                let began = Date()
-                let outcome: Result<String, Error> = await Task.detached(priority: .userInitiated) { [self] in
-                    do {
-                        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-                        let data = try Data(contentsOf: item.url, options: .mappedIfSafe)
-                        let staging = target.word.map { $0.deletingLastPathComponent().appendingPathComponent(".KongFolio-\(UUID().uuidString.prefix(8)).docx") }
-                        defer { if let staging { try? FileManager.default.removeItem(at: staging) } }
-                        let result = try BatchPipeline.process(data, recipe: recipe, replacements: replacements, wordURL: staging) { value in
-                            Task { @MainActor in self.fileProgress = value }
-                        }
-                        try Task.checkCancellation()
-                        if let pdf = result.pdf, let url = target.pdf { try Self.place(pdf, at: url) }
-                        if let staging, let url = target.word, result.wordURL != nil { try Self.move(staging, to: url) }
-                        if let folder = target.chapters, !result.chapters.isEmpty { try Self.placeFolder(result.chapters, at: folder) }
-                        return .success("\(result.pages) 页" + (result.recognized > 0 ? "，识别 \(result.recognized) 页" : ""))
-                    } catch { return .failure(error) }
-                }.value
-                if case .success(let note) = outcome {
-                    let size = (try? item.url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 } ?? 0
-                    PerfLog.record("批量处理", name: item.url.lastPathComponent, pages: Int(note.split(separator: " ").first.flatMap { Int($0) } ?? 0), seconds: Date().timeIntervalSince(began), note: String(format: "%.1f MB", Double(size) / 1_048_576))
-                }
-                switch outcome {
-                case .success(let note): items[offset].state = .done(note); done += 1
-                case .failure(let error):
-                    if error is CancellationError { items[offset].state = .waiting } else { items[offset].state = .failed(error.localizedDescription); failed += 1 }
-                }
-            }
-            let stopped = Task.isCancelled
-            running = false
-            fileProgress = 0
-            summary = (stopped ? "已停止：" : "完成：") + "处理 \(done) 个，跳过 \(skipped) 个，失败 \(failed) 个。" + (stopped ? "再次开始会跳过已经完成的文件。" : "")
-        }
-    }
-
-    func cancel() { task?.cancel() }
-
-    nonisolated static func place(_ data: Data, at url: URL) throws {
-        let staging = url.deletingLastPathComponent().appendingPathComponent(".KongFolio-\(UUID().uuidString.prefix(8)).partial")
-        try data.write(to: staging)
-        try move(staging, to: url)
-    }
-
-    /// Writes the files into a hidden folder first and renames it at the end, so a half-written chapter folder never stands in for a finished one.
-    nonisolated static func placeFolder(_ files: [(name: String, data: Data)], at folder: URL) throws {
-        let staging = folder.deletingLastPathComponent().appendingPathComponent(".KongFolio-\(UUID().uuidString.prefix(8)).partial", isDirectory: true)
-        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: staging) }
-        for file in files { try file.data.write(to: staging.appendingPathComponent(file.name)) }
-        if FileManager.default.fileExists(atPath: folder.path) { _ = try FileManager.default.replaceItemAt(folder, withItemAt: staging) }
-        else { try FileManager.default.moveItem(at: staging, to: folder) }
-    }
-
-    nonisolated static func move(_ staged: URL, to url: URL) throws {
-        if FileManager.default.fileExists(atPath: url.path) { _ = try FileManager.default.replaceItemAt(url, withItemAt: staged) }
-        else { try FileManager.default.moveItem(at: staged, to: url) }
-    }
-}

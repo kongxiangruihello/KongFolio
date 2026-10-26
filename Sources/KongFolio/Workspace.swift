@@ -75,6 +75,9 @@ import UniformTypeIdentifiers
     @Published var showCrop = false
     @Published var showWordExport = false
     @Published var showBatch = false
+    @Published var showVersionHistory = false
+    lazy var localBatchQueue = BatchQueue(storage: AppEnvironment.isTestRun ? nil : storage)
+    var batchQueue: BatchQueue { store?.batchQueue ?? localBatchQueue }
     @Published var showOCRQuality = false
     @Published var showOutlineText = false
     @Published var showReplacementRules = false
@@ -504,7 +507,7 @@ import UniformTypeIdentifiers
         backupError.map { "项目已保存，但未能备份上一版：\($0.localizedDescription)" } ?? "项目已保存"
     }
 
-    @discardableResult func saveProject(asNew: Bool = false, background: Bool = true) -> Bool {
+    @discardableResult func saveProject(asNew: Bool = false, background: Bool = true, automatic: Bool = false) -> Bool {
         guard count > 0 else { return false }
         let url: URL
         if let existing = projectURL, !asNew {
@@ -526,12 +529,16 @@ import UniformTypeIdentifiers
                 taskLabel = "保存项目…"
                 let captured = archive
                 let backups = backupFolder
+                let historyStorage = storage
                 Task {
                     defer { busy = false }
                     do {
                         let backupError = try await Task.detached { () -> Error? in
+                            try DocumentHistory.protectExisting(url, storage: historyStorage)
                             let failure = ProjectBackup.preserve(url, in: backups)
                             try captured.write(url)
+                            do { try DocumentHistory.record(captured, source: url, storage: historyStorage, label: automatic ? "自动保存项目" : "保存项目", automatic: automatic) }
+                            catch { return error }
                             return failure
                         }.value
                         projectURL = url
@@ -545,8 +552,11 @@ import UniformTypeIdentifiers
                 }
                 return true
             }
-            let backupError = ProjectBackup.preserve(url, in: backupFolder)
+            try DocumentHistory.protectExisting(url, storage: storage)
+            var backupError = ProjectBackup.preserve(url, in: backupFolder)
             try archive.write(url)
+            do { try DocumentHistory.record(archive, source: url, storage: storage, label: automatic ? "自动保存项目" : "保存项目", automatic: automatic) }
+            catch { backupError = backupError ?? error }
             projectURL = url
             dirty = false
             remember([url])
