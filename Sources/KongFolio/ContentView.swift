@@ -144,11 +144,11 @@ struct ContentView: View {
     }
 
     private func topBar(width: CGFloat) -> some View {
-        let style = LayoutMetrics.topBarStyle(width: width - 140)
+        let style = LayoutMetrics.topBarStyle(width: width - 160)
         let sidebarShown = LayoutMetrics.showsSidebar(preferred: showSidebar, width: width)
         let inspectorShown = LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width), splitShown: splitShown(width: width))
         let boardIsShown = boardShown(width: width)
-        return HStack(spacing: style == .full ? 16 : 10) {
+        return HStack(spacing: style == .full ? 12 : 8) {
             Button { showSidebar.toggle() } label: { Image(systemName: "sidebar.left") }
                 .buttonStyle(.borderless)
                 .foregroundStyle(showSidebar && !sidebarShown ? .tertiary : .primary)
@@ -168,8 +168,8 @@ struct ContentView: View {
                     }
             }
             .frame(minWidth: 40, idealWidth: 175, maxWidth: style == .full ? 220 : 260, alignment: .leading)
-            NewFileIcons(store: workspace.store)
             Spacer(minLength: 0)
+            NewFileIcons(store: workspace.store, spacing: style == .full ? 12 : 8)
             switch style {
             case .full:
                 splitMenu(iconOnly: false)
