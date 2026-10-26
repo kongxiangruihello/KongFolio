@@ -224,8 +224,11 @@ enum BatchPipeline {
             for index in 0..<count {
                 try Task.checkCancellation()
                 try autoreleasepool {
-                    if let saved=cache?.read(index),let replacement=PDFDocument(data:saved.pdf)?.page(at:0) {
-                        document.removePage(at:index);document.insert(replacement,at:index)
+                    if let saved=cache?.read(index),let cachedDocument=PDFDocument(data:saved.pdf),
+                       let replacement=cachedDocument.page(at:0)?.copy() as? PDFPage {
+                        withExtendedLifetime(cachedDocument) {
+                            document.removePage(at:index);document.insert(replacement,at:index)
+                        }
                         regions[index]=saved.lines
                         output.resumed += 1
                         if saved.recognized { output.recognized += 1 }

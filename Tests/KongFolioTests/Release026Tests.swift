@@ -115,12 +115,17 @@ final class Release026Tests: XCTestCase {
         } catch is CancellationError { interrupted=true }
         XCTAssertTrue(interrupted)
         let cache=try OCRPageCache(root:directory,source:data,recipe:recipe)
-        XCTAssertNotNil(cache.read(0));XCTAssertNil(cache.read(1))
+        let cached=try XCTUnwrap(cache.read(0));XCTAssertNil(cache.read(1))
+        let cachedDocument=try XCTUnwrap(PDFDocument(data:cached.pdf))
+        XCTAssertTrue(cachedDocument.string?.contains("checkpoint") ?? false)
         var resumedCalls=0
         let result=try BatchPipeline.process(data,recipe:recipe,replacements:[],wordURL:nil,checkpointRoot:directory,recognize:{ _,_ in resumedCalls += 1;return [] })
         XCTAssertEqual(resumedCalls,2);XCTAssertEqual(result.resumed,1)
-        XCTAssertEqual(result.recognized,3);XCTAssertEqual(PDFDocument(data:result.pdf!)?.pageCount,3)
-        XCTAssertTrue(PDFDocument(data:result.pdf!)!.page(at:0)!.string?.contains("checkpoint") ?? false)
+        let restored=try XCTUnwrap(PDFDocument(data:try XCTUnwrap(result.pdf)))
+        XCTAssertEqual(result.recognized,3);XCTAssertEqual(restored.pageCount,3)
+        withExtendedLifetime(restored) {
+            XCTAssertTrue(restored.page(at:0)?.string?.contains("checkpoint") ?? false)
+        }
     }
     func testCheckpointContextInvalidatesForSourceAndRecipeChanges() throws {
         let directory=try folder();defer { try? FileManager.default.removeItem(at:directory) }
