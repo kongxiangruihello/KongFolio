@@ -115,15 +115,7 @@ private struct DocumentTab: View {
                 dimmed: workspace.count == 0 && known && !loading,
                 hover: { inside in store.setPathHint(inside ? Workspace.pathHintText(path: workspace.displayPath, title: workspace.title) : nil) },
                 select: { store.select(workspace.id) }, close: { store.close(workspace.id) })
-            .dropDestination(for: String.self) { values, _ in
-                guard let value = values.first, let drag = PageDrag.decode(value), drag.source != workspace.id else { return false }
-                store.select(workspace.id)
-                if workspace.busy || workspace.count == 0 {
-                    workspace.status = "等待目标文档打开后，再拖入页面"
-                    return false
-                }
-                return store.preparePageTransfer(drag, to: workspace, at: min(workspace.count, workspace.selection + 1))
-            }
+            .onDrop(of: [.utf8PlainText], delegate: PageDropDelegate(workspace: workspace))
             .contextMenu {
                 if workspace.displayPath != nil {
                     Button("拷贝完整路径") { workspace.copyPath() }

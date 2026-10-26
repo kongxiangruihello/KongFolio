@@ -25,7 +25,7 @@ struct OCRBatchCorrectionSheet: View {
                     Toggle(isOn: Binding(get: { selected.contains(hit.id) }, set: { if $0 { selected.insert(hit.id) } else { selected.remove(hit.id) } })) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("第 \(hit.page + 1) 页 · 第 \(hit.line + 1) 行：\(hit.from) → \(hit.to.isEmpty ? "（删除）" : hit.to)")
-                            Text(hit.context).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                            Text(hit.markedContext).font(.caption).foregroundStyle(.secondary).lineLimit(3)
                         }
                     }
                     Button("定位原文") { workspace.selectPage(hit.page) }

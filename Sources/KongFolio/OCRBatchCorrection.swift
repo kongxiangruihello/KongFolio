@@ -9,6 +9,12 @@ struct OCRRuleHit: Identifiable, Equatable {
     var to: String
     var context: String
     var id: String { "\(page):\(line):\(range.location):\(range.length)" }
+    var markedContext: String {
+        let value = NSMutableString(string: context)
+        guard range.location >= 0, range.length > 0, NSMaxRange(range) <= value.length else { return context }
+        value.replaceCharacters(in: range, with: "【" + from + "】")
+        return value as String
+    }
 }
 
 enum OCRBatchCorrection {

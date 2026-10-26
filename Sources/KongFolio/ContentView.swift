@@ -366,11 +366,8 @@ struct ContentView: View {
                         .id(index)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top:6,leading:12,bottom:6,trailing:12))
-                        .draggable(workspace.pageDrag(index))
-                        .dropDestination(for: String.self) { values, _ in
-                            guard let value = values.first else { return false }
-                            return workspace.receivePageDrag(value, before: index)
-                        } isTargeted: { targeted in pageDropTarget = targeted ? index : (pageDropTarget == index ? nil : pageDropTarget) }
+                        .onDrag { NSItemProvider(object: workspace.pageDrag(index) as NSString) }
+                        .onDrop(of: [.utf8PlainText], delegate: PageDropDelegate(workspace: workspace, insertion: index, targeted: { targeted in pageDropTarget = targeted ? index : (pageDropTarget == index ? nil : pageDropTarget) }))
                         .overlay(alignment: .top) { if pageDropTarget == index { Rectangle().fill(Brand.accent).frame(height: 3) } }
                     }
                 }
@@ -694,5 +691,32 @@ struct ContentView: View {
         }
         .padding(24)
         .frame(width: 600)
+    }
+}
+
+/// Explicit providers also work on native macOS List rows, whose own drag handling can swallow Transferable strings.
+@MainActor struct PageDropDelegate: DropDelegate {
+    let workspace: Workspace
+    var insertion: Int?
+    var targeted: (Bool) -> Void = { _ in }
+    func validateDrop(info: DropInfo) -> Bool { !workspace.busy && info.hasItemsConforming(to: [.utf8PlainText]) }
+    func dropEntered(info: DropInfo) { targeted(true) }
+    func dropExited(info: DropInfo) { targeted(false) }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .copy) }
+    func performDrop(info: DropInfo) -> Bool {
+        targeted(false)
+        guard let provider = info.itemProviders(for: [.utf8PlainText]).first else { return false }
+        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let value = object as? String else { return }
+            Task { @MainActor in
+                if let insertion { _ = workspace.receivePageDrag(value, before: insertion) }
+                else if let drag = PageDrag.decode(value), drag.source != workspace.id {
+                    workspace.store?.select(workspace.id)
+                    if workspace.busy || workspace.count == 0 { workspace.status = "等待目标文档打开后，再拖入页面"; return }
+                    _ = workspace.store?.preparePageTransfer(drag, to: workspace, at: min(workspace.count, workspace.selection + 1))
+                }
+            }
+        }
+        return true
     }
 }
