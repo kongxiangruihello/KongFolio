@@ -50,9 +50,19 @@ enum PDFComparison {
             guard rendered else { throw FolioError(message:"无法生成对照图像") }
             return OCRPageCache.digest(bytes)
         }
-        let annotations=page.annotations.map { a in
-            [a.type ?? "",a.contents ?? "",NSStringFromRect(a.bounds),a.color.description,a.interiorColor?.description ?? "",a.font?.fontName ?? "",String(Double(a.font?.pointSize ?? 0))].joined(separator:"|")
-        }.sorted().joined(separator:"\n")
+        let annotationSignatures:[String]=page.annotations.map { annotation -> String in
+            var fields:[String]=[]
+            fields.append(annotation.type ?? "")
+            fields.append(annotation.contents ?? "")
+            fields.append(NSStringFromRect(annotation.bounds))
+            fields.append(annotation.color.description)
+            fields.append(annotation.interiorColor?.description ?? "")
+            fields.append(annotation.font?.fontName ?? "")
+            let pointSize:CGFloat=annotation.font?.pointSize ?? 0
+            fields.append(String(Double(pointSize)))
+            return fields.joined(separator:"|")
+        }
+        let annotations=annotationSignatures.sorted().joined(separator:"\n")
         return Signature(identity:OCRPageCache.digest(rawIdentity),visual:try pixels(page),text:page.string ?? "",rotation:(page.rotation%360+360)%360,crop:page.bounds(for:.cropBox),annotations:annotations)
     }
     /// Unique occurrence keys and a longest increasing sequence align unchanged pages in O(n log n).

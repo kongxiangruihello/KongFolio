@@ -16,7 +16,7 @@ enum OrderedText {
 
     /// One character of a vertical page in reading order, with where it is (fractions of the page, origin bottom-left)
     /// and which column of the page it is in. `approximate` characters share the box of their whole column.
-    struct Glyph: Equatable {
+    struct Glyph: Equatable, Codable {
         var text: String
         var box: CGRect
         var column: Int
