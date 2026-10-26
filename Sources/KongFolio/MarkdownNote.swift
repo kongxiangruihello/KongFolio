@@ -17,12 +17,14 @@ struct TextEdit: Equatable {
         var id: UUID
         var text: String
         var path: String?
+        var format: TextDocumentFormat? = nil
     }
 
     let id: UUID
     let storage: URL
     @Published var text: String { didSet { if text != oldValue { textChanged() } } }
     @Published var fileURL: URL?
+    @Published var format: TextDocumentFormat = .markdown
     @Published var dirty = false
     @Published var showPreview = true
     @Published var preview: PDFDocument?
@@ -33,10 +35,11 @@ struct TextEdit: Equatable {
     private var previewTask: Task<Void, Never>?
     private var backupTask: Task<Void, Never>?
 
-    init(id: UUID = UUID(), text: String = "", fileURL: URL? = nil, dirty: Bool = false, storage: URL? = nil) {
+    init(id: UUID = UUID(), text: String = "", fileURL: URL? = nil, dirty: Bool = false, storage: URL? = nil, format: TextDocumentFormat? = nil) {
         self.id = id
         self.text = text
         self.fileURL = fileURL
+        self.format = format ?? fileURL.map { TextDocumentFormat.forURL($0) } ?? .markdown
         self.dirty = dirty
         self.storage = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
         if !text.isEmpty { refreshPreview() }
@@ -56,6 +59,7 @@ struct TextEdit: Equatable {
     func write(to url: URL) throws {
         try text.write(to: url, atomically: true, encoding: .utf8)
         fileURL = url
+        format = TextDocumentFormat.forURL(url)
         dirty = false
         removeBackup()
     }
@@ -64,8 +68,8 @@ struct TextEdit: Equatable {
         var target = fileURL
         if asNew || target == nil {
             let panel = NSSavePanel()
-            panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
-            panel.nameFieldStringValue = title + ".md"
+            panel.allowedContentTypes = [UTType(filenameExtension: format.fileExtension) ?? .plainText]
+            panel.nameFieldStringValue = title + "." + format.fileExtension
             guard panel.runModal() == .OK, let chosen = panel.url else { return false }
             target = chosen
         }
@@ -102,7 +106,7 @@ struct TextEdit: Equatable {
         panel.nameFieldStringValue = title + ".pdf"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let data = try TextImport.render(text, markdown: true).dataRepresentation().unwrap("PDF 生成失败")
+            let data = try renderDocument().dataRepresentation().unwrap("PDF 生成失败")
             try data.write(to: url, options: .atomic)
             status = "已导出 PDF"
         } catch {
@@ -116,7 +120,7 @@ struct TextEdit: Equatable {
 
     func writeBackup() throws {
         try FileManager.default.createDirectory(at: backupURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL?.path)).write(to: backupURL, options: .atomic)
+        try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL?.path, format: format)).write(to: backupURL, options: .atomic)
     }
 
     func removeBackup() {
@@ -139,7 +143,7 @@ struct TextEdit: Equatable {
         let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
         return files.filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { file -> MarkdownNote? in
             guard let backup = try? JSONDecoder().decode(Backup.self, from: Data(contentsOf: file)) else { return nil }
-            let note = MarkdownNote(id: backup.id, text: backup.text, fileURL: backup.path.map { URL(fileURLWithPath: $0) }, dirty: true, storage: storage)
+            let note = MarkdownNote(id: backup.id, text: backup.text, fileURL: backup.path.map { URL(fileURLWithPath: $0) }, dirty: true, storage: storage, format: backup.format)
             note.status = "已恢复上次未保存的内容"
             return note
         }
@@ -155,15 +159,12 @@ struct TextEdit: Equatable {
 
     func refreshPreview() {
         previewTask?.cancel()
-        let source = text
         previewTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled else { return }
-            let data = await Task.detached(priority: .userInitiated) { () -> Data? in
-                guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-                return try? TextImport.render(source, markdown: true).dataRepresentation()
-            }.value
-            guard !Task.isCancelled, let self else { return }
+            guard let self else { return }
+            let data = try? self.renderDocument().dataRepresentation()
+            guard !Task.isCancelled else { return }
             self.preview = data.flatMap { PDFDocument(data: $0) }
         }
     }

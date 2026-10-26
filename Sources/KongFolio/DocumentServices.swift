@@ -52,8 +52,9 @@ enum DocumentServices {
             }
             return unrestricted(document)
         }
+        if ImageImport.handles(url) { return try ImageImport.document(url) }
         if TextImport.handles(url) { return try TextImport.document(from: url) }
-        throw FolioError(message: "不支持的文件：\(url.lastPathComponent)。KongFolio 现在只处理 PDF、Markdown 与纯文本。")
+        throw FolioError(message: "不支持的文件：\(url.lastPathComponent)。支持 PDF、图片、Markdown、HTML 与纯文本。")
     }
     // PDFKit thumbnail honors crop boxes and page rotation, returning upright pixels.
     static func render(_ page: PDFPage, maxDimension: CGFloat = 2200) throws -> CGImage {

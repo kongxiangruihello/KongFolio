@@ -13,7 +13,8 @@ import PDFKit
 enum TextImport {
     static let plainExtensions: Set<String> = ["txt", "text"]
     static let markdownExtensions: Set<String> = ["md", "markdown", "mdown"]
-    static var extensions: Set<String> { plainExtensions.union(markdownExtensions) }
+    static let htmlExtensions: Set<String> = ["html", "htm"]
+    static var extensions: Set<String> { plainExtensions.union(markdownExtensions).union(htmlExtensions) }
     static func handles(_ url: URL) -> Bool { extensions.contains(url.pathExtension.lowercased()) }
 
     static let pageSize = CGSize(width: 595.28, height: 841.89)   // A4
@@ -34,6 +35,10 @@ enum TextImport {
     static func document(from url: URL) throws -> PDFDocument {
         let data = try Data(contentsOf: url)
         let text = try decode(data)
+        if htmlExtensions.contains(url.pathExtension.lowercased()) {
+            // HTML imports through the document editor, where AppKit can render it on the main thread.
+            throw FolioError(message: "请使用“编辑文本文件”打开 HTML，再导出 PDF。")
+        }
         return try render(text, markdown: markdownExtensions.contains(url.pathExtension.lowercased()))
     }
 

@@ -57,7 +57,9 @@ struct TabBar: View {
                 Button("打开文档…") { store.open() }
                 Divider()
                 Button("新建 Markdown 笔记") { store.newNote() }
-                Button("编辑 Markdown 文件…") { store.editMarkdownFile() }
+                Button("新建 HTML 文件") { store.newNote(format: .html) }
+                Button("新建文本文件") { store.newNote(format: .plain) }
+                Button("编辑文本文件…") { store.editMarkdownFile() }
             } label: { Image(systemName: "plus") }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

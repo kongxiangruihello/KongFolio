@@ -20,7 +20,7 @@ import AppKit
                 .background(WindowAccessor { window in delegate.attach(window) })
                 .onAppear { delegate.store = store; store.bootstrap() }
                 .onOpenURL { url in
-                    if TextImport.markdownExtensions.contains(url.pathExtension.lowercased()) { store.openNote(url) }
+                    if TextImport.handles(url) { store.openNote(url) }
                     else { store.openInNewTab([url]) }
                 }
         }
@@ -31,13 +31,18 @@ import AppKit
             CommandGroup(replacing: .newItem) {
                 Button("打开…") { store.open() }.keyboardShortcut("o")
                 Button("新建 Markdown 笔记") { store.newNote() }.keyboardShortcut("n")
-                Button("编辑 Markdown 文件…") { store.editMarkdownFile() }.keyboardShortcut("o", modifiers: [.command, .shift])
+                Button("新建 HTML 文件") { store.newNote(format: .html) }
+                Button("新建文本文件") { store.newNote(format: .plain) }
+                Button("编辑 Markdown / HTML / 文本文件…") { store.editMarkdownFile() }.keyboardShortcut("o", modifiers: [.command, .shift])
             }
             CommandGroup(replacing: .saveItem) {
                 Button("保存") { store.saveActive() }.keyboardShortcut("s").disabled(!store.canSave)
                 Button("另存为…") { store.saveActive(asNew: true) }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(!store.canSave)
                 Button("导出 PDF…") { store.exportActive() }.keyboardShortcut("e").disabled(!store.canSave)
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
+            }
+            CommandGroup(replacing: .printItem) {
+                Button("打印…") { store.printActive() }.keyboardShortcut("p").disabled(!store.canSave)
             }
             CommandGroup(replacing: .sidebar) {
                 Button(showSidebar ? "隐藏左侧栏" : "显示左侧栏") { showSidebar.toggle() }.keyboardShortcut("1", modifiers: [.command, .option])
@@ -83,6 +88,8 @@ import AppKit
                     .keyboardShortcut("n", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
             }
             CommandMenu("编辑页面") {
+                Button("扫描整理：切分 / 纠偏 / 检查…") { store.commandWorkspace?.showScanWorkshop = true }
+                    .disabled((store.commandWorkspace?.count ?? 0) == 0 || store.commandWorkspace?.busy == true)
                 Menu("选择页面") {
                     ForEach(PageSelectionKind.allCases) { kind in
                         Button(kind.rawValue) { store.commandWorkspace?.selectPages(kind) }

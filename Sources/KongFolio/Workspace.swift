@@ -70,7 +70,7 @@ import UniformTypeIdentifiers
     @Published var pendingImports: [URL] = []
     @Published var showImportOrder = false
     @Published var selectedAnnotation: PDFAnnotation?
-    @Published var annotationColor = Color.blue
+    @Published var annotationColor = Color.blue { didSet { rememberDrawingStyle() } }
     @Published var showCompress = false
     @Published var showCrop = false
     @Published var showWordExport = false
@@ -118,10 +118,10 @@ import UniformTypeIdentifiers
     /// The filter chosen in the annotation list, kept while switching between tabs.
     @Published var noteFilter = AnnotationFilter()
     /// Pen and arrow line width in points; the highlighter draws a wide translucent stroke instead.
-    @Published var penWidth = 2.0
-    @Published var penHighlighter = false
+    @Published var penWidth = 2.0 { didSet { rememberDrawingStyle() } }
+    @Published var penHighlighter = false { didSet { rememberDrawingStyle() } }
     /// Rectangles and ellipses get a translucent fill.
-    @Published var shapeFill = false
+    @Published var shapeFill = false { didSet { rememberDrawingStyle() } }
     /// Entries ticked in the annotation list, for deleting or recolouring several at once.
     @Published var selectedNoteIDs: Set<String> = []
     /// Kinds of annotation hidden on the page right now ("高亮", "手写"…); not part of the file.
@@ -131,16 +131,26 @@ import UniformTypeIdentifiers
         didSet { AnnotationPresets.saveUser(userPresets) }
     }
     /// Dashed instead of solid for lines, arrows, rectangles and ellipses.
-    @Published var lineDashed = false
+    @Published var lineDashed = false { didSet { rememberDrawingStyle() } }
     /// The drawing tools floating over the page. Off by default (reading comes first); a small button brings them up.
     @Published var showAnnotationBar = UserDefaults.standard.object(forKey: "KongFolio.annotationBar2") as? Bool ?? false {
         didSet {
             UserDefaults.standard.set(showAnnotationBar, forKey: "KongFolio.annotationBar2")
             if !showAnnotationBar, tool != .select { tool = .select }
+            else if showAnnotationBar, tool == .select, drawingStylesReady {
+                let next = drawingDefaults.string(forKey: "KongFolio.lastDrawingTool").flatMap(AnnotationTool.init(rawValue:)) ?? .pen
+                selectTool(next, highlighter: drawingDefaults.bool(forKey: "KongFolio.lastHighlighter"))
+            }
         }
     }
     /// The colour and width each tool was last used with.
-    var toolStyles: [String: (rgb: [Double], width: Double)] = [:]
+    var toolStyles: [String: SavedDrawingStyle] = [:]
+    var restoringDrawingStyle = false
+    var drawingStylesReady = false
+    var drawingDefaults = UserDefaults.standard
+    var directSaveTask: Task<Void, Never>?
+    var drawingInProgress = false
+    @Published var showScanWorkshop = false
     @Published var signatures: [SignatureTemplate] = []
     @Published var signaturePositions: [SignaturePosition] = []
     @Published var placingSignature: SignatureTemplate?
@@ -193,9 +203,11 @@ import UniformTypeIdentifiers
     let slot: String
     weak var store: WorkspaceStore?
 
-    init(storage: URL? = nil, slot: String = "") {
+    init(storage: URL? = nil, slot: String = "", drawingDefaults: UserDefaults? = nil) {
         self.storage = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
         self.slot = slot
+        self.drawingDefaults = drawingDefaults ?? (AppEnvironment.isTestRun ? UserDefaults(suiteName: "KongFolio.StyleTests." + UUID().uuidString)! : .standard)
+        loadDrawingStyles()
     }
 
     var recoveryURL: URL { storage.appendingPathComponent(slot.isEmpty ? "Recovery.kfrecovery" : "Recovery-\(slot).kfrecovery", isDirectory: true) }
@@ -228,7 +240,7 @@ import UniformTypeIdentifiers
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
     /// Unchanged since it was opened or saved, so the file on disk is the document and no recovery copy is needed.
-    var canRestoreFromFile: Bool { !dirty && (projectURL != nil || sourceURL != nil) }
+    var canRestoreFromFile: Bool { !dirty && (projectURL != nil || (sourceURL != nil && !hasPrivateReadingData)) }
     /// A loaded tab that can be dropped from memory and read again later without losing anything.
     var canUnload: Bool { count > 0 && !busy && canRestoreFromFile && history.isEmpty && future.isEmpty }
     var canUndo: Bool { !history.isEmpty }
@@ -301,6 +313,9 @@ import UniformTypeIdentifiers
         let hidden = hiddenKinds
         if !hidden.isEmpty { hiddenKinds = []; applyLayers() }
         defer { if !hidden.isEmpty { hiddenKinds = hidden; applyLayers() } }
+        if let first = document.page(at: 0), !document.isEncrypted || document.allowsDocumentChanges {
+            document.removePage(at: 0); document.insert(first, at: 0)
+        }
         guard count > 0, let data = document.dataRepresentation() else { throw FolioError(message: "没有可保存的文档。") }
         lastSerializationSeconds = Date().timeIntervalSince(started)
         cachedPDF = data
@@ -384,7 +399,7 @@ import UniformTypeIdentifiers
     func scheduleRecovery() {
         guard started, count > 0 else { return }
         autoTask?.cancel()
-        guard dirty else {
+        guard dirty || hasPrivateReadingData else {
             // Nothing to protect: the opened file or saved project is this very document. Copying it into the
             // recovery folder only cost disk time (a hash and a full write per opened PDF), and an older copy must
             // not be restored over what is on disk. Quitting still writes a copy so the session comes back.
@@ -397,6 +412,7 @@ import UniformTypeIdentifiers
         autoTask = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) } catch { return }
             guard let self, !Task.isCancelled else { return }
+            if self.drawingInProgress { self.scheduleRecovery(); return }
             do {
                 let archive = try self.snapshot()
                 let legacy = self.legacyRecoveryURL
@@ -462,6 +478,7 @@ import UniformTypeIdentifiers
             selectedAnnotation = nil
         }
         scheduleRecovery()
+        scheduleDirectSave()
     }
 
     func changed() { edited(reset: true) }
@@ -544,26 +561,7 @@ import UniformTypeIdentifiers
 
     func confirmReplace() -> Bool {
         guard dirty else { return true }
-        let alert = NSAlert()
-        alert.messageText = "保存当前工作？"
-        alert.informativeText = "保存为 KongFolio 项目可保留页面、标注和 OCR 前的原页；保存为 PDF 得到一份普通 PDF（页面、标注和已识别的文字都在，标注仍可编辑）。"
-        alert.addButton(withTitle: "保存项目")
-        alert.addButton(withTitle: "保存为 PDF…")
-        alert.addButton(withTitle: "取消")
-        alert.addButton(withTitle: "放弃修改")
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            return saveProject(background: false)
-        case .alertSecondButtonReturn:
-            // A PDF is a hand-off: once it is written the work is done with, as after "放弃修改".
-            guard saveAsPDFBeforeLeaving() else { return false }
-            return discardWork()
-        case NSApplication.ModalResponse(rawValue: NSApplication.ModalResponse.alertThirdButtonReturn.rawValue + 1):
-            // AppKit names only the first three alert buttons; the fourth follows them.
-            return discardWork()
-        default:
-            return false
-        }
+        return saveDirectly()
     }
 
     /// Asks where to put a PDF of the document and writes it; false when cancelled or when it failed.
@@ -623,6 +621,7 @@ import UniformTypeIdentifiers
 
     /// Empties the workspace. With `keepingSource` the file it came from stays known, so the tab can load it again.
     private func clearDocument(keepingSource: Bool) {
+        directSaveTask?.cancel()
         searchTask?.cancel(); estimateTask?.cancel()
         document = PDFDocument(); cachedPDF = nil
         pageMeta = []; selection = 0; selectedPages = [0]; rangeText = ""
@@ -727,7 +726,7 @@ import UniformTypeIdentifiers
 
     func pickFiles() -> [URL] {
         let panel = NSOpenPanel()
-        var types: [UTType] = [.pdf, .plainText, UTType(exportedAs: "com.kongfolio.project")]
+        var types: [UTType] = [.pdf, .image, .html, .plainText, UTType(exportedAs: "com.kongfolio.project")]
         types += TextImport.markdownExtensions.compactMap { UTType(filenameExtension: $0) }
         panel.allowedContentTypes = types
         panel.allowsMultipleSelection = true
@@ -744,7 +743,7 @@ import UniformTypeIdentifiers
     /// Several files are opened side by side, one tab each. Only an explicit merge (or inserting pages into the
     /// current document) asks for an order and combines them.
     func openSelected(_ urls: [URL], insert: Bool, merge: Bool = false) {
-        if urls.count > 1, !insert, !merge, let store {
+        if !insert, !merge, let store {
             store.openEach(urls)
             return
         }
@@ -759,8 +758,8 @@ import UniformTypeIdentifiers
 
     /// Files dropped on the window: open them, or insert after the current page when a document is open.
     func openDropped(_ urls: [URL]) {
-        let files = urls.filter { $0.isFileURL && (["pdf", "kongfolio"].contains($0.pathExtension.lowercased()) || TextImport.handles($0)) }
-        guard !files.isEmpty else { error = "只能拖入 PDF、Markdown、TXT 或 KongFolio 项目。"; return }
+        let files = urls.filter { $0.isFileURL && (["pdf", "kongfolio"].contains($0.pathExtension.lowercased()) || TextImport.handles($0) || ImageImport.handles($0)) }
+        guard !files.isEmpty else { error = "支持拖入 PDF、图片、Markdown、HTML、TXT 或 KongFolio 项目。"; return }
         let isProject = files.contains { $0.pathExtension.lowercased() == "kongfolio" }
         var insert = false
         if count > 0, !isProject, AppEnvironment.isInteractive {
@@ -899,7 +898,7 @@ import UniformTypeIdentifiers
             if !insert, loaded.count == 1 { dirty = false }
             applyPendingView()
             remember(urls)
-            status = "已载入 \(count) 页" + (rebuilt ? "（此文件带“禁止修改”限制，已转成可编辑副本；原文件不会被改动）" : "")
+            status = "已载入 \(count) 页" + (rebuilt ? "（此文件带“禁止修改”限制，已转成可编辑文档；修改后自动保存）" : "")
             store?.loadedTabsChanged()
         }
     }

@@ -6,6 +6,7 @@ struct SignatureImportSheet: View {
     @ObservedObject var workspace: Workspace
     @Environment(\.dismiss) private var dismiss
     @State private var source: CGImage?
+    @State private var sourceID = UUID()
     @State private var processed: CGImage?
     @State private var options = SignatureOptions()
     @State private var name = ""
@@ -49,8 +50,7 @@ struct SignatureImportSheet: View {
         }
         .padding(20)
         .frame(width: 520)
-        .task(id: options) { await reprocess() }
-        .onChange(of: source == nil) { _, _ in Task { await reprocess() } }
+        .task(id: SignaturePreviewKey(source: sourceID, options: options)) { await reprocess() }
     }
 
     private var preview: some View {
@@ -85,11 +85,14 @@ struct SignatureImportSheet: View {
     private func use(_ image: CGImage, suggestedName: String) {
         message = ""
         source = image
+        processed = nil
+        sourceID = UUID()
         if name.isEmpty { name = suggestedName }
     }
 
     private func reprocess() async {
         guard let source else { processed = nil; return }
+        processed = nil
         try? await Task.sleep(nanoseconds: 120_000_000)
         if Task.isCancelled { return }
         let current = options
@@ -139,3 +142,5 @@ struct SignatureThumbnail: View {
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(.secondary.opacity(0.4)))
     }
 }
+
+private struct SignaturePreviewKey: Equatable { var source: UUID; var options: SignatureOptions }

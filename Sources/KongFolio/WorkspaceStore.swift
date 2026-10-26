@@ -36,7 +36,7 @@ import UniformTypeIdentifiers
     private var forwarding: AnyCancellable?
 
     init(storage: URL? = nil) {
-        let folder = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
+        let folder = storage ?? ProcessInfo.processInfo.environment["KONGFOLIO_STORAGE"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
         self.storage = folder
         self.board = Board(storage: folder)
         connectBoardToDocuments()
@@ -219,8 +219,9 @@ import UniformTypeIdentifiers
 
     /// Opens files in the current tab when it is empty, otherwise in a new tab.
     func openInNewTab(_ urls: [URL]) {
+        if urls.count == 1, let url = urls.first, TextImport.handles(url) { openNote(url); return }
         let target: Workspace
-        if let current = activeWorkspace, current.count == 0, !current.busy { target = current } else { target = addWorkspace() }
+        if let current = activeWorkspace, current.count == 0, !current.needsLoad, !current.busy { target = current } else { target = addWorkspace() }
         select(target.id)
         target.load(urls)
     }
@@ -228,16 +229,21 @@ import UniformTypeIdentifiers
     /// Opens every file in its own tab. The tabs appear at once with their file names; the first one is read and brought
     /// to the front, the others are read when selected, so opening dozens of files is instant and uses no extra memory.
     func openEach(_ urls: [URL]) {
-        var first: Workspace?
+        var first: UUID?
         for url in urls {
+            if TextImport.handles(url) {
+                openNote(url)
+                if first == nil { first = selectedID }
+                continue
+            }
             let target: Workspace
-            if first == nil, let current = activeWorkspace, current.count == 0, !current.busy { target = current } else { target = addWorkspace() }
+            if let current = activeWorkspace, current.count == 0, !current.needsLoad, !current.busy { target = current }
+            else { target = addWorkspace() }
             target.sourceURL = url
-            if first == nil { first = target } else { target.needsLoad = true }
+            target.needsLoad = true
+            if first == nil { first = target.id }
         }
-        guard let first else { return }
-        select(first.id)
-        first.load([urls[0]])
+        if let first { select(first) }
     }
 
     /// The "open" command: shows the file panel for an empty document tab, creating one when a note is in front.
@@ -252,8 +258,8 @@ import UniformTypeIdentifiers
 
     // MARK: Notes
 
-    @discardableResult func newNote() -> MarkdownNote {
-        let note = MarkdownNote(storage: storage)
+    @discardableResult func newNote(format: TextDocumentFormat = .markdown) -> MarkdownNote {
+        let note = MarkdownNote(storage: storage, format: format)
         tabs.append(.note(note))
         select(note.id)
         return note
@@ -331,7 +337,9 @@ import UniformTypeIdentifiers
     // MARK: Commands on the active tab
 
     func saveActive(asNew: Bool = false) {
-        if let workspace = activeWorkspace { workspace.saveProject(asNew: asNew) }
+        if let workspace = activeWorkspace {
+            if asNew { workspace.saveProject(asNew: true) } else { workspace.saveDirectly() }
+        }
         else { activeNote?.save(asNew: asNew) }
     }
 
