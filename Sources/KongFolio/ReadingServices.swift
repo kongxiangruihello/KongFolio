@@ -28,6 +28,8 @@ struct SearchHit: Identifiable {
     var snippet: String
     /// The PDF page label (usually the printed page number) when it differs from the physical position.
     var label: String? = nil
+    /// Character boxes (upright normalized) for hits found in vertical reading order; empty otherwise.
+    var boxes: [CGRect] = []
 }
 struct AnnotationNote: Identifiable {
     var id: String { "\(page)-\(index)" }
@@ -142,7 +144,8 @@ enum ReadingServices {
         return result
     }
 
-    static func search(_ data: Data, query: String, limit: Int = 1000, simplify: Bool = true) throws -> [SearchHit] {
+    /// `ordered` supplies vertical OCR lines per page; those pages are searched in column order (right to left).
+    static func search(_ data: Data, query: String, limit: Int = 1000, simplify: Bool = true, ordered: [Int: [RecognizedLine]] = [:]) throws -> [SearchHit] {
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let doc = PDFDocument(data: data) else { return [] }
         var hits: [SearchHit] = []
         var cache: [String: String] = [:]
@@ -152,6 +155,17 @@ enum ReadingServices {
             let string = page.string ?? ""
             let text = string as NSString
             let label = pageLabel(page, index: i)
+            if let lines = ordered[i], let reading = ReadingOrder.ordered(lines) {
+                let readingText = reading.text as NSString
+                for found in matches(in: reading.text, query: query, simplify: simplify, cache: &cache) {
+                    let lower = max(0, found.location - 24), upper = min(readingText.length, NSMaxRange(found) + 48)
+                    let excerpt = readingText.substring(with: readingText.rangeOfComposedCharacterSequences(for: NSRange(location: lower, length: upper - lower))).replacingOccurrences(of: "\n", with: "｜")
+                    let boxes = Array(reading.boxes[found.location..<NSMaxRange(found)]).filter { !$0.isNull }
+                    hits.append(SearchHit(page: i, range: NSRange(location: NSNotFound, length: 0), snippet: repairIdeographs(excerpt), label: label, boxes: boxes))
+                    if hits.count >= limit { return hits }
+                }
+                continue
+            }
             for found in matches(in: string, query: query, simplify: simplify, cache: &cache) {
                 let lower = max(0, found.location - 32), upper = min(text.length, NSMaxRange(found) + 64)
                 let excerpt = text.substring(with: text.rangeOfComposedCharacterSequences(for: NSRange(location: lower, length: upper - lower))).replacingOccurrences(of: "\n", with: " ")
@@ -255,15 +269,17 @@ extension Workspace {
         searchTask?.cancel(); searchResults = []; searchMessage = ""
         guard !search.isEmpty, let data = try? pdfData() else { return }
         let query = search, version = revision; searchMessage = "正在搜索…"; sidebarTab = .search
-        let job = Task.detached { try ReadingServices.search(data, query: query) }; searchTask = job
+        let ordered = orderedOCRLines()
+        let job = Task.detached { try ReadingServices.search(data, query: query, ordered: ordered) }; searchTask = job
         Task {
-            do { let hits = try await job.value; guard revision == version, query == search else { return }; searchResults = hits; searchMessage = hits.count == 1000 ? "显示前 1000 处匹配，请缩小搜索范围" : "找到 \(hits.count) 处匹配（忽略换行，简繁通查）" }
+            do { let hits = try await job.value; guard revision == version, query == search else { return }; searchResults = hits; searchMessage = hits.count == 1000 ? "显示前 1000 处匹配，请缩小搜索范围" : "找到 \(hits.count) 处匹配（忽略换行，简繁通查\(ordered.isEmpty ? "" : "，竖排页按列序")）" }
             catch is CancellationError {} catch { self.error = error.localizedDescription }
         }
     }
     func goToSearch(_ hit: SearchHit) {
         selectPage(hit.page)
-        guard let selection = page?.selection(for: hit.range) else { return }
+        let found = hit.boxes.isEmpty ? page?.selection(for: hit.range) : page.flatMap { ReadingOrder.selection(for: hit.boxes, on: $0) }
+        guard let selection = found else { return }
         if let page { let bounds = selection.bounds(for: page); readingPoint = CGPoint(x: bounds.minX, y: bounds.maxY + 20) }
         pdfView?.setCurrentSelection(selection, animate: true); pdfView?.go(to: selection)
     }
