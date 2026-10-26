@@ -4,6 +4,7 @@ import SwiftUI
 /// Editor on the left, typeset preview (the same A4 layout used when a Markdown file is opened) on the right.
 struct MarkdownEditorView: View {
     @ObservedObject var note: MarkdownNote
+    var store: WorkspaceStore? = nil
 
     var body: some View {
         GeometryReader { proxy in
@@ -39,6 +40,12 @@ struct MarkdownEditorView: View {
 
     private var toolbarButtons: some View {
         HStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "square.stack.3d.up.fill").font(.title2).foregroundStyle(Brand.accent)
+                Text("KongFolio").font(.headline)
+                NewFileIcons(store: store)
+            }
+            Divider().frame(height: 18)
             Button("保存") { note.save() }.help("保存当前文件（⌘S）")
             Button("另存为…") { note.save(asNew: true) }
             Text(note.format.rawValue).font(.caption).foregroundStyle(.secondary)
