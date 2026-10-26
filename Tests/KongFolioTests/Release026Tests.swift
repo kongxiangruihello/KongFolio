@@ -117,14 +117,14 @@ final class Release026Tests: XCTestCase {
         let cache=try OCRPageCache(root:directory,source:data,recipe:recipe)
         let cached=try XCTUnwrap(cache.read(0));XCTAssertNil(cache.read(1))
         let cachedDocument=try XCTUnwrap(PDFDocument(data:cached.pdf))
-        XCTAssertTrue(cachedDocument.string?.contains("checkpoint") ?? false)
+        XCTAssertTrue(cachedDocument.string?.contains("checkpoint") ?? false, "Cached OCR text: \(String(reflecting: cachedDocument.string))")
         var resumedCalls=0
         let result=try BatchPipeline.process(data,recipe:recipe,replacements:[],wordURL:nil,checkpointRoot:directory,recognize:{ _,_ in resumedCalls += 1;return [] })
         XCTAssertEqual(resumedCalls,2);XCTAssertEqual(result.resumed,1)
         let restored=try XCTUnwrap(PDFDocument(data:try XCTUnwrap(result.pdf)))
         XCTAssertEqual(result.recognized,3);XCTAssertEqual(restored.pageCount,3)
         withExtendedLifetime(restored) {
-            XCTAssertTrue(restored.page(at:0)?.string?.contains("checkpoint") ?? false)
+            XCTAssertTrue(restored.page(at:0)?.string?.contains("checkpoint") ?? false, "Restored OCR text: \(String(reflecting: restored.page(at:0)?.string))")
         }
     }
     func testCheckpointContextInvalidatesForSourceAndRecipeChanges() throws {

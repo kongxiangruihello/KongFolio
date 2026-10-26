@@ -130,8 +130,9 @@ enum DocumentServices {
         }
         ctx.endPDFPage(); ctx.closePDF()
         withExtendedLifetime(holder) {}
-        guard let result = PDFDocument(data: data as Data)?.page(at: 0) else { throw FolioError(message: "OCR PDF 生成失败。") }
-        return result
+        guard let document = PDFDocument(data: data as Data),
+              let result = document.page(at: 0)?.copy() as? PDFPage else { throw FolioError(message: "OCR PDF 生成失败。") }
+        return withExtendedLifetime(document) { result }
     }
     static func subset(_ doc: PDFDocument, indexes: [Int]) -> PDFDocument {
         let output = PDFDocument()
