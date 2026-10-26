@@ -316,8 +316,8 @@ struct ContentView: View {
             HStack { Text("页面").font(.headline); Spacer(); Text("\(workspace.count)").foregroundStyle(.secondary) }
                 .padding(.horizontal, 14).padding(.top, 16)
             Text("⌘ 多选 · ⇧ 连选 · 拖动排序 · 可拖入文件").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 14)
-            ScrollView {
-                LazyVStack(spacing: 12) {
+            ScrollViewReader { proxy in
+                List(selection:Binding(get:{workspace.selectedPages},set:{workspace.selectSidebarPages($0)})) {
                     ForEach(0..<workspace.count, id: \.self) { index in
                         Button { workspace.selectPage(index, modifiers: NSEvent.modifierFlags) } label: {
                             VStack(spacing: 6) {
@@ -329,6 +329,11 @@ struct ContentView: View {
                             .background(workspace.selectedPages.contains(index) ? Brand.accent.opacity(0.15) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("第 \(index+1) 页")
+                        .tag(index)
+                        .id(index)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top:6,leading:12,bottom:6,trailing:12))
                         .draggable("KongFolio:\(index)")
                         .dropDestination(for: String.self) { values, _ in
                             guard let value = values.first, value.hasPrefix("KongFolio:"), let source = Int(value.dropFirst(10)) else { return false }
@@ -337,7 +342,13 @@ struct ContentView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 12)
+                .listStyle(.plain)
+                .onChange(of:workspace.selection) { _,page in proxy.scrollTo(page,anchor:.center) }
+                .task(id:workspace.layoutRevision) {
+                    await Task.yield()
+                    guard !Task.isCancelled else { return }
+                    proxy.scrollTo(workspace.selection,anchor:.center)
+                }
             }
             HStack {
                 Button { workspace.move(-1) } label: { Image(systemName: "arrow.up") }.disabled(workspace.effectivePages.first == 0)

@@ -87,7 +87,12 @@ struct BatchPlan: Codable, Equatable {
         }
         summary = "加入 \(added) 个 PDF。" + (rejected > 0 ? "\(rejected) 个文件与队列文件同名，请改名后再加入。" : ""); remember()
     }
-    func clear() { guard !running else { return }; items = []; plan = nil; summary = "队列已清空，输出文件保留。"; remember() }
+    func clear() { guard !running else { return }; clearCheckpoints();items = []; plan = nil; summary = "队列已清空，输出文件保留。"; remember() }
+    func clearCheckpoints() {
+        guard !running,let storage else { return }
+        do { let url=storage.appendingPathComponent("BatchPages");if FileManager.default.fileExists(atPath:url.path) { try FileManager.default.removeItem(at:url) } }
+        catch { summary="续跑缓存清理失败：\(error.localizedDescription)" }
+    }
     func resume() { if let plan { start(recipe: plan.recipe, output: plan.output, replacements: plan.replacements, mode: .unfinished) } }
     func retryFailed() { if let plan { start(recipe: plan.recipe, output: plan.output, replacements: plan.replacements, mode: .failed) } }
     func retryItem(_ id: UUID) {
@@ -118,8 +123,9 @@ struct BatchPlan: Codable, Equatable {
                 let item = items[index]
                 items[index].state = .running; items[index].attempts += 1; fileProgress = 0; remember()
                 let attempt = items[index].attempts
+                let checkpointRoot=storage?.appendingPathComponent("BatchPages",isDirectory:true).appendingPathComponent(item.id.uuidString,isDirectory:true)
                 let worker = Task.detached(priority: .userInitiated) {
-                    try Self.process(item, plan: plan) { value in
+                    try Self.process(item, plan: plan, checkpointRoot:checkpointRoot) { value in
                         Task { @MainActor in
                             guard self.running, self.items.indices.contains(index), self.items[index].id == item.id, self.items[index].attempts == attempt, case .running = self.items[index].state else { return }
                             self.fileProgress = max(self.fileProgress, value)
@@ -144,7 +150,7 @@ struct BatchPlan: Codable, Equatable {
     }
     func cancel() { guard running else { return }; stopping = true; task?.cancel(); worker?.cancel() }
 
-    nonisolated static func process(_ item: BatchItem, plan: BatchPlan, progress: @escaping @Sendable (Double) -> Void) throws -> Completion {
+    nonisolated static func process(_ item: BatchItem, plan: BatchPlan, checkpointRoot: URL? = nil, progress: @escaping @Sendable (Double) -> Void) throws -> Completion {
         try Task.checkCancellation()
         let data = try Data(contentsOf: item.url, options: .mappedIfSafe)
         let fingerprint = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -164,7 +170,7 @@ struct BatchPlan: Codable, Equatable {
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: staging) }
         let staged = outputs(for: item.url, in: staging, recipe: plan.recipe)
-        let result = try BatchPipeline.process(data, recipe: plan.recipe, replacements: plan.replacements, wordURL: staged.word, progress: progress)
+        let result = try BatchPipeline.process(data, recipe: plan.recipe, replacements: plan.replacements, wordURL: staged.word, checkpointRoot:checkpointRoot, progress: progress)
         if let pdf = result.pdf, let url = staged.pdf { try pdf.write(to: url) }
         if let folder = staged.chapters { try placeFolder(result.chapters, at: folder) }
         let digest = try digestOutputs([staged.pdf, staged.word, staged.chapters].compactMap { $0 })
@@ -179,7 +185,8 @@ struct BatchPlan: Codable, Equatable {
             for url in committed { try? FileManager.default.removeItem(at: url) }
             throw error
         }
-        return Completion(note: "\(result.pages) 页" + (result.recognized > 0 ? "，识别 \(result.recognized) 页" : ""), fingerprint: fingerprint, skipped: false, outputDigest: digest)
+        if let checkpointRoot { try? FileManager.default.removeItem(at:checkpointRoot) }
+        return Completion(note: "\(result.pages) 页" + (result.recognized > 0 ? "，识别 \(result.recognized) 页" : "") + (result.resumed > 0 ? "，续跑复用 \(result.resumed) 页" : ""), fingerprint: fingerprint, skipped: false, outputDigest: digest)
     }
     nonisolated static func digestOutputs(_ urls: [URL]) throws -> String {
         var digest = SHA256()

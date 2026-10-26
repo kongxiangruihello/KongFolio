@@ -133,6 +133,9 @@ struct BatchOutput {
     var wordURL: URL?
     var pages = 0
     var recognized = 0
+    var resumed = 0
+    var angles: [Int:Double] = [:]
+    var cropGuides: [Int:CGRect] = [:]
     /// One PDF per chapter, in book order, named for writing to a folder.
     var chapters: [(name: String, data: Data)] = []
 }
@@ -140,7 +143,7 @@ struct BatchOutput {
 enum BatchPipeline {
     /// Runs a recipe over one file. Everything happens in memory; `wordURL` is written before this returns.
     /// `progress` gets 0...1 for the file.
-    static func process(_ data: Data, recipe: WorkRecipe, replacements: [ReplacementRule], wordURL: URL?, progress: (Double) -> Void = { _ in }) throws -> BatchOutput {
+    static func process(_ data: Data, recipe: WorkRecipe, replacements: [ReplacementRule], wordURL: URL?, checkpointRoot: URL? = nil, recognize: (PDFPage, OCRSettings) throws -> [RecognizedLine] = { try BackgroundJobs.recognize($0,settings:$1) }, progress: (Double) -> Void = { _ in }) throws -> BatchOutput {
         guard var document = PDFDocument(data: data) else { throw FolioError(message: "无法读取这个 PDF。") }
         if document.isLocked, !document.unlock(withPassword: "") { throw FolioError(message: "文件需要密码才能打开。") }
         guard document.pageCount > 0 else { throw FolioError(message: "这个 PDF 没有页面。") }
@@ -171,12 +174,14 @@ enum BatchPipeline {
         }
         ReadingServices.applyOutline(sourceOutline, to: document)
         let count = document.pageCount
+        var detectedAngles:[Int:Double]=[:]
         if recipe.autoStraighten {
             for index in 0..<count {
                 try Task.checkCancellation()
                 try autoreleasepool {
                     let page = try document.page(at: index).unwrap("无法读取页面")
                     let correction = try ScanProcessing.angle(page)
+                    detectedAngles[index]=correction
                     if abs(correction) >= 0.15 {
                         let replacement = try ScanProcessing.straightened(page, angle: correction)
                         document.removePage(at: index); document.insert(replacement, at: index)
@@ -187,6 +192,7 @@ enum BatchPipeline {
             ReadingServices.applyOutline(sourceOutline, to: document)
         }
         var output = BatchOutput(pages: count)
+        output.angles=detectedAngles
         var regions: [Int: [RecognizedLine]] = [:]
         let steps = Double((recipe.autoCrop ? 1 : 0) + (recipe.ocr != nil ? 4 : 0) + (recipe.word != nil ? 2 : 0))
         var done = 0.0
@@ -197,7 +203,7 @@ enum BatchPipeline {
             for index in 0..<count {
                 try Task.checkCancellation()
                 autoreleasepool {
-                    guard let page = document.page(at: index), let bitmap = ContentBounds.render(page),
+                    guard let page = document.page(at: index), let bitmap = ContentBounds.render(page,box:.cropBox),
                           let found = ContentBounds.margins(pixels: bitmap.pixels, width: bitmap.width, height: bitmap.height) else { return }
                     if PageCrop.isOddPage(index) { odd.append(found) } else { even.append(found) }
                 }
@@ -207,17 +213,29 @@ enum BatchPipeline {
             for index in 0..<count {
                 guard let page = document.page(at: index) else { continue }
                 let margins = PageCrop.isOddPage(index) ? (odd.isEmpty ? evenCommon : oddCommon) : (even.isEmpty ? oddCommon : evenCommon)
-                page.setBounds(PageCrop.cropBox(mediaBox: page.bounds(for: .mediaBox), rotation: page.rotation, margins: margins), for: .cropBox)
+                let crop=PageCrop.cropBox(mediaBox:page.bounds(for:.cropBox),rotation:page.rotation,margins:margins)
+                output.cropGuides[index]=crop
+                page.setBounds(crop,for:.cropBox)
             }
             done += 1
         }
         if let settings = recipe.ocr {
+            let cache = try checkpointRoot.map { try OCRPageCache(root:$0,source:data,recipe:recipe) }
             for index in 0..<count {
                 try Task.checkCancellation()
                 try autoreleasepool {
+                    if let saved=cache?.read(index),let replacement=PDFDocument(data:saved.pdf)?.page(at:0) {
+                        document.removePage(at:index);document.insert(replacement,at:index)
+                        regions[index]=saved.lines
+                        output.resumed += 1
+                        if saved.recognized { output.recognized += 1 }
+                        return
+                    }
                     let page = try document.page(at: index).unwrap("无法读取页面")
-                    guard settings.ignoresTextLayer || BackgroundJobs.textCharacterCount(page) < settings.minimumTextCharacters else { return }
-                    let lines = try BackgroundJobs.recognize(page, settings: settings)
+                    guard settings.ignoresTextLayer || BackgroundJobs.textCharacterCount(page) < settings.minimumTextCharacters else {
+                        try cache?.write(index:index,page:page,lines:nil,recognized:false);return
+                    }
+                    let lines = try recognize(page, settings)
                     regions[index] = lines
                     output.recognized += 1
                     if !lines.isEmpty {
@@ -225,6 +243,7 @@ enum BatchPipeline {
                         document.removePage(at: index)
                         document.insert(replacement, at: index)
                     }
+                    try cache?.write(index:index,page:try document.page(at:index).unwrap("OCR 页缺失"),lines:lines,recognized:true)
                 }
                 step(4, Double(index + 1) / Double(count))
             }

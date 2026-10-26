@@ -70,15 +70,15 @@ enum PageCrop {
 /// Finds where the printed area of a scanned page is.
 enum ContentBounds {
     /// Draws the page, as it is shown, into a grey bitmap `width` pixels wide (white = 255).
-    static func render(_ page: PDFPage, width: Int = 320) -> (pixels: [UInt8], width: Int, height: Int)? {
-        guard let reference = page.pageRef else { return nil }
-        let box = page.bounds(for: .mediaBox)
+    static func render(_ page: PDFPage, width: Int = 320, box displayBox: PDFDisplayBox = .mediaBox) -> (pixels: [UInt8], width: Int, height: Int)? {
+        guard page.pageRef != nil else { return nil }
+        let box = page.bounds(for: displayBox)
         let quarterTurn = abs(page.rotation % 180) == 90
         let pageWidth = quarterTurn ? box.height : box.width, pageHeight = quarterTurn ? box.width : box.height
         guard pageWidth > 0, pageHeight > 0 else { return nil }
-        let height = max(8, Int((CGFloat(width) * pageHeight / pageWidth).rounded()))
+        let height = max(8, Int(min(4096,(CGFloat(width) * pageHeight / pageWidth).rounded())))
         // PDFKit's own thumbnail draws the page upright, whatever its rotation or boxes.
-        guard let picture = page.thumbnail(of: CGSize(width: width, height: height), for: .mediaBox).cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        guard let picture = page.thumbnail(of: CGSize(width: width, height: height), for: displayBox).cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         var pixels = [UInt8](repeating: 255, count: width * height)
         let drawn = pixels.withUnsafeMutableBytes { raw -> Bool in
             guard let context = CGContext(data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,

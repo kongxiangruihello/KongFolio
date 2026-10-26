@@ -13,6 +13,8 @@ struct TaskCenterPanel: View {
     @State private var recipes = WorkRecipeStore.load()
     @State private var selected: UUID?
     @State private var output: URL?
+    @State private var trial: Trial?
+    private struct Trial: Identifiable { let id=UUID();let source:URL;let recipe:WorkRecipe }
     private var index: Int? { recipes.firstIndex { $0.id == selected } }
     var body: some View {
         VStack(alignment:.leading,spacing:10) {
@@ -39,6 +41,14 @@ struct TaskCenterPanel: View {
                 Button("输出文件夹…") { if let folder=pickFolder() { output=folder } }
             }.disabled(queue.running)
             Text(output?.path ?? "请选择输出文件夹").font(.caption).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
+            HStack {
+                Menu("试跑与对照…") {
+                    ForEach(queue.items) { item in Button(item.url.lastPathComponent) { if let index { trial=Trial(source:item.url,recipe:recipes[index]) } } }
+                }.disabled(queue.running || index == nil || queue.items.isEmpty)
+                Text("先选文件，最多试跑 6 页；不写输出文件。").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("清理续跑缓存") { queue.clearCheckpoints() }.disabled(queue.running)
+            }
             if let plan=queue.plan { Text("已保存任务：\(plan.recipe.name) → \(plan.output.path)").font(.caption).foregroundStyle(.secondary).lineLimit(1) }
             List(queue.items) { item in
                 HStack {
@@ -51,7 +61,7 @@ struct TaskCenterPanel: View {
             ProgressView(value:queue.overallProgress)
             if queue.running { Text("当前文件 \(Int(queue.fileProgress*100))%" + (queue.stopping ? " · 正在暂停，完成当前页后停止" : "")).font(.caption) }
             if !queue.summary.isEmpty { Text(queue.summary).font(.callout).textSelection(.enabled).lineLimit(3) }
-            Text("输入原件不改动，结果不会覆盖已有文件。关闭此面板后继续处理；退出应用时先暂停。队列和所用配方会保留，重启后按文件继续；当前未完成文件从头重做。").font(.caption).foregroundStyle(.secondary)
+            Text("输入原件不改动，结果不会覆盖已有文件。关闭面板后继续处理；退出应用时先暂停。OCR 完成页会落盘，重启后校验原件和配方并复用；切分、纠偏、裁边和导出步骤重新执行。清空队列会清理续跑缓存。").font(.caption).foregroundStyle(.secondary)
             }
             }
             HStack {
@@ -72,6 +82,7 @@ struct TaskCenterPanel: View {
             selected=queue.plan?.recipe.id ?? recipes.first?.id;output=queue.plan?.output
         }
         .onChange(of:recipes) { _, value in WorkRecipeStore.save(value) }
+        .sheet(item:$trial) { value in RecipeTrialView(source:value.source,recipe:value.recipe,replacements:replacements) }
         .dropDestination(for:URL.self) { urls,_ in guard !queue.running else { return false };queue.add(urls);return true }
     }
     @ViewBuilder private var editor: some View {

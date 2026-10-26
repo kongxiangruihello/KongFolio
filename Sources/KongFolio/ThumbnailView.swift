@@ -6,7 +6,9 @@ actor ThumbnailRenderer {
     func render(_ data: Data) throws -> CGImage {
         try Task.checkCancellation()
         guard let doc = PDFDocument(data: data), let page = doc.page(at: 0) else { throw FolioError(message: "缩略图读取失败") }
-        return try DocumentServices.render(page, maxDimension: 310)
+        let image=try autoreleasepool { try DocumentServices.render(page, maxDimension: 310) }
+        try Task.checkCancellation()
+        return image
     }
 }
 @MainActor final class ThumbnailState: ObservableObject { @Published var image: NSImage? }
@@ -24,12 +26,17 @@ struct ThumbnailView: View {
             let key = workspace.thumbnailKey(index)
             if let cached = workspace.thumbnails.image(for: key) { state.image = cached; return }
             state.image = nil
-            guard let data = DocumentServices.subset(workspace.document, indexes: [index]).dataRepresentation() else { return }
             do {
+                // Let fast scrolling settle before serializing a page on the main actor.
+                try await Task.sleep(nanoseconds:45_000_000)
+                try Task.checkCancellation()
+                guard let data=autoreleasepool(invoking:{ DocumentServices.subset(workspace.document,indexes:[index]).dataRepresentation() }) else { return }
                 let cg = try await ThumbnailRenderer.shared.render(data); try Task.checkCancellation()
+                guard key==workspace.thumbnailKey(index) else { return }
                 let image = NSImage(cgImage: cg, size: .zero)
                 workspace.thumbnails.put(image, key: key, cost: cg.width * cg.height * 4); state.image = image
             } catch { }
         }
+        .onDisappear { state.image=nil }
     }
 }
