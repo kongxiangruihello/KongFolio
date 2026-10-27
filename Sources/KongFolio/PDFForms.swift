@@ -48,7 +48,7 @@ enum PDFForms {
         guard Dictionary(grouping: radio, by: \.name).values.allSatisfy({ $0.count <= 1 }) else { throw FolioError(message: "同组单选框只能选择一个选项") }
     }
     /// A rendered copy contains no interactive widgets. Never writes back to the source.
-    static func flattened(_ document: PDFDocument) throws -> PDFDocument {
+    static func flattened(_ document: PDFDocument, progress: (Double) -> Void = { _ in }) throws -> PDFDocument {
         let output = PDFDocument()
         for i in 0..<document.pageCount {
             try Task.checkCancellation()
@@ -64,6 +64,7 @@ enum PDFForms {
             let rendered = try PDFDocument(data: bytes as Data).unwrap("固定表单失败")
             let copy = try (rendered.page(at: 0)?.copy() as? PDFPage).unwrap("固定表单失败")
             output.insert(copy, at: output.pageCount)
+            progress(Double(i + 1) / Double(max(1, document.pageCount)))
         }
         return output
     }

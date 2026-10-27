@@ -15,6 +15,7 @@ enum TextDocumentFormat: String, Codable, CaseIterable, Identifiable {
 extension MarkdownNote {
     func renderDocument() throws -> PDFDocument {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return PDFDocument() }
-        return try RichTextDocument(try SourceLink.rebasedText(text, baseURL: fileURL?.deletingLastPathComponent()), format: format, baseURL: fileURL?.deletingLastPathComponent(), options: layoutOptions).pdf()
+        let base = fileURL?.deletingLastPathComponent() ?? recoveryBaseURL
+        return try RichTextDocument(try SourceLink.rebasedText(text, baseURL: base), format: format, baseURL: base, options: layoutOptions).pdf()
     }
 }

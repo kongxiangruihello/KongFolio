@@ -12,6 +12,7 @@ struct ImageRecipe: Codable {
 struct ProjectArchive: Codable {
     static let currentVersion = 4
     var version = ProjectArchive.currentVersion
+    var tableDrafts: [TableDraftRecord]? = nil
     var wordDraft: WordDraftArchive? = nil
     var fileBaseline: FileBaseline? = nil
     var reading: ReadingState? = nil

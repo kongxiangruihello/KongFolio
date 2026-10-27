@@ -17,6 +17,8 @@ struct RootView: View {
                 Color.clear
             }
         }
+        .sheet(isPresented: $store.showBackgroundJobs) { DocumentTasksView(queue: store.documentTasks, store: store) }
+        .sheet(isPresented: $store.showRecoveryCenter) { RecoveryCenterView(store: store) }
         .sheet(isPresented: $store.showDocumentComparison) { DocumentComparisonPanel() }
         .sheet(item: $store.pendingPageTransfer) { request in PageTransferSheet(store: store, request: request) }
         .sheet(isPresented: $store.showTaskCenter) { TaskCenterPanel(queue: store.batchQueue, replacements: []) }
@@ -49,6 +51,7 @@ struct TabBar: View {
                     withAnimation { proxy.scrollTo(id, anchor: .center) }
                 }
             }
+            DocumentTaskButton(queue: store.documentTasks, store: store)
             Menu {
                 ForEach(store.tabs) { tab in
                     Button { store.select(tab.id) } label: {

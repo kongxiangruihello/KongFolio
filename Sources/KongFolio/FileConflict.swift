@@ -49,7 +49,7 @@ extension Workspace {
             projectURL = nil; sourceURL = destination
         }
         fileBaseline = saved; saveConflict = false; dirty = false
-        try persistWordDraft(); remember([destination]); scheduleRecovery(); status = "已另存副本，原文件保留"
+        try persistWordDraft(); try persistTableDrafts(); remember([destination]); scheduleRecovery(); status = "已另存副本，原文件保留"
     }
     func chooseConflictCopy() {
         guard let original = historySource else { return }

@@ -50,6 +50,9 @@ struct WordExportSheet: View {
                 Toggle("应用替换规则（\(ReplacementRules.parse(workspace.replacementText).count) 条）", isOn: $workspace.applyReplacements)
                 Button("编辑规则…") { workspace.showReplacementRules = true }
             }
+            if workspace.tableDrafts.contains(where: \.includeInWord) {
+                Toggle("正文插入已核对的表格草稿（\(workspace.tableDrafts.filter(\.includeInWord).count) 份）", isOn: Binding(get: { workspace.wordOptions.includeTables != false }, set: { workspace.wordOptions.includeTables = $0 }))
+            }
             Toggle("清除重复页眉页脚（仅导出文字）", isOn: cleanup)
             Toggle("将章、节标题设为 Word 标题", isOn: headings)
             Toggle("页码标记附上原书印刷页码", isOn: printed)
@@ -69,8 +72,8 @@ struct WordExportSheet: View {
             }
             if preview.indices.contains(previewIndex) {
                 Text("文字整理预览 · 第 \(preview[previewIndex].index + 1) 页").font(.caption.bold())
-                Toggle("导出前修改本页正文", isOn: $editText).disabled(preparing || workspace.wordOptions.content == .imagesOnly)
-                if editText {
+                Toggle("导出前修改本页正文", isOn: $editText).disabled(preparing || workspace.wordOptions.content == .imagesOnly || preview[previewIndex].blocks != nil)
+                if editText && preview[previewIndex].blocks == nil {
                     TextEditor(text: Binding(get: {
                         let page = preview[previewIndex]
                         return workspace.wordOptions.editedText?[page.index] ?? page.paragraphs.map(\.text).joined(separator: "\n\n")
@@ -82,7 +85,7 @@ struct WordExportSheet: View {
                     })).font(.body).frame(height: 200).border(.secondary.opacity(0.3))
                     Text("仅修改 Word 导出的文字，草稿自动保留，原 PDF 保留。段落之间留空行；已修改页采用手动文字，其他页继续应用整理规则。").font(.caption).foregroundStyle(.secondary)
                 } else {
-                    ScrollView { VStack(alignment: .leading, spacing: 8) { ForEach(Array(shownParagraphs.enumerated()), id: \.offset) { _, paragraph in Text(paragraph.text).font(paragraph.heading > 0 ? .headline : .body).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) } } }.frame(height: 180).border(.secondary.opacity(0.3))
+                    WordBlocksPreview(blocks: preview[previewIndex].blocks ?? shownParagraphs.map(WordPreparedBlock.paragraph)).frame(height: 220).border(.secondary.opacity(0.3))
                 }
                 if !(workspace.wordOptions.editedText ?? [:]).isEmpty {
                     PanelRow {
@@ -111,14 +114,16 @@ struct WordExportSheet: View {
         do { try workspace.validateWordDraft() } catch { previewMessage = error.localizedDescription; return }
         guard let data = try? workspace.pdfData() else { previewMessage = "无法读取当前文档"; return }
         let sourceRevision = workspace.revision
-        var options = workspace.wordOptions
+        let baseOptions: WordExportOptions
+        do { baseOptions = try workspace.wordOptionsWithTables() } catch { previewMessage = error.localizedDescription; return }
+        var options = baseOptions
         options.replacements = workspace.applyReplacements ? ReplacementRules.parse(workspace.replacementText) : []
         let pages = workspace.wordScope == .all ? Array(0..<workspace.count) : workspace.effectivePages
         let regions = Dictionary(uniqueKeysWithValues: pages.compactMap { i in workspace.meta(i).ocrRegions.map { (i, $0) } })
         preparing = true; previewMessage = ""
         worker = Task {
             let job = Task.detached(priority: .userInitiated) {
-                try WordCleanup.inspect(try PDFDocument(data: data).unwrap("无法读取文档"), pages: pages, options: options, regions: regions)
+                try WordCleanup.inspect(try PDFDocument(data: data).unwrap("无法读取文档"), pages: pages, options: options, regions: regions, sourceDigest: OCRPageCache.digest(data))
             }
             do {
                 let result = try await withTaskCancellationHandler(operation: { try await job.value }, onCancel: { job.cancel() })
@@ -144,16 +149,19 @@ extension Workspace {
         if wordOptions.content != .imagesOnly {
             do { try validateWordDraft() } catch { self.error = error.localizedDescription; return }
         }
+        let exportOptionsWithTables: WordExportOptions
+        do { exportOptionsWithTables = try wordOptionsWithTables() } catch { self.error = error.localizedDescription; showWordExport = true; return }
         let pages = wordScope == .all ? Array(0..<count) : effectivePages
         if wordOptions.content != .imagesOnly {
-            let hasText = pages.contains { index in document.page(at: index).map { BackgroundJobs.textCharacterCount($0) > 0 } ?? false }
+            let hasTables = exportOptionsWithTables.tables?.contains(where: { table in table.regions.contains(where: { pages.contains($0.page) }) }) == true
+            let hasText = hasTables || pages.contains { index in document.page(at: index).map { BackgroundJobs.textCharacterCount($0) > 0 } ?? false }
             if !hasText {
                 if wordOptions.content == .textOnly { error = "这些页面没有文字，请先运行 OCR。"; return }
                 guard confirm("这些页面没有文字层", "只会导出页面图片。需要文字的话，请先运行 OCR 再导出。", action: "只导出图片") else { return }
             }
         }
         showWordExport = false
-        var exportOptions = wordOptions
+        var exportOptions = exportOptionsWithTables
         exportOptions.replacements = applyReplacements ? ReplacementRules.parse(replacementText) : []
         guard let destination = saveURL(type: UTType(filenameExtension: "docx") ?? .data, suffix: "docx") else { return }
         runJob(JobSpec(operation: .word, source: data, pages: pages, destination: destination, revision: revision, word: exportOptions, outline: outlineEntries,

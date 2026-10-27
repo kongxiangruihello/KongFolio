@@ -96,7 +96,7 @@ enum TableExtraction {
             return lines.map { line in
                 var text = "", previous: TablePiece?
                 for p in line.sorted(by: { $0.box.minX < $1.box.minX }) {
-                    if let previous, p.box.minX - previous.box.maxX > min(previous.box.height, p.box.height) * 0.3 { text += " " }
+                    if let previous, p.box.minX - previous.box.maxX > min(previous.box.height, p.box.height) * 0.15 { text += " " }
                     text += p.text; previous = p
                 }; return text
             }.joined(separator: "\n")

@@ -83,7 +83,7 @@ enum BackgroundJobs {
             // Written next to the destination and moved into place, so a cancelled export never damages an existing file.
             let staging = target.deletingLastPathComponent().appendingPathComponent(".KongFolio-\(UUID().uuidString).partial")
             defer { try? FileManager.default.removeItem(at: staging) }
-            let report = try WordExport.write(doc, pages: spec.pages, outline: spec.outline, options: spec.word, regions: spec.regions, to: staging, progress: progress)
+            let report = try WordExport.write(doc, pages: spec.pages, outline: spec.outline, options: spec.word, regions: spec.regions, to: staging, sourceDigest: OCRPageCache.digest(spec.source), progress: progress)
             try Task.checkCancellation()
             if FileManager.default.fileExists(atPath: target.path) { _ = try FileManager.default.replaceItemAt(target, withItemAt: staging) } else { try FileManager.default.moveItem(at: staging, to: target) }
             return JobResult(destination: nil, message: report.summary)

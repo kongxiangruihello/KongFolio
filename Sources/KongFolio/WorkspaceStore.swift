@@ -34,6 +34,10 @@ import UniformTypeIdentifiers
     let storage: URL
     /// The workspace shared by every tab: excerpts from any open document gather here.
     let board: Board
+    let documentTasks = DocumentTaskQueue()
+    @Published var showBackgroundJobs = false
+    @Published var showRecoveryCenter = false
+    var pendingRecoveryURL: URL?
     let batchQueue: BatchQueue
     let folderSearch: FolderSearchModel
     @Published var pendingPageTransfer: PageTransferRequest?
@@ -331,6 +335,7 @@ import UniformTypeIdentifiers
     /// Called when the window closes or the app quits. Walks through every tab; any cancel stops the quit.
     func prepareToClose() -> Bool {
         folderSearch.cancel()
+        if documentTasks.running { documentTasks.cancelAll(); showBackgroundJobs = true; return false }
         if batchQueue.running {
             batchQueue.cancel()
             batchQueue.summary = "正在暂停任务；当前页结束后可再次关闭。未完成项会保留。"
