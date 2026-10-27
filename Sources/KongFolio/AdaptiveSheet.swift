@@ -16,7 +16,7 @@ private struct AdaptiveSheet: ViewModifier {
         let screen = NSApp.keyWindow?.screen?.visibleFrame.size ?? NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 800)
         let size = SheetMetrics.size(preferred: preferred, parent: parent ?? NSApp.keyWindow?.sheetParent?.contentView?.bounds.size ?? NSApp.keyWindow?.contentView?.bounds.size, screen: screen)
         return ScrollView([.horizontal, .vertical]) {
-            content.frame(width: max(size.width, minimumWidth), height: preferred.height)
+            content.frame(width: max(size.width - 18, minimumWidth), height: preferred.height).padding(.bottom, 28)
         }
         .frame(width: size.width, height: size.height)
         .background(PanelParentObserver { parent = $0 })

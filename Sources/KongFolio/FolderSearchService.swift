@@ -20,9 +20,10 @@ struct FolderSearchFile {
     var pages=0
     var textPages=0
     var cached=false
+    var currentBuffer=false
     var warning:String?
     var error:String?
-    var needsOCR:Bool { url.pathExtension.lowercased()=="pdf" && error==nil && pages>0 && textPages==0 }
+    var needsOCR:Bool { !currentBuffer && url.pathExtension.lowercased()=="pdf" && error==nil && pages>0 && textPages==0 }
 }
 struct FolderSearchSummary {
     var totalFiles=0

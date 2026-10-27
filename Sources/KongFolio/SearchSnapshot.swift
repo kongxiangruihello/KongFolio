@@ -15,7 +15,7 @@ struct SearchSnapshot {
     static func cardDigest(_ card: BoardCard) -> String { let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]; return (try? encoder.encode(card)).map(OCRPageCache.digest) ?? "" }
     func search(query: String, limit: Int, terms: FolderSearchTerms, includeAnnotations: Bool, cache: inout [String: String]) throws -> FolderSearchFile {
         let url = path ?? URL(fileURLWithPath: "/未保存/" + id.uuidString + "/" + title)
-        var result = FolderSearchFile(url: url)
+        var result = FolderSearchFile(url: url); result.currentBuffer = true
         func add(_ page: FolderSearchPage, category: String) {
             guard terms.accepts(page.text, cache: &cache) else { return }
             result.hits += FolderSearchService.matches(page, query: query, limit: max(0, limit - result.hits.count), cache: &cache).map {
@@ -38,7 +38,7 @@ struct SearchSnapshot {
             }
         } else {
             let content = card.map { $0.text + "\n" + $0.comment } ?? text ?? ""
-            result.pages = 1; result.textPages = content.isEmpty ? 0 : 1
+            result.pages = (card?.source?.page ?? 0) + 1; result.textPages = content.isEmpty ? 0 : 1
             add(FolderSearchPage(index: card?.source?.page ?? 0, text: content, label: nil, glyphs: nil), category: card == nil ? "文本当前编辑" : "工作区摘录")
         }
         return result
@@ -100,7 +100,7 @@ extension MarkdownNote {
         pendingSearchRange = range
         Task { @MainActor [weak self] in
             for _ in 0..<12 {
-                guard let self else { return }
+                guard let self, self.pendingSearchRange == range else { return }
                 if let view = self.textView, view.window != nil {
                     let selected = Self.clamp(range, to: (view.string as NSString).length)
                     view.setSelectedRange(selected); view.scrollRangeToVisible(selected); view.showFindIndicator(for: selected); view.window?.makeFirstResponder(view); pendingSearchRange = nil; return
