@@ -47,7 +47,7 @@ struct ColumnProofView: View {
             Text("列按阅读顺序排列（从右到左）。左边是原页上这一列的图，右边可直接改字；改完点“应用”，识别记录与可搜索的文字层一并更新（⌘Z 可撤销）。")
                 .font(.caption).foregroundStyle(.secondary).padding(8)
         }
-        .frame(width: 760, height: 640)
+        .adaptiveSheet(width: 760, height: 640)
         .onAppear(perform: load)
     }
 

@@ -56,7 +56,7 @@ struct ExportSheet: View {
                 if let page = workspace.page, let pixels = try? ExportServices.pixels(page, dpi: workspace.exportOptions.dpi) {
                     Text("当前页：\(Int(pixels.width)) × \(Int(pixels.height)) 像素").font(.caption).foregroundStyle(.secondary)
                 }
-                HStack {
+                PanelRow {
                     Text("JPEG 质量")
                     Slider(value: $workspace.exportOptions.quality, in: 0.1...1)
                     Text(workspace.exportOptions.quality, format: .percent.precision(.fractionLength(0))).frame(width: 45)
@@ -64,7 +64,7 @@ struct ExportSheet: View {
                 Text("图片型 PDF 把每页重绘为图片；提高 DPI 不会恢复原图中已丢失的细节。").font(.caption).foregroundStyle(.secondary)
             }
             Divider()
-            HStack {
+            PanelRow {
                 Button("估算体积") { workspace.estimateExport() }.disabled(workspace.estimating)
                 if workspace.estimating { ProgressView().controlSize(.small) }
                 Text("\(workspace.exportPages.count) 页").foregroundStyle(.secondary)
@@ -73,14 +73,14 @@ struct ExportSheet: View {
                 Text("\(estimate.exact ? "预计体积" : "约")：\(ByteCountFormatter.string(fromByteCount: Int64(estimate.bytes), countStyle: .file))").font(.headline)
                 if !estimate.exact { Text("基于前 \(estimate.sampled) 页估算，复杂度不同会影响实际大小。").font(.caption).foregroundStyle(.secondary) }
             }
-            HStack {
+            PanelRow {
                 Button("取消") { workspace.showExport = false }
                 Spacer()
                 Button("选择位置并导出…") { workspace.configuredExport() }.buttonStyle(.borderedProminent)
             }
         }
         .padding(28)
-        .frame(width: 560)
+        .adaptiveSheet(width: 560, height: 600, minimumWidth: 360)
         .tint(Brand.accent)
         .onChange(of: workspace.exportOptions) { _, _ in workspace.invalidateEstimate() }
         .onDisappear { workspace.invalidateEstimate() }

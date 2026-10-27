@@ -50,7 +50,7 @@ struct PageInspectionView: View {
                     else { message = workspace.error ?? "删除未完成"; workspace.error = nil }
                 }.disabled(working || selected.isEmpty || selected.count >= workspace.count)
             }
-        }.padding(20).frame(width: 1060, height: 740)
+        }.padding(20).adaptiveSheet(width: 1060, height: 740)
         .onAppear { scan() }.onDisappear { worker?.cancel() }
     }
     private func preview(_ index: Int?, title: String) -> some View {

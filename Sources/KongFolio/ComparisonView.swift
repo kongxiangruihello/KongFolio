@@ -8,6 +8,8 @@ struct PDFDifferenceCanvas: NSViewRepresentable {
     var left: Int?
     var right: Int?
     var zoom: Double
+    var chunks: [TextDifferenceChunk] = []
+    var activeChunk: Int? = nil
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> NSStackView {
         let stack=LayoutStack();stack.orientation = .horizontal;stack.distribution = .fillEqually;stack.spacing=8
@@ -21,6 +23,7 @@ struct PDFDifferenceCanvas: NSViewRepresentable {
     }
     func updateNSView(_ view: NSStackView, context: Context) {
         context.coordinator.update(before,after,left:left,right:right,zoom:zoom)
+        context.coordinator.mark(chunks, active: activeChunk)
     }
     static func dismantleNSView(_ view: NSStackView, coordinator: Coordinator) { coordinator.observers.forEach(NotificationCenter.default.removeObserver) }
     final class LayoutStack:NSStackView {
@@ -64,6 +67,22 @@ struct PDFDifferenceCanvas: NSViewRepresentable {
             target.contentView.scroll(to:CGPoint(x:x*max(0,b.bounds.width-target.contentView.bounds.width),y:y*max(0,b.bounds.height-target.contentView.bounds.height)))
             target.reflectScrolledClipView(target.contentView)
         }
+        var lastMark: String = ""
+        func mark(_ chunks: [TextDifferenceChunk], active: Int?) {
+            let key = "\(lastPages)-\(active ?? -1)-\(chunks)"
+            guard key != lastMark else { return }; lastMark = key
+            for i in views.indices {
+                guard let page = views[i].currentPage else { continue }
+                var marks: [PDFSelection] = []
+                for chunk in chunks.prefix(400) {
+                    guard let range = i == 0 ? chunk.before : chunk.after, let selection = page.selection(for: range) else { continue }
+                    selection.color = (chunk.id == active ? NSColor.systemOrange : i == 0 ? .systemRed : .systemGreen).withAlphaComponent(0.4)
+                    marks.append(selection)
+                    if chunk.id == active { views[i].go(to: selection) }
+                }
+                views[i].highlightedSelections = marks
+            }
+        }
         func update(_ before:PDFDocument,_ after:PDFDocument,left:Int?,right:Int?,zoom:Double) {
             synchronizing=true;defer { synchronizing=false }
             let docs=[before,after],pages=[left,right]
@@ -89,11 +108,20 @@ struct ComparisonViewer: View {
     @Binding var selection: Int
     @State private var zoom=1.0
     @State private var changedOnly=false
+    @State private var mode = 0
+    @State private var chunks: [TextDifferenceChunk] = []
+    @State private var activeChunk: Int? = nil
+    @State private var coarse = false
+    @State private var imageResult: DetailedDifference.ImageResult?
+    @State private var blend = 0.55
+    @State private var detailMessage = ""
+    @State private var detailWorking = false
+    private var detailKey: String { "\(row?.before ?? -1)-\(row?.after ?? -1)-\(mode)" }
     private var row: PageDifference? { rows.first { $0.id==selection } }
     private var visible:[PageDifference] { changedOnly ? rows.filter(\.changed) : rows }
     var body: some View {
         VStack(spacing:8) {
-            HStack {
+            PanelRow {
                 Button { step(-1) } label:{ Image(systemName:"chevron.left") }.disabled(visible.first?.id==selection || visible.isEmpty)
                 Picker("页面",selection:$selection) { ForEach(visible) { Text($0.title).tag($0.id) } }.frame(maxWidth:390)
                 Button { step(1) } label:{ Image(systemName:"chevron.right") }.disabled(visible.last?.id==selection || visible.isEmpty)
@@ -103,12 +131,68 @@ struct ComparisonViewer: View {
                 Slider(value:$zoom,in:1...5).frame(width:110)
                 Text("\(Int(zoom*100))%").font(.caption.monospacedDigit()).frame(width:42)
             }
+            PanelRow {
+                Picker("对比方式", selection: $mode) { Text("并排").tag(0); Text("字词差异").tag(1); Text("图像叠加").tag(2) }.pickerStyle(.segmented).frame(maxWidth: 360)
+                if detailWorking { ProgressView().controlSize(.small) }
+                if mode == 1 {
+                    Button("上一处") { stepChunk(-1) }.disabled(chunks.isEmpty)
+                    Button("下一处") { stepChunk(1) }.disabled(chunks.isEmpty)
+                    Text("\(activeChunk.map { $0 + 1 } ?? 0) / \(chunks.count) 处").font(.caption)
+                }
+                if mode == 2 { Text("红色差异").font(.caption); Slider(value: $blend, in: 0...1).frame(maxWidth: 140) }
+            }
             HStack { Text(leftTitle).frame(maxWidth:.infinity);Text(rightTitle).frame(maxWidth:.infinity) }.font(.caption)
             if let row,!visible.isEmpty {
-                PDFDifferenceCanvas(before:before,after:after,left:row.before,right:row.after,zoom:zoom)
+                if mode == 2, let result = imageResult, let overlay = NSImage(data: result.overlay), let mask = NSImage(data: result.mask) {
+                    ScrollView([.horizontal, .vertical]) {
+                        Image(nsImage: overlay).resizable().overlay { Image(nsImage: mask).resizable().opacity(blend) }.frame(width: 520 * zoom, height: 520 * zoom)
+                    }
+                    Text("\(result.changedPixels) 个差异像素 · 局部叠加仅供核对，未自动纠正扫描位移").font(.caption)
+                } else {
+                    PDFDifferenceCanvas(before:before,after:after,left:row.before,right:row.after,zoom:zoom,chunks: mode == 1 ? chunks : [], activeChunk: activeChunk)
+                }
+                if mode == 1 {
+                    ScrollView { LazyVStack(alignment: .leading, spacing: 5) {
+                        ForEach(chunks) { chunk in
+                            Button { activeChunk = chunk.id } label: {
+                                HStack(alignment: .top) {
+                                    Text(chunk.kind).frame(width: 32)
+                                    Text(chunk.old.isEmpty ? "（无）" : String(chunk.old.prefix(180))).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
+                                    Text(chunk.new.isEmpty ? "（无）" : String(chunk.new.prefix(180))).foregroundStyle(.green).frame(maxWidth: .infinity, alignment: .leading)
+                                }.font(.caption).padding(4).background(chunk.id == activeChunk ? Color.orange.opacity(0.12) : .clear)
+                            }.buttonStyle(.plain)
+                        }
+                    } }.frame(height: 120)
+                    Text(coarse ? "本页差异较大，已按整段标示；请结合原页核对。" : "红色为删除，绿色为新增；同一处同时出现表示修改。无文字层的扫描页请先 OCR，或使用图像叠加。").font(.caption).foregroundStyle(.secondary)
+                }
+                if !detailMessage.isEmpty { Text(detailMessage).font(.caption) }
                 Text(row.title).font(.caption).foregroundStyle(.secondary)
             } else { ContentUnavailableView("没有差异页面",systemImage:"doc.on.doc").frame(maxWidth:.infinity,maxHeight:.infinity) }
+        }.task(id: detailKey) { await details() }
+    }
+    private func stepChunk(_ delta: Int) {
+        guard !chunks.isEmpty else { return }
+        activeChunk = ((activeChunk ?? (delta > 0 ? -1 : 0)) + delta + chunks.count) % chunks.count
+    }
+    private func details() async {
+        chunks = []; activeChunk = nil; imageResult = nil; detailMessage = ""; coarse = false
+        guard mode != 0, let row else { return }
+        let left = row.before.flatMap { before.page(at: $0) }, right = row.after.flatMap { after.page(at: $0) }
+        let mode = mode, a = left?.string ?? "", b = right?.string ?? ""
+        let leftData = left.map { page -> Data? in let doc = PDFDocument(); if let copy = page.copy() as? PDFPage { doc.insert(copy, at: 0) }; return doc.dataRepresentation() } ?? nil
+        let rightData = right.map { page -> Data? in let doc = PDFDocument(); if let copy = page.copy() as? PDFPage { doc.insert(copy, at: 0) }; return doc.dataRepresentation() } ?? nil
+        detailWorking = true
+        let job = Task.detached(priority: .userInitiated) { () throws -> (TextDifferenceResult?, DetailedDifference.ImageResult?) in
+            if mode == 1 { return (try DetailedDifference.text(a, b), nil) }
+            return (nil, try DetailedDifference.image(leftData.flatMap { PDFDocument(data: $0)?.page(at: 0) }, rightData.flatMap { PDFDocument(data: $0)?.page(at: 0) }))
         }
+        do {
+            let result = try await withTaskCancellationHandler(operation: { try await job.value }, onCancel: { job.cancel() })
+            try Task.checkCancellation()
+            if let text = result.0 { chunks = text.chunks; coarse = text.coarse; activeChunk = chunks.first?.id }
+            imageResult = result.1
+            detailWorking = false
+        } catch is CancellationError {} catch { detailMessage = error.localizedDescription; detailWorking = false }
     }
     private func step(_ delta:Int) { guard let i=visible.firstIndex(where:{$0.id==selection}),visible.indices.contains(i+delta) else { return };selection=visible[i+delta].id }
 }
@@ -140,7 +224,7 @@ struct RecipeTrialView: View {
             if let before,let after { ComparisonViewer(before:before,after:after,rows:rows,selection:$selection) }
             else { Spacer();Text("先选取几页检查切分、纠偏、裁边、OCR 和压缩效果。").foregroundStyle(.secondary);Spacer() }
             Text(message).font(.caption).textSelection(.enabled)
-        }.padding(20).frame(width:1100,height:740).interactiveDismissDisabled(running)
+        }.padding(20).adaptiveSheet(width: 1100, height: 740).interactiveDismissDisabled(running)
         .onAppear { if !recipe.pageRange.isEmpty { range=recipe.pageRange } }
         .onDisappear { worker?.cancel();task?.cancel() }
     }

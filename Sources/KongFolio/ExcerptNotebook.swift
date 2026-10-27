@@ -16,6 +16,26 @@ enum SourceLink {
               source.path.hasPrefix("/"), source.page >= 0, source.rects.allSatisfy({ $0.minX.isFinite && $0.minY.isFinite && $0.width.isFinite && $0.height.isFinite }) else { return nil }
         return source
     }
+    static func rebasedText(_ text: String, baseURL: URL?) throws -> String {
+        let regex = try NSRegularExpression(pattern: #"kongfolio://source\?ref=[A-Za-z0-9%+/=]+"#)
+        let result = NSMutableString(string: text)
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length)).reversed() {
+            guard let url = URL(string: (text as NSString).substring(with: match.range)), let original = source(url), original.relativePath != nil else { continue }
+            var resolved = try resolved(original, baseURL: baseURL); resolved.relativePath = nil
+            if let replacement = Self.url(resolved) { result.replaceCharacters(in: match.range, with: replacement.absoluteString) }
+        }
+        return result as String
+    }
+    static func resolved(_ source: SourceRef, baseURL: URL?) throws -> SourceRef {
+        guard let relative = source.relativePath else { return source }
+        guard let baseURL, !relative.hasPrefix("/"), !relative.components(separatedBy: "/").contains("..") else { throw FolioError(message: "请先打开资料包中的笔记，再返回原文") }
+        let base = baseURL.standardizedFileURL.resolvingSymlinksInPath()
+        let url = base.appendingPathComponent(relative).standardizedFileURL.resolvingSymlinksInPath()
+        guard url.path.hasPrefix(base.path + "/"), FileManager.default.fileExists(atPath: url.path) else { throw FolioError(message: "资料包中的原件缺失：" + relative) }
+        if let fingerprint = source.fingerprint, OCRPageCache.digest(try Data(contentsOf: url)) != fingerprint { throw FolioError(message: "资料包原件已变化，请核对来源") }
+        var result = source; result.path = url.path; return result
+    }
+
 }
 
 enum ExcerptNotebook {
@@ -41,7 +61,10 @@ enum ExcerptNotebook {
                 if previousChapter != chapter { lines += ["### " + chapter, ""]; previousChapter = chapter }
             }
             if card.kind == .note { lines += [card.text, ""] }
-            else if card.kind == .image { lines += ["> （图片摘录：请从出处查看原图）", ""] }
+            else if card.kind == .image {
+                if let data = card.imageData { lines += ["![图片摘录](data:image/png;base64," + data.base64EncodedString() + ")", ""] }
+                else { lines += ["> （图片摘录缺少图像，请从出处查看）", ""] }
+            }
             else { lines += card.text.components(separatedBy: "\n").map { "> " + $0 }; lines.append("") }
             if let source = card.source {
                 lines += ["出处：\(source.fileName)，\(source.pageDescription)"]

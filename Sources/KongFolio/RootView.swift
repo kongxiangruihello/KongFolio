@@ -17,6 +17,7 @@ struct RootView: View {
                 Color.clear
             }
         }
+        .sheet(isPresented: $store.showDocumentComparison) { DocumentComparisonPanel() }
         .sheet(item: $store.pendingPageTransfer) { request in PageTransferSheet(store: store, request: request) }
         .sheet(isPresented: $store.showTaskCenter) { TaskCenterPanel(queue: store.batchQueue, replacements: []) }
         .sheet(isPresented: $store.showSwitcher) { TabSwitcherView(store: store) }

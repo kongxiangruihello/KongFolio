@@ -15,7 +15,7 @@ struct SignatureImportSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("导入图片签名").font(.title3.bold())
-            HStack {
+            PanelRow {
                 Button("选择图片…") { choose() }
                 Button("从剪贴板粘贴") { paste() }
                 Text("支持 PNG、JPEG、HEIC、TIFF；可以是纸上签名的照片或扫描件。").font(.caption).foregroundStyle(.secondary)
@@ -27,7 +27,7 @@ struct SignatureImportSheet: View {
                 if options.removeBackground {
                     Toggle("自动判断去底强度", isOn: $options.automatic)
                     if !options.automatic {
-                        HStack {
+                        PanelRow {
                             Text("去底强度")
                             Slider(value: $options.threshold, in: 0.3...0.97)
                         }
@@ -41,7 +41,7 @@ struct SignatureImportSheet: View {
                 TextField("名称（可留空）", text: $name)
             }
             if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.red) }
-            HStack {
+            PanelRow {
                 Spacer()
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("保存到签名库") { save(place: false) }.disabled(processed == nil)
@@ -49,7 +49,7 @@ struct SignatureImportSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 520)
+        .adaptiveSheet(width: 520, height: 600, minimumWidth: 360)
         .task(id: SignaturePreviewKey(source: sourceID, options: options)) { await reprocess() }
     }
 

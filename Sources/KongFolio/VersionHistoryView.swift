@@ -37,7 +37,7 @@ struct VersionHistoryView: View {
                 Text("\(rows.filter(\.changed).count) 处页面差异 · 左 \(before.pageCount) 页 / 右 \(after.pageCount) 页").font(.caption)
                 ComparisonViewer(before:before,after:after,rows:rows,leftTitle:"选中历史版本",rightTitle:compareTo == nil ? "当前工作" : "对照历史版本",selection:$page)
             } else { Spacer();Text(entries.isEmpty ? "尚无历史；首次覆盖保存前会自动保留原件。" : "选择历史版本，检查各页变化。").foregroundStyle(.secondary);Spacer() }
-            Text("图像差异采用缩略图检测，细微变化请放大核对；文字、旋转、裁边和批注另行比较。移动页可能显示为删除与新增。每文件最多 10 个版本、约 512 MB，至少保留 2 个。恢复前保留当前工作，恢复后写回文件。").font(.caption).foregroundStyle(.secondary)
+            Text("页面列表使用缩略图筛查；字词差异和图像叠加可进一步核对当前页，扫描位移会产生图像差异。移动页可能显示为删除与新增。每文件最多 10 个版本、约 512 MB，至少保留 2 个。恢复前保留当前工作，恢复后写回文件。").font(.caption).foregroundStyle(.secondary)
             if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.red) }
             HStack {
                 Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -50,7 +50,7 @@ struct VersionHistoryView: View {
                     if let entry,workspace.restoreVersion(entry) { dismiss() } else { message=workspace.error ?? "无法恢复" }
                 }.disabled(entry == nil || before == nil || working || workspace.busy).buttonStyle(.borderedProminent)
             }
-        }.padding(20).frame(width:1100,height:760)
+        }.padding(20).adaptiveSheet(width: 1100, height: 760)
         .onAppear {
             if let source=workspace.historySource {
                 do { entries=try DocumentHistory.list(source:source,storage:workspace.storage);selected=entries.first?.id }

@@ -15,6 +15,9 @@ import Foundation
     @Published var fileFilter = ""
     @Published var pageFilter = ""
     @Published var grouped = true
+    @Published var includeText = true
+    @Published var includeAnnotations = true
+    @Published var includeLive = true
     @Published private(set) var searchedTerms = FolderSearchTerms()
     var openWorkerForExcerpts: Task<[(String, SourceRef)], Error>?
     @Published private(set) var searchedQuery=""
@@ -57,9 +60,10 @@ import Foundation
             try JSONEncoder().encode(Settings(folder:folder,recursive:recursive,query:query,savedFolders:savedFolders,required:requiredTerms,excluded:excludedTerms)).write(to:settingsURL,options:.atomic)
         } catch { message="搜索设置未保存："+error.localizedDescription }
     }
-    func start() {
+    func start(live: [SearchSnapshot] = []) {
         guard !running,openingID==nil else { return }
         guard let folder else { message="请先选择文件夹";return }
+        let includeText = includeText, includeAnnotations = includeAnnotations
         let query=query.trimmingCharacters(in:.whitespacesAndNewlines)
         guard !query.isEmpty else { message="请输入要搜索的文字";return }
         remember()
@@ -67,10 +71,10 @@ import Foundation
         searchedTerms = terms
         fileFilter="";pageFilter=""
         generation=UUID();let token=generation,indexURL=indexURL,recursive=recursive
-        delivered=[];results=[];files=[];discoveryErrors=[];scanned=0;total=0;message="";progressText="正在查找 PDF…"
+        delivered=[];results=[];files=[];discoveryErrors=[];scanned=0;total=0;message="";progressText="正在查找资料…"
         searchedQuery=query;searchedFolder=folder;running=true;stopping=false
         let job=Task.detached(priority:.userInitiated) { [weak self] in
-            try FolderSearchService.run(folder:folder,query:query,recursive:recursive,indexURL:indexURL,terms:terms) { event in
+            try FolderSearchService.run(folder:folder,query:query,recursive:recursive,indexURL:indexURL,terms:terms,includeText:includeText,includeAnnotations:includeAnnotations,live:live) { event in
                 Task { @MainActor [weak self] in self?.receive(event,token:token) }
             }
         }
@@ -119,6 +123,9 @@ import Foundation
     }
     func open(_ result:FolderSearchHit,in store:WorkspaceStore) async -> Bool {
         guard !running,openingID==nil else { return false }
+        if result.tabID != nil || result.cardID != nil {
+            do { return try store.openLiveSearch(result) } catch { message = error.localizedDescription; return false }
+        }
         openingID=result.id;message="正在核对并打开："+result.url.lastPathComponent
         let job=Task.detached(priority:.userInitiated) { try FolderSearchService.verify(result) };openWorker=job
         defer { openingID=nil;openWorker=nil }
@@ -133,7 +140,7 @@ import Foundation
         return false
     }
     func report() -> String {
-        var lines=["KongFolio 跨文件搜索","文件夹：\(searchedFolder?.path ?? "")","搜索：\(searchedQuery)","已检查 \(scanned) / \(total) 份 PDF，\(results.count) 处匹配",message,""]
+        var lines=["KongFolio 跨文件搜索","文件夹：\(searchedFolder?.path ?? "")","搜索：\(searchedQuery)","已检查 \(scanned) / \(total) 份资料，\(results.count) 处匹配",message,""]
         lines.append("同页包含：" + searchedTerms.required.joined(separator: "、"))
         lines.append("同页排除：" + searchedTerms.excluded.joined(separator: "、"))
         lines.append("文件筛选：" + fileFilter + "；页码筛选：" + pageFilter)
@@ -149,6 +156,12 @@ import Foundation
 
 extension WorkspaceStore {
     func openFolderSearchResult(_ result:FolderSearchHit,verified:FolderSearchService.Verified) throws {
+        if let text = verified.text {
+            if let existing = tabs.compactMap(\.note).first(where: { $0.fileURL?.standardizedFileURL == result.url.standardizedFileURL }) {
+                guard existing.text == text else { throw FolioError(message: "这个文本文件有未保存或不同的内容，请重新搜索当前编辑") }
+            }
+            openNote(result.url); activeNote?.revealSearch(result.hit.range); return
+        }
         let path=result.url.standardizedFileURL.resolvingSymlinksInPath()
         let existing=tabs.compactMap(\.workspace).first { $0.projectURL==nil && $0.sourceURL?.standardizedFileURL.resolvingSymlinksInPath()==path }
         let target:Workspace

@@ -42,7 +42,7 @@ struct OCRReview: View {
             }
             Text(editable ? "左侧对照原图，右侧直接改字。应用时从 OCR 前原页重建文字层，保留识别原文与现有标注，可撤销。竖排也可使用“逐列校对”。" : "此页只有检查记录，没有 OCR 前原页。请先执行 OCR，再校正并保存文字层。")
                 .font(.caption).foregroundStyle(.secondary)
-        }.padding(20).frame(width: 940, height: 680)
+        }.padding(20).adaptiveSheet(width: 940, height: 680)
         .onAppear { page = workspace.selection; lines = workspace.meta(page).ocrRegions ?? []; initial = lines; image = workspace.pageDisplayImage(maxDimension: 2400) }
         .alert("校正失败", isPresented: Binding(get: { workspace.error != nil }, set: { if !$0 { workspace.error = nil } })) { Button("好") { workspace.error = nil } } message: { Text(workspace.error ?? "") }
     }

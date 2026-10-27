@@ -35,6 +35,7 @@ struct TextEdit: Equatable {
     @Published var status = ""
     var lastActive = Date()
     weak var textView: NSTextView?
+    var pendingSearchRange: NSRange?
     private var previewTask: Task<Void, Never>?
     private var backupTask: Task<Void, Never>?
 

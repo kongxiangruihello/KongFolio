@@ -16,13 +16,13 @@ struct ReplacementRulesSheet: View {
             Text("现有 \(ReplacementRules.parse(workspace.replacementText).count) 条规则。只影响导出的 Word、TXT、Markdown，不改动 PDF 和识别记录；规则保存在本机，所有书通用。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Button("用这些规则批量校正 OCR 文字层…") { workspace.showReplacementRules = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { workspace.showOCRBatchCorrection = true } }
-            HStack {
+            PanelRow {
                 Toggle("导出时应用", isOn: $workspace.applyReplacements)
                 Spacer()
                 Button("完成") { workspace.showReplacementRules = false }.keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)
-        .frame(width: 460)
+        .adaptiveSheet(width: 460, height: 600, minimumWidth: 360)
     }
 }

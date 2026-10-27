@@ -20,7 +20,10 @@ import AppKit
                 .background(WindowAccessor { window in delegate.attach(window) })
                 .onAppear { delegate.store = store; store.bootstrap() }
                 .onOpenURL { url in
-                    if let source = SourceLink.source(url) { store.reveal(source, beside: false) }
+                    if let source = SourceLink.source(url) {
+                        do { store.reveal(try SourceLink.resolved(source, baseURL: store.activeNote?.fileURL?.deletingLastPathComponent()), beside: false) }
+                        catch { store.present(error) }
+                    }
                     else if TextImport.handles(url) { store.openNote(url) }
                     else { store.openInNewTab([url]) }
                 }
@@ -46,6 +49,7 @@ import AppKit
             }
             CommandMenu("任务与历史") {
                 Button("OCR 批量纠错…") { store.commandWorkspace?.showOCRBatchCorrection = true }.disabled((store.commandWorkspace?.count ?? 0) == 0 || store.commandWorkspace?.busy == true)
+                Button("文档精细对比…") { store.showDocumentComparison = true }
                 Button("跨文件全文搜索…") { store.showFolderSearch=true }.keyboardShortcut("f",modifiers:[.command,.shift])
                 Button("空白页与重复页检查…") { store.activeWorkspace?.showPageInspection = true }.disabled((store.activeWorkspace?.count ?? 0) == 0)
                 Button("任务中心与扫描配方…") { store.showTaskCenter = true }.keyboardShortcut("j", modifiers: [.command, .option])

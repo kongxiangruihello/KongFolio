@@ -8,6 +8,11 @@ struct FolderSearchHit: Identifiable {
     var fingerprint:String
     var query:String
     var hit:SearchHit
+    var category = "PDF 正文"
+    var tabID: UUID? = nil
+    var revision: UUID? = nil
+    var cardID: UUID? = nil
+    var sourceRect: CGRect? = nil
 }
 struct FolderSearchFile {
     var url:URL
@@ -17,7 +22,7 @@ struct FolderSearchFile {
     var cached=false
     var warning:String?
     var error:String?
-    var needsOCR:Bool { error==nil && pages>0 && textPages==0 }
+    var needsOCR:Bool { url.pathExtension.lowercased()=="pdf" && error==nil && pages>0 && textPages==0 }
 }
 struct FolderSearchSummary {
     var totalFiles=0
@@ -35,9 +40,9 @@ enum FolderSearchService {
         case page(String,Int,Int)
         case file(Int,Int,FolderSearchFile)
     }
-    struct Verified { var data:Data;var source:SourceRef }
+    struct Verified { var data:Data;var source:SourceRef; var text: String? = nil }
     static let resultLimit=1000
-    static func enumerate(_ folder:URL,recursive:Bool) throws -> (files:[URL],errors:[String]) {
+    static func enumerate(_ folder:URL,recursive:Bool,includeText:Bool = false) throws -> (files:[URL],errors:[String]) {
         let root=folder.standardizedFileURL.resolvingSymlinksInPath()
         let values=try root.resourceValues(forKeys:[.isDirectoryKey])
         guard values.isDirectory==true else { throw FolioError(message:"请选择可读取的文件夹") }
@@ -52,7 +57,7 @@ enum FolderSearchService {
                 let properties=try url.resourceValues(forKeys:[.isSymbolicLinkKey,.isRegularFileKey])
                 // DirectoryEnumerator does not follow symbolic links. skipDescendants on a file can skip the next real directory.
                 if properties.isSymbolicLink==true { continue }
-                if properties.isRegularFile==true,url.pathExtension.lowercased()=="pdf" { files.append(url.standardizedFileURL) }
+                if properties.isRegularFile==true,(url.pathExtension.lowercased()=="pdf" || (includeText && TextImport.handles(url))) { files.append(url.standardizedFileURL) }
             } catch { errors.append(url.path+"："+error.localizedDescription) }
         }
         return (files.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending },errors)
@@ -87,35 +92,46 @@ enum FolderSearchService {
             return SearchHit(page:page.index,range:found,snippet:ReadingServices.repairIdeographs(snippet),label:page.label,strips:strips)
         }
     }
-    static func run(folder:URL,query:String,recursive:Bool,indexURL:URL,limit:Int=resultLimit,terms:FolderSearchTerms = FolderSearchTerms(),event:@escaping @Sendable (Event)->Void = { _ in }) throws -> FolderSearchSummary {
+    static func run(folder:URL,query:String,recursive:Bool,indexURL:URL,limit:Int=resultLimit,terms:FolderSearchTerms = FolderSearchTerms(),includeText:Bool = false,includeAnnotations:Bool = false,live:[SearchSnapshot] = [],event:@escaping @Sendable (Event)->Void = { _ in }) throws -> FolderSearchSummary {
         let query=query.trimmingCharacters(in:.whitespacesAndNewlines)
         guard !query.isEmpty else { throw FolioError(message:"请输入要搜索的文字") }
         guard limit>0 else { throw FolioError(message:"搜索结果上限必须大于零") }
-        let discovery=try enumerate(folder,recursive:recursive)
-        event(.discovered(discovery.files.count))
-        var result=FolderSearchSummary(totalFiles:discovery.files.count,discoveryErrors:discovery.errors)
+        var discovery=try enumerate(folder,recursive:recursive,includeText:includeText)
+        let livePaths = Set(live.filter { $0.card == nil }.compactMap { $0.path?.standardizedFileURL.path })
+        discovery.files.removeAll { livePaths.contains($0.standardizedFileURL.path) }
+        let total = discovery.files.count + live.count
+        event(.discovered(total))
+        var result=FolderSearchSummary(totalFiles:total,discoveryErrors:discovery.errors)
         let index:FolderSearchIndex?
         do { index=try FolderSearchIndex(url:indexURL) }
         catch { index=nil;result.indexWarning="索引不可用，本次直接搜索："+error.localizedDescription }
         var totalHits=0,foldingCache:[String:String]=[:]
+        for snapshot in live {
+            try Task.checkCancellation()
+            let file = try snapshot.search(query: query, limit: max(0, limit - totalHits), terms: terms, includeAnnotations: includeAnnotations, cache: &foldingCache)
+            totalHits += file.hits.count; result.files.append(file); event(.file(result.files.count - 1,total,file))
+            if totalHits >= limit { result.truncated = true; return result }
+        }
+        let liveCount = result.files.count
         for (offset,url) in discovery.files.enumerated() {
             try Task.checkCancellation()
             let file:FolderSearchFile=try autoreleasepool {
                 do {
-                    return try searchFile(url,folder:folder,query:query,index:index,limit:max(0,limit-totalHits),cache:&foldingCache,terms:terms,event:event)
+                    return try searchFile(url,folder:folder,query:query,index:index,limit:max(0,limit-totalHits),cache:&foldingCache,terms:terms,includeAnnotations:includeAnnotations,event:event)
                 } catch is CancellationError { throw CancellationError() }
                 catch { return FolderSearchFile(url:url,error:error.localizedDescription) }
             }
-            totalHits+=file.hits.count;result.files.append(file);event(.file(offset,discovery.files.count,file))
+            totalHits+=file.hits.count;result.files.append(file);event(.file(offset+liveCount,total,file))
             if totalHits>=max(1,limit) { result.truncated=true;break }
         }
         try Task.checkCancellation()
         return result
     }
-    private static func searchFile(_ url:URL,folder:URL,query:String,index:FolderSearchIndex?,limit:Int,cache:inout [String:String],terms:FolderSearchTerms,event:@escaping @Sendable (Event)->Void) throws -> FolderSearchFile {
+    private static func searchFile(_ url:URL,folder:URL,query:String,index:FolderSearchIndex?,limit:Int,cache:inout [String:String],terms:FolderSearchTerms,includeAnnotations:Bool,event:@escaping @Sendable (Event)->Void) throws -> FolderSearchFile {
+        let index = includeAnnotations && !TextImport.handles(url) ? nil : index
         event(.reading(url.lastPathComponent))
         let data=try Data(contentsOf:url),digest=OCRPageCache.digest(data)
-        let indexDigest=digest+"|"+ProcessInfo.processInfo.operatingSystemVersionString
+        let indexDigest=digest+"|"+(includeAnnotations ? "annotations-v1|" : "")+ProcessInfo.processInfo.operatingSystemVersionString
         try Task.checkCancellation()
         var file=FolderSearchFile(url:url)
         func append(_ page:FolderSearchPage,cache:inout [String:String],file:inout FolderSearchFile) throws {
@@ -124,7 +140,7 @@ enum FolderSearchService {
             if !page.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { file.textPages+=1 }
             guard terms.accepts(page.text,cache:&cache) else { return }
             file.hits += matches(page,query:query,limit:max(0,limit-file.hits.count),cache:&cache).map {
-                FolderSearchHit(url:url,relativePath:relativePath(url,in:folder),fingerprint:digest,query:query,hit:$0)
+                FolderSearchHit(url:url,relativePath:relativePath(url,in:folder),fingerprint:digest,query:query,hit:$0,category:page.category ?? "PDF 正文",sourceRect:page.sourceRect)
             }
         }
         do {
@@ -134,6 +150,16 @@ enum FolderSearchService {
             })==true { file.cached=true;return file }
         } catch is CancellationError { throw CancellationError() }
         catch { file=FolderSearchFile(url:url,warning:"页缓存无效，已重新读取原件") }
+        if TextImport.handles(url) {
+            let text = TextImport.normalized(try TextImport.decode(data))
+            let page = FolderSearchPage(index: 0, text: text, label: "文本", glyphs: nil, category: TextDocumentFormat.forURL(url).rawValue + " 源文")
+            try append(page, cache: &cache, file: &file)
+            if let index {
+                do { try index.begin(path: url.path, digest: indexDigest, pages: 1); try index.write(page, path: url.path); try index.commit(path: url.path, textPages: file.textPages) }
+                catch { index.rollback(); file.warning = "文字索引未写入，本次结果可用" }
+            }
+            return file
+        }
         guard let document=PDFDocument(data:data) else { throw FolioError(message:"PDF 已损坏或无法读取") }
         guard !document.isLocked else { throw FolioError(message:"PDF 需要密码；请先解锁并保存副本") }
         guard document.pageCount>0 else { throw FolioError(message:"PDF 没有页面") }
@@ -156,6 +182,13 @@ enum FolderSearchService {
             }
             if position%5==0 || position+1==document.pageCount { event(.page(url.lastPathComponent,position+1,document.pageCount)) }
         }
+        if includeAnnotations {
+            for note in ReadingServices.notes(document) where !note.note.isEmpty {
+                let page = FolderSearchPage(index: note.page, text: note.note, label: note.label, glyphs: nil, category: "批注", sourceRect: document.page(at: note.page)?.annotations[note.index].bounds)
+                guard terms.accepts(page.text, cache: &cache) else { continue }
+                file.hits += matches(page, query: query, limit: max(0, limit - file.hits.count), cache: &cache).map { FolderSearchHit(url: url, relativePath: relativePath(url, in: folder), fingerprint: digest, query: query, hit: $0, category: "批注", sourceRect: page.sourceRect) }
+            }
+        }
         try Task.checkCancellation()
         if writing {
             do { try index?.commit(path:url.path,textPages:file.textPages);writing=false }
@@ -168,6 +201,10 @@ enum FolderSearchService {
         try Task.checkCancellation()
         let data=try Data(contentsOf:result.url)
         guard OCRPageCache.digest(data)==result.fingerprint else { throw FolioError(message:"文件在搜索后已变化，请重新搜索后打开") }
+        if TextImport.handles(result.url) {
+            let text = TextImport.normalized(try TextImport.decode(data))
+            return Verified(data: data, source: SourceRef(path: result.url.path, fileName: result.url.lastPathComponent, page: 0, anchor: result.query), text: text)
+        }
         guard let document=PDFDocument(data:data) else { throw FolioError(message:"命中页面已无法读取") }
         return Verified(data:data,source:try source(result,in:document))
     }
@@ -179,6 +216,10 @@ enum FolderSearchService {
             guard let first=values.first else { continue }
             let data=try Data(contentsOf:first.url),fingerprint=OCRPageCache.digest(data)
             guard values.allSatisfy({ $0.fingerprint==fingerprint }) else { throw FolioError(message:"文件在搜索后已变化，请重新搜索后摘录") }
+            if TextImport.handles(first.url) {
+                for value in values { references[value.id] = SourceRef(path: value.url.path, fileName: value.url.lastPathComponent, page: 0, anchor: value.query) }
+                continue
+            }
             guard let document=PDFDocument(data:data) else { throw FolioError(message:"无法读取来源 PDF") }
             for value in values { try Task.checkCancellation();references[value.id]=try source(value,in:document) }
         }
@@ -190,7 +231,8 @@ enum FolderSearchService {
     private static func source(_ result:FolderSearchHit,in document:PDFDocument) throws -> SourceRef {
         guard let page=document.page(at:result.hit.page) else { throw FolioError(message:"命中页面已无法读取") }
         var rects:[CGRect]
-        if let strips=result.hit.strips {
+        if let rect = result.sourceRect { rects = [rect] }
+        else if let strips=result.hit.strips {
             rects=strips.map { OrderedText.pageRect(forFraction:$0,cropBox:page.bounds(for:.cropBox),rotation:page.rotation) }
         } else {
             guard let selection=page.selection(for:result.hit.range) else { throw FolioError(message:"无法定位这处文字，请重新搜索") }
@@ -201,7 +243,7 @@ enum FolderSearchService {
         // Keep the actual source spelling, not the folded search phrase: otherwise a simplified query could
         // relocate a traditional-text excerpt to a different page containing the same words in simplified form.
         var anchor:String?
-        if result.hit.strips==nil,let text=page.string as NSString?,result.hit.range.location>=0,NSMaxRange(result.hit.range)<=text.length {
+        if result.sourceRect==nil,result.hit.strips==nil,let text=page.string as NSString?,result.hit.range.location>=0,NSMaxRange(result.hit.range)<=text.length {
             anchor=text.substring(with:result.hit.range)
         }
         return SourceRef(path:result.url.path,fileName:result.url.lastPathComponent,page:result.hit.page,pageLabel:result.hit.label,rects:rects,anchor:anchor)

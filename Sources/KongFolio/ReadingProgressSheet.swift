@@ -11,7 +11,7 @@ struct ReadingProgressSheet: View {
     var body: some View {
         let progress = workspace.readingProgress
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            PanelRow {
                 Text("阅读进度").font(.headline)
                 Spacer()
                 Button("完成") { workspace.showProgress = false }.keyboardShortcut(.defaultAction)
@@ -20,7 +20,7 @@ struct ReadingProgressSheet: View {
             ProgressView(value: fraction)
             Text("已读 \(progress.visited.filter { $0 < workspace.count }.count) / \(workspace.count) 页（\(Int(fraction * 100))%）；上次读到第 \(progress.last + 1) 页")
                 .font(.callout)
-            HStack {
+            PanelRow {
                 Button("回到上次读到的页") { workspace.selectPage(min(progress.last, max(0, workspace.count - 1))); workspace.showProgress = false }
                     .disabled(progress.visited.isEmpty)
                 Button("跳到下一个没读过的页") {
@@ -40,7 +40,7 @@ struct ReadingProgressSheet: View {
                     Button {
                         workspace.selectPage(chapter.firstPage); workspace.showProgress = false
                     } label: {
-                        HStack {
+                        PanelRow {
                             Text(String(repeating: "　", count: chapter.depth) + chapter.title).lineLimit(1)
                             Spacer()
                             ProgressView(value: chapter.fraction).frame(width: 90)
@@ -53,6 +53,6 @@ struct ReadingProgressSheet: View {
             Text("停留一会儿的页面才算读过；记录只保存在本机，按文件路径区分。").font(.caption).foregroundStyle(.secondary)
         }
         .padding()
-        .frame(width: 560, height: 520)
+        .adaptiveSheet(width: 560, height: 520, minimumWidth: 360)
     }
 }

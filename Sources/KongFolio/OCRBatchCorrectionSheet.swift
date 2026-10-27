@@ -13,7 +13,7 @@ struct OCRBatchCorrectionSheet: View {
             Text("OCR 批量纠错").font(.title2.bold())
             Text("每行填写“错字=正字”，规则保存在本机。先预览，再勾选要改的位置；重叠内容优先使用上面的规则，替换结果不再次匹配。").font(.caption).foregroundStyle(.secondary)
             TextEditor(text: $workspace.replacementText).font(.system(.body, design: .monospaced)).frame(height: 100).border(.secondary.opacity(0.4))
-            HStack {
+            PanelRow {
                 Toggle("仅选中页", isOn: $selectedOnly)
                 Button("预览全部命中") { preview() }.disabled(workspace.busy)
                 Button("全选") { selected = Set(hits.map(\.id)) }
@@ -32,13 +32,13 @@ struct OCRBatchCorrectionSheet: View {
                 }
             }
             if previewed && hits.isEmpty { Text("没有命中。仅扫描保留 OCR 前原页的识别记录。").foregroundStyle(.secondary) }
-            HStack {
+            PanelRow {
                 Button("取消") { workspace.showOCRBatchCorrection = false }.disabled(workspace.busy)
                 Spacer()
                 Button("应用选中纠错") { workspace.applyOCRBatch(hits.filter { selected.contains($0.id) }, expected: expected) }
                     .disabled(workspace.busy || selected.isEmpty || rulesUsed != workspace.replacementText || workspace.revision != expected)
             }
-        }.padding(20).frame(width: 780, height: 620)
+        }.padding(20).adaptiveSheet(width: 780, height: 620, minimumWidth: 360)
         .onChange(of: selectedOnly) { _, _ in hits = []; selected = []; previewed = false }
         .alert("纠错失败", isPresented: Binding(get: { workspace.error != nil }, set: { if !$0 { workspace.error = nil } })) { Button("好") { workspace.error = nil } } message: { Text(workspace.error ?? "") }
     }

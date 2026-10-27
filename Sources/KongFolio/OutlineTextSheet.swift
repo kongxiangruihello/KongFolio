@@ -14,7 +14,7 @@ struct OutlineTextSheet: View {
             Text("目录文本").font(.title2.bold())
             Text("每行一条：标题 页码。行首缩进（一个制表符或两个空格）表示下一级。页码后面可以带 “……” 之类的点线。把整份目录粘贴进来也行。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack {
+            PanelRow {
                 Text("页码偏移")
                 TextField("0", value: $offset, format: .number).frame(width: 60).multilineTextAlignment(.trailing)
                 Text("物理页 = 书上印的页码 + 偏移。例如正文第 1 页是 PDF 的第 12 页，偏移填 11。")
@@ -33,7 +33,7 @@ struct OutlineTextSheet: View {
                 }
             }
             .font(.caption)
-            HStack {
+            PanelRow {
                 Button("取消") { workspace.showOutlineText = false }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("应用") { workspace.applyOutlineText(text, offset: offset); workspace.showOutlineText = false }
@@ -41,7 +41,7 @@ struct OutlineTextSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 520)
+        .adaptiveSheet(width: 520, height: 600, minimumWidth: 360)
         .onAppear {
             guard !loaded else { return }
             loaded = true

@@ -14,7 +14,7 @@ struct ToolbarSettingsView: View {
             Toggle("只显示图标", isOn: Binding(get: { preferences.iconsOnly }, set: { on in update { $0.iconsOnly = on } }))
             List {
                 ForEach(preferences.order) { action in
-                    HStack {
+                    PanelRow {
                         Toggle(isOn: Binding(get: { !preferences.hidden.contains(action) || action.pinned }, set: { on in update { if on { $0.hidden.remove(action) } else { $0.hidden.insert(action) } } })) {
                             Label(action.title, systemImage: action.symbol)
                         }.disabled(action.pinned)
@@ -25,7 +25,7 @@ struct ToolbarSettingsView: View {
                     }
                 }.onMove { source, destination in update { $0.order.move(fromOffsets: source, toOffset: destination) } }
             }
-            HStack { Button("恢复默认") { saved = ToolbarPreferences().encoded }; Spacer(); Button("完成") { dismiss() }.keyboardShortcut(.defaultAction) }
-        }.padding(20).frame(width: 460, height: 620)
+            PanelRow { Button("恢复默认") { saved = ToolbarPreferences().encoded }; Spacer(); Button("完成") { dismiss() }.keyboardShortcut(.defaultAction) }
+        }.padding(20).adaptiveSheet(width: 460, height: 620, minimumWidth: 360)
     }
 }

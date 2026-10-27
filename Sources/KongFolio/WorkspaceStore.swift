@@ -39,6 +39,7 @@ import UniformTypeIdentifiers
     @Published var pendingPageTransfer: PageTransferRequest?
     @Published var showTaskCenter = false
     @Published var showFolderSearch = false
+    @Published var showDocumentComparison = false
     var showOCRTasksAfterSearch = false
     private var forwarding: AnyCancellable?
 
