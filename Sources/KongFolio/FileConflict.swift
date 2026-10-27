@@ -64,9 +64,15 @@ extension Workspace {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try snapshot().write(folder.appendingPathComponent(UUID().uuidString + ".kongfolio"))
             let payload = try ImportServices.read([original])
-            if case .project(let archive) = payload { try restore(archive); projectURL = original; sourceURL = nil }
-            else if case .documents(let bytes) = payload { try restore(ProjectArchive(sourcePath: original.path, pdf: bytes[0], title: title, selection: 0, selectedPages: [0], mode: .document, recipes: [:], drafts: [:], dirty: false, projectPath: nil)) }
-            fileBaseline = try FileBaseline.capture(original); dirty = false; saveConflict = false
+            let loadedBaseline: FileBaseline?
+            if case .project(let archive) = payload {
+                loadedBaseline = archive.fileBaseline
+                try restore(archive); projectURL = original; sourceURL = nil
+            } else if case .documents(let bytes) = payload {
+                loadedBaseline = try FileBaseline.capture(original, data: bytes[0])
+                try restore(ProjectArchive(sourcePath: original.path, pdf: bytes[0], title: title, selection: 0, selectedPages: [0], mode: .document, recipes: [:], drafts: [:], dirty: false, projectPath: nil))
+            } else { loadedBaseline = nil }
+            fileBaseline = loadedBaseline; dirty = false; saveConflict = false
             history.removeAll(); future.removeAll(); loadWordDraft(); scheduleRecovery()
             status = "已重新载入原文件；此前修改保存在应用的 Conflicts 文件夹"
         } catch { self.error = error.localizedDescription }
