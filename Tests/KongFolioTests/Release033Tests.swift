@@ -19,6 +19,20 @@ final class Release033Tests: XCTestCase {
         let deadline = Date().addingTimeInterval(10)
         while queue.running, Date() < deadline { try await Task.sleep(nanoseconds:2_000_000) }; XCTAssertFalse(queue.running)
     }
+    @MainActor func testDeferredTabsDoNotReadOriginalUntilSelectedAndRecoveryUsesSavedBaseline() async throws {
+        let root = try folder(); defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("deferred.pdf"), data = try pdf()
+        try data.write(to: file)
+        let workspace = Workspace(storage: root); workspace.bootstrap(); workspace.needsLoad = true; workspace.sourceURL = file
+        XCTAssertNil(workspace.fileBaseline); XCTAssertEqual(workspace.count, 0)
+        workspace.ensureLoaded()
+        let deadline = Date().addingTimeInterval(5)
+        while workspace.busy, Date() < deadline { try await Task.sleep(nanoseconds: 2_000_000) }
+        XCTAssertGreaterThan(workspace.count, 0); XCTAssertEqual(workspace.fileBaseline?.digest, OCRPageCache.digest(data))
+        let archive = try workspace.snapshot(); try pdf("externally changed").write(to: file)
+        let recovered = Workspace(storage: root); try recovered.restore(archive)
+        XCTAssertEqual(recovered.fileBaseline, archive.fileBaseline); XCTAssertThrowsError(try recovered.fileBaseline!.verify(file))
+    }
     func testRepeatedCrossPageMergeDoesNotDuplicateRowsAndExtensionKeepsEdits() throws {
         let document = PDFDocument(data: try tablePDF())!
         document.insert(document.page(at: 1)!.copy() as! PDFPage, at: 2)

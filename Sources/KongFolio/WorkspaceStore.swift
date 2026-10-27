@@ -131,6 +131,7 @@ import UniformTypeIdentifiers
                 guard recoveryExists(entry.slot) else { continue }
             } else if let path = entry.path, FileManager.default.fileExists(atPath: path) {
                 let url = URL(fileURLWithPath: path)
+                workspace.needsLoad = true
                 if entry.kind == .project { workspace.projectURL = url } else { workspace.sourceURL = url }
                 workspace.pendingView = entry.position
                 workspace.needsLoad = true
@@ -254,8 +255,8 @@ import UniformTypeIdentifiers
             let target: Workspace
             if let current = activeWorkspace, current.count == 0, !current.needsLoad, !current.busy { target = current }
             else { target = addWorkspace() }
-            target.sourceURL = url
             target.needsLoad = true
+            target.sourceURL = url
             if first == nil { first = target.id }
         }
         if let first { select(first) }

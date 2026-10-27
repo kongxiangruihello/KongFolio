@@ -165,9 +165,10 @@ import UniformTypeIdentifiers
     var movingSignature: (layer: SignatureLayer, item: PlacedSignature)?
     var moveSnapshot: ProjectArchive?
     @Published var signatureWidth = 0.28
-    @Published var projectURL: URL? { didSet { if projectURL != oldValue, let projectURL { fileBaseline = try? FileBaseline.capture(projectURL) } } }
+    private var restoringBaseline = false
+    @Published var projectURL: URL? { didSet { if !needsLoad, !restoringBaseline, projectURL != oldValue, let projectURL { fileBaseline = try? FileBaseline.capture(projectURL) } } }
     /// The PDF, image or text file this document was opened from; nil for merged documents and projects.
-    @Published var sourceURL: URL? { didSet { if sourceURL != oldValue, let sourceURL { fileBaseline = try? FileBaseline.capture(sourceURL) } } }
+    @Published var sourceURL: URL? { didSet { if !needsLoad, !restoringBaseline, sourceURL != oldValue, let sourceURL { fileBaseline = try? FileBaseline.capture(sourceURL) } } }
     /// The tab exists but its file has not been read yet: it was opened together with many others, restored from the last
     /// session, or unloaded to free memory. Selecting the tab loads it (`ensureLoaded`).
     @Published var needsLoad = false
@@ -369,6 +370,10 @@ import UniformTypeIdentifiers
         searchResults = []
         annotationNotes = []
         title = archive.title
+        // Recovery already carries its baseline. Reading the current cloud file here can block launch
+        // and would establish the wrong version before the saved baseline is restored below.
+        restoringBaseline = true
+        defer { restoringBaseline = false }
         if !keepProjectURL { sourceURL = archive.sourcePath.map { URL(fileURLWithPath: $0) } }
         selection = archive.selection
         selectedPages = archive.selectedPages
