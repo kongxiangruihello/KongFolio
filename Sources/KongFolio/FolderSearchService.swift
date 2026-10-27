@@ -13,6 +13,7 @@ struct FolderSearchHit: Identifiable {
     var revision: UUID? = nil
     var cardID: UUID? = nil
     var sourceRect: CGRect? = nil
+    var textLine: Int? = nil
 }
 struct FolderSearchFile {
     var url:URL
@@ -90,26 +91,26 @@ enum FolderSearchService {
                 }
                 strips=boxes
             }
-            return SearchHit(page:page.index,range:found,snippet:ReadingServices.repairIdeographs(snippet),label:page.label,strips:strips)
+            return SearchHit(page:page.index,range:TextSearchBody.sourceRange(found, spans: page.sourceSpans),snippet:ReadingServices.repairIdeographs(snippet),label:page.label,strips:strips)
         }
     }
-    static func run(folder:URL,query:String,recursive:Bool,indexURL:URL,limit:Int=resultLimit,terms:FolderSearchTerms = FolderSearchTerms(),includeText:Bool = false,includeAnnotations:Bool = false,live:[SearchSnapshot] = [],event:@escaping @Sendable (Event)->Void = { _ in }) throws -> FolderSearchSummary {
+    static func run(folder:URL?,query:String,recursive:Bool,indexURL:URL,limit:Int=resultLimit,terms:FolderSearchTerms = FolderSearchTerms(),includeText:Bool = false,includeAnnotations:Bool = false,bodyOnly:Bool = true,live:[SearchSnapshot] = [],event:@escaping @Sendable (Event)->Void = { _ in }) throws -> FolderSearchSummary {
         let query=query.trimmingCharacters(in:.whitespacesAndNewlines)
         guard !query.isEmpty else { throw FolioError(message:"请输入要搜索的文字") }
         guard limit>0 else { throw FolioError(message:"搜索结果上限必须大于零") }
-        var discovery=try enumerate(folder,recursive:recursive,includeText:includeText)
+        var discovery = try folder.map { try enumerate($0, recursive: recursive, includeText: includeText) } ?? (files: [URL](), errors: [String]())
         let livePaths = Set(live.filter { $0.card == nil }.compactMap { $0.path?.standardizedFileURL.path })
         discovery.files.removeAll { livePaths.contains($0.standardizedFileURL.path) }
         let total = discovery.files.count + live.count
         event(.discovered(total))
         var result=FolderSearchSummary(totalFiles:total,discoveryErrors:discovery.errors)
         let index:FolderSearchIndex?
-        do { index=try FolderSearchIndex(url:indexURL) }
+        do { index = discovery.files.isEmpty ? nil : try FolderSearchIndex(url:indexURL) }
         catch { index=nil;result.indexWarning="索引不可用，本次直接搜索："+error.localizedDescription }
         var totalHits=0,foldingCache:[String:String]=[:]
         for snapshot in live {
             try Task.checkCancellation()
-            let file = try snapshot.search(query: query, limit: max(0, limit - totalHits), terms: terms, includeAnnotations: includeAnnotations, cache: &foldingCache)
+            let file = try snapshot.search(query: query, limit: max(0, limit - totalHits), terms: terms, includeAnnotations: includeAnnotations, bodyOnly: bodyOnly, cache: &foldingCache)
             totalHits += file.hits.count; result.files.append(file); event(.file(result.files.count - 1,total,file))
             if totalHits >= limit { result.truncated = true; return result }
         }
@@ -118,7 +119,7 @@ enum FolderSearchService {
             try Task.checkCancellation()
             let file:FolderSearchFile=try autoreleasepool {
                 do {
-                    return try searchFile(url,folder:folder,query:query,index:index,limit:max(0,limit-totalHits),cache:&foldingCache,terms:terms,includeAnnotations:includeAnnotations,event:event)
+                    return try searchFile(url,folder:folder!,query:query,index:index,limit:max(0,limit-totalHits),cache:&foldingCache,terms:terms,includeAnnotations:includeAnnotations,bodyOnly:bodyOnly,event:event)
                 } catch is CancellationError { throw CancellationError() }
                 catch { return FolderSearchFile(url:url,error:error.localizedDescription) }
             }
@@ -128,11 +129,11 @@ enum FolderSearchService {
         try Task.checkCancellation()
         return result
     }
-    private static func searchFile(_ url:URL,folder:URL,query:String,index:FolderSearchIndex?,limit:Int,cache:inout [String:String],terms:FolderSearchTerms,includeAnnotations:Bool,event:@escaping @Sendable (Event)->Void) throws -> FolderSearchFile {
+    private static func searchFile(_ url:URL,folder:URL,query:String,index:FolderSearchIndex?,limit:Int,cache:inout [String:String],terms:FolderSearchTerms,includeAnnotations:Bool,bodyOnly:Bool,event:@escaping @Sendable (Event)->Void) throws -> FolderSearchFile {
         let index = includeAnnotations && !TextImport.handles(url) ? nil : index
         event(.reading(url.lastPathComponent))
         let data=try Data(contentsOf:url),digest=OCRPageCache.digest(data)
-        let indexDigest=digest+"|"+(includeAnnotations ? "annotations-v1|" : "")+ProcessInfo.processInfo.operatingSystemVersionString
+        let indexDigest=digest+"|body-v1-\(bodyOnly)|"+(includeAnnotations ? "annotations-v1|" : "")+ProcessInfo.processInfo.operatingSystemVersionString
         try Task.checkCancellation()
         var file=FolderSearchFile(url:url)
         func append(_ page:FolderSearchPage,cache:inout [String:String],file:inout FolderSearchFile) throws {
@@ -141,7 +142,7 @@ enum FolderSearchService {
             if !page.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { file.textPages+=1 }
             guard terms.accepts(page.text,cache:&cache) else { return }
             file.hits += matches(page,query:query,limit:max(0,limit-file.hits.count),cache:&cache).map {
-                FolderSearchHit(url:url,relativePath:relativePath(url,in:folder),fingerprint:digest,query:query,hit:$0,category:page.category ?? "PDF 正文",sourceRect:page.sourceRect)
+                FolderSearchHit(url:url,relativePath:relativePath(url,in:folder),fingerprint:digest,query:query,hit:$0,category:page.category ?? "PDF 正文",sourceRect:page.sourceRect,textLine:TextSearchBody.line(at:$0.range.location, starts:page.sourceLineStarts))
             }
         }
         do {
@@ -153,7 +154,8 @@ enum FolderSearchService {
         catch { file=FolderSearchFile(url:url,warning:"页缓存无效，已重新读取原件") }
         if TextImport.handles(url) {
             let text = TextImport.normalized(try TextImport.decode(data))
-            let page = FolderSearchPage(index: 0, text: text, label: "文本", glyphs: nil, category: TextDocumentFormat.forURL(url).rawValue + " 源文")
+            let format = TextDocumentFormat.forURL(url)
+            let page = TextSearchBody.make(text, format: format, bodyOnly: bodyOnly).page(format: format, bodyOnly: bodyOnly)
             try append(page, cache: &cache, file: &file)
             if let index {
                 do { try index.begin(path: url.path, digest: indexDigest, pages: 1); try index.write(page, path: url.path); try index.commit(path: url.path, textPages: file.textPages) }

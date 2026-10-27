@@ -114,9 +114,13 @@ struct ComparisonViewer: View {
     @State private var coarse = false
     @State private var imageResult: DetailedDifference.ImageResult?
     @State private var blend = 0.55
+    @State private var alignScans = false
+    @State private var offsetX = 0.0
+    @State private var offsetY = 0.0
+    @State private var resolution = 1200
     @State private var detailMessage = ""
     @State private var detailWorking = false
-    private var detailKey: String { "\(row?.before ?? -1)-\(row?.after ?? -1)-\(mode)" }
+    private var detailKey: String { "\(row?.before ?? -1)-\(row?.after ?? -1)-\(mode)-\(alignScans)-\(offsetX)-\(offsetY)-\(resolution)" }
     private var row: PageDifference? { rows.first { $0.id==selection } }
     private var visible:[PageDifference] { changedOnly ? rows.filter(\.changed) : rows }
     var body: some View {
@@ -141,13 +145,23 @@ struct ComparisonViewer: View {
                 }
                 if mode == 2 { Text("红色差异").font(.caption); Slider(value: $blend, in: 0...1).frame(maxWidth: 140) }
             }
+            if mode == 2 {
+                PanelRow {
+                    Toggle("校准扫描位置", isOn: $alignScans)
+                    Picker("清晰度", selection: $resolution) { Text("标准").tag(1200); Text("精细").tag(2000) }.frame(width: 140)
+                    Stepper("水平 \(Int(offsetX))", value: $offsetX, in: -80...80).frame(width: 140)
+                    Stepper("垂直 \(Int(offsetY))", value: $offsetY, in: -80...80).frame(width: 140)
+                    Button("重置校准") { alignScans = false; offsetX = 0; offsetY = 0 }
+                }
+                Text("仅校准对比画面的轻微平移，原文件保留；自动结果不明显时不套用，可手动微调。不会校准旋转或页面变形。").font(.caption).foregroundStyle(.secondary)
+            }
             HStack { Text(leftTitle).frame(maxWidth:.infinity);Text(rightTitle).frame(maxWidth:.infinity) }.font(.caption)
             if let row,!visible.isEmpty {
                 if mode == 2, let result = imageResult, let overlay = NSImage(data: result.overlay), let mask = NSImage(data: result.mask) {
                     ScrollView([.horizontal, .vertical]) {
                         Image(nsImage: overlay).resizable().overlay { Image(nsImage: mask).resizable().opacity(blend) }.frame(width: 520 * zoom, height: 520 * zoom)
                     }
-                    Text("\(result.changedPixels) 个差异像素 · 局部叠加仅供核对，未自动纠正扫描位移").font(.caption)
+                    Text("\(result.changedPixels) 个差异像素 · \(result.side) 像素画布 · 偏移 \(Int(result.shift.x)), \(Int(result.shift.y))" + (alignScans ? (result.calibrated ? " · 已校准" : " · 未找到可靠自动校准") : "")).font(.caption)
                 } else {
                     PDFDifferenceCanvas(before:before,after:after,left:row.before,right:row.after,zoom:zoom,chunks: mode == 1 ? chunks : [], activeChunk: activeChunk)
                 }
@@ -179,12 +193,14 @@ struct ComparisonViewer: View {
         guard mode != 0, let row else { return }
         let left = row.before.flatMap { before.page(at: $0) }, right = row.after.flatMap { after.page(at: $0) }
         let mode = mode, a = left?.string ?? "", b = right?.string ?? ""
+        let align = alignScans, resolution = resolution, translation = CGPoint(x: offsetX, y: offsetY)
+        if mode == 2 { do { try await Task.sleep(nanoseconds: 150_000_000) } catch { return } }
         let leftData = left.map { page -> Data? in let doc = PDFDocument(); if let copy = page.copy() as? PDFPage { doc.insert(copy, at: 0) }; return doc.dataRepresentation() } ?? nil
         let rightData = right.map { page -> Data? in let doc = PDFDocument(); if let copy = page.copy() as? PDFPage { doc.insert(copy, at: 0) }; return doc.dataRepresentation() } ?? nil
         detailWorking = true
         let job = Task.detached(priority: .userInitiated) { () throws -> (TextDifferenceResult?, DetailedDifference.ImageResult?) in
             if mode == 1 { return (try DetailedDifference.text(a, b), nil) }
-            return (nil, try DetailedDifference.image(leftData.flatMap { PDFDocument(data: $0)?.page(at: 0) }, rightData.flatMap { PDFDocument(data: $0)?.page(at: 0) }))
+            return (nil, try DetailedDifference.image(leftData.flatMap { PDFDocument(data: $0)?.page(at: 0) }, rightData.flatMap { PDFDocument(data: $0)?.page(at: 0) }, dimension: resolution, automaticAlignment: align, translation: translation))
         }
         do {
             let result = try await withTaskCancellationHandler(operation: { try await job.value }, onCancel: { job.cancel() })

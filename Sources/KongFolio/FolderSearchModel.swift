@@ -5,6 +5,7 @@ import Foundation
     struct Settings: Codable {
         var folder: URL?; var recursive = true; var query = ""
         var savedFolders: [URL]?; var required: String?; var excluded: String?
+        var scope: SearchScope?; var bodyOnly: Bool?; var textFiles: Bool?; var annotations: Bool?; var grouped: Bool?
     }
     @Published var folder:URL?
     @Published var recursive=true
@@ -17,7 +18,10 @@ import Foundation
     @Published var grouped = true
     @Published var includeText = true
     @Published var includeAnnotations = true
-    @Published var includeLive = true
+    @Published var scope = SearchScope.combined
+    @Published var bodyOnly = true
+    var includeLive: Bool { scope.usesLive }
+    @Published private(set) var searchedScope = SearchScope.combined
     @Published private(set) var searchedTerms = FolderSearchTerms()
     var openWorkerForExcerpts: Task<[(String, SourceRef)], Error>?
     @Published private(set) var searchedQuery=""
@@ -46,6 +50,7 @@ import Foundation
             folder=saved.folder;recursive=saved.recursive;query=saved.query
             savedFolders=saved.savedFolders ?? saved.folder.map { [$0] } ?? []
             requiredTerms=saved.required ?? "";excludedTerms=saved.excluded ?? ""
+            scope = saved.scope ?? .combined; bodyOnly = saved.bodyOnly ?? true; includeText = saved.textFiles ?? true; includeAnnotations = saved.annotations ?? true; grouped = saved.grouped ?? true
         }
     }
     var noTextFiles:[URL] { files.filter(\.needsOCR).map(\.url) }
@@ -57,12 +62,16 @@ import Foundation
     func remember() {
         do {
             try FileManager.default.createDirectory(at:settingsURL.deletingLastPathComponent(),withIntermediateDirectories:true)
-            try JSONEncoder().encode(Settings(folder:folder,recursive:recursive,query:query,savedFolders:savedFolders,required:requiredTerms,excluded:excludedTerms)).write(to:settingsURL,options:.atomic)
+            try JSONEncoder().encode(Settings(folder:folder,recursive:recursive,query:query,savedFolders:savedFolders,required:requiredTerms,excluded:excludedTerms,scope:scope,bodyOnly:bodyOnly,textFiles:includeText,annotations:includeAnnotations,grouped:grouped)).write(to:settingsURL,options:.atomic)
         } catch { message="搜索设置未保存："+error.localizedDescription }
     }
     func start(live: [SearchSnapshot] = []) {
         guard !running,openingID==nil else { return }
-        guard let folder else { message="请先选择文件夹";return }
+        guard !scope.usesFolder || folder != nil else { message="请选择资料文件夹，或切换为“仅当前编辑和摘录”";return }
+        let folder = scope.usesFolder ? folder : nil
+        let live = scope.usesLive ? live : []
+        let bodyOnly = bodyOnly
+        searchedScope = scope
         let includeText = includeText, includeAnnotations = includeAnnotations
         let query=query.trimmingCharacters(in:.whitespacesAndNewlines)
         guard !query.isEmpty else { message="请输入要搜索的文字";return }
@@ -74,7 +83,7 @@ import Foundation
         delivered=[];results=[];files=[];discoveryErrors=[];scanned=0;total=0;message="";progressText="正在查找资料…"
         searchedQuery=query;searchedFolder=folder;running=true;stopping=false
         let job=Task.detached(priority:.userInitiated) { [weak self] in
-            try FolderSearchService.run(folder:folder,query:query,recursive:recursive,indexURL:indexURL,terms:terms,includeText:includeText,includeAnnotations:includeAnnotations,live:live) { event in
+            try FolderSearchService.run(folder:folder,query:query,recursive:recursive,indexURL:indexURL,terms:terms,includeText:includeText,includeAnnotations:includeAnnotations,bodyOnly:bodyOnly,live:live) { event in
                 Task { @MainActor [weak self] in self?.receive(event,token:token) }
             }
         }
@@ -140,12 +149,12 @@ import Foundation
         return false
     }
     func report() -> String {
-        var lines=["KongFolio 跨文件搜索","文件夹：\(searchedFolder?.path ?? "")","搜索：\(searchedQuery)","已检查 \(scanned) / \(total) 份资料，\(results.count) 处匹配",message,""]
+        var lines=["KongFolio 跨文件搜索","范围：\(searchedScope.rawValue)","文件夹：\(searchedFolder?.path ?? "无")","搜索：\(searchedQuery)","已检查 \(scanned) / \(total) 份资料，\(results.count) 处匹配",message,""]
         lines.append("同页包含：" + searchedTerms.required.joined(separator: "、"))
         lines.append("同页排除：" + searchedTerms.excluded.joined(separator: "、"))
         lines.append("文件筛选：" + fileFilter + "；页码筛选：" + pageFilter)
         for result in visibleResults {
-            lines.append(result.url.path+" · 第 \(result.hit.page+1) 页"+(result.hit.label.map { "（印刷页码 \($0)）" } ?? ""))
+            lines.append(result.url.path+" · "+(result.textLine.map { "第 \($0) 行" } ?? "第 \(result.hit.page+1) 页")+(result.hit.label.map { "（印刷页码 \($0)）" } ?? ""))
             lines.append(result.hit.snippet);lines.append("")
         }
         if !noTextFiles.isEmpty { lines += ["未提取到文字："]+noTextFiles.map(\.path)+[""] }

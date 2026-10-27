@@ -8,6 +8,8 @@ struct WordExportSheet: View {
     @State private var preview: [WordPreparedPage] = []
     @State private var candidates: [WordMarginCandidate] = []
     @State private var previewIndex = 0
+    @State private var editText = false
+    @State private var previewRevision: UUID?
     @State private var preparing = false
     @State private var previewMessage = ""
     @State private var worker: Task<Void, Never>?
@@ -15,6 +17,12 @@ struct WordExportSheet: View {
     private var headings: Binding<Bool> { Binding(get: { workspace.wordOptions.recognizeHeadings ?? true }, set: { workspace.wordOptions.recognizeHeadings = $0 }) }
     private var printed: Binding<Bool> { Binding(get: { workspace.wordOptions.printedPageLabels ?? false }, set: { workspace.wordOptions.printedPageLabels = $0 }) }
 
+    private var shownParagraphs: [WordPreparedParagraph] {
+        guard preview.indices.contains(previewIndex) else { return [] }
+        let page = preview[previewIndex]
+        if let edited = workspace.wordOptions.editedText?[page.index] { return WordCleanup.editedParagraphs(edited, headings: workspace.wordOptions.recognizeHeadings != false) }
+        return page.paragraphs
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("导出为 Word（.docx）").font(.title2.bold())
@@ -54,7 +62,28 @@ struct WordExportSheet: View {
             }
             if preview.indices.contains(previewIndex) {
                 Text("文字整理预览 · 第 \(preview[previewIndex].index + 1) 页").font(.caption.bold())
-                ScrollView { VStack(alignment: .leading, spacing: 8) { ForEach(Array(preview[previewIndex].paragraphs.enumerated()), id: \.offset) { _, paragraph in Text(paragraph.text).font(paragraph.heading > 0 ? .headline : .body).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) } } }.frame(height: 180).border(.secondary.opacity(0.3))
+                Toggle("导出前修改本页正文", isOn: $editText).disabled(preparing || workspace.wordOptions.content == .imagesOnly)
+                if editText {
+                    TextEditor(text: Binding(get: {
+                        let page = preview[previewIndex]
+                        return workspace.wordOptions.editedText?[page.index] ?? page.paragraphs.map(\.text).joined(separator: "\n\n")
+                    }, set: { text in
+                        do {
+                            guard previewRevision == workspace.revision else { throw FolioError(message: "PDF 已变化，请重新更新预览后再修改正文") }
+                            try workspace.setWordDraft(text, page: preview[previewIndex].index) }
+                        catch { previewMessage = error.localizedDescription }
+                    })).font(.body).frame(height: 200).border(.secondary.opacity(0.3))
+                    Text("仅修改这次 Word 导出的文字，原 PDF 保留。段落之间留空行；已修改页采用手动文字，其他页继续应用整理规则。").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ScrollView { VStack(alignment: .leading, spacing: 8) { ForEach(Array(shownParagraphs.enumerated()), id: \.offset) { _, paragraph in Text(paragraph.text).font(paragraph.heading > 0 ? .headline : .body).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) } } }.frame(height: 180).border(.secondary.opacity(0.3))
+                }
+                if !(workspace.wordOptions.editedText ?? [:]).isEmpty {
+                    PanelRow {
+                        Text("已修改 \(workspace.wordOptions.editedText?.count ?? 0) 页").font(.caption)
+                        Button("恢复本页整理结果") { workspace.clearWordDraft(page: preview[previewIndex].index); inspect() }
+                        Button("清除本次文字修改") { workspace.clearWordDraft(); inspect() }
+                    }
+                }
             }
             if !previewMessage.isEmpty { Text(previewMessage).font(.caption).foregroundStyle(.secondary) }
             Toggle("标出页码（“—— 第 N 页 ——”）", isOn: $workspace.wordOptions.pageMarks)
@@ -71,7 +100,9 @@ struct WordExportSheet: View {
         .onDisappear { worker?.cancel() }
     }
     private func inspect() {
+        do { try workspace.validateWordDraft() } catch { previewMessage = error.localizedDescription; return }
         guard let data = try? workspace.pdfData() else { previewMessage = "无法读取当前文档"; return }
+        let sourceRevision = workspace.revision
         var options = workspace.wordOptions
         options.replacements = workspace.applyReplacements ? ReplacementRules.parse(workspace.replacementText) : []
         let pages = workspace.wordScope == .all ? Array(0..<workspace.count) : workspace.effectivePages
@@ -83,7 +114,9 @@ struct WordExportSheet: View {
             }
             do {
                 let result = try await withTaskCancellationHandler(operation: { try await job.value }, onCancel: { job.cancel() })
-                try Task.checkCancellation(); preview = result.pages; candidates = result.candidates; previewIndex = 0
+                try Task.checkCancellation()
+                guard sourceRevision == workspace.revision else { preparing = false; previewMessage = "PDF 已变化，请重新更新预览"; return }
+                previewRevision = sourceRevision; preview = result.pages; candidates = result.candidates; previewIndex = 0
                 previewMessage = "预览与导出使用同一套整理规则。修改选项后请更新预览；原 PDF 不变。"
             } catch is CancellationError {} catch { previewMessage = error.localizedDescription }
             preparing = false
@@ -100,6 +133,9 @@ extension Workspace {
 
     func startWordExport() {
         guard count > 0, !busy, checkDraftsForExport(), let data = try? pdfData() else { return }
+        if wordOptions.content != .imagesOnly {
+            do { try validateWordDraft() } catch { self.error = error.localizedDescription; return }
+        }
         let pages = wordScope == .all ? Array(0..<count) : effectivePages
         if wordOptions.content != .imagesOnly {
             let hasText = pages.contains { index in document.page(at: index).map { BackgroundJobs.textCharacterCount($0) > 0 } ?? false }

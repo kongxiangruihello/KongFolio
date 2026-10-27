@@ -11,15 +11,16 @@ struct SearchSnapshot {
     var pdf: Data?
     var text: String?
     var card: BoardCard?
+    var format: TextDocumentFormat? = nil
     var fingerprint: String { text.map { OCRPageCache.digest(Data($0.utf8)) } ?? card.map(Self.cardDigest) ?? "" }
     static func cardDigest(_ card: BoardCard) -> String { let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]; return (try? encoder.encode(card)).map(OCRPageCache.digest) ?? "" }
-    func search(query: String, limit: Int, terms: FolderSearchTerms, includeAnnotations: Bool, cache: inout [String: String]) throws -> FolderSearchFile {
+    func search(query: String, limit: Int, terms: FolderSearchTerms, includeAnnotations: Bool, bodyOnly: Bool = true, cache: inout [String: String]) throws -> FolderSearchFile {
         let url = path ?? URL(fileURLWithPath: "/未保存/" + id.uuidString + "/" + title)
         var result = FolderSearchFile(url: url); result.currentBuffer = true
         func add(_ page: FolderSearchPage, category: String) {
             guard terms.accepts(page.text, cache: &cache) else { return }
             result.hits += FolderSearchService.matches(page, query: query, limit: max(0, limit - result.hits.count), cache: &cache).map {
-                FolderSearchHit(url: url, relativePath: title + (path == nil ? "（未保存）" : " · 当前编辑"), fingerprint: fingerprint, query: query, hit: $0, category: category, tabID: card == nil ? id : nil, revision: revision, cardID: card?.id, sourceRect: page.sourceRect)
+                FolderSearchHit(url: url, relativePath: title + (path == nil ? "（未保存）" : " · 当前编辑"), fingerprint: fingerprint, query: query, hit: $0, category: category, tabID: card == nil ? id : nil, revision: revision, cardID: card?.id, sourceRect: page.sourceRect, textLine: TextSearchBody.line(at: $0.range.location, starts: page.sourceLineStarts))
             }
         }
         if let pdf {
@@ -39,7 +40,11 @@ struct SearchSnapshot {
         } else {
             let content = card.map { $0.text + "\n" + $0.comment } ?? text ?? ""
             result.pages = (card?.source?.page ?? 0) + 1; result.textPages = content.isEmpty ? 0 : 1
-            add(FolderSearchPage(index: card?.source?.page ?? 0, text: content, label: nil, glyphs: nil), category: card == nil ? "文本当前编辑" : "工作区摘录")
+            if card == nil {
+                let format = format ?? path.map(TextDocumentFormat.forURL) ?? .plain
+                let page = TextSearchBody.make(content, format: format, bodyOnly: bodyOnly).page(format: format, bodyOnly: bodyOnly)
+                add(page, category: page.category! + " · 当前编辑")
+            } else { add(FolderSearchPage(index: card?.source?.page ?? 0, text: content, label: nil, glyphs: nil), category: "工作区摘录") }
         }
         return result
     }
@@ -49,7 +54,7 @@ extension WorkspaceStore {
     func searchSnapshots() throws -> [SearchSnapshot] {
         var values: [SearchSnapshot] = []
         for tab in tabs {
-            if let note = tab.note { values.append(SearchSnapshot(id: note.id, title: note.title, path: note.fileURL, text: note.text)) }
+            if let note = tab.note { values.append(SearchSnapshot(id: note.id, title: note.title, path: note.fileURL, text: note.text, format: note.format)) }
             else if let workspace = tab.workspace, workspace.count > 0 {
                 guard !workspace.busy else { throw FolioError(message: "请先完成当前文档任务，或取消搜索当前编辑内容") }
                 values.append(SearchSnapshot(id: workspace.id, title: workspace.title, path: workspace.projectURL ?? workspace.sourceURL, revision: workspace.revision, pdf: try workspace.pdfData()))

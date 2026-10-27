@@ -26,6 +26,35 @@ enum SourceLink {
         }
         return result as String
     }
+    /// Carry only the originals explicitly referenced by a portable note, never an entire source folder.
+    static func saving(_ text: String, oldBase: URL?, destination: URL) throws -> String {
+        let regex = try NSRegularExpression(pattern: #"kongfolio://source\?ref=[A-Za-z0-9%+/=]+"#)
+        let result = NSMutableString(string: text), fm = FileManager.default
+        let newBase = destination.deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath()
+        let sameBase = oldBase?.standardizedFileURL.resolvingSymlinksInPath() == newBase
+        var carried: [String: SourceRef] = [:]
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length)).reversed() {
+            guard let link = URL(string: (text as NSString).substring(with: match.range)), var source = Self.source(link), source.relativePath != nil else { continue }
+            let current = try resolved(source, baseURL: oldBase)
+            if sameBase { source.path = current.path }
+            else if let saved = carried[current.path] { source.path = saved.path; source.relativePath = saved.relativePath; source.fingerprint = saved.fingerprint }
+            else {
+                let bytes = try Data(contentsOf: URL(fileURLWithPath: current.path)), digest = OCRPageCache.digest(bytes)
+                let folder = newBase.appendingPathComponent(destination.deletingPathExtension().lastPathComponent + "-sources", isDirectory: true)
+                try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+                let ext = URL(fileURLWithPath: current.path).pathExtension
+                let name = digest + (ext.isEmpty ? "" : "." + ext)
+                let target = folder.appendingPathComponent(name)
+                if fm.fileExists(atPath: target.path) {
+                    guard OCRPageCache.digest(try Data(contentsOf: target)) == digest else { throw FolioError(message: "目标原件副本内容不符，请选择其他保存位置") }
+                } else { try bytes.write(to: target, options: .atomic) }
+                source.path = target.path; source.relativePath = folder.lastPathComponent + "/" + name; source.fingerprint = digest
+                carried[current.path] = source
+            }
+            if let replacement = Self.url(source) { result.replaceCharacters(in: match.range, with: replacement.absoluteString) }
+        }
+        return result as String
+    }
     static func resolved(_ source: SourceRef, baseURL: URL?) throws -> SourceRef {
         guard let relative = source.relativePath else { return source }
         guard let baseURL, !relative.hasPrefix("/"), !relative.components(separatedBy: "/").contains("..") else { throw FolioError(message: "请先打开资料包中的笔记，再返回原文") }

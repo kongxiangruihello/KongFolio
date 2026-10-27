@@ -61,7 +61,8 @@ struct TextEdit: Equatable {
     // MARK: Saving
 
     func write(to url: URL) throws {
-        let prepared = try TextAssets.saving(text, format: format, oldBase: fileURL?.deletingLastPathComponent(), destination: url)
+        let linked = try SourceLink.saving(text, oldBase: fileURL?.deletingLastPathComponent(), destination: url)
+        let prepared = try TextAssets.saving(linked, format: format, oldBase: fileURL?.deletingLastPathComponent(), destination: url)
         try prepared.write(to: url, atomically: true, encoding: .utf8)
         fileURL = url
         text = prepared
