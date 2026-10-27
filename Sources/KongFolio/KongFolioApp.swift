@@ -48,6 +48,9 @@ import AppKit
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
             CommandMenu("任务与历史") {
+                Button("恢复中心…") { store.showRecoveryCenter = true }
+                Button("后台任务…") { store.showBackgroundJobs = true }
+                Button("制作 / 套用扫描表单模板…") { store.commandWorkspace?.showFormTemplate = true }.disabled((store.commandWorkspace?.count ?? 0) == 0 || store.commandWorkspace?.busy == true)
                 Button("搜索命令…") { store.showCommandPalette = true }.keyboardShortcut("k")
                 Button("提取 PDF 表格…") { store.commandWorkspace?.showTableExtraction = true }.disabled((store.commandWorkspace?.count ?? 0) == 0 || store.commandWorkspace?.busy == true)
                 Button("填写 PDF 表单…") { store.commandWorkspace?.showPDFForms = true }.disabled((store.commandWorkspace?.count ?? 0) == 0 || store.commandWorkspace?.busy == true)

@@ -104,6 +104,8 @@ struct WordExportOptions: Equatable, Codable {
     var removedMarginKeys: [String]? = nil
     var recognizeHeadings: Bool? = nil
     var printedPageLabels: Bool? = nil
+    var tables: [WordTableInsertion]? = nil
+    var includeTables: Bool? = nil
     var editedText: [Int: String]? = nil
     var editedFromRevision: UUID? = nil
 }
@@ -198,10 +200,10 @@ enum WordExport {
     }
 
     /// Writes the chosen pages of `document` as a Word file. `progress` runs on the calling thread.
-    static func write(_ document: PDFDocument, pages: [Int], outline: [OutlineEntry], options: WordExportOptions, regions: [Int: [RecognizedLine]] = [:], to url: URL,
+    static func write(_ document: PDFDocument, pages: [Int], outline: [OutlineEntry], options: WordExportOptions, regions: [Int: [RecognizedLine]] = [:], to url: URL, sourceDigest: String? = nil,
                       progress: (Double) -> Void = { _ in }) throws -> WordExportReport {
         var report = WordExportReport()
-        let prepared = options.content == .imagesOnly ? [] : try WordCleanup.inspect(document, pages: pages, options: options, regions: regions).pages
+        let prepared = options.content == .imagesOnly ? [] : try WordCleanup.inspect(document, pages: pages, options: options, regions: regions, sourceDigest: sourceDigest).pages
         let textByPage = Dictionary(uniqueKeysWithValues: prepared.map { ($0.index, $0) })
         let zip = try ZipWriter(url: url)
         do {
@@ -240,9 +242,16 @@ enum WordExport {
                         }
                     }
                     if options.content != .imagesOnly {
-                        for paragraph in textByPage[index]?.paragraphs ?? [] {
-                            body += textParagraph(paragraph.text, style: paragraph.heading > 0 ? "Heading\(paragraph.heading)" : nil, size: paragraph.heading > 0 ? 32 : 24)
-                            report.characters += paragraph.text.filter { !$0.isWhitespace }.count
+                        let prepared = textByPage[index]
+                        let blocks = prepared?.blocks ?? (prepared?.paragraphs ?? []).map(WordPreparedBlock.paragraph)
+                        for block in blocks {
+                            switch block {
+                            case .paragraph(let paragraph):
+                                body += textParagraph(paragraph.text, style: paragraph.heading > 0 ? "Heading\(paragraph.heading)" : nil, size: paragraph.heading > 0 ? 32 : 24)
+                                report.characters += paragraph.text.filter { !$0.isWhitespace }.count
+                            case .table(let rows):
+                                body += WordTables.xml(rows); report.characters += rows.joined().reduce(0) { $0 + $1.filter { !$0.isWhitespace }.count }
+                            }
                         }
                     }
                     report.pages += 1

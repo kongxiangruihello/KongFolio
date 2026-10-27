@@ -11,6 +11,7 @@ struct PDFFormSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("填写 PDF 表单").font(.title2.bold())
             Text("填写已有的交互字段；修改后点击“应用填写”。签名字段、按钮动作和 XFA 表单暂不支持。").font(.caption).foregroundStyle(.secondary)
+            Button("制作 / 套用扫描表单模板…") { workspace.showPDFForms = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { workspace.showFormTemplate = true } }
             if fields.isEmpty { Text("没有发现可填写字段。普通扫描表格可使用标注中的文字工具填写。").padding(.vertical, 24) }
             ForEach(fields) { field in
                 VStack(alignment: .leading, spacing: 4) {
@@ -25,7 +26,7 @@ struct PDFFormSheet: View {
                 Button("应用填写") { apply() }.disabled(fields.isEmpty)
                 Button("应用并保存") { if apply() { _ = workspace.saveDirectly() } }.disabled(fields.isEmpty)
                 Button("固定结果副本…") { export() }.disabled(fields.isEmpty)
-                Button("打印…") { if apply() { do { DocumentPrinting.printDocument(try PDFForms.flattened(workspace.document)) } catch { message = error.localizedDescription } } }.disabled(fields.isEmpty)
+                Button("准备打印副本…") { printCopy() }.disabled(fields.isEmpty)
             }
         }.padding(24).adaptiveSheet(width: 600, height: 680, minimumWidth: 360, flexibleHeight: true).onAppear(perform: refresh)
     }
@@ -53,6 +54,20 @@ struct PDFFormSheet: View {
     }
     private func export() {
         guard apply(), let destination = workspace.saveURL(type: .pdf, suffix: "pdf", name: workspace.title + "-固定表单") else { return }
-        do { try workspace.exportFlattenedForm(to: destination); message = "已导出固定结果副本" } catch { message = error.localizedDescription }
+        do {
+            guard let store = workspace.store else { return }
+            try workspace.startFlattenedForm(to: destination, queue: store.documentTasks); workspace.showPDFForms = false
+        } catch { message = error.localizedDescription }
     }
+    private func printCopy() {
+        guard apply(), let store = workspace.store else { return }
+        do {
+            let folder = workspace.storage.appendingPathComponent("TaskResults", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try workspace.startFlattenedForm(to: folder.appendingPathComponent(UUID().uuidString + ".pdf"), queue: store.documentTasks)
+            workspace.showPDFForms = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { store.showBackgroundJobs = true }
+        } catch { message = error.localizedDescription }
+    }
+
 }

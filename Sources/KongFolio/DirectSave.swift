@@ -4,7 +4,7 @@ import PDFKit
 extension Workspace {
     /// OCR source pages and reading metadata need a private recovery copy even when the PDF itself is saved.
     var hasPrivateReadingData: Bool {
-        wordDraftArchive != nil || !signatureEditArchives.isEmpty || !ocrOriginals.isEmpty || !ocrRegions.isEmpty || !bookmarks.isEmpty || !bibliography.isEmpty
+        !tableDrafts.isEmpty || wordDraftArchive != nil || !signatureEditArchives.isEmpty || !ocrOriginals.isEmpty || !ocrRegions.isEmpty || !bookmarks.isEmpty || !bibliography.isEmpty
     }
     func scheduleDirectSave() {
         directSaveTask?.cancel()
@@ -38,7 +38,7 @@ extension Workspace {
             try SignaturePersistence.write(signatureEditArchives, pdf: target, storage: storage)
             sourceURL = target; dirty = false
             fileBaseline = saved; saveConflict = false
-            try persistWordDraft()
+            try persistWordDraft(); try persistTableDrafts()
             remember([target]); scheduleRecovery()
             status = "已保存：\(target.lastPathComponent)"
             do {

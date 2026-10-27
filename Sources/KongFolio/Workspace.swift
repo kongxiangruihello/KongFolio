@@ -165,9 +165,10 @@ import UniformTypeIdentifiers
     var movingSignature: (layer: SignatureLayer, item: PlacedSignature)?
     var moveSnapshot: ProjectArchive?
     @Published var signatureWidth = 0.28
-    @Published var projectURL: URL? { didSet { if projectURL != oldValue, let projectURL { fileBaseline = try? FileBaseline.capture(projectURL) } } }
+    private var restoringBaseline = false
+    @Published var projectURL: URL? { didSet { if !needsLoad, !restoringBaseline, projectURL != oldValue, let projectURL { fileBaseline = try? FileBaseline.capture(projectURL) } } }
     /// The PDF, image or text file this document was opened from; nil for merged documents and projects.
-    @Published var sourceURL: URL? { didSet { if sourceURL != oldValue, let sourceURL { fileBaseline = try? FileBaseline.capture(sourceURL) } } }
+    @Published var sourceURL: URL? { didSet { if !needsLoad, !restoringBaseline, sourceURL != oldValue, let sourceURL { fileBaseline = try? FileBaseline.capture(sourceURL) } } }
     /// The tab exists but its file has not been read yet: it was opened together with many others, restored from the last
     /// session, or unloaded to free memory. Selecting the tab loads it (`ensureLoaded`).
     @Published var needsLoad = false
@@ -197,7 +198,10 @@ import UniformTypeIdentifiers
     @Published var saveConflict = false
     @Published var showTableExtraction = false
     @Published var showPDFForms = false
+    @Published var showFormTemplate = false
     var fileBaseline: FileBaseline?
+    @Published var tableDrafts: [TableDraftRecord] = []
+    var pendingTableDraftID: UUID?
     var wordDraftDigest: String?
     var cachedPDF: Data?
     private var displayCache: (key: String, image: NSImage)?
@@ -340,7 +344,7 @@ import UniformTypeIdentifiers
         let pdf = try pdfData()
         alignMeta()
         let reading = ReadingState(bookmarks: bookmarks, outline: outlineEntries, layout: readingLayout, point: readingPoint, scale: readingScale, bibliography: bibliography.isEmpty ? nil : bibliography)
-        return ProjectArchive(wordDraft: wordDraftArchive, fileBaseline: fileBaseline, reading: reading, signatureEdits: signatureEditArchives, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: .document, recipes: [:], drafts: [:], dirty: dirty, projectPath: projectURL?.path)
+        return ProjectArchive(tableDrafts: tableDrafts.isEmpty ? nil : tableDrafts, wordDraft: wordDraftArchive, fileBaseline: fileBaseline, reading: reading, signatureEdits: signatureEditArchives, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: .document, recipes: [:], drafts: [:], dirty: dirty, projectPath: projectURL?.path)
     }
 
     func restore(_ archive: ProjectArchive, keepProjectURL: Bool = false) throws {
@@ -348,7 +352,7 @@ import UniformTypeIdentifiers
         document = try PDFDocument(data: archive.pdf).unwrap("项目中的 PDF 无法读取")
         restoreSignatureEdits(archive.signatureEdits ?? [:])
         ReadingServices.applyOutline(archive.reading?.outline ?? ReadingServices.outline(document), to: document)
-        cachedPDF = nil
+        cachedPDF = archive.pdf
         bookmarks = archive.reading?.bookmarks ?? []
         outlineEntries = archive.reading?.outline ?? ReadingServices.outline(document)
         readingLayout = archive.reading?.layout ?? .continuous
@@ -366,6 +370,10 @@ import UniformTypeIdentifiers
         searchResults = []
         annotationNotes = []
         title = archive.title
+        // Recovery already carries its baseline. Reading the current cloud file here can block launch
+        // and would establish the wrong version before the saved baseline is restored below.
+        restoringBaseline = true
+        defer { restoringBaseline = false }
         if !keepProjectURL { sourceURL = archive.sourcePath.map { URL(fileURLWithPath: $0) } }
         selection = archive.selection
         selectedPages = archive.selectedPages
@@ -373,6 +381,8 @@ import UniformTypeIdentifiers
         if !keepProjectURL { projectURL = archive.projectPath.map { URL(fileURLWithPath: $0) } }
         revision = UUID()
         if !keepProjectURL { fileBaseline = archive.fileBaseline }
+        tableDrafts = archive.tableDrafts ?? []
+        try persistTableDrafts()
         restoreWordDraft(archive.wordDraft, sourceDigest: OCRPageCache.digest(archive.pdf))
         saveConflict = false
         selectedAnnotation = nil
@@ -559,7 +569,7 @@ import UniformTypeIdentifiers
                         projectURL = url
                         fileBaseline = result.1; saveConflict = false
                         dirty = false
-                        try persistWordDraft()
+                        try persistWordDraft(); try persistTableDrafts()
                         remember([url])
                         scheduleRecovery()
                         status = Workspace.savedStatus(result.0)
@@ -577,7 +587,7 @@ import UniformTypeIdentifiers
             projectURL = url
             fileBaseline = saved; saveConflict = false
             dirty = false
-            try persistWordDraft()
+            try persistWordDraft(); try persistTableDrafts()
             remember([url])
             scheduleRecovery()
             status = Workspace.savedStatus(backupError)
@@ -651,6 +661,8 @@ import UniformTypeIdentifiers
     /// Empties the workspace. With `keepingSource` the file it came from stays known, so the tab can load it again.
     private func clearDocument(keepingSource: Bool) {
         try? persistWordDraft()
+        try? persistTableDrafts()
+        tableDrafts = []; pendingTableDraftID = nil
         wordOptions.editedText = nil; wordOptions.editedFromRevision = nil; wordDraftDigest = nil
         saveConflict = false; fileBaseline = nil
         directSaveTask?.cancel()
@@ -848,6 +860,7 @@ import UniformTypeIdentifiers
                 sourceURL = nil
                 fileBaseline = archive.fileBaseline
                 if archive.wordDraft == nil { loadWordDraft() }
+                if archive.tableDrafts == nil { loadTableDrafts() }
                 history.removeAll()
                 future.removeAll()
                 remember(urls)
@@ -938,7 +951,7 @@ import UniformTypeIdentifiers
                     dirty = false
                     fileBaseline = try FileBaseline.capture(urls[0], data: urls[0].pathExtension.lowercased() == "pdf" ? data[0] : nil)
                 } else { fileBaseline = nil }
-                saveConflict = false; loadWordDraft()
+                saveConflict = false; loadWordDraft(); loadTableDrafts()
             }
             applyPendingView()
             remember(urls)

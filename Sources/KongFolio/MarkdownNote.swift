@@ -20,6 +20,7 @@ struct TextEdit: Equatable {
         var format: TextDocumentFormat? = nil
         var layoutOptions: TextLayoutOptions? = nil
         var fileBaseline: FileBaseline? = nil
+        var resourceBasePath: String? = nil
     }
 
     let id: UUID
@@ -29,6 +30,7 @@ struct TextEdit: Equatable {
     @Published var format: TextDocumentFormat = .markdown
     @Published var layoutOptions = TextLayoutOptions.load() { didSet { layoutOptions.save(); refreshPreview() } }
     @Published var previewMessage = ""
+    var recoveryBaseURL: URL?
     var fileBaseline: FileBaseline?
     @Published var saveConflict = false
     @Published var dirty = false
@@ -73,8 +75,8 @@ struct TextEdit: Equatable {
             guard let baseline = fileBaseline else { throw FileConflict() }; expected = baseline
         } else { expected = try FileBaseline.capture(url) }
         try expected.verify(url)
-        let linked = try SourceLink.saving(text, oldBase: fileURL?.deletingLastPathComponent(), destination: url)
-        let prepared = try TextAssets.saving(linked, format: format, oldBase: fileURL?.deletingLastPathComponent(), destination: url)
+        let linked = try SourceLink.saving(text, oldBase: fileURL?.deletingLastPathComponent() ?? recoveryBaseURL, destination: url)
+        let prepared = try TextAssets.saving(linked, format: format, oldBase: fileURL?.deletingLastPathComponent() ?? recoveryBaseURL, destination: url)
         let saved = try expected.writing(url) { try prepared.write(to: $0, atomically: true, encoding: .utf8) }
         fileBaseline = saved; saveConflict = false
         fileURL = url
@@ -140,7 +142,7 @@ struct TextEdit: Equatable {
         do {
             let directory = storage.appendingPathComponent("Conflicts", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL.path, format: format, layoutOptions: layoutOptions, fileBaseline: fileBaseline)).write(to: directory.appendingPathComponent(UUID().uuidString + ".json"), options: .atomic)
+            try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL.path, format: format, layoutOptions: layoutOptions, fileBaseline: fileBaseline, resourceBasePath: recoveryBaseURL?.path)).write(to: directory.appendingPathComponent(UUID().uuidString + ".json"), options: .atomic)
             let bytes = try Data(contentsOf: fileURL)
             text = TextImport.normalized(try TextImport.decode(bytes)); fileBaseline = try FileBaseline.capture(fileURL, data: bytes)
             dirty = false; saveConflict = false; removeBackup(); status = "已载入外部版本；此前修改保存在应用的 Conflicts 文件夹"
@@ -153,7 +155,7 @@ struct TextEdit: Equatable {
 
     func writeBackup() throws {
         try FileManager.default.createDirectory(at: backupURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL?.path, format: format, layoutOptions: layoutOptions, fileBaseline: fileBaseline)).write(to: backupURL, options: .atomic)
+        try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL?.path, format: format, layoutOptions: layoutOptions, fileBaseline: fileBaseline, resourceBasePath: recoveryBaseURL?.path)).write(to: backupURL, options: .atomic)
     }
 
     func removeBackup() {
@@ -179,6 +181,7 @@ struct TextEdit: Equatable {
             let note = MarkdownNote(id: backup.id, text: backup.text, fileURL: backup.path.map { URL(fileURLWithPath: $0) }, dirty: true, storage: storage, format: backup.format)
             if let options = backup.layoutOptions, options.valid { note.layoutOptions = options }
             note.fileBaseline = backup.fileBaseline
+            note.recoveryBaseURL = backup.resourceBasePath.map { URL(fileURLWithPath: $0) }
             note.status = "已恢复上次未保存的内容"
             return note
         }

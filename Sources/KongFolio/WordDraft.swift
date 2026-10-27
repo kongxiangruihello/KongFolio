@@ -3,12 +3,15 @@ import Foundation
 struct WordDraftArchive: Codable {
     var digest: String
     var options: WordExportOptions
+    var sourcePath: String? = nil
+    var sourceTitle: String? = nil
+    var modified: Date? = nil
 }
 
 extension Workspace {
     var wordDraftArchive: WordDraftArchive? {
         guard !(wordOptions.editedText ?? [:]).isEmpty, let digest = wordDraftDigest else { return nil }
-        return WordDraftArchive(digest: digest, options: wordOptions)
+        return WordDraftArchive(digest: digest, options: wordOptions, sourcePath: (projectURL ?? sourceURL)?.path, sourceTitle: displayName, modified: Date())
     }
     var wordDraftURL: URL {
         let identity = (projectURL ?? sourceURL)?.standardizedFileURL.path ?? "unsaved-\(slot)"

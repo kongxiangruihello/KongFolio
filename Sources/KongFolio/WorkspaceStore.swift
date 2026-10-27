@@ -34,6 +34,10 @@ import UniformTypeIdentifiers
     let storage: URL
     /// The workspace shared by every tab: excerpts from any open document gather here.
     let board: Board
+    let documentTasks = DocumentTaskQueue()
+    @Published var showBackgroundJobs = false
+    @Published var showRecoveryCenter = false
+    var pendingRecoveryURL: URL?
     let batchQueue: BatchQueue
     let folderSearch: FolderSearchModel
     @Published var pendingPageTransfer: PageTransferRequest?
@@ -127,6 +131,7 @@ import UniformTypeIdentifiers
                 guard recoveryExists(entry.slot) else { continue }
             } else if let path = entry.path, FileManager.default.fileExists(atPath: path) {
                 let url = URL(fileURLWithPath: path)
+                workspace.needsLoad = true
                 if entry.kind == .project { workspace.projectURL = url } else { workspace.sourceURL = url }
                 workspace.pendingView = entry.position
                 workspace.needsLoad = true
@@ -250,8 +255,8 @@ import UniformTypeIdentifiers
             let target: Workspace
             if let current = activeWorkspace, current.count == 0, !current.needsLoad, !current.busy { target = current }
             else { target = addWorkspace() }
-            target.sourceURL = url
             target.needsLoad = true
+            target.sourceURL = url
             if first == nil { first = target.id }
         }
         if let first { select(first) }
@@ -331,6 +336,7 @@ import UniformTypeIdentifiers
     /// Called when the window closes or the app quits. Walks through every tab; any cancel stops the quit.
     func prepareToClose() -> Bool {
         folderSearch.cancel()
+        if documentTasks.running { documentTasks.cancelAll(); showBackgroundJobs = true; return false }
         if batchQueue.running {
             batchQueue.cancel()
             batchQueue.summary = "正在暂停任务；当前页结束后可再次关闭。未完成项会保留。"

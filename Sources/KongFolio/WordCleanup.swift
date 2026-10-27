@@ -2,7 +2,7 @@ import Foundation
 import PDFKit
 
 struct WordPreparedParagraph: Equatable { var text: String; var heading: Int = 0 }
-struct WordPreparedPage { var index: Int; var label: String?; var paragraphs: [WordPreparedParagraph] }
+struct WordPreparedPage { var index: Int; var label: String?; var paragraphs: [WordPreparedParagraph]; var blocks: [WordPreparedBlock]? = nil }
 struct WordMarginCandidate: Identifiable { var id: String; var example: String; var pages: Int }
 
 enum WordCleanup {
@@ -88,14 +88,20 @@ enum WordCleanup {
         paragraphs = paragraphs.map { WordPreparedParagraph(text: ReplacementRules.apply(options.replacements, to: ReadingServices.repairIdeographs($0.text)), heading: $0.heading) }
         return WordPreparedPage(index: index, label: label, paragraphs: paragraphs)
     }
-    static func inspect(_ document: PDFDocument, pages: [Int], options: WordExportOptions, regions: [Int: [RecognizedLine]]) throws -> (pages: [WordPreparedPage], candidates: [WordMarginCandidate]) {
+    static func inspect(_ document: PDFDocument, pages: [Int], options: WordExportOptions, regions: [Int: [RecognizedLine]], sourceDigest: String? = nil) throws -> (pages: [WordPreparedPage], candidates: [WordMarginCandidate]) {
+        let tables = options.includeTables == false || options.content == .imagesOnly ? [] : (options.tables ?? [])
+        try WordTables.validate(tables, document: document, pages: pages, options: options, sourceDigest: sourceDigest)
         let texts = try pages.map { index -> String in
             try Task.checkCancellation(); return raw(try document.page(at: index).unwrap("页面缺失"), regions: regions[index])
         }
         let candidates = candidates(texts)
         let margins = Set(options.removedMarginKeys ?? candidates.map(\.id))
-        let prepared = zip(pages, texts).map { index, text in
-            prepare(index: index, label: ReadingServices.pageLabel(document.page(at: index)!, index: index), text: text, regions: regions[index], options: options, margins: margins)
+        let prepared = try zip(pages, texts).map { index, text -> WordPreparedPage in
+            var value = prepare(index: index, label: ReadingServices.pageLabel(document.page(at: index)!, index: index), text: text, regions: regions[index], options: options, margins: margins)
+            if let blocks = try WordTables.blocks(page: document.page(at: index)!, index: index, tables: tables, options: options, margins: margins) {
+                value.blocks = blocks; value.paragraphs = blocks.compactMap { if case .paragraph(let p) = $0 { return p }; return nil }
+            }
+            return value
         }
         return (prepared, candidates)
     }

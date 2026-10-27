@@ -36,6 +36,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showScanWorkshop) { ScanWorkshop(workspace: workspace) }
         .sheet(isPresented: $workspace.showCrop) { CropSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showTableExtraction) { TableExtractionSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showFormTemplate) { FormTemplateSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showPDFForms) { PDFFormSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showWordExport) { WordExportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showBatch) { BatchSheet(workspace: workspace) }
