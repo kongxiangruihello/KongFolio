@@ -29,7 +29,7 @@ struct DocumentTaskItem: Identifiable {
         guard activeCount < 2 else { throw FolioError(message: "已有两个后台任务，请完成或取消其中一个后再开始") }
         let item = DocumentTaskItem(title: title), id = item.id
         items.insert(item, at: 0); completions[id] = completion
-        if items.count > 20 { items.removeSubrange(20..<items.count) }
+        while items.count > 20, let oldest = items.lastIndex(where: { !$0.active }) { items.remove(at: oldest) }
         let worker = Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 let result = try operation { value in Task { @MainActor [weak self] in self?.update(id) { $0.progress = min(1, max(0, value)) } } }

@@ -216,8 +216,11 @@ enum TableMerge {
         guard sorted.count >= 2, sorted.count <= 100, sorted.first == current.page, Set(sorted).count == sorted.count,
               zip(sorted, sorted.dropFirst()).allSatisfy({ $1 == $0 + 1 }) else { throw FolioError(message: "请选择从当前页开始的连续页面，最多 100 页") }
         let document = try PDFDocument(data: data).unwrap("无法读取文档")
-        var fragments = [current.rows], regions = [TableSourceRegion(page: current.page, rect: current.grid.region)]
-        for (offset, index) in sorted.dropFirst().enumerated() {
+        let existing = current.regions
+        guard existing.map(\.page) == Array(sorted.prefix(existing.count)) else { throw FolioError(message: "所选范围须包含已经合并的全部来源页；缩小范围请先重新生成当前页表格") }
+        var fragments = [current.rows], regions = existing
+        let remaining = Array(sorted.dropFirst(existing.count))
+        for (offset, index) in remaining.enumerated() {
             try Task.checkCancellation()
             try autoreleasepool {
                 let page = try document.page(at: index).unwrap("合并页码超出文档范围")
@@ -233,7 +236,7 @@ enum TableMerge {
                 fragments.append(extracted)
                 regions.append(TableSourceRegion(page: index, rect: current.grid.region))
             }
-            progress(Double(offset + 1) / Double(max(1, sorted.count - 1)))
+            progress(Double(offset + 1) / Double(max(1, remaining.count)))
         }
         return TableMergeResult(rows: try joined(fragments, removeHeaders: removeHeaders), regions: regions)
     }

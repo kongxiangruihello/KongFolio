@@ -19,6 +19,39 @@ final class Release033Tests: XCTestCase {
         let deadline = Date().addingTimeInterval(10)
         while queue.running, Date() < deadline { try await Task.sleep(nanoseconds:2_000_000) }; XCTAssertFalse(queue.running)
     }
+    func testRepeatedCrossPageMergeDoesNotDuplicateRowsAndExtensionKeepsEdits() throws {
+        let document = PDFDocument(data: try tablePDF())!
+        document.insert(document.page(at: 1)!.copy() as! PDFPage, at: 2)
+        let data = document.dataRepresentation()!
+        var draft = record(data: data)
+        draft.rows = [["A", "B"], ["edited", "two"]]
+        let first = try TableMerge.extract(data: data, current: draft, pages: [0, 1], removeHeaders: true, languages: ["en-US"])
+        draft.rows = first.rows; draft.sourceRegions = first.regions
+        let repeatMerge = try TableMerge.extract(data: data, current: draft, pages: [0, 1], removeHeaders: true, languages: ["en-US"])
+        XCTAssertEqual(repeatMerge.rows, first.rows); XCTAssertEqual(repeatMerge.regions, first.regions)
+        let extended = try TableMerge.extract(data: data, current: draft, pages: [0, 1, 2], removeHeaders: true, languages: ["en-US"])
+        XCTAssertEqual(extended.regions.count, 3); XCTAssertEqual(extended.rows.count, first.rows.count + 1)
+        XCTAssertEqual(extended.rows[1][0], "edited")
+        draft.rows = extended.rows; draft.sourceRegions = extended.regions
+        XCTAssertThrowsError(try TableMerge.extract(data: data, current: draft, pages: [0, 1], removeHeaders: true, languages: ["en-US"]))
+    }
+    @MainActor func testTaskHistoryLimitKeepsLongRunningTasksAndConcurrencyLimit() async throws {
+        let queue = DocumentTaskQueue()
+        let long = try queue.start("long") { _ in
+            while true { try Task.checkCancellation(); Thread.sleep(forTimeInterval: 0.005) }
+        }
+        defer { queue.cancelAll() }
+        for _ in 0..<22 {
+            let quick = try queue.start("quick") { _ in DocumentTaskResult(message: "done") }
+            let deadline = Date().addingTimeInterval(5)
+            while queue.items.first(where: { $0.id == quick })?.active == true, Date() < deadline { try await Task.sleep(nanoseconds: 2_000_000) }
+            XCTAssertEqual(queue.items.first(where: { $0.id == quick })?.state, .finished)
+        }
+        XCTAssertEqual(queue.items.count, 20); XCTAssertTrue(queue.items.contains { $0.id == long && $0.active }); XCTAssertEqual(queue.activeCount, 1)
+        try queue.start("second") { _ in while true { try Task.checkCancellation(); Thread.sleep(forTimeInterval: 0.005) } }
+        XCTAssertThrowsError(try queue.start("third") { _ in DocumentTaskResult(message: "unexpected") })
+        queue.cancelAll(); try await wait(queue)
+    }
     func testGridDragClampsWithoutCrossingAndRejectsInvalidGeometry() throws {
         var grid = TableGrid(x:[0,0.4,0.8,1],y:[0,0.5,1]); try grid.move(vertical:true,index:1,value:2)
         XCTAssertEqual(grid.x[1],0.798,accuracy:0.0001); try grid.move(vertical:false,index:1,value:-1); XCTAssertEqual(grid.y[1],0.002,accuracy:0.0001)
