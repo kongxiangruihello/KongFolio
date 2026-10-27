@@ -165,9 +165,9 @@ import UniformTypeIdentifiers
     var movingSignature: (layer: SignatureLayer, item: PlacedSignature)?
     var moveSnapshot: ProjectArchive?
     @Published var signatureWidth = 0.28
-    @Published var projectURL: URL?
+    @Published var projectURL: URL? { didSet { if projectURL != oldValue, let projectURL { fileBaseline = try? FileBaseline.capture(projectURL) } } }
     /// The PDF, image or text file this document was opened from; nil for merged documents and projects.
-    @Published var sourceURL: URL?
+    @Published var sourceURL: URL? { didSet { if sourceURL != oldValue, let sourceURL { fileBaseline = try? FileBaseline.capture(sourceURL) } } }
     /// The tab exists but its file has not been read yet: it was opened together with many others, restored from the last
     /// session, or unloaded to free memory. Selecting the tab loads it (`ensureLoaded`).
     @Published var needsLoad = false
@@ -194,6 +194,11 @@ import UniformTypeIdentifiers
     var lastSerializationSeconds = 0.0
     /// Tests and scripts replace this to answer confirmation dialogs.
     static var confirmationHandler: ((_ title: String, _ detail: String) -> Bool)?
+    @Published var saveConflict = false
+    @Published var showTableExtraction = false
+    @Published var showPDFForms = false
+    var fileBaseline: FileBaseline?
+    var wordDraftDigest: String?
     var cachedPDF: Data?
     private var displayCache: (key: String, image: NSImage)?
     private var importAsInsert = false
@@ -335,7 +340,7 @@ import UniformTypeIdentifiers
         let pdf = try pdfData()
         alignMeta()
         let reading = ReadingState(bookmarks: bookmarks, outline: outlineEntries, layout: readingLayout, point: readingPoint, scale: readingScale, bibliography: bibliography.isEmpty ? nil : bibliography)
-        return ProjectArchive(reading: reading, signatureEdits: signatureEditArchives, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: .document, recipes: [:], drafts: [:], dirty: dirty, projectPath: projectURL?.path)
+        return ProjectArchive(wordDraft: wordDraftArchive, fileBaseline: fileBaseline, reading: reading, signatureEdits: signatureEditArchives, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: .document, recipes: [:], drafts: [:], dirty: dirty, projectPath: projectURL?.path)
     }
 
     func restore(_ archive: ProjectArchive, keepProjectURL: Bool = false) throws {
@@ -367,6 +372,9 @@ import UniformTypeIdentifiers
         dirty = archive.dirty
         if !keepProjectURL { projectURL = archive.projectPath.map { URL(fileURLWithPath: $0) } }
         revision = UUID()
+        if !keepProjectURL { fileBaseline = archive.fileBaseline }
+        restoreWordDraft(archive.wordDraft, sourceDigest: OCRPageCache.digest(archive.pdf))
+        saveConflict = false
         selectedAnnotation = nil
     }
 
@@ -525,6 +533,8 @@ import UniformTypeIdentifiers
             url = chosen
         }
         do {
+            let expected = try baseline(for: url)
+            try expected.verify(url)
             var archive = try snapshot()
             archive.projectPath = url.path
             archive.dirty = false
@@ -538,38 +548,42 @@ import UniformTypeIdentifiers
                 Task {
                     defer { busy = false }
                     do {
-                        let backupError = try await Task.detached { () -> Error? in
+                        let result = try await Task.detached { () -> (Error?, FileBaseline) in
                             try DocumentHistory.protectExisting(url, storage: historyStorage)
                             let failure = ProjectBackup.preserve(url, in: backups)
-                            try captured.write(url)
+                            let saved = try expected.writing(url) { try captured.write($0) }
                             do { try DocumentHistory.record(captured, source: url, storage: historyStorage, label: automatic ? "自动保存项目" : "保存项目", automatic: automatic) }
-                            catch { return error }
-                            return failure
+                            catch { return (error, saved) }
+                            return (failure, saved)
                         }.value
                         projectURL = url
+                        fileBaseline = result.1; saveConflict = false
                         dirty = false
+                        try persistWordDraft()
                         remember([url])
                         scheduleRecovery()
-                        status = Workspace.savedStatus(backupError)
+                        status = Workspace.savedStatus(result.0)
                     } catch {
-                        self.error = error.localizedDescription
+                        handleSaveError(error)
                     }
                 }
                 return true
             }
             try DocumentHistory.protectExisting(url, storage: storage)
             var backupError = ProjectBackup.preserve(url, in: backupFolder)
-            try archive.write(url)
+            let saved = try expected.writing(url) { try archive.write($0) }
             do { try DocumentHistory.record(archive, source: url, storage: storage, label: automatic ? "自动保存项目" : "保存项目", automatic: automatic) }
             catch { backupError = backupError ?? error }
             projectURL = url
+            fileBaseline = saved; saveConflict = false
             dirty = false
+            try persistWordDraft()
             remember([url])
             scheduleRecovery()
             status = Workspace.savedStatus(backupError)
             return true
         } catch {
-            self.error = error.localizedDescription
+            handleSaveError(error)
             return false
         }
     }
@@ -636,6 +650,9 @@ import UniformTypeIdentifiers
 
     /// Empties the workspace. With `keepingSource` the file it came from stays known, so the tab can load it again.
     private func clearDocument(keepingSource: Bool) {
+        try? persistWordDraft()
+        wordOptions.editedText = nil; wordOptions.editedFromRevision = nil; wordDraftDigest = nil
+        saveConflict = false; fileBaseline = nil
         directSaveTask?.cancel()
         searchTask?.cancel(); estimateTask?.cancel()
         document = PDFDocument(); cachedPDF = nil
@@ -829,6 +846,8 @@ import UniformTypeIdentifiers
                 discarded = false
                 projectURL = urls[0]
                 sourceURL = nil
+                fileBaseline = archive.fileBaseline
+                if archive.wordDraft == nil { loadWordDraft() }
                 history.removeAll()
                 future.removeAll()
                 remember(urls)
@@ -913,7 +932,14 @@ import UniformTypeIdentifiers
             // Opening one file changes nothing yet: the file on disk is the original (or, for a file marked "no modification",
             // an editable copy of it). Without this every opened document counted as unsaved work and closing it asked
             // whether to save.
-            if !insert, loaded.count == 1 { dirty = false }
+            if !insert {
+                wordOptions.editedText = nil; wordOptions.editedFromRevision = nil; wordDraftDigest = nil
+                if loaded.count == 1 {
+                    dirty = false
+                    fileBaseline = try FileBaseline.capture(urls[0], data: urls[0].pathExtension.lowercased() == "pdf" ? data[0] : nil)
+                } else { fileBaseline = nil }
+                saveConflict = false; loadWordDraft()
+            }
             applyPendingView()
             remember(urls)
             status = "已载入 \(count) 页" + (rebuilt ? "（此文件带“禁止修改”限制，已转成可编辑文档；修改后自动保存）" : "")

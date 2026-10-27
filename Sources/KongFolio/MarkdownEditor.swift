@@ -11,6 +11,7 @@ struct MarkdownEditorView: View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
                 toolbar
+                if note.saveConflict { SaveConflictBanner(copy: { note.save(asNew: true) }, reload: note.reloadAfterConflict) }
                 Divider()
                 HSplitView {
                     MarkdownTextView(note: note).frame(minWidth: 200, maxWidth: .infinity, maxHeight: .infinity)

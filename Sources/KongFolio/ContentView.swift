@@ -35,6 +35,8 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showCompress) { CompressSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showScanWorkshop) { ScanWorkshop(workspace: workspace) }
         .sheet(isPresented: $workspace.showCrop) { CropSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showTableExtraction) { TableExtractionSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showPDFForms) { PDFFormSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showWordExport) { WordExportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showBatch) { BatchSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showReplacementRules) { ReplacementRulesSheet(workspace: workspace) }
@@ -84,6 +86,7 @@ struct ContentView: View {
     private func layout(width: CGFloat) -> some View {
         VStack(spacing: 0) {
             topBar(width: width)
+            if workspace.saveConflict { SaveConflictBanner(copy: workspace.chooseConflictCopy, reload: workspace.reloadAfterConflict) }
             Divider()
             HSplitView {
                 if LayoutMetrics.showsSidebar(preferred: showSidebar, width: width) { sidebar.frame(minWidth: 140, idealWidth: 180, maxWidth: 230) }
@@ -649,6 +652,11 @@ struct ContentView: View {
                 Spacer()
                 Button("关闭") { workspace.showTools = false }
             }
+            PanelRow {
+                Button("提取表格…") { workspace.showTools = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { workspace.showTableExtraction = true } }
+                Button("填写 PDF 表单…") { workspace.showTools = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { workspace.showPDFForms = true } }
+                Button("搜索所有命令 ⌘K") { workspace.showTools = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { workspace.store?.showCommandPalette = true } }
+            }.disabled(workspace.count == 0)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 ForEach(QuickTool.allCases) { tool in
                     Button { workspace.quick(tool) } label: {

@@ -19,6 +19,7 @@ struct TextEdit: Equatable {
         var path: String?
         var format: TextDocumentFormat? = nil
         var layoutOptions: TextLayoutOptions? = nil
+        var fileBaseline: FileBaseline? = nil
     }
 
     let id: UUID
@@ -28,6 +29,8 @@ struct TextEdit: Equatable {
     @Published var format: TextDocumentFormat = .markdown
     @Published var layoutOptions = TextLayoutOptions.load() { didSet { layoutOptions.save(); refreshPreview() } }
     @Published var previewMessage = ""
+    var fileBaseline: FileBaseline?
+    @Published var saveConflict = false
     @Published var dirty = false
     @Published var showPreview = true
     @Published var preview: PDFDocument?
@@ -43,6 +46,7 @@ struct TextEdit: Equatable {
         self.id = id
         self.text = text
         self.fileURL = fileURL
+        self.fileBaseline = fileURL.flatMap { try? FileBaseline.capture($0) }
         self.format = format ?? fileURL.map { TextDocumentFormat.forURL($0) } ?? .markdown
         self.dirty = dirty
         self.storage = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
@@ -55,15 +59,24 @@ struct TextEdit: Equatable {
     var characterCount: Int { text.reduce(0) { $0 + ($1.isWhitespace ? 0 : 1) } }
 
     static func open(_ url: URL, storage: URL? = nil) throws -> MarkdownNote {
-        MarkdownNote(text: TextImport.normalized(try TextImport.decode(Data(contentsOf: url))), fileURL: url, storage: storage)
+        let bytes = try Data(contentsOf: url)
+        let note = MarkdownNote(text: TextImport.normalized(try TextImport.decode(bytes)), fileURL: url, storage: storage)
+        note.fileBaseline = try FileBaseline.capture(url, data: bytes)
+        return note
     }
 
     // MARK: Saving
 
     func write(to url: URL) throws {
+        let expected: FileBaseline
+        if url.standardizedFileURL == fileURL?.standardizedFileURL {
+            guard let baseline = fileBaseline else { throw FileConflict() }; expected = baseline
+        } else { expected = try FileBaseline.capture(url) }
+        try expected.verify(url)
         let linked = try SourceLink.saving(text, oldBase: fileURL?.deletingLastPathComponent(), destination: url)
         let prepared = try TextAssets.saving(linked, format: format, oldBase: fileURL?.deletingLastPathComponent(), destination: url)
-        try prepared.write(to: url, atomically: true, encoding: .utf8)
+        let saved = try expected.writing(url) { try prepared.write(to: $0, atomically: true, encoding: .utf8) }
+        fileBaseline = saved; saveConflict = false
         fileURL = url
         text = prepared
         refreshPreview()
@@ -87,7 +100,8 @@ struct TextEdit: Equatable {
             status = "已保存"
             return true
         } catch {
-            self.error = "保存失败：\(error.localizedDescription)"
+            if error is FileConflict { saveConflict = true; status = error.localizedDescription; try? writeBackup() }
+            else { self.error = "保存失败：\(error.localizedDescription)" }
             return false
         }
     }
@@ -121,13 +135,25 @@ struct TextEdit: Equatable {
         }
     }
 
+    func reloadAfterConflict() {
+        guard let fileURL else { return }
+        do {
+            let directory = storage.appendingPathComponent("Conflicts", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL.path, format: format, layoutOptions: layoutOptions, fileBaseline: fileBaseline)).write(to: directory.appendingPathComponent(UUID().uuidString + ".json"), options: .atomic)
+            let bytes = try Data(contentsOf: fileURL)
+            text = TextImport.normalized(try TextImport.decode(bytes)); fileBaseline = try FileBaseline.capture(fileURL, data: bytes)
+            dirty = false; saveConflict = false; removeBackup(); status = "已载入外部版本；此前修改保存在应用的 Conflicts 文件夹"
+        } catch { self.error = error.localizedDescription }
+    }
+
     // MARK: Backup of unsaved text
 
     var backupURL: URL { storage.appendingPathComponent("Notes", isDirectory: true).appendingPathComponent("\(id.uuidString).json") }
 
     func writeBackup() throws {
         try FileManager.default.createDirectory(at: backupURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL?.path, format: format, layoutOptions: layoutOptions)).write(to: backupURL, options: .atomic)
+        try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL?.path, format: format, layoutOptions: layoutOptions, fileBaseline: fileBaseline)).write(to: backupURL, options: .atomic)
     }
 
     func removeBackup() {
@@ -152,6 +178,7 @@ struct TextEdit: Equatable {
             guard let backup = try? JSONDecoder().decode(Backup.self, from: Data(contentsOf: file)) else { return nil }
             let note = MarkdownNote(id: backup.id, text: backup.text, fileURL: backup.path.map { URL(fileURLWithPath: $0) }, dirty: true, storage: storage, format: backup.format)
             if let options = backup.layoutOptions, options.valid { note.layoutOptions = options }
+            note.fileBaseline = backup.fileBaseline
             note.status = "已恢复上次未保存的内容"
             return note
         }

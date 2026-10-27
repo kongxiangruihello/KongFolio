@@ -18,7 +18,11 @@ enum ImportServices {
     static func read(_ urls: [URL]) throws -> ImportPayload {
         if urls.contains(where: { $0.pathExtension.lowercased() == "kongfolio" }) {
             guard urls.count == 1 else { throw FolioError(message: "请单独打开 KongFolio 项目") }
-            try Task.checkCancellation(); return .project(try ProjectArchive.read(urls[0]))
+            try Task.checkCancellation()
+            let baseline = try FileBaseline.capture(urls[0])
+            var archive = try ProjectArchive.read(urls[0])
+            try baseline.verify(urls[0]); archive.fileBaseline = baseline
+            return .project(archive)
         }
         var results: [Data] = []
         for url in urls { try Task.checkCancellation(); let data = try autoreleasepool { try documentData(url) }; results.append(data) }

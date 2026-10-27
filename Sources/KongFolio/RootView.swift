@@ -20,6 +20,7 @@ struct RootView: View {
         .sheet(isPresented: $store.showDocumentComparison) { DocumentComparisonPanel() }
         .sheet(item: $store.pendingPageTransfer) { request in PageTransferSheet(store: store, request: request) }
         .sheet(isPresented: $store.showTaskCenter) { TaskCenterPanel(queue: store.batchQueue, replacements: []) }
+        .sheet(isPresented: $store.showCommandPalette) { CommandPaletteView(store: store) }
         .sheet(isPresented: $store.showSwitcher) { TabSwitcherView(store: store) }
         .sheet(isPresented: $store.showFolderSearch,onDismiss:{
             if store.showOCRTasksAfterSearch { store.showOCRTasksAfterSearch=false;store.showTaskCenter=true }
