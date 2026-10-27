@@ -45,7 +45,7 @@ struct OutlineEditorView: View {
             Text(message.isEmpty ? "标签会以 #标签 的形式写进导出的大纲；顺序、章节和删除只影响导出，不改动文档里的标注。" : message)
                 .font(.caption).foregroundStyle(.secondary).padding(8)
         }
-        .frame(width: 720, height: 620)
+        .adaptiveSheet(width: 720, height: 620)
         .onAppear { load(fresh: false) }
         .onDisappear { workspace.outlineDraft = draft }
     }

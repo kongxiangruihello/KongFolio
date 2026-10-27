@@ -207,6 +207,14 @@ extension WorkspaceStore {
             present(FolioError(message: "这张卡片的来源文档没有保存为文件，无法跳转。"))
             return false
         }
+        if TextImport.handles(URL(fileURLWithPath: source.path)) {
+            openNote(URL(fileURLWithPath: source.path))
+            if let note = activeNote, let anchor = source.anchor {
+                var cache: [String: String] = [:]
+                if let range = ReadingServices.matches(in: note.text, query: anchor, cache: &cache, limit: 1).first { note.revealSearch(range) }
+            }
+            return activeNote != nil
+        }
         let wantsBeside = beside ?? (UserDefaults.standard.object(forKey: LayoutKeys.cardsBeside) as? Bool ?? true)
         let position = source.position
         if let workspace = tabs.compactMap(\.workspace).first(where: { $0.matches(path: source.path) }) {

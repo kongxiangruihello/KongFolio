@@ -144,7 +144,7 @@ struct ContentView: View {
                 if let other = workspace.comparison { ComparisonCanvas(document: other, sync: comparisonSync) }
             }
         }
-        .frame(width: 1040, height: 720)
+        .adaptiveSheet(width: 1040, height: 720)
         .onAppear { comparisonSync.page = workspace.selection }
     }
 
@@ -690,7 +690,7 @@ struct ContentView: View {
             }
         }
         .padding(24)
-        .frame(width: 600)
+        .adaptiveSheet(width: 600, height: 520)
     }
 }
 

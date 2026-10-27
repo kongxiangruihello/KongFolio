@@ -8,6 +8,8 @@ struct SourceRef: Codable, Equatable {
     var fileName: String
     var page: Int
     var pageLabel: String? = nil
+    var relativePath: String? = nil
+    var fingerprint: String? = nil
     /// The selected lines (or the captured region) in page coordinates.
     var rects: [CGRect] = []
     /// The first words of the excerpt as PDFKit reads them. If the page numbers have changed since (pages added or

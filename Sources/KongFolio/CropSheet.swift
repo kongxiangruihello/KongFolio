@@ -68,7 +68,7 @@ struct CropSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 600)
+        .adaptiveSheet(width: 600, height: 600, flexibleHeight: true)
     }
 
     /// The part of a preview of the given size that stays after the cut (the top-left origin of SwiftUI).

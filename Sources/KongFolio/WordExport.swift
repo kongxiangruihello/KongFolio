@@ -100,6 +100,10 @@ struct WordExportOptions: Equatable, Codable {
     var keepColumns = false
     /// Corrections applied to every paragraph of text.
     var replacements: [ReplacementRule] = []
+    var removeRunningMargins: Bool? = nil
+    var removedMarginKeys: [String]? = nil
+    var recognizeHeadings: Bool? = nil
+    var printedPageLabels: Bool? = nil
 }
 
 struct WordExportReport: Equatable {
@@ -195,6 +199,8 @@ enum WordExport {
     static func write(_ document: PDFDocument, pages: [Int], outline: [OutlineEntry], options: WordExportOptions, regions: [Int: [RecognizedLine]] = [:], to url: URL,
                       progress: (Double) -> Void = { _ in }) throws -> WordExportReport {
         var report = WordExportReport()
+        let prepared = options.content == .imagesOnly ? [] : try WordCleanup.inspect(document, pages: pages, options: options, regions: regions).pages
+        let textByPage = Dictionary(uniqueKeysWithValues: prepared.map { ($0.index, $0) })
         let zip = try ZipWriter(url: url)
         do {
             var body = "", relationships = ""
@@ -210,7 +216,11 @@ enum WordExport {
                     for entry in outline where entry.page == index {
                         body += textParagraph(entry.label, style: "Heading\(min(entry.depth, 2) + 1)", size: 28, bold: true)
                     }
-                    if options.pageMarks { body += textParagraph("—— 第 \(index + 1) 页 ——", size: 18, gray: true, centered: true) }
+                    if options.pageMarks {
+                        let label = options.printedPageLabels == true ? ReadingServices.pageLabel(page, index: index) : nil
+                        let marker = "—— 第 \(index + 1) 页" + (label.map { " · 印刷页码 " + $0 } ?? "") + " ——"
+                        body += textParagraph(marker, size: 18, gray: true, centered: true)
+                    }
                     if options.content != .textOnly {
                         let image = try DocumentServices.render(page, maxDimension: options.imageSize.pixels)
                         if let data = jpeg(image, quality: options.imageSize.quality) {
@@ -228,10 +238,9 @@ enum WordExport {
                         }
                     }
                     if options.content != .imagesOnly {
-                        let found = OrderedText.paragraphs(regions: regions[index], pageText: page.string ?? "", mergeLines: options.mergeLines, keepColumns: options.keepColumns)
-                        for paragraph in found.map({ ReplacementRules.apply(options.replacements, to: $0) }) {
-                            body += textParagraph(paragraph)
-                            report.characters += paragraph.filter { !$0.isWhitespace }.count
+                        for paragraph in textByPage[index]?.paragraphs ?? [] {
+                            body += textParagraph(paragraph.text, style: paragraph.heading > 0 ? "Heading\(paragraph.heading)" : nil, size: paragraph.heading > 0 ? 32 : 24)
+                            report.characters += paragraph.text.filter { !$0.isWhitespace }.count
                         }
                     }
                     report.pages += 1

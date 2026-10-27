@@ -41,7 +41,7 @@ struct TabSwitcherView: View {
                 }
             }
         }
-        .frame(width: 520, height: 360)
+        .adaptiveSheet(width: 520, height: 360)
         .onAppear { focused = true }
         .onChange(of: query) { _, _ in highlighted = 0 }
     }

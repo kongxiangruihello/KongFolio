@@ -16,7 +16,7 @@ struct OutlineCandidatesSheet: View {
                     Toggle(isOn: Binding(get: { workspace.outlineCandidatesChosen.contains(item.id) }, set: { on in
                         if on { workspace.outlineCandidatesChosen.insert(item.id) } else { workspace.outlineCandidatesChosen.remove(item.id) }
                     })) {
-                        HStack {
+                        PanelRow {
                             Text(String(repeating: "　", count: item.depth) + item.title)
                             Spacer()
                             Text("第 \(item.page + 1) 页").font(.caption).foregroundStyle(.secondary)
@@ -27,7 +27,7 @@ struct OutlineCandidatesSheet: View {
             }
             Text("只看每页最前面的几行（竖排书是最右边的几列）。识别有误时标题也会错，加入后可在目录里改名。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack {
+            PanelRow {
                 Button("关闭") { workspace.showOutlineCandidates = false }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("加入目录") { workspace.addChosenOutlineCandidates(); workspace.showOutlineCandidates = false }
@@ -36,6 +36,6 @@ struct OutlineCandidatesSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 480)
+        .adaptiveSheet(width: 480, height: 600, minimumWidth: 360, flexibleHeight: true)
     }
 }

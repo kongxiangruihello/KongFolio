@@ -9,7 +9,7 @@ struct CompressSheet: View {
             Text("压缩 PDF").font(.title2.bold())
             Toggle("压到指定大小以内", isOn: $workspace.compressUseTarget)
             if workspace.compressUseTarget {
-                HStack {
+                PanelRow {
                     TextField("大小", value: $workspace.compressTargetMB, format: .number.precision(.fractionLength(0...1)))
                         .frame(width: 70).multilineTextAlignment(.trailing)
                     Text("MB")
@@ -43,13 +43,13 @@ struct CompressSheet: View {
             }
             Text("只处理含大图片的页面；压缩后如果没有变小，不会生成文件。当前文档不会被改动，压缩结果另存为新文件。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack {
+            PanelRow {
                 Button("取消") { workspace.showCompress = false }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("选择位置并压缩…") { workspace.startCompress() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)
-        .frame(width: 460)
+        .adaptiveSheet(width: 460, height: 600, minimumWidth: 360, flexibleHeight: true)
     }
 }

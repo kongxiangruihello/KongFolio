@@ -38,14 +38,21 @@ extension FolderSearchModel {
         guard !running, openingID == nil, !selected.isEmpty else { return false }
         openingID = selected[0].id
         defer { openingID = nil; openWorkerForExcerpts = nil }
+        var live: [(UUID, String, SourceRef)] = []
+        do { live = try selected.filter { $0.tabID != nil || $0.cardID != nil }.map { value in let entry = try store.liveExcerpt(value); return (value.id, entry.0, entry.1) } }
+        catch { message = error.localizedDescription; return false }
+        let saved = selected.filter { $0.tabID == nil && $0.cardID == nil }
         let job = Task.detached(priority: .userInitiated) { () throws -> [(String, SourceRef)] in
-            try FolderSearchService.verifiedExcerpts(selected)
+            try FolderSearchService.verifiedExcerpts(saved)
         }
         openWorkerForExcerpts = job
         do {
-            let verified = try await withTaskCancellationHandler(operation: { try await job.value }, onCancel: { job.cancel() })
+            let disk = try await withTaskCancellationHandler(operation: { try await job.value }, onCancel: { job.cancel() })
             guard !job.isCancelled else { throw CancellationError() }
             try Task.checkCancellation()
+            // Validate the live sources again after the worker finishes, before adding anything.
+            for value in selected where value.tabID != nil || value.cardID != nil { _ = try store.liveExcerpt(value) }
+            let verified = disk + live.map { ($0.1, $0.2) }
             var added = 0
             for (text, source) in verified {
                 if let existing = store.board.existingExcerpt(text: text, source: source) { store.board.focus(existing.id) }

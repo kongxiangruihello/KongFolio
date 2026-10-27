@@ -34,13 +34,13 @@ struct OCRQualitySheet: View {
                     Text("把当前第 \(workspace.selection + 1) 页校对好的文字粘贴在下面（标点、空白不计），按键即可得到识别的字准确率。换一种识别设置后再比较一次，就知道哪种更准。")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     TextEditor(text: $workspace.accuracyReference).font(.system(size: 12)).frame(height: 90).border(Color.secondary.opacity(0.4))
-                    HStack {
+                    PanelRow {
                         Button("计算") { workspace.compareAccuracy() }
                         if !workspace.accuracyMessage.isEmpty { Text(workspace.accuracyMessage).font(.caption).textSelection(.enabled) }
                     }
                 }
             }
-            HStack {
+            PanelRow {
                 Button("关闭") { workspace.showOCRQuality = false }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("重新识别这些页") { workspace.recognizeDoubtfulAgain() }
@@ -48,6 +48,6 @@ struct OCRQualitySheet: View {
             }
         }
         .padding(24)
-        .frame(width: 460)
+        .adaptiveSheet(width: 460, height: 600, minimumWidth: 360, flexibleHeight: true)
     }
 }

@@ -21,7 +21,7 @@ extension MarkdownNote {
         let panel = NSSavePanel(); panel.allowedContentTypes = [UTType(filenameExtension: "docx") ?? .data]
         panel.nameFieldStringValue = title + ".docx"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try TextFileExport.writeWord(text, format: format, to: url, baseURL: fileURL?.deletingLastPathComponent(), options: layoutOptions); status = "已导出可编辑的 Word 文档" }
+        do { try TextFileExport.writeWord(try SourceLink.rebasedText(text, baseURL: fileURL?.deletingLastPathComponent()), format: format, to: url, baseURL: fileURL?.deletingLastPathComponent(), options: layoutOptions); status = "已导出可编辑的 Word 文档" }
         catch { self.error = "Word 导出失败：" + error.localizedDescription }
     }
 }

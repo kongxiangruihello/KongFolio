@@ -54,7 +54,7 @@ struct ScanWorkshop: View {
                 }
             }
         }
-        .padding(22).frame(width: 720, height: 650)
+        .padding(22).adaptiveSheet(width: 720, height: 650)
         .interactiveDismissDisabled(working)
         .onAppear {
             do {

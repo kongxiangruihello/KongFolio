@@ -1,9 +1,19 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import PDFKit
 
 /// Chooses what goes into the Word file made from the scanned book.
 struct WordExportSheet: View {
     @ObservedObject var workspace: Workspace
+    @State private var preview: [WordPreparedPage] = []
+    @State private var candidates: [WordMarginCandidate] = []
+    @State private var previewIndex = 0
+    @State private var preparing = false
+    @State private var previewMessage = ""
+    @State private var worker: Task<Void, Never>?
+    private var cleanup: Binding<Bool> { Binding(get: { workspace.wordOptions.removeRunningMargins ?? false }, set: { workspace.wordOptions.removeRunningMargins = $0 }) }
+    private var headings: Binding<Bool> { Binding(get: { workspace.wordOptions.recognizeHeadings ?? true }, set: { workspace.wordOptions.recognizeHeadings = $0 }) }
+    private var printed: Binding<Bool> { Binding(get: { workspace.wordOptions.printedPageLabels ?? false }, set: { workspace.wordOptions.printedPageLabels = $0 }) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -21,22 +31,65 @@ struct WordExportSheet: View {
                 Text("做过竖排 OCR 的页面按“列从右到左、字从上到下”排成横排文字，繁体字原样保留；关闭时整页连成一段。没有识别记录的页面按文字层顺序。")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            HStack {
+            PanelRow {
                 Toggle("应用替换规则（\(ReplacementRules.parse(workspace.replacementText).count) 条）", isOn: $workspace.applyReplacements)
                 Button("编辑规则…") { workspace.showReplacementRules = true }
             }
+            Toggle("清除重复页眉页脚（仅导出文字）", isOn: cleanup)
+            Toggle("将章、节标题设为 Word 标题", isOn: headings)
+            Toggle("页码标记附上原书印刷页码", isOn: printed)
+            PanelRow {
+                Button(preparing ? "正在整理…" : "更新导出预览") { inspect() }.disabled(preparing)
+                if preparing { ProgressView().controlSize(.small) }
+                Spacer()
+                if !preview.isEmpty { Button("上一页") { previewIndex = max(0, previewIndex - 1) }; Button("下一页") { previewIndex = min(preview.count - 1, previewIndex + 1) } }
+            }
+            if !candidates.isEmpty {
+                Text("疑似页眉页脚（只检查至少 3 页；请核对后选择）").font(.caption)
+                ForEach(candidates) { candidate in
+                    Toggle("\(candidate.id.hasPrefix("上") ? "页眉" : "页脚")：\(candidate.example) · \(candidate.pages) 页", isOn: Binding(get: { workspace.wordOptions.removedMarginKeys?.contains(candidate.id) ?? true }, set: { value in
+                        var keys = Set(workspace.wordOptions.removedMarginKeys ?? candidates.map(\.id)); if value { keys.insert(candidate.id) } else { keys.remove(candidate.id) }; workspace.wordOptions.removedMarginKeys = keys.sorted()
+                    })).font(.caption).disabled(!cleanup.wrappedValue)
+                }
+            }
+            if preview.indices.contains(previewIndex) {
+                Text("文字整理预览 · 第 \(preview[previewIndex].index + 1) 页").font(.caption.bold())
+                ScrollView { VStack(alignment: .leading, spacing: 8) { ForEach(Array(preview[previewIndex].paragraphs.enumerated()), id: \.offset) { _, paragraph in Text(paragraph.text).font(paragraph.heading > 0 ? .headline : .body).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) } } }.frame(height: 180).border(.secondary.opacity(0.3))
+            }
+            if !previewMessage.isEmpty { Text(previewMessage).font(.caption).foregroundStyle(.secondary) }
             Toggle("标出页码（“—— 第 N 页 ——”）", isOn: $workspace.wordOptions.pageMarks)
             Text("文字来自页面的文字层，扫描页需要先 OCR；目录条目会成为 Word 的标题，可在导航窗格里跳转。页面图片是当前显示的范围（裁边后的样子）。版式、脚注位置不会还原。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack {
+            PanelRow {
                 Button("取消") { workspace.showWordExport = false }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("选择位置并导出…") { workspace.startWordExport() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)
-        .frame(width: 460)
+        .adaptiveSheet(width: 620, height: 820, minimumWidth: 360, flexibleHeight: true)
+        .onDisappear { worker?.cancel() }
     }
+    private func inspect() {
+        guard let data = try? workspace.pdfData() else { previewMessage = "无法读取当前文档"; return }
+        var options = workspace.wordOptions
+        options.replacements = workspace.applyReplacements ? ReplacementRules.parse(workspace.replacementText) : []
+        let pages = workspace.wordScope == .all ? Array(0..<workspace.count) : workspace.effectivePages
+        let regions = Dictionary(uniqueKeysWithValues: pages.compactMap { i in workspace.meta(i).ocrRegions.map { (i, $0) } })
+        preparing = true; previewMessage = ""
+        worker = Task {
+            let job = Task.detached(priority: .userInitiated) {
+                try WordCleanup.inspect(try PDFDocument(data: data).unwrap("无法读取文档"), pages: pages, options: options, regions: regions)
+            }
+            do {
+                let result = try await withTaskCancellationHandler(operation: { try await job.value }, onCancel: { job.cancel() })
+                try Task.checkCancellation(); preview = result.pages; candidates = result.candidates; previewIndex = 0
+                previewMessage = "预览与导出使用同一套整理规则。修改选项后请更新预览；原 PDF 不变。"
+            } catch is CancellationError {} catch { previewMessage = error.localizedDescription }
+            preparing = false
+        }
+    }
+
 }
 
 extension Workspace {

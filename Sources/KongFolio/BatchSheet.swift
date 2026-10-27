@@ -76,7 +76,7 @@ struct TaskCenterPanel: View {
                         .disabled(index == nil || output == nil || queue.items.isEmpty).buttonStyle(.borderedProminent)
                 }
             }
-        }.padding(20).frame(width:820,height:740)
+        }.padding(20).adaptiveSheet(width: 820, height: 740)
         .onAppear {
             if let plan=queue.plan, !recipes.contains(where: { $0.id == plan.recipe.id }) { recipes.append(plan.recipe) }
             selected=queue.plan?.recipe.id ?? recipes.first?.id;output=queue.plan?.output
