@@ -28,7 +28,7 @@ final class Release033Tests: XCTestCase {
         workspace.ensureLoaded()
         let deadline = Date().addingTimeInterval(5)
         while workspace.busy, Date() < deadline { try await Task.sleep(nanoseconds: 2_000_000) }
-        XCTAssertGreaterThan(workspace.count, 0); XCTAssertEqual(workspace.fileBaseline?.digest, OCRPageCache.digest(data))
+        XCTAssertTrue(workspace.count > 0); XCTAssertEqual(workspace.fileBaseline?.digest, OCRPageCache.digest(data))
         let archive = try workspace.snapshot(); try pdf("externally changed").write(to: file)
         let recovered = Workspace(storage: root); try recovered.restore(archive)
         XCTAssertEqual(recovered.fileBaseline, archive.fileBaseline); XCTAssertThrowsError(try recovered.fileBaseline!.verify(file))
