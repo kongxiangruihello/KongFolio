@@ -11,12 +11,19 @@ enum SheetMetrics {
 private struct AdaptiveSheet: ViewModifier {
     var preferred: CGSize
     var minimumWidth: CGFloat
+    var flexibleHeight: Bool
     @State private var parent: CGSize?
     func body(content: Content) -> some View {
         let screen = NSApp.keyWindow?.screen?.visibleFrame.size ?? NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 800)
         let size = SheetMetrics.size(preferred: preferred, parent: parent ?? NSApp.keyWindow?.sheetParent?.contentView?.bounds.size ?? NSApp.keyWindow?.contentView?.bounds.size, screen: screen)
         return ScrollView([.horizontal, .vertical]) {
-            content.frame(width: max(size.width - 18, minimumWidth), height: preferred.height).padding(.bottom, 28)
+            Group {
+                if flexibleHeight {
+                    content.frame(width: max(size.width - 18, minimumWidth)).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    content.frame(width: max(size.width - 18, minimumWidth), height: preferred.height)
+                }
+            }.padding(.bottom, 28)
         }
         .frame(width: size.width, height: size.height)
         .background(PanelParentObserver { parent = $0 })
@@ -47,7 +54,7 @@ private struct PanelParentObserver: NSViewRepresentable {
     }
 }
 extension View {
-    func adaptiveSheet(width: CGFloat, height: CGFloat = 600, minimumWidth: CGFloat? = nil) -> some View { modifier(AdaptiveSheet(preferred: CGSize(width: width, height: height), minimumWidth: minimumWidth ?? width)) }
+    func adaptiveSheet(width: CGFloat, height: CGFloat = 600, minimumWidth: CGFloat? = nil, flexibleHeight: Bool = false) -> some View { modifier(AdaptiveSheet(preferred: CGSize(width: width, height: height), minimumWidth: minimumWidth ?? width, flexibleHeight: flexibleHeight)) }
 }
 
 /// Rows wrap instead of dropping their trailing actions outside the available panel width.

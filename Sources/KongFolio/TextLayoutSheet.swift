@@ -14,6 +14,6 @@ struct TextLayoutSheet: View {
             PanelRow { Text("页边距：\(note.layoutOptions.margin * 25.4 / 72, specifier: "%.0f") 毫米"); Slider(value: $note.layoutOptions.margin, in: 20...120, step: 2.835) }
             Text("预览、PDF、Word 和打印共用这些设置，下次自动沿用。纸张为 A4。").font(.caption).foregroundStyle(.secondary)
             PanelRow { Button("恢复默认") { note.layoutOptions = TextLayoutOptions() }; Spacer(); Button("完成") { dismiss() }.keyboardShortcut(.defaultAction) }
-        }.padding(24).adaptiveSheet(width: 430, height: 600, minimumWidth: 360)
+        }.padding(24).adaptiveSheet(width: 430, height: 600, minimumWidth: 360, flexibleHeight: true)
     }
 }

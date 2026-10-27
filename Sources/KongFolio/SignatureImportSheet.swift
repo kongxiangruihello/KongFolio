@@ -49,7 +49,7 @@ struct SignatureImportSheet: View {
             }
         }
         .padding(20)
-        .adaptiveSheet(width: 520, height: 600, minimumWidth: 360)
+        .adaptiveSheet(width: 520, height: 600, minimumWidth: 360, flexibleHeight: true)
         .task(id: SignaturePreviewKey(source: sourceID, options: options)) { await reprocess() }
     }
 

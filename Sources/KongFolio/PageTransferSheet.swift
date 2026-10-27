@@ -18,7 +18,7 @@ struct PageTransferSheet: View {
             Toggle("移动页面（从源文档移除）", isOn: $moving)
             Text("标注、目录与 OCR 记录随页面复制。移动后，两份文档可分别撤销。").font(.caption).foregroundStyle(.secondary)
             PanelRow { Button("取消") { store.pendingPageTransfer = nil }; Spacer(); Button(moving ? "移动页面" : "复制页面") { _ = store.transferPages(request, move: moving, insertion: position) }.keyboardShortcut(.defaultAction) }
-        }.padding(24).adaptiveSheet(width: 440, height: 600, minimumWidth: 360)
+        }.padding(24).adaptiveSheet(width: 440, height: 600, minimumWidth: 360, flexibleHeight: true)
         .alert("页面传送失败", isPresented: Binding(get: { target?.error != nil }, set: { if !$0 { target?.error = nil } })) { Button("好") { target?.error = nil } } message: { Text(target?.error ?? "") }
         .onAppear { position = request.insertion }
     }

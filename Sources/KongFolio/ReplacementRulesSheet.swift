@@ -23,6 +23,6 @@ struct ReplacementRulesSheet: View {
             }
         }
         .padding(24)
-        .adaptiveSheet(width: 460, height: 600, minimumWidth: 360)
+        .adaptiveSheet(width: 460, height: 600, minimumWidth: 360, flexibleHeight: true)
     }
 }

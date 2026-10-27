@@ -67,7 +67,7 @@ struct WordExportSheet: View {
             }
         }
         .padding(24)
-        .adaptiveSheet(width: 620, height: 820, minimumWidth: 360)
+        .adaptiveSheet(width: 620, height: 820, minimumWidth: 360, flexibleHeight: true)
         .onDisappear { worker?.cancel() }
     }
     private func inspect() {

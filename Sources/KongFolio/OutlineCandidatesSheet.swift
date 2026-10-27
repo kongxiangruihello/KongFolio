@@ -36,6 +36,6 @@ struct OutlineCandidatesSheet: View {
             }
         }
         .padding(24)
-        .adaptiveSheet(width: 480, height: 600, minimumWidth: 360)
+        .adaptiveSheet(width: 480, height: 600, minimumWidth: 360, flexibleHeight: true)
     }
 }

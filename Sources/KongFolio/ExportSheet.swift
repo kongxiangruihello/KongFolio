@@ -80,7 +80,7 @@ struct ExportSheet: View {
             }
         }
         .padding(28)
-        .adaptiveSheet(width: 560, height: 600, minimumWidth: 360)
+        .adaptiveSheet(width: 560, height: 600, minimumWidth: 360, flexibleHeight: true)
         .tint(Brand.accent)
         .onChange(of: workspace.exportOptions) { _, _ in workspace.invalidateEstimate() }
         .onDisappear { workspace.invalidateEstimate() }
