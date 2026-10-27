@@ -26,6 +26,13 @@ struct WordExportSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("导出为 Word（.docx）").font(.title2.bold())
+            if !(workspace.wordOptions.editedText ?? [:]).isEmpty {
+                Text(workspace.wordOptions.editedFromRevision == workspace.revision ? "修改草稿已自动保留，重新打开可继续。" : "原文已变化，草稿已保留。请先拷贝核对，再清除旧稿并更新预览。").font(.caption).foregroundStyle(.secondary)
+                PanelRow {
+                    Button("拷贝全部修改草稿") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(workspace.wordDraftText, forType: .string) }
+                    Button("清除修改草稿") { workspace.clearWordDraft(); inspect() }
+                }
+            }
             Picker("范围", selection: $workspace.wordScope) { ForEach(CropScope.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
             Picker("内容", selection: $workspace.wordOptions.content) { ForEach(WordExportOptions.Content.allCases) { Text($0.rawValue).tag($0) } }
             if workspace.wordOptions.content != .textOnly {
@@ -73,7 +80,7 @@ struct WordExportSheet: View {
                             try workspace.setWordDraft(text, page: preview[previewIndex].index) }
                         catch { previewMessage = error.localizedDescription }
                     })).font(.body).frame(height: 200).border(.secondary.opacity(0.3))
-                    Text("仅修改这次 Word 导出的文字，原 PDF 保留。段落之间留空行；已修改页采用手动文字，其他页继续应用整理规则。").font(.caption).foregroundStyle(.secondary)
+                    Text("仅修改 Word 导出的文字，草稿自动保留，原 PDF 保留。段落之间留空行；已修改页采用手动文字，其他页继续应用整理规则。").font(.caption).foregroundStyle(.secondary)
                 } else {
                     ScrollView { VStack(alignment: .leading, spacing: 8) { ForEach(Array(shownParagraphs.enumerated()), id: \.offset) { _, paragraph in Text(paragraph.text).font(paragraph.heading > 0 ? .headline : .body).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) } } }.frame(height: 180).border(.secondary.opacity(0.3))
                 }
@@ -97,6 +104,7 @@ struct WordExportSheet: View {
         }
         .padding(24)
         .adaptiveSheet(width: 620, height: 820, minimumWidth: 360, flexibleHeight: true)
+        .onAppear { inspect() }
         .onDisappear { worker?.cancel() }
     }
     private func inspect() {

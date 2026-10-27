@@ -4,11 +4,11 @@ import PDFKit
 extension Workspace {
     /// OCR source pages and reading metadata need a private recovery copy even when the PDF itself is saved.
     var hasPrivateReadingData: Bool {
-        !signatureEditArchives.isEmpty || !ocrOriginals.isEmpty || !ocrRegions.isEmpty || !bookmarks.isEmpty || !bibliography.isEmpty
+        wordDraftArchive != nil || !signatureEditArchives.isEmpty || !ocrOriginals.isEmpty || !ocrRegions.isEmpty || !bookmarks.isEmpty || !bibliography.isEmpty
     }
     func scheduleDirectSave() {
         directSaveTask?.cancel()
-        guard !AppEnvironment.isTestRun, dirty, projectURL != nil || sourceURL?.pathExtension.lowercased() == "pdf" else { return }
+        guard !AppEnvironment.isTestRun, !saveConflict, dirty, projectURL != nil || sourceURL?.pathExtension.lowercased() == "pdf" else { return }
         directSaveTask = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: 1_200_000_000) } catch { return }
             guard let self, !Task.isCancelled, self.dirty else { return }
@@ -30,10 +30,15 @@ extension Workspace {
         do {
             // Protect the unsaved state before attempting the original-file write.
             guard flushRecovery() else { return false }
+            let expected = try baseline(for: target)
+            try expected.verify(target)
             try DocumentHistory.protectExisting(target, storage: storage)
-            try writePDFCopy(to: target)
+            let saved = try expected.writing(target) { try writePDFCopy(to: $0) }
+            fileBaseline = saved
             try SignaturePersistence.write(signatureEditArchives, pdf: target, storage: storage)
             sourceURL = target; dirty = false
+            fileBaseline = saved; saveConflict = false
+            try persistWordDraft()
             remember([target]); scheduleRecovery()
             status = "已保存：\(target.lastPathComponent)"
             do {
@@ -42,7 +47,7 @@ extension Workspace {
             } catch { status += "；版本记录失败：\(error.localizedDescription)" }
             return true
         } catch {
-            self.error = "保存失败，修改已保留在恢复副本：\(error.localizedDescription)"
+            handleSaveError(error)
             return false
         }
     }

@@ -105,8 +105,8 @@ final class Release025Tests: XCTestCase {
     @MainActor func testDirectSaveSeedsOriginalAndRestoresAnOlderVersion() throws {
         let directory=try folder();defer { try? FileManager.default.removeItem(at:directory) }
         let source=directory.appendingPathComponent("source.pdf"),w=Workspace(storage:directory)
-        w.bootstrap();w.document=DocumentServicesTests().fixture();w.sourceURL=source
-        try w.document.dataRepresentation()!.write(to:source)
+        w.bootstrap();w.document=DocumentServicesTests().fixture()
+        try w.document.dataRepresentation()!.write(to:source);w.sourceURL=source
         let annotation=PDFAnnotation(bounds:CGRect(x:10,y:10,width:20,height:20),forType:.text,withProperties:nil)
         annotation.contents="new mark";w.document.page(at:0)!.addAnnotation(annotation);w.recordAnnotationsAdded([annotation])
         XCTAssertTrue(w.saveDirectly(askForDestination:false))
@@ -184,8 +184,8 @@ final class Release025Tests: XCTestCase {
     @MainActor func testHistoryFailureStopsOverwriteAndKeepsRecovery() throws {
         let directory=try folder();defer { try? FileManager.default.removeItem(at:directory) }
         let source=directory.appendingPathComponent("a.pdf"),w=Workspace(storage:directory)
-        w.bootstrap();w.document=DocumentServicesTests().fixture();w.sourceURL=source
-        let bytes=w.document.dataRepresentation()!;try bytes.write(to:source)
+        w.bootstrap();w.document=DocumentServicesTests().fixture()
+        let bytes=w.document.dataRepresentation()!;try bytes.write(to:source);w.sourceURL=source
         try Data("blocked".utf8).write(to:directory.appendingPathComponent("History"))
         w.rotate();XCTAssertFalse(w.saveDirectly(askForDestination:false))
         XCTAssertEqual(try Data(contentsOf:source),bytes)

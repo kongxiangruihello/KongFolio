@@ -48,6 +48,9 @@ import AppKit
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
             CommandMenu("任务与历史") {
+                Button("搜索命令…") { store.showCommandPalette = true }.keyboardShortcut("k")
+                Button("提取 PDF 表格…") { store.commandWorkspace?.showTableExtraction = true }.disabled((store.commandWorkspace?.count ?? 0) == 0 || store.commandWorkspace?.busy == true)
+                Button("填写 PDF 表单…") { store.commandWorkspace?.showPDFForms = true }.disabled((store.commandWorkspace?.count ?? 0) == 0 || store.commandWorkspace?.busy == true)
                 Button("OCR 批量纠错…") { store.commandWorkspace?.showOCRBatchCorrection = true }.disabled((store.commandWorkspace?.count ?? 0) == 0 || store.commandWorkspace?.busy == true)
                 Button("文档精细对比…") { store.showDocumentComparison = true }
                 Button("跨文件全文搜索…") { store.showFolderSearch=true }.keyboardShortcut("f",modifiers:[.command,.shift])

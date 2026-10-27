@@ -66,6 +66,7 @@ import UniformTypeIdentifiers
 
     /// The quick tab switcher (⌘P) is open.
     @Published var showSwitcher = false
+    @Published var showCommandPalette = false
 
     /// Tabs whose names match `query`, best match first; with nothing typed, the most recently used first.
     func switcherResults(for query: String) -> [OpenTab] {

@@ -271,6 +271,10 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
         let point = convert(location, to: page)
         switch workspace.tool {
         case .select:
+            if page.annotations.contains(where: { $0.type == "Widget" && $0.bounds.contains(point) }) {
+                workspace.showPDFForms = true
+                return
+            }
             // Route editable annotations through our tracked editor so edits are recoverable.
             if let hit = page.annotations.reversed().first(where: { ["FreeText", "Text"].contains($0.type ?? "") && $0.bounds.contains(point) }) {
                 workspace.selectAnnotation(hit)
