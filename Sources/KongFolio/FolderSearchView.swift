@@ -25,7 +25,7 @@ struct FolderSearchView: View {
             resultList
             issues
             if !model.message.isEmpty { Text(model.message).font(.callout).textSelection(.enabled).lineLimit(3) }
-            Text("附加词按同一物理页筛选，多个词用逗号分隔。⌘ 点选或 ⇧ 连选结果后可摘录；导出报告采用当前筛选。扫描件请先 OCR；文本文件检索源文，当前编辑含未保存内容；批注和摘录单独标明。索引仅保存在本机。").font(.caption).foregroundStyle(.secondary)
+            Text("附加词按同一物理页筛选，多个词用逗号分隔。⌘ 点选或 ⇧ 连选结果后可摘录；导出报告采用当前筛选。扫描件请先 OCR；笔记可切换正文或源码搜索；当前编辑含未保存内容，无须选择文件夹；批注和摘录单独标明。索引仅保存在本机。").font(.caption).foregroundStyle(.secondary)
             actions
         }.padding(20).adaptiveSheet(width: 1000, height: 760, minimumWidth: 360)
         .onDisappear { model.cancel(); model.remember() }
@@ -33,7 +33,8 @@ struct FolderSearchView: View {
     }
     private var searchControls: some View {
         VStack(spacing: 8) {
-            PanelRow {
+            Picker("搜索范围", selection: $model.scope) { ForEach(SearchScope.allCases) { Text($0.rawValue).tag($0) } }.disabled(occupied)
+            if model.scope.usesFolder { PanelRow {
                 Button("选择并记住文件夹…") { chooseFolder() }
                 Menu("常用文件夹（\(model.savedFolders.count)）") {
                     ForEach(model.savedFolders, id: \.path) { folder in
@@ -45,16 +46,16 @@ struct FolderSearchView: View {
                 }.disabled(model.savedFolders.isEmpty)
                 Text(model.folder?.path ?? "请选择存放资料的文件夹").font(.caption).lineLimit(1).truncationMode(.middle).help(model.folder?.path ?? "")
                 Spacer(); Toggle("含子文件夹", isOn: $model.recursive)
-            }.disabled(occupied)
+            }.disabled(occupied) }
             PanelRow {
                 Toggle("文本文件", isOn: $model.includeText)
                 Toggle("批注", isOn: $model.includeAnnotations)
-                Toggle("当前编辑和摘录", isOn: $model.includeLive)
+                Toggle("笔记只搜正文", isOn: $model.bodyOnly)
             }.disabled(occupied)
             PanelRow {
                 TextField("主要搜索词句（简繁通查）", text: $model.query).onSubmit { start() }.disabled(occupied)
                 if model.running { Button(model.stopping ? "正在停止…" : "停止") { model.cancel() }.disabled(model.stopping) }
-                else { Button("搜索") { start() }.disabled(model.folder == nil || model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || occupied).buttonStyle(.borderedProminent) }
+                else { Button("搜索") { start() }.disabled((model.scope.usesFolder && model.folder == nil) || model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || occupied).buttonStyle(.borderedProminent) }
             }
             PanelRow {
                 TextField("同页还需包含：词一，词二", text: $model.requiredTerms)
@@ -88,7 +89,7 @@ struct FolderSearchView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(result.url.lastPathComponent).font(.headline)
                 Text(result.category).font(.caption).foregroundStyle(.blue)
-                Text("第 \(result.hit.page + 1) 页" + (result.hit.label.map { " · 印刷页码 \($0)" } ?? "")).font(.caption).foregroundStyle(.secondary)
+                Text((result.textLine.map { "第 \($0) 行" } ?? "第 \(result.hit.page + 1) 页") + (result.hit.label.map { " · 印刷页码 \($0)" } ?? "")).font(.caption).foregroundStyle(.secondary)
             }
             Text(result.hit.snippet).lineLimit(3)
             Text(result.relativePath).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(result.url.path)

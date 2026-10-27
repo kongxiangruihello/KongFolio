@@ -211,7 +211,8 @@ extension WorkspaceStore {
             openNote(URL(fileURLWithPath: source.path))
             if let note = activeNote, let anchor = source.anchor {
                 var cache: [String: String] = [:]
-                if let range = ReadingServices.matches(in: note.text, query: anchor, cache: &cache, limit: 1).first { note.revealSearch(range) }
+                let body = TextSearchBody.make(note.text, format: note.format)
+                if let found = ReadingServices.matches(in: body.text, query: anchor, cache: &cache, limit: 1).first { note.revealSearch(TextSearchBody.sourceRange(found, spans: body.spans)) }
             }
             return activeNote != nil
         }

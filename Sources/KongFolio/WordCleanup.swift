@@ -44,7 +44,25 @@ enum WordCleanup {
         if let regions, !OrderedText.isVertical(regions), !regions.isEmpty { return regions.map(\.text).joined(separator: "\n") }
         return page.string ?? ""
     }
+    static func editedParagraphs(_ text: String, headings: Bool) -> [WordPreparedParagraph] {
+        var result: [WordPreparedParagraph] = [], pending: [String] = []
+        func flush() {
+            if !pending.isEmpty { result.append(WordPreparedParagraph(text: pending.joined(separator: "\n"))); pending = [] }
+        }
+        for line in lines(text) {
+            if line.isEmpty { flush() }
+            else {
+                let level = headings ? heading(line) : 0
+                if level > 0 { flush(); result.append(WordPreparedParagraph(text: line, heading: level)) }
+                else { pending.append(line) }
+            }
+        }
+        flush(); return result
+    }
     static func prepare(index: Int, label: String?, text: String, regions: [RecognizedLine]?, options: WordExportOptions, margins: Set<String>) -> WordPreparedPage {
+        if let edited = options.editedText?[index] {
+            return WordPreparedPage(index: index, label: label, paragraphs: editedParagraphs(edited, headings: options.recognizeHeadings != false))
+        }
         if let regions, OrderedText.isVertical(regions) {
             let paragraphs = OrderedText.paragraphs(regions: regions, pageText: text, mergeLines: options.mergeLines, keepColumns: options.keepColumns)
             return WordPreparedPage(index: index, label: label, paragraphs: paragraphs.map { WordPreparedParagraph(text: ReplacementRules.apply(options.replacements, to: $0)) })

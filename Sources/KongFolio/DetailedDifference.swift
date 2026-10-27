@@ -44,8 +44,8 @@ enum DetailedDifference {
         }
         return TextDifferenceResult(chunks: chunks, coarse: false)
     }
-    struct ImageResult { var overlay: Data; var mask: Data; var regions: [CGRect]; var changedPixels: Int }
-    static func image(_ before: PDFPage?, _ after: PDFPage?, dimension: Int = 1200, threshold: Int = 36) throws -> ImageResult {
+    struct ImageResult { var overlay: Data; var mask: Data; var regions: [CGRect]; var changedPixels: Int; var shift: CGPoint = .zero; var calibrated = false; var side = 1200 }
+    static func image(_ before: PDFPage?, _ after: PDFPage?, dimension: Int = 1200, threshold: Int = 36, automaticAlignment: Bool = false, translation: CGPoint = .zero) throws -> ImageResult {
         let side = max(64, min(2000, dimension)), count = side * side
         func raster(_ page: PDFPage?) throws -> Data {
             var data = Data(repeating: 255, count: count * 4)
@@ -59,7 +59,12 @@ enum DetailedDifference {
             }
             return data
         }
-        let a = try raster(before), b = try raster(after)
+        let a = try raster(before), rawB = try raster(after)
+        let estimate = automaticAlignment && before != nil && after != nil ? try ImageCalibration.estimate(a, rawB, side: side, maxShift: max(2,side/25)) : ImageCalibration.Estimate()
+        let manualX = translation.x.isFinite ? Int(max(-80,min(80,translation.x))) : 0
+        let manualY = translation.y.isFinite ? Int(max(-80,min(80,translation.y))) : 0
+        let dx = estimate.sampleX - manualX, dy = estimate.sampleY - manualY
+        let b = dx == 0 && dy == 0 ? rawB : ImageCalibration.shifted(rawB, side: side, sampleX: dx, sampleY: dy)
         var overlay = Data(count: count * 4), mask = Data(repeating: 255, count: count * 4)
         var pixels = 0, bounds: [Int: CGRect] = [:]
         try a.withUnsafeBytes { (left: UnsafeRawBufferPointer) in try b.withUnsafeBytes { (right: UnsafeRawBufferPointer) in
@@ -84,6 +89,6 @@ enum DetailedDifference {
             let image = CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             return try NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]).unwrap("无法保存差异图")
         }
-        return ImageResult(overlay: try png(overlay), mask: try png(mask), regions: bounds.values.sorted { ($0.minY, $0.minX) < ($1.minY, $1.minX) }, changedPixels: pixels)
+        return ImageResult(overlay: try png(overlay), mask: try png(mask), regions: bounds.values.sorted { ($0.minY, $0.minX) < ($1.minY, $1.minX) }, changedPixels: pixels, shift: CGPoint(x: -dx, y: -dy), calibrated: estimate.accepted, side: side)
     }
 }

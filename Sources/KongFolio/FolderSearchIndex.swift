@@ -8,6 +8,8 @@ struct FolderSearchPage: Codable {
     var glyphs: [OrderedText.Glyph]?
     var category: String? = nil
     var sourceRect: CGRect? = nil
+    var sourceSpans: [SearchBodySpan]? = nil
+    var sourceLineStarts: [Int]? = nil
 }
 
 /// A disposable local cache. Each document replaces its old rows in one transaction; interrupted documents never look complete.

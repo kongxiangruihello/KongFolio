@@ -104,6 +104,8 @@ struct WordExportOptions: Equatable, Codable {
     var removedMarginKeys: [String]? = nil
     var recognizeHeadings: Bool? = nil
     var printedPageLabels: Bool? = nil
+    var editedText: [Int: String]? = nil
+    var editedFromRevision: UUID? = nil
 }
 
 struct WordExportReport: Equatable {
