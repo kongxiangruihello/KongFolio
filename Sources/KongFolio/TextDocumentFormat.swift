@@ -15,11 +15,6 @@ enum TextDocumentFormat: String, Codable, CaseIterable, Identifiable {
 extension MarkdownNote {
     func renderDocument() throws -> PDFDocument {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return PDFDocument() }
-        if format == .html {
-            guard let data = text.data(using: .utf8) else { throw FolioError(message: "HTML 编码失败") }
-            let attributed = try NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.html, .characterEncoding: String.Encoding.utf8.rawValue], documentAttributes: nil)
-            return try TextImport.pdf(from: attributed)
-        }
-        return try TextImport.render(text, markdown: format == .markdown)
+        return try RichTextDocument(text, format: format, baseURL: fileURL?.deletingLastPathComponent(), options: layoutOptions).pdf()
     }
 }

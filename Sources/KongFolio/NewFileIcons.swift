@@ -4,13 +4,21 @@ import SwiftUI
 struct NewFileIcons: View {
     var store: WorkspaceStore?
     var spacing: CGFloat = 8
+    @AppStorage(ToolbarPreferences.key) private var saved = ""
     var body: some View {
         if let store {
             HStack(spacing: spacing) {
-                icon("新建 PDF", symbol: "doc.badge.plus") { store.newPDF() }
-                icon("新建 Markdown 文件", symbol: "square.and.pencil") { store.newNote() }
-                icon("新建文本文件", symbol: "doc.plaintext") { store.newNote(format: .plain) }
-                icon("新建 HTML 文件", symbol: "chevron.left.forwardslash.chevron.right") { store.newNote(format: .html) }
+                ForEach(ToolbarPreferences.decode(saved).visible.filter(\.isNewFile)) { action in
+                    icon(action.title, symbol: action.symbol) {
+                        switch action {
+                        case .newPDF: store.newPDF()
+                        case .newMarkdown: store.newNote()
+                        case .newText: store.newNote(format: .plain)
+                        case .newHTML: store.newNote(format: .html)
+                        default: break
+                        }
+                    }
+                }
             }.fixedSize()
         }
     }

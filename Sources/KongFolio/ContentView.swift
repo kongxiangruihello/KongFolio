@@ -6,6 +6,9 @@ struct ContentView: View {
     @ObservedObject var workspace: Workspace
     @StateObject private var comparisonSync = ComparisonSync()
     @State private var showSignatureImport = false
+    @State private var showToolbarSettings = false
+    @State private var pageDropTarget: Int?
+    @AppStorage(ToolbarPreferences.key) private var toolbarSaved = ""
     @AppStorage(LayoutKeys.sidebar) private var showSidebar = true
     @AppStorage(LayoutKeys.inspector) private var showInspector = true
     @AppStorage(LayoutKeys.board) private var showBoard = false
@@ -25,6 +28,7 @@ struct ContentView: View {
         .alert("无法完成操作", isPresented: Binding(get: { workspace.error != nil }, set: { if !$0 { workspace.error = nil } })) {
             Button("好") { workspace.error = nil }
         } message: { Text(workspace.error ?? "") }
+        .sheet(isPresented: $showToolbarSettings) { ToolbarSettingsView(saved: $toolbarSaved) }
         .sheet(isPresented: $showSignatureImport) { SignatureImportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showVersionHistory) { VersionHistoryView(workspace: workspace) }
         .sheet(isPresented: $workspace.showExport) { ExportSheet(workspace: workspace) }
@@ -38,6 +42,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showOutlineText) { OutlineTextSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOutlineCandidates) { OutlineCandidatesSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showPageInspection) { PageInspectionView(workspace: workspace) }
+        .sheet(isPresented: $workspace.showOCRBatchCorrection) { OCRBatchCorrectionSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showOCRReview) { OCRReview(workspace: workspace) }
         .sheet(isPresented: $workspace.showProofreading) { ColumnProofView(workspace: workspace) }
         .sheet(isPresented: $workspace.showOutlineEditor) { OutlineEditorView(workspace: workspace) }
@@ -144,11 +149,13 @@ struct ContentView: View {
     }
 
     private func topBar(width: CGFloat) -> some View {
-        let style = LayoutMetrics.topBarStyle(width: width - 160)
+        let style = LayoutMetrics.topBarStyle(width: width - 160 - CGFloat(max(0, ToolbarPreferences.decode(toolbarSaved).visible.count - 11)) * 70)
+        let twoRows = width < 620
         let sidebarShown = LayoutMetrics.showsSidebar(preferred: showSidebar, width: width)
         let inspectorShown = LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width), splitShown: splitShown(width: width))
         let boardIsShown = boardShown(width: width)
-        return HStack(spacing: style == .full ? 12 : 8) {
+        return VStack(spacing: 6) {
+        HStack(spacing: style == .full ? 12 : 8) {
             Button { showSidebar.toggle() } label: { Image(systemName: "sidebar.left") }
                 .buttonStyle(.borderless)
                 .foregroundStyle(showSidebar && !sidebarShown ? .tertiary : .primary)
@@ -167,40 +174,13 @@ struct ContentView: View {
                         }
                     }
             }
-            .frame(minWidth: 40, idealWidth: 175, maxWidth: style == .full ? 220 : 260, alignment: .leading)
+            .frame(minWidth: 20, idealWidth: 175, maxWidth: style == .full ? 220 : 260, alignment: .leading)
             Spacer(minLength: 0)
-            NewFileIcons(store: workspace.store, spacing: style == .full ? 12 : 8)
-            switch style {
-            case .full:
-                splitMenu(iconOnly: false)
-                annotateButton(iconOnly: false)
-                toolsButton(iconOnly: false)
-                openMenu(iconOnly: false)
-                saveButton(iconOnly: false)
-                closeButton(iconOnly: false)
-                exportMenu(iconOnly: false)
-            case .icons:
-                splitMenu(iconOnly: true)
-                annotateButton(iconOnly: true)
-                toolsButton(iconOnly: true)
-                openMenu(iconOnly: true)
-                saveButton(iconOnly: true)
-                closeButton(iconOnly: true)
-                exportMenu(iconOnly: true)
-            case .minimal:
-                Menu {
-                    Button(workspace.showAnnotationBar ? "收起标注工具栏" : "打开标注工具栏") { workspace.showAnnotationBar.toggle() }.disabled(workspace.count == 0)
-                    Button("快捷工具") { workspace.showTools = true }
-                    Menu("打开") { openItems }
-                    Button("保存") { workspace.saveDirectly() }.disabled(workspace.count == 0)
-                    Button("关闭") { workspace.closeTab() }.disabled(workspace.count == 0 || workspace.busy)
-                    Menu("导出") { exportItems }.disabled(workspace.count == 0)
-                } label: { Image(systemName: "ellipsis.circle") }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 32)
-                .help("更多操作")
-            }
+            if style != .minimal {
+                ForEach(ToolbarPreferences.decode(toolbarSaved).visible) { action in
+                    toolbarAction(action, iconOnly: style != .full || ToolbarPreferences.decode(toolbarSaved).iconsOnly || action.isNewFile)
+                }
+            } else if !twoRows { compactToolbar }
             Button { showBoard.toggle() } label: { Image(systemName: "rectangle.3.group") }
                 .buttonStyle(.borderless)
                 .foregroundStyle(showBoard && !boardIsShown ? .tertiary : .primary)
@@ -210,7 +190,56 @@ struct ContentView: View {
                 .foregroundStyle(showInspector && !inspectorShown ? .tertiary : .primary)
                 .help(inspectorShown ? "隐藏右侧栏（⌥⌘2）" : (showInspector ? "窗口太窄，放宽后显示右侧栏" : "显示右侧栏（⌥⌘2）"))
         }
+        if twoRows { compactToolbar.frame(maxWidth: .infinity, alignment: .leading) }
+
+        }
+        .contextMenu { Button("自定工具栏…") { showToolbarSettings = true } }
         .padding(style == .full ? 16 : 10)
+    }
+
+    private var compactToolbar: some View {
+            HStack(spacing: 8) {
+                ForEach(ToolbarPreferences.decode(toolbarSaved).visible.filter(\.isNewFile)) { action in toolbarAction(action, iconOnly: true) }
+                annotateButton(iconOnly: true)
+                toolsButton(iconOnly: true)
+                Menu {
+                    ForEach(ToolbarPreferences.decode(toolbarSaved).order.filter { !$0.isNewFile && !$0.pinned }) { action in
+                        toolbarAction(action, iconOnly: false)
+                    }
+                    Divider()
+                    Button("自定工具栏…") { showToolbarSettings = true }
+                } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28).help("更多操作与自定工具栏")
+            }.controlSize(.regular).frame(height: 30)
+    }
+
+    @ViewBuilder private func toolbarAction(_ action: ToolbarAction, iconOnly: Bool) -> some View {
+        switch action {
+        case .split: splitMenu(iconOnly: iconOnly)
+        case .annotate: annotateButton(iconOnly: iconOnly)
+        case .tools: toolsButton(iconOnly: iconOnly)
+        case .open: openMenu(iconOnly: iconOnly)
+        case .save: saveButton(iconOnly: iconOnly)
+        case .close: closeButton(iconOnly: iconOnly)
+        case .export: exportMenu(iconOnly: iconOnly)
+        default:
+            Button {
+                switch action {
+                case .newPDF: workspace.store?.newPDF()
+                case .newMarkdown: workspace.store?.newNote()
+                case .newText: workspace.store?.newNote(format: .plain)
+                case .newHTML: workspace.store?.newNote(format: .html)
+                case .ocr: workspace.ocr(selectedOnly: false)
+                case .signature: showSignatureImport = true
+                case .print: workspace.store?.printActive()
+                default: break
+                }
+            } label: {
+                if iconOnly { Image(systemName: action.symbol).frame(width: 28, height: 28) }
+                else { Label(action.title, systemImage: action.symbol) }
+            }.buttonStyle(.borderless).foregroundStyle(Brand.accent).help(action.title).accessibilityLabel(action.title)
+                .disabled((action == .ocr || action == .print) && workspace.count == 0)
+        }
     }
 
     /// Always in the top bar, so the annotation tools are one click away without being open on every document.
@@ -218,6 +247,7 @@ struct ContentView: View {
         Button { workspace.showAnnotationBar.toggle() } label: {
             if iconOnly { Image(systemName: "pencil.tip.crop.circle") } else { Label("标注", systemImage: "pencil.tip.crop.circle") }
         }
+        .accessibilityLabel("标注")
         .foregroundStyle(workspace.showAnnotationBar ? Brand.accent : Color.primary)
         .disabled(workspace.count == 0)
         .help(workspace.showAnnotationBar ? "收起标注工具栏（⌥⌘A）" : "打开标注工具栏（⌥⌘A）：画线、画框、写文字、荧光笔")
@@ -226,7 +256,7 @@ struct ContentView: View {
     @ViewBuilder private func toolsButton(iconOnly: Bool) -> some View {
         Button { workspace.showTools = true } label: {
             if iconOnly { Image(systemName: "square.grid.2x2") } else { Label("快捷工具", systemImage: "square.grid.2x2") }
-        }.help("快捷工具")
+        }.help("快捷工具").accessibilityLabel("快捷工具")
     }
 
     @ViewBuilder private var openItems: some View {
@@ -317,7 +347,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { Text("页面").font(.headline); Spacer(); Text("\(workspace.count)").foregroundStyle(.secondary) }
                 .padding(.horizontal, 14).padding(.top, 16)
-            Text("⌘ 多选 · ⇧ 连选 · 拖动排序 · 可拖入文件").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 14)
+            Text("⌘ 多选 · ⇧ 连选 · 可拖至其他标签页").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 14)
             ScrollViewReader { proxy in
                 List(selection:Binding(get:{workspace.selectedPages},set:{workspace.selectSidebarPages($0)})) {
                     ForEach(0..<workspace.count, id: \.self) { index in
@@ -336,12 +366,9 @@ struct ContentView: View {
                         .id(index)
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top:6,leading:12,bottom:6,trailing:12))
-                        .draggable("KongFolio:\(index)")
-                        .dropDestination(for: String.self) { values, _ in
-                            guard let value = values.first, value.hasPrefix("KongFolio:"), let source = Int(value.dropFirst(10)) else { return false }
-                            workspace.movePages(before: index, dragged: source)
-                            return true
-                        }
+                        .onDrag { NSItemProvider(object: workspace.pageDrag(index) as NSString) }
+                        .onDrop(of: [.utf8PlainText], delegate: PageDropDelegate(workspace: workspace, insertion: index, targeted: { targeted in pageDropTarget = targeted ? index : (pageDropTarget == index ? nil : pageDropTarget) }))
+                        .overlay(alignment: .top) { if pageDropTarget == index { Rectangle().fill(Brand.accent).frame(height: 3) } }
                     }
                 }
                 .listStyle(.plain)
@@ -392,7 +419,12 @@ struct ContentView: View {
         } else {
             PDFCanvas(workspace: workspace)
                 .overlay(alignment: .top) {
-                    if workspace.showAnnotationBar { AnnotationBar(workspace: workspace).padding(.top, 10) }
+                    if workspace.showAnnotationBar {
+                        GeometryReader { proxy in
+                            AnnotationBar(workspace: workspace, availableWidth: max(140, proxy.size.width - 20))
+                                .padding(.horizontal, 10).padding(.top, 10)
+                        }
+                    }
                 }
         }
     }
@@ -441,10 +473,13 @@ struct ContentView: View {
             }
             .disabled(workspace.count == 0)
             Text(workspace.ocrSettings.ignoresTextLayer ? "所有选定的页面都会被识别；原有标注会被固化，执行前会提示。" : "文字少于 \(workspace.ocrSettings.minimumTextCharacters) 个字符的页面会被识别；原有标注会被固化，执行前会提示。").font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button("检查当前页区域") { workspace.inspectOCR() }
-                Button("OCR 质量检查…") { workspace.openOCRQuality() }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Button("检查当前页区域") { workspace.inspectOCR() }
+                    Button("OCR 质量检查…") { workspace.openOCRQuality() }
+                }
                 Toggle("标出低置信度的列", isOn: Binding(get: { workspace.showLowConfidence }, set: { workspace.showLowConfidence = $0; workspace.refreshConfidenceMarks() }))
+                Button("批量纠错…") { workspace.showOCRBatchCorrection = true }
                 if workspace.meta(workspace.selection).ocrRegions != nil {
                     Button("对照校正…") { workspace.reviewSelection = -1; workspace.showOCRReview = true }
                 }
@@ -630,7 +665,7 @@ struct ContentView: View {
             }
         }
         .padding(24)
-        .frame(width: 650)
+        .frame(width: min(650, max(340, (NSApp.keyWindow?.contentView?.bounds.width ?? 650) - 20)))
     }
 
     private var importOrder: some View {
@@ -656,5 +691,37 @@ struct ContentView: View {
         }
         .padding(24)
         .frame(width: 600)
+    }
+}
+
+/// Explicit providers also work on native macOS List rows, whose own drag handling can swallow Transferable strings.
+@MainActor struct PageDropDelegate: DropDelegate {
+    let workspace: Workspace
+    var insertion: Int?
+    var targeted: (Bool) -> Void = { _ in }
+    func validateDrop(info: DropInfo) -> Bool { !workspace.busy && info.hasItemsConforming(to: [.utf8PlainText]) }
+    func dropEntered(info: DropInfo) { targeted(true) }
+    func dropExited(info: DropInfo) { targeted(false) }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .copy) }
+    func performDrop(info: DropInfo) -> Bool {
+        targeted(false)
+        guard let provider = info.itemProviders(for: [.utf8PlainText]).first else { return false }
+        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let value = object as? String else { return }
+            Task { @MainActor in
+                if let insertion { _ = workspace.receivePageDrag(value, before: insertion) }
+                else if let drag = PageDrag.decode(value), drag.source != workspace.id {
+                    guard let store = workspace.store else { return }
+                    store.select(workspace.id)
+                    while workspace.busy {
+                        do { try await Task.sleep(nanoseconds: 50_000_000) } catch { return }
+                        guard store.tabs.contains(where: { $0.id == workspace.id }) else { return }
+                    }
+                    guard workspace.count > 0 else { workspace.status = "目标文档无法读取，页面未传送"; return }
+                    _ = store.preparePageTransfer(drag, to: workspace, at: min(workspace.count, workspace.selection + 1))
+                }
+            }
+        }
+        return true
     }
 }

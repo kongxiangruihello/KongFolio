@@ -17,6 +17,7 @@ struct RootView: View {
                 Color.clear
             }
         }
+        .sheet(item: $store.pendingPageTransfer) { request in PageTransferSheet(store: store, request: request) }
         .sheet(isPresented: $store.showTaskCenter) { TaskCenterPanel(queue: store.batchQueue, replacements: []) }
         .sheet(isPresented: $store.showSwitcher) { TabSwitcherView(store: store) }
         .sheet(isPresented: $store.showFolderSearch,onDismiss:{
@@ -114,6 +115,7 @@ private struct DocumentTab: View {
                 dimmed: workspace.count == 0 && known && !loading,
                 hover: { inside in store.setPathHint(inside ? Workspace.pathHintText(path: workspace.displayPath, title: workspace.title) : nil) },
                 select: { store.select(workspace.id) }, close: { store.close(workspace.id) })
+            .onDrop(of: [.utf8PlainText], delegate: PageDropDelegate(workspace: workspace))
             .contextMenu {
                 if workspace.displayPath != nil {
                     Button("拷贝完整路径") { workspace.copyPath() }

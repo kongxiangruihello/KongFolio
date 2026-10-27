@@ -25,6 +25,7 @@ import UniformTypeIdentifiers
     @Published var exportOptions = ExportOptions()
     @Published var exportEstimate: ExportEstimate?
     @Published var estimating = false
+    @Published var showOCRBatchCorrection = false
     @Published var showOCRReview = false
     @Published var showPageInspection = false
     @Published var showProofreading = false
@@ -330,16 +331,19 @@ import UniformTypeIdentifiers
     var recoveryDelay: Double { min(15, max(0.7, lastSerializationSeconds * 6)) }
 
     func snapshot() throws -> ProjectArchive {
+        if let moveSnapshot { return moveSnapshot }
         let pdf = try pdfData()
         alignMeta()
         let reading = ReadingState(bookmarks: bookmarks, outline: outlineEntries, layout: readingLayout, point: readingPoint, scale: readingScale, bibliography: bibliography.isEmpty ? nil : bibliography)
-        return ProjectArchive(reading: reading, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: .document, recipes: [:], drafts: [:], dirty: dirty, projectPath: projectURL?.path)
+        return ProjectArchive(reading: reading, signatureEdits: signatureEditArchives, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: .document, recipes: [:], drafts: [:], dirty: dirty, projectPath: projectURL?.path)
     }
 
     func restore(_ archive: ProjectArchive, keepProjectURL: Bool = false) throws {
         try archive.validate()
         document = try PDFDocument(data: archive.pdf).unwrap("项目中的 PDF 无法读取")
-        cachedPDF = archive.pdf
+        restoreSignatureEdits(archive.signatureEdits ?? [:])
+        ReadingServices.applyOutline(archive.reading?.outline ?? ReadingServices.outline(document), to: document)
+        cachedPDF = nil
         bookmarks = archive.reading?.bookmarks ?? []
         outlineEntries = archive.reading?.outline ?? ReadingServices.outline(document)
         readingLayout = archive.reading?.layout ?? .continuous
@@ -884,6 +888,9 @@ import UniformTypeIdentifiers
                 outlineEntries = ReadingServices.outline(combined)
                 bibliography = ReadingServices.bibliography(from: combined)
                 document = combined
+                if loaded.count == 1, let bytes = data.first {
+                    restoreSignatureEdits(SignaturePersistence.read(pdf: urls[0], bytes: bytes, storage: storage))
+                } else { signatureLayers = [:] }
                 pageMeta = Array(repeating: PageMeta(), count: combined.pageCount)
                 title = urls.count == 1 ? urls[0].deletingPathExtension().lastPathComponent : "合并文档"
                 selection = 0
@@ -945,6 +952,7 @@ import UniformTypeIdentifiers
     /// Rebuilds the document in a new page order. All per-page state follows through one remap.
     func rebuild(order: [Int], selected: Set<Int>) {
         alignMeta()
+        let oldSignatures = signatureEditArchives
         let oldMeta = pageMeta, oldBookmarks = bookmarks, oldOutline = outlineEntries
         bookmarks = []
         outlineEntries = []
@@ -955,6 +963,9 @@ import UniformTypeIdentifiers
         readingPoint = nil
         navigationToken = UUID()
         document = DocumentServices.subset(document, indexes: order)
+        var remappedSignatures: [Int: SignatureEditArchive] = [:]
+        for (index, old) in order.enumerated() { remappedSignatures[index] = oldSignatures[old] }
+        restoreSignatureEdits(remappedSignatures)
         pageMeta = order.map { oldMeta.indices.contains($0) ? oldMeta[$0] : PageMeta() }
         ReadingServices.applyOutline(outlineEntries, to: document)
         selectedPages = selected
@@ -1101,6 +1112,7 @@ import UniformTypeIdentifiers
         case .merge: open(insert: count > 0)
         case .compress: compress()
         case .ocr: ocr()
+        case .ocrCorrection: DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.showOCRBatchCorrection = true }
         case .sign:
             tool = .signature
             status = "在页面上拖动手写签名；可将当前页墨迹保存到签名库"
@@ -1113,6 +1125,7 @@ enum QuickTool: String, CaseIterable, Identifiable {
     case merge = "合并 PDF"
     case compress = "压缩 PDF"
     case ocr = "OCR 识别"
+    case ocrCorrection = "OCR 批量纠错"
     case sign = "手写签名"
     case compare = "对照阅读"
     var id: String { rawValue }
@@ -1121,6 +1134,7 @@ enum QuickTool: String, CaseIterable, Identifiable {
         case .merge: return "多选文件，按选择顺序插入页面"
         case .compress: return "重新编码图片，保留文字与目录"
         case .ocr: return "按所选语言识别并加入可搜索文本层"
+        case .ocrCorrection: return "预览错字命中，勾选后同步修正文字层"
         case .sign: return "在画布上手写签名"
         case .compare: return "双栏阅读，可同步翻页"
         }

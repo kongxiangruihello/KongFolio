@@ -18,6 +18,7 @@ struct TextEdit: Equatable {
         var text: String
         var path: String?
         var format: TextDocumentFormat? = nil
+        var layoutOptions: TextLayoutOptions? = nil
     }
 
     let id: UUID
@@ -25,6 +26,8 @@ struct TextEdit: Equatable {
     @Published var text: String { didSet { if text != oldValue { textChanged() } } }
     @Published var fileURL: URL?
     @Published var format: TextDocumentFormat = .markdown
+    @Published var layoutOptions = TextLayoutOptions.load() { didSet { layoutOptions.save(); refreshPreview() } }
+    @Published var previewMessage = ""
     @Published var dirty = false
     @Published var showPreview = true
     @Published var preview: PDFDocument?
@@ -57,8 +60,11 @@ struct TextEdit: Equatable {
     // MARK: Saving
 
     func write(to url: URL) throws {
-        try text.write(to: url, atomically: true, encoding: .utf8)
+        let prepared = try TextAssets.saving(text, format: format, oldBase: fileURL?.deletingLastPathComponent(), destination: url)
+        try prepared.write(to: url, atomically: true, encoding: .utf8)
         fileURL = url
+        text = prepared
+        refreshPreview()
         format = TextDocumentFormat.forURL(url)
         dirty = false
         removeBackup()
@@ -119,7 +125,7 @@ struct TextEdit: Equatable {
 
     func writeBackup() throws {
         try FileManager.default.createDirectory(at: backupURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL?.path, format: format)).write(to: backupURL, options: .atomic)
+        try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL?.path, format: format, layoutOptions: layoutOptions)).write(to: backupURL, options: .atomic)
     }
 
     func removeBackup() {
@@ -143,6 +149,7 @@ struct TextEdit: Equatable {
         return files.filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap { file -> MarkdownNote? in
             guard let backup = try? JSONDecoder().decode(Backup.self, from: Data(contentsOf: file)) else { return nil }
             let note = MarkdownNote(id: backup.id, text: backup.text, fileURL: backup.path.map { URL(fileURLWithPath: $0) }, dirty: true, storage: storage, format: backup.format)
+            if let options = backup.layoutOptions, options.valid { note.layoutOptions = options }
             note.status = "已恢复上次未保存的内容"
             return note
         }
@@ -162,9 +169,11 @@ struct TextEdit: Equatable {
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled else { return }
             guard let self else { return }
-            let data = try? self.renderDocument().dataRepresentation()
-            guard !Task.isCancelled else { return }
-            self.preview = data.flatMap { PDFDocument(data: $0) }
+            do {
+                let rendered = try self.renderDocument()
+                guard !Task.isCancelled else { return }
+                self.preview = rendered; self.previewMessage = ""
+            } catch { self.preview = nil; self.previewMessage = error.localizedDescription }
         }
     }
 

@@ -48,7 +48,7 @@ enum UndoEntry {
 
     var snapshotBytes: Int {
         guard case .snapshot(let archive) = self else { return 0 }
-        return archive.pdf.count + archive.recipes.values.reduce(0) { $0 + $1.originalPDF.count }
+        return archive.pdf.count + archive.recipes.values.reduce(0) { $0 + $1.originalPDF.count } + (archive.signatureEdits ?? [:]).values.reduce(0) { $0 + $1.base.count + $1.items.reduce(0) { $0 + $1.png.count } }
     }
     var isSnapshot: Bool { if case .snapshot = self { return true } else { return false } }
 }

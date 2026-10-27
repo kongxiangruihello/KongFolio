@@ -36,6 +36,7 @@ import UniformTypeIdentifiers
     let board: Board
     let batchQueue: BatchQueue
     let folderSearch: FolderSearchModel
+    @Published var pendingPageTransfer: PageTransferRequest?
     @Published var showTaskCenter = false
     @Published var showFolderSearch = false
     var showOCRTasksAfterSearch = false

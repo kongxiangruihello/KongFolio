@@ -96,8 +96,8 @@ enum SignatureStamp {
     }
 }
 
-/// A signature placed on a page, kept so it can be moved, resized or removed later in the same session.
-struct PlacedSignature: Identifiable {
+/// A placed signature, persisted with its editing source in projects and local PDF metadata.
+struct PlacedSignature: Identifiable, Codable {
     let id: UUID
     var png: Data
     /// In the coordinates of the page as it was before the signatures were drawn.
@@ -114,9 +114,10 @@ final class SignatureLayer {
     let rotation: Int
     var items: [PlacedSignature]
     var page: PDFPage
+    let shownBounds: CGRect
 
     init(base: Data, preserved: Bool, size: CGSize, rotation: Int, items: [PlacedSignature], page: PDFPage) {
-        self.base = base; self.preserved = preserved; self.size = size; self.rotation = rotation; self.items = items; self.page = page
+        self.base = base; self.preserved = preserved; self.size = size; self.rotation = rotation; self.items = items; self.page = page; self.shownBounds = page.bounds(for: .cropBox)
     }
 
     /// Where the signature appears on the page that is in the document.
@@ -235,7 +236,7 @@ extension Workspace {
 
     /// The movable signatures of a page that is in the document, if it still is the page they were drawn on.
     func signatureLayer(for page: PDFPage) -> SignatureLayer? {
-        guard let layer = signatureLayers[ObjectIdentifier(page)], layer.page === page, page.rotation == 0, document.index(for: page) != NSNotFound else { return nil }
+        guard let layer = signatureLayers[ObjectIdentifier(page)], layer.page === page, page.rotation == 0, page.bounds(for: .cropBox) == layer.shownBounds, document.index(for: page) != NSNotFound else { return nil }
         return layer
     }
 
@@ -279,7 +280,7 @@ extension Workspace {
 
     /// Redraws the page with exactly `items`, keeping the annotations that were added to it since.
     @discardableResult
-    private func rebake(_ layer: SignatureLayer, items: [PlacedSignature]) throws -> PDFPage {
+    func rebake(_ layer: SignatureLayer, items: [PlacedSignature]) throws -> PDFPage {
         let old = layer.page
         let index = document.index(for: old)
         guard index != NSNotFound, let basePage = PDFDocument(data: layer.base)?.page(at: 0) else { throw FolioError(message: "页面已变化，无法再移动这个签名。") }

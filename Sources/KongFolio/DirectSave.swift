@@ -4,7 +4,7 @@ import PDFKit
 extension Workspace {
     /// OCR source pages and reading metadata need a private recovery copy even when the PDF itself is saved.
     var hasPrivateReadingData: Bool {
-        !ocrOriginals.isEmpty || !ocrRegions.isEmpty || !bookmarks.isEmpty || !bibliography.isEmpty
+        !signatureEditArchives.isEmpty || !ocrOriginals.isEmpty || !ocrRegions.isEmpty || !bookmarks.isEmpty || !bibliography.isEmpty
     }
     func scheduleDirectSave() {
         directSaveTask?.cancel()
@@ -12,13 +12,13 @@ extension Workspace {
         directSaveTask = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: 1_200_000_000) } catch { return }
             guard let self, !Task.isCancelled, self.dirty else { return }
-            if self.busy || self.drawingInProgress { self.scheduleDirectSave(); return }
+            if self.busy || self.drawingInProgress || self.placingSignature != nil { self.scheduleDirectSave(); return }
             _ = self.saveDirectly(askForDestination: false)
         }
     }
     /// Existing documents save without confirmation. A new document asks for a destination only once.
     @discardableResult func saveDirectly(askForDestination: Bool = true) -> Bool {
-        guard !busy, count > 0 else { return false }
+        guard !busy, count > 0, placingSignature == nil else { return false }
         directSaveTask?.cancel()
         if projectURL != nil { return saveProject(background: false, automatic: !askForDestination) }
         let target: URL
@@ -32,6 +32,7 @@ extension Workspace {
             guard flushRecovery() else { return false }
             try DocumentHistory.protectExisting(target, storage: storage)
             try writePDFCopy(to: target)
+            try SignaturePersistence.write(signatureEditArchives, pdf: target, storage: storage)
             sourceURL = target; dirty = false
             remember([target]); scheduleRecovery()
             status = "已保存：\(target.lastPathComponent)"

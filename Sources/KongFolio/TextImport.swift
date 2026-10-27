@@ -35,11 +35,8 @@ enum TextImport {
     static func document(from url: URL) throws -> PDFDocument {
         let data = try Data(contentsOf: url)
         let text = try decode(data)
-        if htmlExtensions.contains(url.pathExtension.lowercased()) {
-            // HTML imports through the document editor, where AppKit can render it on the main thread.
-            throw FolioError(message: "请使用“编辑文本文件”打开 HTML，再导出 PDF。")
-        }
-        return try render(text, markdown: markdownExtensions.contains(url.pathExtension.lowercased()))
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FolioError(message: "文本文件是空的。") }
+        return try RichTextDocument(text, format: TextDocumentFormat.forURL(url), baseURL: url.deletingLastPathComponent()).pdf()
     }
 
     static func render(_ text: String, markdown isMarkdown: Bool) throws -> PDFDocument {

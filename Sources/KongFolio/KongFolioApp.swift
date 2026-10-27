@@ -45,6 +45,7 @@ import AppKit
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
             CommandMenu("任务与历史") {
+                Button("OCR 批量纠错…") { store.commandWorkspace?.showOCRBatchCorrection = true }.disabled((store.commandWorkspace?.count ?? 0) == 0 || store.commandWorkspace?.busy == true)
                 Button("跨文件全文搜索…") { store.showFolderSearch=true }.keyboardShortcut("f",modifiers:[.command,.shift])
                 Button("空白页与重复页检查…") { store.activeWorkspace?.showPageInspection = true }.disabled((store.activeWorkspace?.count ?? 0) == 0)
                 Button("任务中心与扫描配方…") { store.showTaskCenter = true }.keyboardShortcut("j", modifiers: [.command, .option])
