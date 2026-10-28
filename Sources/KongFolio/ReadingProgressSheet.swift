@@ -3,6 +3,7 @@ import SwiftUI
 /// How far through the book the reader is, chapter by chapter, and a way to carry on.
 struct ReadingProgressSheet: View {
     @ObservedObject var workspace: Workspace
+    @AppStorage(AppInterface.resumeReadingKey) private var resumeReading = true
 
     private var chapters: [ReadingProgress.Chapter] {
         ReadingProgress.chapters(outline: workspace.outlineEntries, visited: workspace.readingProgress.visited, pageCount: workspace.count)
@@ -50,7 +51,8 @@ struct ReadingProgressSheet: View {
                     .buttonStyle(.plain)
                 }
             }
-            Text("停留一会儿的页面才算读过；记录只保存在本机，按文件路径区分。").font(.caption).foregroundStyle(.secondary)
+            Toggle("打开书时回到上次读到的页", isOn: $resumeReading)
+            Text("停留一会儿的页面才算读过；记录只保存在本机，按文件路径区分。KongSeek 的“最近阅读”和文件清单的“阅读进度”读取这份记录。").font(.caption).foregroundStyle(.secondary)
         }
         .padding()
         .adaptiveSheet(width: 560, height: 520, minimumWidth: 360)

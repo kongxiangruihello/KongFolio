@@ -24,6 +24,14 @@ enum AppInterface {
     static let tooltipDelayKey = "NSInitialToolTipDelay"
     static let tooltipDelay = 150
 
+    /// Open a book at the page where it was last read (0.34); on unless turned off in 阅读进度.
+    static let resumeReadingKey = "KongFolio.resumeReading"
+    static var resumeReading: Bool {
+        // Tests open the same fixtures again and again and expect the first page.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil || NSClassFromString("XCTestCase") != nil { return false }
+        return UserDefaults.standard.object(forKey: resumeReadingKey) as? Bool ?? true
+    }
+
     /// Registered, not stored: a value the reader set themselves still wins.
     static func registerDefaults(in defaults: UserDefaults = .standard) {
         defaults.register(defaults: [tooltipDelayKey: tooltipDelay])
