@@ -12,7 +12,12 @@ struct ExportReviewIssue: Identifiable, Equatable {
     var page: Int? = nil
     var range: NSRange? = nil
     var tableID: UUID? = nil
-    var id: String { severity.rawValue + target.rawValue + String(page ?? -1) + String(range?.location ?? -1) + (tableID?.uuidString ?? "") + message }
+    var id: String {
+        let pageKey = String(page ?? -1)
+        let rangeKey = String(range?.location ?? -1)
+        let tableKey = tableID?.uuidString ?? ""
+        return [severity.rawValue, target.rawValue, pageKey, rangeKey, tableKey, message].joined(separator: "|")
+    }
 }
 enum ExportPreflight {
     static func fingerprint<T: Encodable>(_ value: T) throws -> String { let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]; return OCRPageCache.digest(try encoder.encode(value)) }
