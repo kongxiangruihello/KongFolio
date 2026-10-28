@@ -96,7 +96,7 @@ enum RecoveryCatalog {
             result.text = archive.title + " · 文档恢复副本"; digest = OCRPageCache.digest(archive.pdf)
         case .word:
             let archive = try JSONDecoder().decode(WordDraftArchive.self, from: Data(contentsOf: item.url))
-            result.text = (archive.options.editedText ?? [:]).sorted { $0.key < $1.key }.map { "—— 第 \($0.key + 1) 页 ——\n\($0.value)" }.joined(separator: "\n\n"); digest = archive.digest; result.payload = .word(result.text)
+            result.text = archive.options.draftText; digest = archive.digest; result.payload = .word(result.text)
         case .table:
             let draft = try TableDraftStore.read(item.url); tableDraft = draft; result.payload = .table(draft, nil); result.text = "第 \(draft.page + 1) 页起 · \(draft.rows.count) 行 × \(draft.columns) 列\n\n" + ExtractedTable(rows: draft.rows).markdown; digest = draft.sourceDigest
         case .conflictText, .note:

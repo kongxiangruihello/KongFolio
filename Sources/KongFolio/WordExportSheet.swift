@@ -26,10 +26,11 @@ struct WordExportSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("导出为 Word（.docx）").font(.title2.bold())
-            if !(workspace.wordOptions.editedText ?? [:]).isEmpty {
+            if workspace.wordOptions.hasDraft {
                 Text(workspace.wordOptions.editedFromRevision == workspace.revision ? "修改草稿已自动保留，重新打开可继续。" : "原文已变化，草稿已保留。请先拷贝核对，再清除旧稿并更新预览。").font(.caption).foregroundStyle(.secondary)
                 PanelRow {
                     Button("拷贝全部修改草稿") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(workspace.wordDraftText, forType: .string) }
+                    Button("清除当前页修改") { workspace.clearWordDraft(page: workspace.selection); inspect() }.disabled(!workspace.wordOptions.draftPages.contains(workspace.selection))
                     Button("清除修改草稿") { workspace.clearWordDraft(); inspect() }
                 }
             }
@@ -72,8 +73,18 @@ struct WordExportSheet: View {
             }
             if preview.indices.contains(previewIndex) {
                 Text("文字整理预览 · 第 \(preview[previewIndex].index + 1) 页").font(.caption.bold())
-                Toggle("导出前修改本页正文", isOn: $editText).disabled(preparing || workspace.wordOptions.content == .imagesOnly || preview[previewIndex].blocks != nil)
-                if editText && preview[previewIndex].blocks == nil {
+                Toggle("导出前修改本页正文和表格", isOn: $editText).disabled(preparing || workspace.wordOptions.content == .imagesOnly)
+                if editText, let base = preview[previewIndex].blocks {
+                    let index = preview[previewIndex].index
+                    WordMixedEditor(blocks: workspace.wordOptions.editedBlocks?[index] ?? base) { block, row, column, text in
+                        do {
+                            guard previewRevision == workspace.revision else { throw FolioError(message: "PDF 已变化，请重新更新预览") }
+                            let changed = try WordMixedDraft.replacing(workspace.wordOptions.editedBlocks?[index] ?? base, block: block, row: row, column: column, text: text)
+                            try workspace.setWordBlocks(changed, base: base, page: index)
+                        } catch { previewMessage = error.localizedDescription }
+                    }.frame(height: 240).border(.secondary.opacity(0.3))
+                    Text("正文和单元格修改自动保留，仅影响 Word 导出。表格结构调整请回到表格工具。").font(.caption).foregroundStyle(.secondary)
+                } else if editText {
                     TextEditor(text: Binding(get: {
                         let page = preview[previewIndex]
                         return workspace.wordOptions.editedText?[page.index] ?? page.paragraphs.map(\.text).joined(separator: "\n\n")
@@ -85,11 +96,11 @@ struct WordExportSheet: View {
                     })).font(.body).frame(height: 200).border(.secondary.opacity(0.3))
                     Text("仅修改 Word 导出的文字，草稿自动保留，原 PDF 保留。段落之间留空行；已修改页采用手动文字，其他页继续应用整理规则。").font(.caption).foregroundStyle(.secondary)
                 } else {
-                    WordBlocksPreview(blocks: preview[previewIndex].blocks ?? shownParagraphs.map(WordPreparedBlock.paragraph)).frame(height: 220).border(.secondary.opacity(0.3))
+                    WordBlocksPreview(blocks: workspace.wordOptions.editedBlocks?[preview[previewIndex].index] ?? preview[previewIndex].blocks ?? shownParagraphs.map(WordPreparedBlock.paragraph)).frame(height: 220).border(.secondary.opacity(0.3))
                 }
-                if !(workspace.wordOptions.editedText ?? [:]).isEmpty {
+                if workspace.wordOptions.hasDraft {
                     PanelRow {
-                        Text("已修改 \(workspace.wordOptions.editedText?.count ?? 0) 页").font(.caption)
+                        Text("已修改 \(workspace.wordOptions.draftPages.count) 页").font(.caption)
                         Button("恢复本页整理结果") { workspace.clearWordDraft(page: preview[previewIndex].index); inspect() }
                         Button("清除本次文字修改") { workspace.clearWordDraft(); inspect() }
                     }
@@ -129,42 +140,11 @@ struct WordExportSheet: View {
                 let result = try await withTaskCancellationHandler(operation: { try await job.value }, onCancel: { job.cancel() })
                 try Task.checkCancellation()
                 guard sourceRevision == workspace.revision else { preparing = false; previewMessage = "PDF 已变化，请重新更新预览"; return }
-                previewRevision = sourceRevision; preview = result.pages; candidates = result.candidates; previewIndex = 0
+                previewRevision = sourceRevision; preview = result.pages; candidates = result.candidates; previewIndex = result.pages.firstIndex(where: { $0.index == workspace.pendingWordPreviewPage }) ?? 0; workspace.pendingWordPreviewPage = nil
                 previewMessage = "预览与导出使用同一套整理规则。修改选项后请更新预览；原 PDF 不变。"
             } catch is CancellationError {} catch { previewMessage = error.localizedDescription }
             preparing = false
         }
     }
 
-}
-
-extension Workspace {
-    func openWordExport() {
-        guard count > 0 else { return }
-        showWordExport = true
-    }
-
-    func startWordExport() {
-        guard count > 0, !busy, checkDraftsForExport(), let data = try? pdfData() else { return }
-        if wordOptions.content != .imagesOnly {
-            do { try validateWordDraft() } catch { self.error = error.localizedDescription; return }
-        }
-        let exportOptionsWithTables: WordExportOptions
-        do { exportOptionsWithTables = try wordOptionsWithTables() } catch { self.error = error.localizedDescription; showWordExport = true; return }
-        let pages = wordScope == .all ? Array(0..<count) : effectivePages
-        if wordOptions.content != .imagesOnly {
-            let hasTables = exportOptionsWithTables.tables?.contains(where: { table in table.regions.contains(where: { pages.contains($0.page) }) }) == true
-            let hasText = hasTables || pages.contains { index in document.page(at: index).map { BackgroundJobs.textCharacterCount($0) > 0 } ?? false }
-            if !hasText {
-                if wordOptions.content == .textOnly { error = "这些页面没有文字，请先运行 OCR。"; return }
-                guard confirm("这些页面没有文字层", "只会导出页面图片。需要文字的话，请先运行 OCR 再导出。", action: "只导出图片") else { return }
-            }
-        }
-        showWordExport = false
-        var exportOptions = exportOptionsWithTables
-        exportOptions.replacements = applyReplacements ? ReplacementRules.parse(replacementText) : []
-        guard let destination = saveURL(type: UTType(filenameExtension: "docx") ?? .data, suffix: "docx") else { return }
-        runJob(JobSpec(operation: .word, source: data, pages: pages, destination: destination, revision: revision, word: exportOptions, outline: outlineEntries,
-                         regions: Dictionary(uniqueKeysWithValues: pages.compactMap { index in meta(index).ocrRegions.map { (index, $0) } })))
-    }
 }

@@ -17,7 +17,8 @@ extension MarkdownNote {
         let document = try renderDocument()
         try document.dataRepresentation().unwrap("PDF 生成失败").write(to: url, options: .atomic)
     }
-    func exportWord() {
+    func exportWord(reviewed: Bool = false) {
+        if !reviewed, store != nil { do { try reviewExport(.word) { [weak self] in self?.exportWord(reviewed:true) } } catch { self.error=error.localizedDescription }; return }
         let panel = NSSavePanel(); panel.allowedContentTypes = [UTType(filenameExtension: "docx") ?? .data]
         panel.nameFieldStringValue = title + ".docx"
         guard panel.runModal() == .OK, let url = panel.url else { return }

@@ -12,6 +12,8 @@ struct TableExtractionSheet: View {
     @State private var regionMode = false
     @State private var chosenRow = 0
     @State private var chosenColumn = 0
+    @State private var endRow = 0
+    @State private var endColumn = 0
     init(workspace: Workspace) { self.workspace = workspace; _model = StateObject(wrappedValue: TableEditorModel(storage: workspace.storage)) }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -50,6 +52,21 @@ struct TableExtractionSheet: View {
                     Button("右侧插入列") { structure(.insertColumn(min(chosenColumn + 1, draft.columns))) }
                     Button("删除列") { structure(.deleteColumn(chosenColumn)) }
                 }.disabled(model.working)
+                DisclosureGroup("合并、拆分与批量粘贴") {
+                    Text("从当前选中的行、列开始，到下方指定的末行末列；合并后文字集中在左上角，撤销可恢复原格。拆分后文字保留在首格。").font(.caption).foregroundStyle(.secondary)
+                    PanelRow {
+                        Picker("末行", selection: $endRow) { ForEach(draft.rows.indices, id: \.self) { Text("\($0+1)").tag($0) } }.frame(width: 110)
+                        Picker("末列", selection: $endColumn) { ForEach(0..<draft.columns, id: \.self) { Text("\($0+1)").tag($0) } }.frame(width: 110)
+                        Button("合并选区") { model.edit { value in try TableStructure.merge(TableCellSpan(row: min(chosenRow,endRow), column: min(chosenColumn,endColumn), rows: abs(endRow-chosenRow)+1, columns: abs(endColumn-chosenColumn)+1), draft: &value) } }
+                        Button("拆分当前格") { model.edit { TableStructure.split(row: chosenRow, column: chosenColumn, draft: &$0) } }
+                        Button("从 Excel 粘贴多格") { if let text = NSPasteboard.general.string(forType: .string) { model.edit { try TableStructure.paste(text, row: chosenRow, column: chosenColumn, draft: &$0) } } }
+                    }
+                }
+                if draft.regions.count > 1 {
+                    DisclosureGroup("并排核对来源页") {
+                        if let data = try? workspace.pdfData() { TableSourcesPreview(source: data, regions: draft.regions) }
+                    }
+                }
                 DisclosureGroup("合并连续页面的表格") {
                     TextField("页码，例如 3-5（从当前表格页开始）", text: $pageRange).textFieldStyle(.roundedBorder)
                     Toggle("移除后续页与首行完全相同的重复表头", isOn: $removeHeaders)
@@ -66,6 +83,7 @@ struct TableExtractionSheet: View {
                 Button("关闭") { model.cancel(); workspace.showTableExtraction = false }.keyboardShortcut(.cancelAction)
                 Button("导出 Word 表格…") { export("docx") }.disabled(!canExport)
                 Button("导出 Markdown…") { export("md") }.disabled(!canExport)
+                Button("导出 Excel…") { export("xlsx") }.disabled(!canExport)
                 Button("导出 CSV…") { export("csv") }.disabled(!canExport)
             }
         }.padding(24).adaptiveSheet(width: 800, height: 880, minimumWidth: 360, flexibleHeight: true)
@@ -77,7 +95,10 @@ struct TableExtractionSheet: View {
     }
     private var canExport: Bool { !model.working && model.draft?.rows.isEmpty == false && model.draft?.needsRegeneration == false }
     private func cells(_ draft: TableDraftRecord) -> some View {
-        ScrollView([.horizontal, .vertical]) {
+        Group {
+            if !(draft.spans ?? []).isEmpty {
+                WordMixedEditor(blocks: [.spanningTable(rows: draft.rows, spans: draft.spans ?? [])]) { _, r, c, text in if let r, let c { chosenRow = r; chosenColumn = c; model.setCell(row: r, column: c, text: text) } }
+            } else { ScrollView([.horizontal, .vertical]) {
             LazyVStack(alignment: .leading, spacing: 4) {
                 ForEach(draft.rows.indices, id: \.self) { r in
                     HStack(alignment: .top, spacing: 4) {
@@ -89,7 +110,7 @@ struct TableExtractionSheet: View {
                     }
                 }
             }.padding(4)
-        }.frame(height: 180).disabled(model.working)
+        } } }.frame(height: 180).disabled(model.working)
     }
     private func load() {
         model.changed = { [weak workspace] in workspace?.updateTableDraft($0) }
@@ -114,7 +135,7 @@ struct TableExtractionSheet: View {
         do { grid.x = try TableExtraction.boundaries(columns, region: grid.region.minX...grid.region.maxX); grid.y = try TableExtraction.boundaries(rows, region: grid.region.minY...grid.region.maxY); model.changeGrid(grid) }
         catch { model.message = error.localizedDescription }
     }
-    private func structure(_ action: TableCellEdit) { model.edit { $0.rows = try action.applying(to: $0.rows) } }
+    private func structure(_ action: TableCellEdit) { model.edit { try TableStructure.structure(action, draft: &$0) } }
     private func merge() {
         guard let pages = PageSpan.parse(pageRange, pageCount: workspace.count), !pageRange.isEmpty else { model.message = "请填写连续页码"; return }
         guard let draft = model.draft, let store = workspace.store else { return }
@@ -122,20 +143,10 @@ struct TableExtractionSheet: View {
         catch { model.message = error.localizedDescription }
     }
     private func export(_ suffix: String) {
-        guard let draft = model.draft, let queue = workspace.store?.documentTasks,
-              let destination = workspace.saveURL(type: UTType(filenameExtension: suffix) ?? .data, suffix: suffix, name: workspace.title + "-表格") else { return }
-        do {
-            let expected = try FileBaseline.capture(destination), table = ExtractedTable(rows: draft.rows)
-            try queue.start("导出表格 · \(workspace.displayName)") { progress in
-                try DocumentTaskOutput.write(to: destination, expected: expected) { staging in
-                    if suffix == "docx" { try table.writeWord(to: staging) }
-                    else { try (suffix == "csv" ? table.csv : table.markdown).write(to: staging, atomically: true, encoding: .utf8) }
-                    progress(1)
-                }
-                return DocumentTaskResult(message: "表格已导出", file: destination)
-            }
-            workspace.showTableExtraction = false
-        } catch { model.message = error.localizedDescription }
+        guard let draft = model.draft else { return }
+        do { try workspace.reviewTableExport(draft, suffix: suffix) }
+        catch { model.message = error.localizedDescription }
+
     }
 }
 

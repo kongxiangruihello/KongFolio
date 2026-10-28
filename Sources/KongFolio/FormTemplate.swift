@@ -44,23 +44,6 @@ enum FormTemplateStore {
 }
 extension Workspace {
     func applyFormTemplate(_ template: FormTemplate, page index: Int, from expectedRevision: UUID) throws {
-        guard !busy, revision == expectedRevision, let page = document.page(at: index) else { throw FolioError(message: "文档已变化，请重新打开模板面板") }
-        try template.validate(for: page)
-        guard !template.fields.isEmpty else { throw FolioError(message: "请先框选添加字段") }
-        let names = Set(PDFForms.fields(document).map(\.name))
-        let annotations = try template.fields.map { field -> PDFAnnotation in
-            let fullName = (template.name + " / " + field.name).replacingOccurrences(of: ".", with: "．")
-            guard !names.contains(fullName) else { throw FolioError(message: "文档中已有同名模板字段，请直接填写，或更换模板和字段名称") }
-            let fraction = CGRect(x: field.rect.minX, y: 1 - field.rect.maxY, width: field.rect.width, height: field.rect.height)
-            let rect = OrderedText.pageRect(forFraction: fraction, cropBox: page.bounds(for: .cropBox), rotation: page.rotation)
-            let annotation = PDFAnnotation(bounds: rect, forType: .widget, withProperties: nil)
-            let border = PDFBorder(); border.lineWidth = 0.6; annotation.border = border; annotation.color = .darkGray
-            if field.kind == .text { annotation.widgetFieldType = .text; annotation.font = .systemFont(ofSize: min(14, max(8, rect.height * 0.55))); annotation.fontColor = .black; annotation.widgetStringValue = "" }
-            else { annotation.widgetFieldType = .button; annotation.widgetControlType = .checkBoxControl; annotation.buttonWidgetStateString = "Yes"; annotation.buttonWidgetState = .offState }
-            annotation.fieldName = fullName
-            return annotation
-        }
-        checkpoint(); annotations.forEach(page.addAnnotation); edited(pages: [index]); pdfView?.needsDisplay = true
-        status = "已添加 \(annotations.count) 个可填写字段；可在表单面板中填写并保存"
+        try applyTemplate(template, pages: [index], revision: expectedRevision, pageNames: false)
     }
 }

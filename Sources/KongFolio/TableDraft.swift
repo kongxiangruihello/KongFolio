@@ -35,12 +35,14 @@ struct TableDraftRecord: Codable, Equatable, Identifiable {
     var grid = TableGrid()
     var rows: [[String]] = []
     var sourceRegions: [TableSourceRegion] = []
+    var spans: [TableCellSpan]? = nil
     var needsRegeneration = false
     var includeInWord = false
     var modified = Date()
     var columns: Int { rows.first?.count ?? 0 }
     func validate() throws {
         try grid.validate()
+        try TableStructure.validate(rows: rows, spans: spans ?? [])
         guard page >= 0, sourceDigest.count == 64, !identity.isEmpty, rows.count <= 2000,
               columns <= 100, rows.count * columns <= 2000,
               rows.allSatisfy({ $0.count == columns }), rows.isEmpty || columns > 0,
@@ -187,7 +189,7 @@ enum TableCellEdit {
     func generate() {
         guard !stale, let current = draft else { return }
         run("正在生成单元格…") { [pieces] in try TableExtraction.extract(pieces, x: current.grid.x, y: current.grid.y).rows } apply: { [weak self] rows in
-            self?.edit { $0.rows = rows; $0.needsRegeneration = false; $0.sourceRegions = [TableSourceRegion(page: $0.page, rect: $0.grid.region)]; $0.includeInWord = false }
+            self?.edit { $0.rows = rows; $0.spans = nil; $0.needsRegeneration = false; $0.sourceRegions = [TableSourceRegion(page: $0.page, rect: $0.grid.region)]; $0.includeInWord = false }
             self?.message = "单元格已生成并自动保存，可修改、插入或删除行列"
         }
     }
@@ -211,7 +213,7 @@ enum TableMerge {
         }
         guard rows.count * header.count <= 2000 else { throw FolioError(message: "合并后超过 2000 个单元格，请分段整理") }; return rows
     }
-    static func extract(data: Data, current: TableDraftRecord, pages: [Int], removeHeaders: Bool, languages: [String], progress: (Double) -> Void = { _ in }) throws -> TableMergeResult {
+    static func extract(data: Data, current: TableDraftRecord, pages: [Int], removeHeaders: Bool, languages: [String], cache: URL? = nil, progress: (Double) -> Void = { _ in }) throws -> TableMergeResult {
         let sorted = pages.sorted()
         guard sorted.count >= 2, sorted.count <= 100, sorted.first == current.page, Set(sorted).count == sorted.count,
               zip(sorted, sorted.dropFirst()).allSatisfy({ $1 == $0 + 1 }) else { throw FolioError(message: "请选择从当前页开始的连续页面，最多 100 页") }
@@ -222,6 +224,13 @@ enum TableMerge {
         let remaining = Array(sorted.dropFirst(existing.count))
         for (offset, index) in remaining.enumerated() {
             try Task.checkCancellation()
+            let checkpoint = cache?.appendingPathComponent("table-\(index).json")
+            if let checkpoint, FileManager.default.fileExists(atPath: checkpoint.path) {
+                let rows = try JSONDecoder().decode([[String]].self, from: Data(contentsOf: checkpoint))
+                guard !rows.isEmpty, rows.allSatisfy({ $0.count == current.columns }), rows.count * current.columns <= 2000 else { throw FolioError(message: "表格检查点无效") }
+                fragments.append(rows); regions.append(TableSourceRegion(page: index, rect: current.grid.region))
+                progress(Double(offset + 1) / Double(max(remaining.count,1))); continue
+            }
             try autoreleasepool {
                 let page = try document.page(at: index).unwrap("合并页码超出文档范围")
                 let image = try DocumentServices.render(page, maxDimension: 1800)
@@ -233,6 +242,7 @@ enum TableMerge {
                 while extracted.first?.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) == true { extracted.removeFirst() }
                 while extracted.last?.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) == true { extracted.removeLast() }
                 guard !extracted.isEmpty else { throw FolioError(message: "第 \(index + 1) 页框选范围没有可提取内容，请调整范围或单独识别") }
+                if let checkpoint { try JSONEncoder().encode(extracted).write(to: checkpoint, options: .atomic) }
                 fragments.append(extracted)
                 regions.append(TableSourceRegion(page: index, rect: current.grid.region))
             }
@@ -284,13 +294,10 @@ extension Workspace {
             let absent = try FileBaseline.capture(destination)
             expected = try absent.writing(destination) { _ in try TableDraftStore.write(draft, storage: storage) }
         }
-        try queue.start("跨页表格合并 · \(displayName)", completion: { [weak self] _ in
+        var spec = PersistentDocumentTask(kind: .merge, destination: destination, expected: expected, sourceBaseline: fileBaseline)
+        spec.pages = pages; spec.draft = draft; spec.removeHeaders = removeHeaders; spec.languages = languages
+        try queue.startPersistent("跨页表格合并 · \(displayName)", source: data, spec: spec, completion: { [weak self] _ in
             if let self, let updated = try? TableDraftStore.read(destination) { self.updateTableDraft(updated) }
-        }) { progress in
-            let result = try TableMerge.extract(data: data, current: draft, pages: pages, removeHeaders: removeHeaders, languages: languages, progress: progress)
-            var updated = draft; updated.rows = result.rows; updated.sourceRegions = result.regions; updated.includeInWord = false; updated.modified = Date(); try updated.validate()
-            try DocumentTaskOutput.write(to: destination, expected: expected) { try JSONEncoder().encode(updated).write(to: $0) }
-            return DocumentTaskResult(message: "已合并 \(result.regions.count) 页，请打开草稿核对后加入 Word", file: destination)
-        }
+        })
     }
 }

@@ -75,6 +75,7 @@ import UniformTypeIdentifiers
     @Published var annotationColor = Color.blue { didSet { rememberDrawingStyle() } }
     @Published var showCompress = false
     @Published var showCrop = false
+    var pendingWordPreviewPage: Int?
     @Published var showWordExport = false
     @Published var showBatch = false
     @Published var showVersionHistory = false
@@ -663,7 +664,7 @@ import UniformTypeIdentifiers
         try? persistWordDraft()
         try? persistTableDrafts()
         tableDrafts = []; pendingTableDraftID = nil
-        wordOptions.editedText = nil; wordOptions.editedFromRevision = nil; wordDraftDigest = nil
+        wordOptions.editedBlocks = nil; wordOptions.blockBaselines = nil; wordOptions.editedSourceDigest = nil; wordOptions.editedText = nil; wordOptions.editedFromRevision = nil; wordDraftDigest = nil
         saveConflict = false; fileBaseline = nil
         directSaveTask?.cancel()
         searchTask?.cancel(); estimateTask?.cancel()
@@ -946,7 +947,7 @@ import UniformTypeIdentifiers
             // an editable copy of it). Without this every opened document counted as unsaved work and closing it asked
             // whether to save.
             if !insert {
-                wordOptions.editedText = nil; wordOptions.editedFromRevision = nil; wordDraftDigest = nil
+                wordOptions.editedBlocks = nil; wordOptions.blockBaselines = nil; wordOptions.editedSourceDigest = nil; wordOptions.editedText = nil; wordOptions.editedFromRevision = nil; wordDraftDigest = nil
                 if loaded.count == 1 {
                     dirty = false
                     fileBaseline = try FileBaseline.capture(urls[0], data: urls[0].pathExtension.lowercased() == "pdf" ? data[0] : nil)

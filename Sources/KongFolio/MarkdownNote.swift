@@ -24,6 +24,7 @@ struct TextEdit: Equatable {
     }
 
     let id: UUID
+    weak var store: WorkspaceStore?
     let storage: URL
     @Published var text: String { didSet { if text != oldValue { textChanged() } } }
     @Published var fileURL: URL?
@@ -124,7 +125,8 @@ struct TextEdit: Equatable {
         }
     }
 
-    func exportPDF() {
+    func exportPDF(reviewed: Bool = false) {
+        if !reviewed, store != nil { do { try reviewExport(.pdf) { [weak self] in self?.exportPDF(reviewed:true) } } catch { self.error=error.localizedDescription }; return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = title + ".pdf"
