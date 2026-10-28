@@ -193,4 +193,29 @@ final class Release036Tests: XCTestCase {
         XCTAssertEqual(opened.selection,1);XCTAssertEqual(opened.readingScale,1.2);XCTAssertEqual(opened.readingLayout,.twoUp)
     }
 
+    @MainActor func testFinderColdLaunchQueuesShortcutUntilWorkspaceExists() async throws {
+        let root=try folder();defer{try? FileManager.default.removeItem(at:root)};let file=try book(root),shortcut=root.appendingPathComponent("book.kongfoliolink")
+        try ReadingShortcut(path:file.path,title:"book",mode:.fixed,position:ViewPosition(selection:2,x:8,y:180,scale:1.4),layout:.single).write(to:shortcut)
+        let router=ExternalDocumentRouter();router.receive([shortcut])
+        let store=WorkspaceStore(storage:root,readingDefaults:defaults());router.attach(store);let opened=try XCTUnwrap(store.activeWorkspace);try await wait(opened)
+        XCTAssertEqual(opened.selection,2);XCTAssertEqual(opened.readingLayout,.single);XCTAssertEqual(opened.readingScale,1.4);XCTAssertTrue(router.errors.isEmpty)
+    }
+    @MainActor func testDelegateAndSwiftUIURLDeliveryDoNotOpenDuplicateTabs() async throws {
+        let root=try folder();defer{try? FileManager.default.removeItem(at:root)};let file=try book(root),store=WorkspaceStore(storage:root,readingDefaults:defaults()),router=ExternalDocumentRouter(),time=Date()
+        router.attach(store);router.receive([file],now:time);router.receive([file],now:time.addingTimeInterval(0.1))
+        let opened=try XCTUnwrap(store.activeWorkspace);try await wait(opened);XCTAssertEqual(store.tabs.count,1)
+    }
+    @MainActor func testMalformedExternalLinkReportsErrorAndDoesNotReplaceBook() throws {
+        let root=try folder();defer{try? FileManager.default.removeItem(at:root)};let file=try book(root),store=WorkspaceStore(storage:root,readingDefaults:defaults()),w=store.addWorkspace(),router=ExternalDocumentRouter()
+        w.document=PDFDocument(url:file)!;w.sourceURL=file;w.selection=2;router.attach(store)
+        router.receive([URL(string:"kongfolio://reading?ref=invalid")!]);XCTAssertEqual(router.errors.count,1);XCTAssertEqual(w.selection,2);XCTAssertEqual(store.tabs.count,1)
+    }
+    @MainActor func testBookmarkCanonicalPathReusesOriginalTabThroughSymbolicAlias() throws {
+        let root=try folder();defer{try? FileManager.default.removeItem(at:root)};let file=try book(root),alias=root.appendingPathComponent("alias.pdf"),store=WorkspaceStore(storage:root,readingDefaults:defaults()),w=store.addWorkspace()
+        try FileManager.default.createSymbolicLink(at:alias,withDestinationURL:file)
+        w.document=PDFDocument(url:file)!;w.sourceURL=alias;w.selection=1
+        let shortcut=ReadingShortcut(path:file.path,title:"book",mode:.fixed,position:ViewPosition(selection:2))
+        let opened=try store.openReadingShortcut(shortcut);XCTAssertEqual(opened.id,w.id);XCTAssertEqual(store.tabs.count,1);XCTAssertEqual(w.selection,2)
+    }
+
 }

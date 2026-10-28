@@ -14,7 +14,7 @@ extension Workspace {
     /// True when this tab shows the file at `path` (a project, or the file the document was opened from).
     func matches(path: String) -> Bool {
         guard let url = projectURL ?? sourceURL else { return false }
-        return url.standardizedFileURL.path == URL(fileURLWithPath: path).standardizedFileURL.path
+        return ReadingProgress.canonicalPath(url.path) == ReadingProgress.canonicalPath(path)
     }
 
     private var sourcePath: String { (projectURL ?? sourceURL)?.path ?? "" }

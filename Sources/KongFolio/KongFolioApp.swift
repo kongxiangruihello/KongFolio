@@ -19,17 +19,7 @@ import AppKit
                 .frame(minWidth: 380, minHeight: 300)
                 .background(WindowAccessor { window in delegate.attach(window) })
                 .onAppear { delegate.store = store; store.bootstrap() }
-                .onOpenURL { url in
-                    if ReadingShortcut.handles(url) {
-                        do { try store.openReadingShortcut(url) } catch { store.present(error) }
-                    }
-                    else if let source = SourceLink.source(url) {
-                        do { store.reveal(try SourceLink.resolved(source, baseURL: store.activeNote?.fileURL?.deletingLastPathComponent()), beside: false) }
-                        catch { store.present(error) }
-                    }
-                    else if TextImport.handles(url) { store.openNote(url) }
-                    else { store.openInNewTab([url]) }
-                }
+                .onOpenURL { url in delegate.externalDocuments.receive([url]) }
         }
         // The window can be dragged to any size, from a narrow reading strip to a full screen.
         .windowResizability(.contentMinSize)
@@ -178,9 +168,16 @@ struct WindowAccessor: NSViewRepresentable {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    weak var store: WorkspaceStore?
+    let externalDocuments = ExternalDocumentRouter()
+    weak var store: WorkspaceStore? { didSet { if let store { externalDocuments.attach(store) } } }
     private weak var window: NSWindow?
     private var closingApproved = false
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        externalDocuments.receive(urls)
+        window?.makeKeyAndOrderFront(nil)
+        application.activate(ignoringOtherApps: true)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
