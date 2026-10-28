@@ -49,6 +49,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showOCRReview) { OCRReview(workspace: workspace) }
         .sheet(isPresented: $workspace.showProofreading) { ColumnProofView(workspace: workspace) }
         .sheet(isPresented: $workspace.showOutlineEditor) { OutlineEditorView(workspace: workspace) }
+        .sheet(isPresented: $workspace.showReadingShortcut) { ReadingShortcutSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showProgress) { ReadingProgressSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showTools) { quickTools }
         .sheet(isPresented: $workspace.showImportOrder) { importOrder }
@@ -173,6 +174,7 @@ struct ContentView: View {
                     .onHover { workspace.showPathHint($0) }
                     .contextMenu {
                         if workspace.displayPath != nil {
+                            Button("保存阅读快捷方式…") { workspace.showReadingShortcut = true }.disabled(!workspace.canCreateReadingShortcut)
                             Button("拷贝完整路径") { workspace.copyPath() }
                             Button("在访达中显示") { workspace.revealInFinder() }
                         }

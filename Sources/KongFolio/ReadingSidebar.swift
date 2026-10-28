@@ -34,6 +34,7 @@ struct ReadingSidebar: View {
                     Picker("级别", selection: $outlineDepth) { ForEach(0..<4) { Text("第 \($0 + 1) 级").tag($0) } }.labelsHidden().frame(width: 90)
                     Button("把当前页加入目录", action: addOutline).disabled(workspace.count == 0)
                 }
+                Button("阅读快捷方式…") { workspace.showReadingShortcut = true }.disabled(!workspace.canCreateReadingShortcut)
                 Button("阅读进度…") { workspace.refreshProgress(); workspace.showProgress = true }.disabled(workspace.count == 0)
                 HStack {
                     Button("编辑目录文本…") { workspace.showOutlineText = true }

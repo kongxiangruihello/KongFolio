@@ -8,6 +8,12 @@ struct ReadingProgress: Equatable {
     var date: Date? = nil
     /// Pages in the document at that time (0.34), for “读到第 N 页 / 共 M 页” in KongSeek.
     var pages = 0
+    var x: Double? = nil
+    var y: Double? = nil
+    var scale: Double? = nil
+    var layout: ReadingLayout? = nil
+    var title: String? = nil
+    var bookmark: Data? = nil
 
     struct Chapter: Equatable {
         var title: String
@@ -71,11 +77,15 @@ struct ReadingProgress: Equatable {
     }
 
     private static func key(_ path: String) -> String { "KongFolio.progress." + path }
+    static func canonicalPath(_ path: String) -> String { URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path }
 
     static func load(path: String, defaults: UserDefaults = .standard) -> ReadingProgress {
-        guard let stored = defaults.dictionary(forKey: key(path)) else { return ReadingProgress() }
+        guard let stored = defaults.dictionary(forKey: key(path)) ?? defaults.dictionary(forKey: key(canonicalPath(path))) else { return ReadingProgress() }
         return ReadingProgress(visited: decode(stored["visited"] as? String ?? ""), last: stored["last"] as? Int ?? 0,
-                               date: (stored["date"] as? Double).map { Date(timeIntervalSince1970: $0) }, pages: stored["pages"] as? Int ?? 0)
+                               date: (stored["date"] as? Double).map { Date(timeIntervalSince1970: $0) }, pages: stored["pages"] as? Int ?? 0,
+                               x: finite(stored["x"] as? Double), y: finite(stored["y"] as? Double),
+                               scale: validScale(stored["scale"] as? Double),
+                               layout: (stored["layout"] as? String).flatMap(ReadingLayout.init(rawValue:)), title: stored["title"] as? String, bookmark: stored["bookmark"] as? Data)
     }
 
     /// Stored as a plain dictionary under "KongFolio.progress.<path>" in KongFolio's preferences; KongSeek reads
@@ -84,7 +94,14 @@ struct ReadingProgress: Equatable {
         var stored: [String: Any] = ["visited": Self.encode(visited), "last": last]
         if let date { stored["date"] = date.timeIntervalSince1970 }
         if pages > 0 { stored["pages"] = pages }
+        if let x = Self.finite(x), let y = Self.finite(y) { stored["x"] = x; stored["y"] = y }
+        if let scale = Self.validScale(scale) { stored["scale"] = scale }
+        if let layout { stored["layout"] = layout.rawValue }
+        if let title { stored["title"] = title }
+        if let bookmark { stored["bookmark"] = bookmark }
         defaults.set(stored, forKey: Self.key(path))
+        let canonical = Self.canonicalPath(path)
+        if canonical != path { defaults.set(stored, forKey: Self.key(canonical)) }
     }
 
     /// The page to reopen at: the last page read, when it is past the first page and still in the document.
@@ -92,36 +109,93 @@ struct ReadingProgress: Equatable {
         last > 0 && last < pageCount ? last : nil
     }
 
-    static func clear(path: String, defaults: UserDefaults = .standard) { defaults.removeObject(forKey: key(path)) }
+    static func finite(_ value: Double?) -> Double? { value.flatMap { $0.isFinite ? $0 : nil } }
+    static func validScale(_ value: Double?) -> Double? { value.flatMap { $0.isFinite && $0 > 0 && $0 <= 64 ? $0 : nil } }
+    func resumePosition(pageCount: Int) -> ViewPosition? {
+        guard pageCount > 0, last >= 0, last < pageCount, date != nil || !visited.isEmpty else { return nil }
+        return ViewPosition(selection: last, x: Self.finite(x), y: Self.finite(y), scale: Self.validScale(scale))
+    }
+    struct HistoryItem: Identifiable {
+        var path: String
+        var progress: ReadingProgress
+        var id: String { path }
+        var title: String { progress.title ?? URL(fileURLWithPath: path).lastPathComponent }
+    }
+    static func history(defaults: UserDefaults = .standard) -> [HistoryItem] {
+        let prefix = "KongFolio.progress."
+        let records: [HistoryItem] = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix(prefix + "/") }.compactMap { key -> HistoryItem? in
+            let path = String(key.dropFirst(prefix.count)), progress = load(path: path, defaults: defaults)
+            guard progress.last >= 0, progress.date != nil || !progress.visited.isEmpty else { return nil }
+            return HistoryItem(path: path, progress: progress)
+        }
+        var unique: [String: HistoryItem] = [:]
+        for record in records.sorted(by: { $0.path < $1.path }) {
+            let identity = canonicalPath(record.path)
+            if let old = unique[identity], (old.progress.date ?? .distantPast) >= (record.progress.date ?? .distantPast) { continue }
+            unique[identity] = record
+        }
+        return unique.values.sorted { a, b in
+            if a.progress.date != b.progress.date { return (a.progress.date ?? .distantPast) > (b.progress.date ?? .distantPast) }
+            return a.path < b.path
+        }
+    }
+    static func clear(path: String, defaults: UserDefaults = .standard) {
+        let prefix = "KongFolio.progress.", canonical = canonicalPath(path)
+        for storedKey in defaults.dictionaryRepresentation().keys where storedKey.hasPrefix(prefix + "/") {
+            if canonicalPath(String(storedKey.dropFirst(prefix.count))) == canonical { defaults.removeObject(forKey: storedKey) }
+        }
+    }
 }
 
 extension Workspace {
-    private var progressPath: String? { (projectURL ?? sourceURL)?.path }
+    var progressPath: String? { (projectURL ?? sourceURL)?.path }
 
-    /// Counts the page as read once the reader has stayed on it for a moment (paging past quickly does not).
+    /// Location is saved immediately; only the visited-page count waits for a deliberate pause.
     func noteVisit(_ index: Int) {
-        guard let path = progressPath else { return }
+        guard index == selection, (0..<count).contains(index), let path = progressPath else { return }
+        saveReadingRecord()
         progressTask?.cancel()
         progressTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
-            guard !Task.isCancelled, let self, self.selection == index, index < self.count else { return }
-            if self.progressLoadedFor != path { self.readingProgress = ReadingProgress.load(path: path); self.progressLoadedFor = path }
-            self.readingProgress.last = index
-            self.readingProgress.visited.insert(index)
-            self.readingProgress.date = Date()
-            self.readingProgress.pages = self.count
-            self.readingProgress.save(path: path)
+            guard !Task.isCancelled, let self, self.progressPath == path, self.selection == index, index < self.count else { return }
+            self.saveReadingRecord(markVisited: true)
         }
     }
-
+    func scheduleReadingRecord() {
+        guard let path = progressPath, count > 0 else { return }
+        readingSaveTask?.cancel()
+        readingSaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled, let self, self.progressPath == path else { return }
+            self.saveReadingRecord()
+        }
+    }
+    func saveReadingRecord(capture: Bool = true, markVisited: Bool = false) {
+        guard let path = progressPath, count > 0, (0..<count).contains(selection) else { return }
+        if capture { captureReadingPosition(scheduleSave: false) }
+        var record = ReadingProgress.load(path: path, defaults: readingDefaults)
+        record.last = selection; record.pages = count; record.date = Date(); record.title = displayName
+        record.x = readingPoint.map { Double($0.x) }; record.y = readingPoint.map { Double($0.y) }
+        record.scale = readingScale; record.layout = readingLayout
+        if record.bookmark == nil { record.bookmark = try? URL(fileURLWithPath: path).bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil) }
+        if markVisited { record.visited.insert(selection) }
+        readingProgress = record; progressLoadedFor = path
+        record.save(path: path, defaults: readingDefaults)
+    }
     func refreshProgress() {
         guard let path = progressPath else { readingProgress = ReadingProgress(); return }
-        readingProgress = ReadingProgress.load(path: path)
+        readingProgress = ReadingProgress.load(path: path, defaults: readingDefaults)
         progressLoadedFor = path
     }
-
     func clearProgress() {
-        if let path = progressPath { ReadingProgress.clear(path: path) }
+        progressTask?.cancel(); readingSaveTask?.cancel()
+        if let path = progressPath { ReadingProgress.clear(path: path, defaults: readingDefaults) }
         readingProgress = ReadingProgress()
+    }
+    func prepareReadingResume(path: String, enabled: Bool = AppInterface.resumeReading) {
+        guard pendingView == nil, pendingReveal == nil, enabled else { return }
+        let progress = ReadingProgress.load(path: path, defaults: readingDefaults)
+        guard let position = progress.resumePosition(pageCount: count) else { return }
+        pendingView = position; pendingReadingLayout = progress.layout
     }
 }
