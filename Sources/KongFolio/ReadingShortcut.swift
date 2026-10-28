@@ -91,7 +91,9 @@ extension Workspace {
         try result.validate(); return result
     }
     func copyReadingLink(mode: ReadingShortcut.Mode) throws {
-        let url = try makeReadingShortcut(mode: mode).link()
+        let shortcut = try makeReadingShortcut(mode: mode)
+        try (store?.library ?? BookLibrary(storage: storage)).register(shortcut)
+        let url = try shortcut.link()
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url.absoluteString, forType: .string)
         NSPasteboard.general.setString(url.absoluteString, forType: .URL)
         status = "已拷贝阅读链接：" + mode.title
@@ -104,6 +106,7 @@ extension Workspace {
         panel.message = "保存后将快捷方式拖到 Dock 右侧分隔线后，点击即可用 KongFolio 打开。"
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         try shortcut.write(to: url)
+        try (store?.library ?? BookLibrary(storage: storage)).register(shortcut, file: url)
         status = "阅读快捷方式已保存，可拖到 Dock 右侧：" + url.lastPathComponent
         return url
     }
@@ -112,6 +115,7 @@ extension Workspace {
 extension WorkspaceStore {
     @discardableResult func openReadingShortcut(_ shortcut: ReadingShortcut) throws -> Workspace {
         if tabs.isEmpty { bootstrap() }
+        let shortcut = library.resolve(shortcut)
         let url = try shortcut.resolvedURL(), path = url.path
         let existing = tabs.compactMap(\.workspace).first { $0.matches(path: path) }
         guard existing?.busy != true || (existing?.isImporting == true && existing?.count == 0) else { throw FolioError(message: "这本书正在处理任务，请完成后再打开快捷方式") }

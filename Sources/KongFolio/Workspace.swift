@@ -82,6 +82,7 @@ import UniformTypeIdentifiers
     @Published var showWordExport = false
     @Published var showBatch = false
     @Published var showVersionHistory = false
+    var restoringHistory = false
     lazy var localBatchQueue = BatchQueue(storage: AppEnvironment.isTestRun ? nil : storage)
     var batchQueue: BatchQueue { store?.batchQueue ?? localBatchQueue }
     @Published var showOCRQuality = false
@@ -586,7 +587,7 @@ import UniformTypeIdentifiers
                 }
                 return true
             }
-            try DocumentHistory.protectExisting(url, storage: storage)
+            if !restoringHistory { try DocumentHistory.protectExisting(url, storage: storage) }
             var backupError = ProjectBackup.preserve(url, in: backupFolder)
             let saved = try expected.writing(url) { try archive.write($0) }
             do { try DocumentHistory.record(archive, source: url, storage: storage, label: automatic ? "自动保存项目" : "保存项目", automatic: automatic) }

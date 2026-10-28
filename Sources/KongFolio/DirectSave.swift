@@ -32,7 +32,7 @@ extension Workspace {
             guard flushRecovery() else { return false }
             let expected = try baseline(for: target)
             try expected.verify(target)
-            try DocumentHistory.protectExisting(target, storage: storage)
+            if !restoringHistory { try DocumentHistory.protectExisting(target, storage: storage) }
             let saved = try expected.writing(target) { try writePDFCopy(to: $0) }
             fileBaseline = saved
             try SignaturePersistence.write(signatureEditArchives, pdf: target, storage: storage)

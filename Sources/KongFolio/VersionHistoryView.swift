@@ -37,7 +37,7 @@ struct VersionHistoryView: View {
                 Text("\(rows.filter(\.changed).count) 处页面差异 · 左 \(before.pageCount) 页 / 右 \(after.pageCount) 页").font(.caption)
                 ComparisonViewer(before:before,after:after,rows:rows,leftTitle:"选中历史版本",rightTitle:compareTo == nil ? "当前工作" : "对照历史版本",selection:$page)
             } else { Spacer();Text(entries.isEmpty ? "尚无历史；首次覆盖保存前会自动保留原件。" : "选择历史版本，检查各页变化。").foregroundStyle(.secondary);Spacer() }
-            Text("页面列表使用缩略图筛查；字词差异和图像叠加可进一步核对当前页，扫描位移会产生图像差异。移动页可能显示为删除与新增。每文件最多 10 个版本、约 512 MB，至少保留 2 个。恢复前保留当前工作，恢复后写回文件。").font(.caption).foregroundStyle(.secondary)
+            Text("页面列表使用缩略图筛查；字词差异和图像叠加可进一步核对当前页，扫描位移会产生图像差异。移动页可能显示为删除与新增。版本数量和容量可在“任务与历史 → 历史版本与备份空间”设置，至少保留 2 个。恢复前保留当前工作，恢复后写回文件。").font(.caption).foregroundStyle(.secondary)
             if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.red) }
             HStack {
                 Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)

@@ -34,6 +34,7 @@ struct MarkdownEditorView: View {
             .frame(width: proxy.size.width)
         }
         .sheet(isPresented: $showLayout) { TextLayoutSheet(note: note) }
+        .sheet(isPresented: $note.showVersionHistory) { TextVersionHistoryView(note: note) }
         .alert("无法完成操作", isPresented: Binding(get: { note.error != nil }, set: { if !$0 { note.error = nil } })) {
             Button("好") { note.error = nil }
         } message: { Text(note.error ?? "") }
@@ -54,6 +55,7 @@ struct MarkdownEditorView: View {
             Divider().frame(height: 18)
             Button("保存") { note.save() }.help("保存当前文件（⌘S）")
             Button("另存为…") { note.save(asNew: true) }
+            Button { note.showVersionHistory = true } label: { Image(systemName: "clock.arrow.circlepath") }.help("查看和恢复文本文件的历史版本").disabled(note.fileURL == nil)
             Text(note.format.rawValue).font(.caption).foregroundStyle(.secondary)
             Button("打印…") { do { DocumentPrinting.printDocument(try note.renderDocument()) } catch { note.error = error.localizedDescription } }
             Divider().frame(height: 18)

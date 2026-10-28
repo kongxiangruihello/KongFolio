@@ -2,12 +2,17 @@ import SwiftUI
 
 enum FolioCommand: String, CaseIterable, Identifiable {
     case open, newPDF, newMarkdown, newHTML, newText, save, saveAs, exportPDF, exportWord, printDocument
+    case bookshelf, shortcutManager, bookNotebook, historySettings
     case recoveryCenter, backgroundJobs, formTemplate, exportCheck, readingHistory, readingShortcut
     case find, searchFiles, rotate, extractPages, removePages, blankPage, annotation, signature, tools
     case table, forms, ocr, scan, compare, history, tasks, switchTabs, undo, redo
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .bookshelf: return "个人书架与收藏分类"
+        case .shortcutManager: return "管理书籍快捷方式与修复链接"
+        case .bookNotebook: return "当前书籍的阅读笔记汇总"
+        case .historySettings: return "设置历史版本与备份空间"
         case .readingHistory: return "阅读记录与继续阅读"
         case .readingShortcut: return "保存阅读快捷方式到 Dock"
         case .exportCheck: return "导出检查与问题定位"
@@ -79,6 +84,8 @@ extension WorkspaceStore {
     func unavailableReason(_ command: FolioCommand) -> String? {
         let w = commandWorkspace
         switch command {
+        case .bookshelf, .shortcutManager, .historySettings: return nil
+        case .bookNotebook: return w?.canCreateReadingShortcut == true ? nil : "请先打开或保存书籍"
         case .readingHistory, .recoveryCenter, .backgroundJobs, .open, .newPDF, .newMarkdown, .newHTML, .newText, .searchFiles, .compare, .tasks, .switchTabs: return nil
         case .exportCheck, .save, .saveAs, .exportPDF, .exportWord, .printDocument:
             if activeWorkspace?.busy == true { return "当前文档正在处理任务" }
@@ -104,6 +111,10 @@ extension WorkspaceStore {
         } catch { commandWorkspace?.status = "无法记忆最近命令：\(error.localizedDescription)" }
         let w = commandWorkspace
         switch command {
+        case .bookshelf: libraryTab = 0; showReadingHistory = true
+        case .shortcutManager: libraryTab = 1; showReadingHistory = true
+        case .bookNotebook: openCurrentBookNotebook()
+        case .historySettings: showHistorySettings = true
         case .readingHistory: showReadingHistory = true
         case .readingShortcut: w?.showReadingShortcut = true
         case .exportCheck: if let workspace = activeWorkspace { workspace.startWordExport() } else { activeNote?.exportWord() }

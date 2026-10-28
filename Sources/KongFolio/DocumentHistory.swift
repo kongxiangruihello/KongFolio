@@ -19,7 +19,7 @@ enum DocumentHistory {
     static let maximumEntries = 10
     static let byteBudget = 512 * 1024 * 1024
     static let coalescingSeconds: TimeInterval = 60
-    private static let queue = DispatchQueue(label: "com.kongfolio.history")
+    private static let queue = HistoryRetention.queue
     private static func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format:"%02x",$0) }.joined() }
     static func folder(for source: URL, storage: URL) -> URL {
         storage.appendingPathComponent("History", isDirectory:true).appendingPathComponent(hash(Data(source.standardizedFileURL.path.utf8)), isDirectory:true)
@@ -88,13 +88,15 @@ enum DocumentHistory {
             stored.removeLast()
         }
         stored.append(entry)
-        while stored.count > maximumEntries || (stored.count > 2 && stored.reduce(0,{$0+$1.bytes}) > byteBudget) { stored.removeFirst() }
+        let policy = HistoryPolicy.load(storage: storage)
+        while stored.count > policy.maximumEntries || (stored.count > 2 && stored.reduce(0,{$0+$1.bytes}) > policy.perFileMB * 1024 * 1024) { stored.removeFirst() }
         let payload = directory.appendingPathComponent(entry.id.uuidString+".kongfolio")
         try data.write(to:payload,options:.atomic)
         do { try JSONEncoder().encode(stored).write(to:directory.appendingPathComponent("index.json"),options:.atomic) }
         catch { try? FileManager.default.removeItem(at:payload); throw error }
         let live = Set(stored.map(\.id))
         for old in previousEntries where !live.contains(old.id) { try? FileManager.default.removeItem(at:directory.appendingPathComponent(old.id.uuidString+".kongfolio")) }
+        try HistoryRetention.enforceUnlocked(storage: storage)
     }
 }
 
@@ -109,10 +111,14 @@ extension Workspace {
         do {
             let archived = try DocumentHistory.read(entry,source:source,storage:storage)
             // Record unsaved work too, so restoration itself can be reversed after closing the app.
+            try baseline(for: source).verify(source)
+            try DocumentHistory.protectExisting(source, storage: storage)
             try DocumentHistory.record(snapshot(),source:source,storage:storage,label:"恢复历史前的当前工作",automatic:false)
             checkpoint()
             try restore(archived,keepProjectURL:true)
             readingPoint=nil;navigationToken=UUID();edited(reset:true)
+            restoringHistory = true
+            defer { restoringHistory = false }
             return saveDirectly(askForDestination:false)
         } catch { self.error="无法恢复历史版本：\(error.localizedDescription)";return false }
     }

@@ -5,8 +5,12 @@ import Foundation
     struct Settings: Codable {
         var folder: URL?; var recursive = true; var query = ""
         var savedFolders: [URL]?; var required: String?; var excluded: String?
+        var recognizeScans: Bool?; var scanSettings: OCRSettings?
         var scope: SearchScope?; var bodyOnly: Bool?; var textFiles: Bool?; var annotations: Bool?; var grouped: Bool?
     }
+    @Published var libraryFiles: [URL] = []
+    @Published var recognizeScans = false
+    @Published var scanSettings = OCRSettings()
     @Published var folder:URL?
     @Published var recursive=true
     @Published var query=""
@@ -47,6 +51,7 @@ import Foundation
     init(storage:URL) {
         self.storage=storage
         if let data=try? Data(contentsOf:settingsURL),let saved=try? JSONDecoder().decode(Settings.self,from:data) {
+            recognizeScans = saved.recognizeScans ?? false; scanSettings = saved.scanSettings ?? OCRSettings()
             folder=saved.folder;recursive=saved.recursive;query=saved.query
             savedFolders=saved.savedFolders ?? saved.folder.map { [$0] } ?? []
             requiredTerms=saved.required ?? "";excludedTerms=saved.excluded ?? ""
@@ -62,12 +67,14 @@ import Foundation
     func remember() {
         do {
             try FileManager.default.createDirectory(at:settingsURL.deletingLastPathComponent(),withIntermediateDirectories:true)
-            try JSONEncoder().encode(Settings(folder:folder,recursive:recursive,query:query,savedFolders:savedFolders,required:requiredTerms,excluded:excludedTerms,scope:scope,bodyOnly:bodyOnly,textFiles:includeText,annotations:includeAnnotations,grouped:grouped)).write(to:settingsURL,options:.atomic)
+            try JSONEncoder().encode(Settings(folder:folder,recursive:recursive,query:query,savedFolders:savedFolders,required:requiredTerms,excluded:excludedTerms,recognizeScans:recognizeScans,scanSettings:scanSettings,scope:scope,bodyOnly:bodyOnly,textFiles:includeText,annotations:includeAnnotations,grouped:grouped)).write(to:settingsURL,options:.atomic)
         } catch { message="搜索设置未保存："+error.localizedDescription }
     }
     func start(live: [SearchSnapshot] = []) {
         guard !running,openingID==nil else { return }
         guard !scope.usesFolder || folder != nil else { message="请选择资料文件夹，或切换为“仅当前编辑和摘录”";return }
+        let explicitFiles: [URL]? = scope == .library ? libraryFiles : nil
+        let recognizeScans = recognizeScans, scanSettings = scanSettings
         let folder = scope.usesFolder ? folder : nil
         let live = scope.usesLive ? live : []
         let bodyOnly = bodyOnly
@@ -83,7 +90,7 @@ import Foundation
         delivered=[];results=[];files=[];discoveryErrors=[];scanned=0;total=0;message="";progressText="正在查找资料…"
         searchedQuery=query;searchedFolder=folder;running=true;stopping=false
         let job=Task.detached(priority:.userInitiated) { [weak self] in
-            try FolderSearchService.run(folder:folder,query:query,recursive:recursive,indexURL:indexURL,terms:terms,includeText:includeText,includeAnnotations:includeAnnotations,bodyOnly:bodyOnly,live:live) { event in
+            try FolderSearchService.run(folder:folder,query:query,recursive:recursive,indexURL:indexURL,terms:terms,includeText:includeText,includeAnnotations:includeAnnotations,bodyOnly:bodyOnly,live:live,explicitFiles:explicitFiles,recognizeScans:recognizeScans,scanSettings:scanSettings) { event in
                 Task { @MainActor [weak self] in self?.receive(event,token:token) }
             }
         }
@@ -172,7 +179,7 @@ extension WorkspaceStore {
             openNote(result.url); activeNote?.revealSearch(result.hit.range); return
         }
         let path=result.url.standardizedFileURL.resolvingSymlinksInPath()
-        let existing=tabs.compactMap(\.workspace).first { $0.projectURL==nil && $0.sourceURL?.standardizedFileURL.resolvingSymlinksInPath()==path }
+        let existing=tabs.compactMap(\.workspace).first { ($0.projectURL ?? $0.sourceURL)?.standardizedFileURL.resolvingSymlinksInPath()==path }
         let target:Workspace
         if let existing {
             guard !existing.busy else { throw FolioError(message:"这个文件正在处理，请完成或取消当前任务后再打开结果") }
@@ -185,7 +192,7 @@ extension WorkspaceStore {
         } else if let empty=activeWorkspace,empty.count==0,!empty.needsLoad,!empty.busy,empty.sourceURL==nil,empty.projectURL==nil { target=empty }
         else { target=addWorkspace() }
         target.needsLoad=false;target.pendingView=verified.source.position;target.pendingReveal=verified.source
-        target.load([result.url],prepared:.documents([verified.data]))
+        target.load([result.url],prepared:verified.project.map { .project($0) } ?? .documents([verified.data]))
         guard target.count>0 else { throw FolioError(message:target.error ?? "无法打开搜索结果") }
         select(target.id)
     }
