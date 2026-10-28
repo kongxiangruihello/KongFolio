@@ -175,4 +175,22 @@ final class Release036Tests: XCTestCase {
         ReadingProgress.clear(path:file.path,defaults:suite);XCTAssertTrue(ReadingProgress.history(defaults:suite).isEmpty)
     }
 
+    @MainActor func testSessionRestartPreservesPositionScaleAndSinglePageLayout() async throws {
+        let root=try folder();defer{try? FileManager.default.removeItem(at:root)};let file=try book(root),suite=defaults(),store=WorkspaceStore(storage:root,readingDefaults:suite),w=store.addWorkspace()
+        w.document=PDFDocument(url:file)!;w.sourceURL=file;w.selection=2;w.readingPoint=CGPoint(x:12,y:345);w.readingScale=1.4;w.readingLayout = .single
+        XCTAssertTrue(store.prepareToClose())
+        let saved=try JSONDecoder().decode(Session.self,from:Data(contentsOf:root.appendingPathComponent("Session.json")))
+        XCTAssertEqual(saved.entries.first?.layout,.single)
+        let restarted=WorkspaceStore(storage:root,readingDefaults:suite);restarted.bootstrap();let opened=try XCTUnwrap(restarted.activeWorkspace);try await wait(opened)
+        XCTAssertEqual(opened.selection,2);XCTAssertEqual(opened.readingPoint,CGPoint(x:12,y:345));XCTAssertEqual(opened.readingScale,1.4);XCTAssertEqual(opened.readingLayout,.single)
+    }
+    @MainActor func testOlderSessionRecoversLayoutFromReadingRecord() async throws {
+        let root=try folder();defer{try? FileManager.default.removeItem(at:root)};let file=try book(root),suite=defaults()
+        ReadingProgress(last:3,date:Date(),pages:4,layout:.twoUp).save(path:file.path,defaults:suite)
+        let session=Session(entries:[SessionEntry(slot:"",kind:.file,path:file.path,position:ViewPosition(selection:1,x:8,y:160,scale:1.2))],selected:"")
+        try JSONEncoder().encode(session).write(to:root.appendingPathComponent("Session.json"))
+        let store=WorkspaceStore(storage:root,readingDefaults:suite);store.bootstrap();let opened=try XCTUnwrap(store.activeWorkspace);try await wait(opened)
+        XCTAssertEqual(opened.selection,1);XCTAssertEqual(opened.readingScale,1.2);XCTAssertEqual(opened.readingLayout,.twoUp)
+    }
+
 }

@@ -744,8 +744,8 @@ import UniformTypeIdentifiers
     }
 
     private func fileEntry(position: ViewPosition?) -> SessionEntry? {
-        if let url = projectURL { return SessionEntry(slot: slot, kind: .project, path: url.path, position: position) }
-        if let url = sourceURL { return SessionEntry(slot: slot, kind: .file, path: url.path, position: position) }
+        if let url = projectURL { return SessionEntry(slot: slot, kind: .project, path: url.path, position: position, layout: pendingReadingLayout ?? readingLayout) }
+        if let url = sourceURL { return SessionEntry(slot: slot, kind: .file, path: url.path, position: position, layout: pendingReadingLayout ?? readingLayout) }
         return nil
     }
 

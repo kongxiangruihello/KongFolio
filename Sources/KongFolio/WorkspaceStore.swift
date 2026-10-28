@@ -143,6 +143,7 @@ import UniformTypeIdentifiers
                 workspace.needsLoad = true
                 if entry.kind == .project { workspace.projectURL = url } else { workspace.sourceURL = url }
                 workspace.pendingView = entry.position
+                workspace.pendingReadingLayout = entry.layout ?? ReadingProgress.load(path: path, defaults: readingDefaults).layout
                 workspace.needsLoad = true
             } else {
                 continue
