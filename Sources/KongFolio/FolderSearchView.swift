@@ -25,7 +25,7 @@ struct FolderSearchView: View {
             resultList
             issues
             if !model.message.isEmpty { Text(model.message).font(.callout).textSelection(.enabled).lineLimit(3) }
-            Text("附加词按同一物理页筛选，多个词用逗号分隔。⌘ 点选或 ⇧ 连选结果后可摘录；导出报告采用当前筛选。扫描件请先 OCR；笔记可切换正文或源码搜索；当前编辑含未保存内容，无须选择文件夹；批注和摘录单独标明。索引仅保存在本机。").font(.caption).foregroundStyle(.secondary)
+            Text("附加词按同一物理页筛选，多个词用逗号分隔。⌘ 点选或 ⇧ 连选结果后可摘录；导出报告采用当前筛选。扫描件可勾选“识别扫描页”，识别只写本机索引；笔记可切换正文或源码搜索；当前编辑含未保存内容，无须选择文件夹；批注和摘录单独标明。索引仅保存在本机。").font(.caption).foregroundStyle(.secondary)
             actions
         }.padding(20).adaptiveSheet(width: 1000, height: 760, minimumWidth: 360)
         .onDisappear { model.cancel(); model.remember() }
@@ -34,6 +34,7 @@ struct FolderSearchView: View {
     private var searchControls: some View {
         VStack(spacing: 8) {
             Picker("搜索范围", selection: $model.scope) { ForEach(SearchScope.allCases) { Text($0.rawValue).tag($0) } }.disabled(occupied)
+            if model.scope == .library { Text("搜索书架所选 \(model.libraryFiles.count) 份资料与当前未保存编辑").font(.caption).foregroundStyle(.secondary) }
             if model.scope.usesFolder { PanelRow {
                 Button("选择并记住文件夹…") { chooseFolder() }
                 Menu("常用文件夹（\(model.savedFolders.count)）") {
@@ -48,10 +49,19 @@ struct FolderSearchView: View {
                 Spacer(); Toggle("含子文件夹", isOn: $model.recursive)
             }.disabled(occupied) }
             PanelRow {
+                Toggle("识别扫描页", isOn: $model.recognizeScans).help("仅识别无文字的 PDF 页面，写入本机搜索索引，原文件保留")
                 Toggle("文本文件", isOn: $model.includeText)
                 Toggle("批注", isOn: $model.includeAnnotations)
                 Toggle("笔记只搜正文", isOn: $model.bodyOnly)
             }.disabled(occupied)
+            if model.recognizeScans {
+                PanelRow {
+                    Picker("识别语言", selection: Binding(get: { model.scanSettings.presetID }, set: { id in model.scanSettings.languages = OCRSettings.presets.first { $0.id == id }?.languages ?? OCRSettings().languages })) {
+                        ForEach(OCRSettings.presets) { Text($0.title).tag($0.id) }
+                    }.frame(maxWidth: 270)
+                    Toggle("竖排扫描", isOn: $model.scanSettings.vertical)
+                }.disabled(occupied)
+            }
             PanelRow {
                 TextField("主要搜索词句（简繁通查）", text: $model.query).onSubmit { start() }.disabled(occupied)
                 if model.running { Button(model.stopping ? "正在停止…" : "停止") { model.cancel() }.disabled(model.stopping) }
@@ -123,7 +133,10 @@ struct FolderSearchView: View {
     }
     private func start() {
         selected = []
-        do { model.start(live: model.includeLive ? try store.searchSnapshots() : []) }
+        do {
+            if model.scope == .library, model.libraryFiles.isEmpty { try store.library.importHistory(defaults: store.readingDefaults); model.libraryFiles = store.library.books.map { URL(fileURLWithPath: $0.path) } }
+            model.start(live: model.includeLive ? try store.searchSnapshots() : [])
+        }
         catch { model.message = error.localizedDescription }
     }
     private func chooseFolder() {

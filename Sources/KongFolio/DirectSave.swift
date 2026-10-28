@@ -3,8 +3,9 @@ import PDFKit
 
 extension Workspace {
     /// OCR source pages and reading metadata need a private recovery copy even when the PDF itself is saved.
+    // Metadata read from the PDF is recoverable from that file; only reader edits need a private copy.
     var hasPrivateReadingData: Bool {
-        !tableDrafts.isEmpty || wordDraftArchive != nil || !signatureEditArchives.isEmpty || !ocrOriginals.isEmpty || !ocrRegions.isEmpty || !bookmarks.isEmpty || !bibliography.isEmpty
+        !tableDrafts.isEmpty || wordDraftArchive != nil || !signatureEditArchives.isEmpty || !ocrOriginals.isEmpty || !ocrRegions.isEmpty || !bookmarks.isEmpty || bibliography != ReadingServices.bibliography(from: document)
     }
     func scheduleDirectSave() {
         directSaveTask?.cancel()
@@ -32,7 +33,7 @@ extension Workspace {
             guard flushRecovery() else { return false }
             let expected = try baseline(for: target)
             try expected.verify(target)
-            try DocumentHistory.protectExisting(target, storage: storage)
+            if !restoringHistory { try DocumentHistory.protectExisting(target, storage: storage) }
             let saved = try expected.writing(target) { try writePDFCopy(to: $0) }
             fileBaseline = saved
             try SignaturePersistence.write(signatureEditArchives, pdf: target, storage: storage)

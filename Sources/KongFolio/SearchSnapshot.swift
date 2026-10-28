@@ -14,7 +14,7 @@ struct SearchSnapshot {
     var format: TextDocumentFormat? = nil
     var fingerprint: String { text.map { OCRPageCache.digest(Data($0.utf8)) } ?? card.map(Self.cardDigest) ?? "" }
     static func cardDigest(_ card: BoardCard) -> String { let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]; return (try? encoder.encode(card)).map(OCRPageCache.digest) ?? "" }
-    func search(query: String, limit: Int, terms: FolderSearchTerms, includeAnnotations: Bool, bodyOnly: Bool = true, cache: inout [String: String]) throws -> FolderSearchFile {
+    func search(query: String, limit: Int, terms: FolderSearchTerms, includeAnnotations: Bool, bodyOnly: Bool = true, recognizeScans: Bool = false, scanSettings: OCRSettings = OCRSettings(), cache: inout [String: String]) throws -> FolderSearchFile {
         let url = path ?? URL(fileURLWithPath: "/未保存/" + id.uuidString + "/" + title)
         var result = FolderSearchFile(url: url); result.currentBuffer = true
         func add(_ page: FolderSearchPage, category: String) {
@@ -28,8 +28,9 @@ struct SearchSnapshot {
             result.pages = document.pageCount
             for i in 0..<document.pageCount {
                 try Task.checkCancellation()
-                let value = FolderSearchService.indexedPage(document.page(at: i)!, index: i)
-                if !value.text.isEmpty { result.textPages += 1 }; add(value, category: "PDF 当前正文")
+                let page = document.page(at: i)!
+                let value = recognizeScans && BackgroundJobs.textCharacterCount(page) == 0 ? try FolderSearchService.recognizedPage(page, index: i) { try BackgroundJobs.recognize($0, settings: scanSettings) } : FolderSearchService.indexedPage(page, index: i)
+                if !value.text.isEmpty { result.textPages += 1 }; add(value, category: value.category ?? "PDF 当前正文")
             }
             if includeAnnotations {
                 for note in ReadingServices.notes(document) where !note.note.isEmpty {

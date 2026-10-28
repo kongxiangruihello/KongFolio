@@ -77,8 +77,8 @@ struct TextSearchBody {
 }
 
 enum SearchScope: String, Codable, CaseIterable, Identifiable {
-    case combined = "文件夹与当前编辑", folder = "仅文件夹", current = "仅当前编辑和摘录"
+    case combined = "文件夹与当前编辑", folder = "仅文件夹", current = "仅当前编辑和摘录", library = "书架与当前编辑"
     var id: String { rawValue }
-    var usesFolder: Bool { self != .current }
+    var usesFolder: Bool { self == .folder || self == .combined }
     var usesLive: Bool { self != .folder }
 }

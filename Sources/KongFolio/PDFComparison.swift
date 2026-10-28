@@ -127,6 +127,8 @@ extension Workspace {
             let archive=try DocumentHistory.read(entry,source:source,storage:storage)
             let original=PDFDocument(data:archive.pdf)
             guard let page=original?.page(at:oldIndex)?.copy() as? PDFPage else { throw FolioError(message:"历史页面不存在") }
+            try baseline(for: source).verify(source)
+            try DocumentHistory.protectExisting(source, storage: storage)
             try DocumentHistory.record(snapshot(),source:source,storage:storage,label:"恢复单页前的当前工作",automatic:false)
             checkpoint()
             document.removePage(at:index);document.insert(page,at:index)
@@ -134,6 +136,8 @@ extension Workspace {
             pageMeta[index]=PageMeta(ocrOriginal:archive.ocrOriginals?[oldIndex],ocrRegions:archive.ocrRegions?[oldIndex])
             ReadingServices.applyOutline(outlineEntries,to:document)
             selection=index;selectedPages=[index];readingPoint=nil;navigationToken=UUID();edited(reset:true)
+            restoringHistory = true
+            defer { restoringHistory = false }
             return saveDirectly(askForDestination:false)
         } catch { self.error="无法恢复历史页面：\(error.localizedDescription)";return false }
     }

@@ -18,6 +18,8 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $store.showReadingHistory) { ReadingHistorySheet(store: store) }
+        .sheet(isPresented: $store.showHistorySettings) { HistorySettingsView(storage: store.storage) }
+        .sheet(item: $store.notebookBook) { BookNotebookView(store: store, library: store.library, book: $0) }
         .sheet(item: $store.exportReview) { request in ExportReviewSheet(store: store, request: request) }
         .sheet(isPresented: $store.showBackgroundJobs) { DocumentTasksView(queue: store.documentTasks, store: store) }
         .sheet(isPresented: $store.showRecoveryCenter) { RecoveryCenterView(store: store) }
@@ -53,8 +55,8 @@ struct TabBar: View {
                     withAnimation { proxy.scrollTo(id, anchor: .center) }
                 }
             }
-            Button { store.showReadingHistory = true } label: { Image(systemName: "clock.arrow.circlepath") }
-                .buttonStyle(.borderless).frame(width: 28).help("阅读记录：继续上次读到的位置")
+            Button { store.showReadingHistory = true } label: { Image(systemName: "books.vertical") }
+                .buttonStyle(.borderless).frame(width: 28).help("个人书架、阅读记录与书籍快捷方式")
             DocumentTaskButton(queue: store.documentTasks, store: store)
             Menu {
                 ForEach(store.tabs) { tab in

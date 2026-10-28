@@ -34,6 +34,10 @@ import UniformTypeIdentifiers
     let storage: URL
     let readingDefaults: UserDefaults
     @Published var showReadingHistory = false
+    @Published var libraryTab = 0
+    @Published var showHistorySettings = false
+    @Published var notebookBook: LibraryBook?
+    let library: BookLibrary
     /// The workspace shared by every tab: excerpts from any open document gather here.
     let board: Board
     let documentTasks: DocumentTaskQueue
@@ -53,6 +57,7 @@ import UniformTypeIdentifiers
     init(storage: URL? = nil, readingDefaults: UserDefaults? = nil) {
         let folder = storage ?? ProcessInfo.processInfo.environment["KONGFOLIO_STORAGE"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
         self.storage = folder
+        self.library = BookLibrary(storage: folder)
         self.readingDefaults = readingDefaults ?? (AppEnvironment.isTestRun ? UserDefaults(suiteName: "KongFolio.ReadingTests." + UUID().uuidString)! : .standard)
         self.documentTasks = DocumentTaskQueue(storage: folder)
         self.board = Board(storage: folder)

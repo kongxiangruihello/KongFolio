@@ -204,6 +204,8 @@ extension WorkspaceStore {
     /// pane next to the document in front, so the reader keeps their place; otherwise the tab that already shows the file
     /// is brought to the front, or a new tab opens it. Returns false when the file cannot be found.
     @discardableResult func reveal(_ source: SourceRef, beside: Bool? = nil) -> Bool {
+        var source = source
+        source.path = library.resolve(ReadingShortcut(path: source.path, title: source.fileName, position: source.position)).path
         guard !source.path.isEmpty else {
             present(FolioError(message: "这张卡片的来源文档没有保存为文件，无法跳转。"))
             return false

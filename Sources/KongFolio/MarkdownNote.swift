@@ -31,11 +31,13 @@ struct TextEdit: Equatable {
     @Published var format: TextDocumentFormat = .markdown
     @Published var layoutOptions = TextLayoutOptions.load() { didSet { layoutOptions.save(); refreshPreview() } }
     @Published var previewMessage = ""
+    var restoringHistory = false
     var recoveryBaseURL: URL?
     var fileBaseline: FileBaseline?
     @Published var saveConflict = false
     @Published var dirty = false
     @Published var showPreview = true
+    @Published var showVersionHistory = false
     @Published var preview: PDFDocument?
     @Published var error: String?
     @Published var status = ""
@@ -78,13 +80,19 @@ struct TextEdit: Equatable {
         try expected.verify(url)
         let linked = try SourceLink.saving(text, oldBase: fileURL?.deletingLastPathComponent() ?? recoveryBaseURL, destination: url)
         let prepared = try TextAssets.saving(linked, format: format, oldBase: fileURL?.deletingLastPathComponent() ?? recoveryBaseURL, destination: url)
-        let saved = try expected.writing(url) { try prepared.write(to: $0, atomically: true, encoding: .utf8) }
+        let saved = try expected.writing(url) {
+            if !restoringHistory { try TextVersionHistory.protectExisting(url, storage: storage) }
+            try prepared.write(to: $0, atomically: true, encoding: .utf8)
+        }
         fileBaseline = saved; saveConflict = false
         fileURL = url
         text = prepared
         refreshPreview()
         format = TextDocumentFormat.forURL(url)
         dirty = false
+        status = "已保存"
+        do { try TextVersionHistory.record(versionSnapshot, source: url, storage: storage, label: "保存文本文件", automatic: true) }
+        catch { status = "文件已保存，历史记录未完成：" + error.localizedDescription }
         removeBackup()
     }
 
@@ -100,7 +108,6 @@ struct TextEdit: Equatable {
         guard let url = target else { return false }
         do {
             try write(to: url)
-            status = "已保存"
             return true
         } catch {
             if error is FileConflict { saveConflict = true; status = error.localizedDescription; try? writeBackup() }

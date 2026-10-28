@@ -67,11 +67,11 @@ struct ReadingShortcut: Codable, Equatable {
         guard FileManager.default.fileExists(atPath: path) else { throw FolioError(message: "找不到这本书：\(path)。请确认原文件仍在本机，或重新打开书籍后保存快捷方式。") }
         return original
     }
-    func write(to url: URL) throws {
+    func write(to url: URL, expected baseline: FileBaseline? = nil) throws {
         try validate()
         guard url.isFileURL, url.pathExtension.lowercased() == Self.fileExtension,
               !DocumentTaskOutput.sameFile(url, URL(fileURLWithPath: path)) else { throw FolioError(message: "请保存为独立的阅读快捷方式文件") }
-        let data = try JSONEncoder().encode(self), expected = try FileBaseline.capture(url)
+        let data = try JSONEncoder().encode(self), expected = try baseline ?? FileBaseline.capture(url)
         try DocumentTaskOutput.write(to: url, expected: expected) { try data.write(to: $0) }
     }
     func destination(progress: ReadingProgress, pageCount: Int) -> ViewPosition {
@@ -91,7 +91,9 @@ extension Workspace {
         try result.validate(); return result
     }
     func copyReadingLink(mode: ReadingShortcut.Mode) throws {
-        let url = try makeReadingShortcut(mode: mode).link()
+        let shortcut = try makeReadingShortcut(mode: mode)
+        try (store?.library ?? BookLibrary(storage: storage)).register(shortcut)
+        let url = try shortcut.link()
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url.absoluteString, forType: .string)
         NSPasteboard.general.setString(url.absoluteString, forType: .URL)
         status = "已拷贝阅读链接：" + mode.title
@@ -104,6 +106,7 @@ extension Workspace {
         panel.message = "保存后将快捷方式拖到 Dock 右侧分隔线后，点击即可用 KongFolio 打开。"
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         try shortcut.write(to: url)
+        try (store?.library ?? BookLibrary(storage: storage)).register(shortcut, file: url)
         status = "阅读快捷方式已保存，可拖到 Dock 右侧：" + url.lastPathComponent
         return url
     }
@@ -112,6 +115,7 @@ extension Workspace {
 extension WorkspaceStore {
     @discardableResult func openReadingShortcut(_ shortcut: ReadingShortcut) throws -> Workspace {
         if tabs.isEmpty { bootstrap() }
+        let shortcut = library.resolve(shortcut)
         let url = try shortcut.resolvedURL(), path = url.path
         let existing = tabs.compactMap(\.workspace).first { $0.matches(path: path) }
         guard existing?.busy != true || (existing?.isImporting == true && existing?.count == 0) else { throw FolioError(message: "这本书正在处理任务，请完成后再打开快捷方式") }

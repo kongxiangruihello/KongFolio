@@ -43,7 +43,8 @@ import AppKit
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
             CommandMenu("阅读") {
-                Button("阅读记录…") { store.showReadingHistory = true }
+                Button("个人书架与阅读记录…") { store.showReadingHistory = true }
+                Button("当前书籍的阅读笔记…") { store.openCurrentBookNotebook() }.disabled(store.commandWorkspace?.canCreateReadingShortcut != true)
                 Button("当前书籍的阅读进度…") { store.commandWorkspace?.refreshProgress(); store.commandWorkspace?.showProgress = true }.disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Button("保存阅读快捷方式…") { store.commandWorkspace?.showReadingShortcut = true }.disabled(store.commandWorkspace?.canCreateReadingShortcut != true)
                 Button("拷贝继续阅读链接") { store.commandWorkspace?.report { try store.commandWorkspace?.copyReadingLink(mode: .resume) } }.disabled(store.commandWorkspace?.canCreateReadingShortcut != true)
@@ -51,6 +52,8 @@ import AppKit
             CommandMenu("任务与历史") {
                 Button("导出检查…") { store.performCommand(.exportCheck) }
                 Button("恢复中心…") { store.showRecoveryCenter = true }
+                Button("历史版本与备份空间…") { store.showHistorySettings = true }
+                Button("当前文本文件的历史…") { store.activeNote?.showVersionHistory = true }.disabled(store.activeNote?.fileURL == nil)
                 Button("后台任务…") { store.showBackgroundJobs = true }
                 Button("制作 / 套用扫描表单模板…") { store.commandWorkspace?.showFormTemplate = true }.disabled((store.commandWorkspace?.count ?? 0) == 0 || store.commandWorkspace?.busy == true)
                 Button("搜索命令…") { store.showCommandPalette = true }.keyboardShortcut("k")
