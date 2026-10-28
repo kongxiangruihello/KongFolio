@@ -191,6 +191,7 @@ import UniformTypeIdentifiers
     var pageVersions: [Int: Int] = [:]
     var history: [UndoEntry] = []
     var future: [UndoEntry] = []
+    var isImporting = false
     var activeJob: Task<JobResult, Error>?
     var lastJob: JobSpec?
     var ocrChain: OCRChain?

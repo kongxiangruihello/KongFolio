@@ -218,4 +218,15 @@ final class Release036Tests: XCTestCase {
         let opened=try store.openReadingShortcut(shortcut);XCTAssertEqual(opened.id,w.id);XCTAssertEqual(store.tabs.count,1);XCTAssertEqual(w.selection,2)
     }
 
+    @MainActor func testColdShortcutOverridesSessionWhileOriginalBookIsStillLoading() async throws {
+        let root=try folder();defer{try? FileManager.default.removeItem(at:root)};let file=try book(root),suite=defaults(),shortcut=root.appendingPathComponent("chapter.kongfoliolink")
+        let session=Session(entries:[SessionEntry(slot:"",kind:.file,path:file.path,position:ViewPosition(selection:3),layout:.continuous)],selected:"")
+        try JSONEncoder().encode(session).write(to:root.appendingPathComponent("Session.json"))
+        try ReadingShortcut(path:file.path,title:"book",mode:.fixed,position:ViewPosition(selection:1,x:8,y:180,scale:1.4),layout:.single).write(to:shortcut)
+        let store=WorkspaceStore(storage:root,readingDefaults:suite);store.bootstrap();let opened=try XCTUnwrap(store.activeWorkspace)
+        XCTAssertTrue(opened.isImporting);XCTAssertTrue(opened.busy)
+        let router=ExternalDocumentRouter();router.attach(store);router.receive([shortcut]);try await wait(opened)
+        XCTAssertTrue(router.errors.isEmpty);XCTAssertEqual(store.tabs.count,1);XCTAssertEqual(opened.selection,1);XCTAssertEqual(opened.readingLayout,.single);XCTAssertEqual(opened.readingScale,1.4)
+    }
+
 }

@@ -14,13 +14,15 @@ import AppKit
     }
 
     var body: some Scene {
-        Window("KongFolio", id: "workspace") {
+        WindowGroup("KongFolio", id: "workspace") {
             RootView(store: store)
+                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
                 .frame(minWidth: 380, minHeight: 300)
                 .background(WindowAccessor { window in delegate.attach(window) })
                 .onAppear { delegate.store = store; store.bootstrap() }
                 .onOpenURL { url in delegate.externalDocuments.receive([url]) }
         }
+        .handlesExternalEvents(matching: ["*"])
         // The window can be dragged to any size, from a narrow reading strip to a full screen.
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1280, height: 820)
@@ -172,12 +174,6 @@ struct WindowAccessor: NSViewRepresentable {
     weak var store: WorkspaceStore? { didSet { if let store { externalDocuments.attach(store) } } }
     private weak var window: NSWindow?
     private var closingApproved = false
-
-    func application(_ application: NSApplication, open urls: [URL]) {
-        externalDocuments.receive(urls)
-        window?.makeKeyAndOrderFront(nil)
-        application.activate(ignoringOtherApps: true)
-    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
