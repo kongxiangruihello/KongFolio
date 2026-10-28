@@ -676,6 +676,11 @@ import UniformTypeIdentifiers
         saveConflict = false; fileBaseline = nil
         directSaveTask?.cancel()
         searchTask?.cancel(); estimateTask?.cancel()
+        // Native views can outlive the SwiftUI tab. Detach before replacing the model document.
+        pdfView?.clearSelection(); pdfView?.document = nil; pdfView = nil
+        displayCache = nil; copiedAnnotations.removeAll()
+        signatureLayers.removeAll(); movingSignature = nil; moveSnapshot = nil; placingSignature = nil
+        drawingInProgress = false; pendingReveal = nil; deferredOpen = nil
         document = PDFDocument(); cachedPDF = nil
         pageMeta = []; selection = 0; selectedPages = [0]; rangeText = ""
         title = "未命名文档"; tool = .select; note = ""
@@ -863,7 +868,7 @@ import UniformTypeIdentifiers
             return
         }
         if prepared == nil { startImport(urls, insert: insert); return }
-        report {
+        report { try autoreleasepool {
             if urls.contains(where: { $0.pathExtension.lowercased() == "kongfolio" }) {
                 guard urls.count == 1, !insert else { throw FolioError(message: "请单独打开 KongFolio 项目；合并时使用 PDF。") }
                 guard case .project(let archive) = prepared else { throw FolioError(message: "项目读取失败") }
@@ -979,7 +984,7 @@ import UniformTypeIdentifiers
             status = "已载入 \(count) 页" + (rebuilt ? "（此文件带“禁止修改”限制，已转成可编辑文档；修改后自动保存）" : "")
                 + (resumed.map { "；回到上次读到的第 \($0 + 1) 页" } ?? "")
             store?.loadedTabsChanged()
-        }
+        } }
     }
 
     // MARK: Pages

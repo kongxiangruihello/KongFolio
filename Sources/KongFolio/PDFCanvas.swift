@@ -3,20 +3,23 @@ import PDFKit
 
 struct PDFCanvas: NSViewRepresentable {
     @ObservedObject var workspace: Workspace
-    func makeNSView(context: Context) -> DrawingPDFView {
+    func makeNSView(context: Context) -> ReadingPDFContainer {
         let view = DrawingPDFView(); view.workspace = workspace; view.autoScales = true; view.displayMode = .singlePageContinuous; view.displayDirection = .vertical; view.backgroundColor = .windowBackgroundColor
         workspace.pdfView = view
-        context.coordinator.observer = NotificationCenter.default.addObserver(forName: .PDFViewPageChanged, object: view, queue: .main) { [weak view, weak workspace] _ in
-            Task { @MainActor in
-                guard let view, let workspace, let page = view.currentPage, view.document === workspace.document else { return }
-                let index = workspace.document.index(for: page)
-                if index != NSNotFound && index != workspace.selection { workspace.selection = index; if workspace.selectedPages.count <= 1 { workspace.selectedPages = [index] }; workspace.scheduleRecovery() }
-                if index != NSNotFound { workspace.noteVisit(index) }
-            }
+        let coordinator = context.coordinator
+        coordinator.observer = NotificationCenter.default.addObserver(forName: .PDFViewPageChanged, object: view, queue: .main) { [weak view, weak coordinator] _ in
+            MainActor.assumeIsolated { coordinator?.schedulePosition(view: view, workspace: view?.workspace) }
         }
-        return view
+        return ReadingPDFContainer(pdfView: view)
     }
-    func updateNSView(_ view: DrawingPDFView, context: Context) {
+    func updateNSView(_ container: ReadingPDFContainer, context: Context) {
+        guard let view = container.pdfView else { return }
+        if view.workspace !== workspace {
+            if let previous = view.workspace, previous.pdfView === view { previous.pdfView = nil }
+            context.coordinator.resetPosition()
+        }
+        workspace.pdfView = view
+        view.workspace = workspace
         let replaced = view.document !== workspace.document
         let display: PDFDisplayMode
         switch workspace.readingLayout {
@@ -37,22 +40,81 @@ struct PDFCanvas: NSViewRepresentable {
         }
         if view.contentFilters.isEmpty == workspace.nightReading { workspace.applyNightReading() }
         if context.coordinator.revision != workspace.revision { view.layoutDocumentView(); context.coordinator.revision = workspace.revision }
-        if context.coordinator.scrollObserver == nil, let clip = view.documentView?.enclosingScrollView?.contentView {
-            clip.postsBoundsChangedNotifications = true
-            context.coordinator.scrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak workspace] _ in
-                Task { @MainActor in workspace?.captureReadingPosition() }
-            }
-        }
+        context.coordinator.observeScroll(view: view)
         if replaced || layoutChanged { view.needsDisplay = true }
     }
     func makeCoordinator() -> Coordinator { Coordinator() }
-    class Coordinator {
+    static func dismantleNSView(_ container: ReadingPDFContainer, coordinator: Coordinator) {
+        coordinator.stop()
+        guard let view = container.pdfView else { return }
+        if let workspace = view.workspace, workspace.pdfView === view { workspace.pdfView = nil }
+        view.releaseReadingResources()
+        view.removeFromSuperview(); container.pdfView = nil
+    }
+    // Notification callbacks run on the main queue; all mutable access is on MainActor.
+    final class Coordinator: @unchecked Sendable {
         var navigation: UUID?
         var scrollObserver: NSObjectProtocol?
         var revision: UUID?
         var observer: NSObjectProtocol?
-        deinit { if let observer { NotificationCenter.default.removeObserver(observer) }; if let scrollObserver { NotificationCenter.default.removeObserver(scrollObserver) } }
+        weak var clip: NSClipView?
+        private weak var visitedPage: PDFPage?
+        private var positionTask: Task<Void, Never>?
+        @MainActor func schedulePosition(view: DrawingPDFView?, workspace: Workspace?) {
+            guard positionTask == nil else { return }
+            positionTask = Task { @MainActor [weak self, weak view, weak workspace] in
+                // Coalesce PDFKit's page and scroll notifications into one update per turn.
+                await Task.yield()
+                guard !Task.isCancelled, let self else { return }
+                self.positionTask = nil
+                guard let view, let workspace,
+                      workspace.pdfView === view, view.document === workspace.document,
+                      let page = view.currentPage else { return }
+                let index = workspace.document.index(for: page)
+                guard index != NSNotFound else { return }
+                if index != workspace.selection {
+                    workspace.selection = index
+                    if workspace.selectedPages.count <= 1 { workspace.selectedPages = [index] }
+                    workspace.scheduleRecovery()
+                }
+                if self.visitedPage !== page { self.visitedPage = page; workspace.noteVisit(index) }
+                workspace.captureReadingPosition()
+            }
+        }
+        @MainActor func observeScroll(view: DrawingPDFView) {
+            let current = view.documentView?.enclosingScrollView?.contentView
+            guard current !== clip else { return }
+            if let scrollObserver { NotificationCenter.default.removeObserver(scrollObserver) }
+            scrollObserver = nil; clip = current
+            guard let current else { return }
+            current.postsBoundsChangedNotifications = true
+            scrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: current, queue: .main) { [weak self, weak view] _ in
+                MainActor.assumeIsolated { self?.schedulePosition(view: view, workspace: view?.workspace) }
+            }
+        }
+        func resetPosition() {
+            positionTask?.cancel(); positionTask = nil; visitedPage = nil
+            navigation = nil; revision = nil
+        }
+        func stop() {
+            resetPosition()
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            if let scrollObserver { NotificationCenter.default.removeObserver(scrollObserver) }
+            observer = nil; scrollObserver = nil; clip = nil; visitedPage = nil
+        }
+        deinit { stop() }
     }
+}
+/// SwiftUI can cache a representable's root NSView. Keep the expensive PDFKit child detachable.
+final class ReadingPDFContainer: NSView {
+    var pdfView: DrawingPDFView?
+    init(pdfView: DrawingPDFView) {
+        self.pdfView = pdfView
+        super.init(frame: .zero)
+        pdfView.frame = bounds; pdfView.autoresizingMask = [.width, .height]
+        addSubview(pdfView)
+    }
+    required init?(coder: NSCoder) { fatalError("not used") }
 }
 final class DrawingPDFView: PDFView, SignaturePlacing {
     weak var workspace: Workspace?
@@ -88,6 +150,17 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
             strokePreview.autoresizingMask = [.width, .height]
             addSubview(strokePreview)
         }
+    }
+
+    /// SwiftUI may cache the native view after a tab disappears. Drop its PDF and overlays explicitly.
+    func releaseReadingResources() {
+        endSignaturePlacement(); hideSelectionToolbar()
+        points.removeAll(); drawingPage = nil; provisional = nil; moving = nil
+        pendingMove.removeAll(); contextSignature = nil; regionStart = nil
+        strokePreview.annotation = nil; strokePreview.page = nil
+        strokePreview.removeFromSuperview(); regionView.removeFromSuperview()
+        clearSelection(); highlightedSelections = nil; delegate = nil; document = nil; workspace = nil
+
     }
 
     // MARK: Signature placement
@@ -432,6 +505,12 @@ struct ComparisonCanvas: NSViewRepresentable {
         guard sync.enabled, let current = nsView.currentPage, nsView.document?.index(for: current) != sync.page,
               let target = document.page(at: min(sync.page, document.pageCount - 1)) else { return }
         nsView.go(to: target)
+    }
+
+    static func dismantleNSView(_ view: PDFView, coordinator: Coordinator) {
+        if let observer = coordinator.observer { NotificationCenter.default.removeObserver(observer) }
+        coordinator.observer = nil
+        view.clearSelection(); view.delegate = nil; view.document = nil
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
