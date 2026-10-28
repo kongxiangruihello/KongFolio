@@ -32,6 +32,8 @@ import UniformTypeIdentifiers
     @Published private(set) var tabs: [OpenTab] = []
     @Published private(set) var selectedID: UUID?
     let storage: URL
+    let readingDefaults: UserDefaults
+    @Published var showReadingHistory = false
     /// The workspace shared by every tab: excerpts from any open document gather here.
     let board: Board
     let documentTasks: DocumentTaskQueue
@@ -48,9 +50,10 @@ import UniformTypeIdentifiers
     var showOCRTasksAfterSearch = false
     private var forwarding: AnyCancellable?
 
-    init(storage: URL? = nil) {
+    init(storage: URL? = nil, readingDefaults: UserDefaults? = nil) {
         let folder = storage ?? ProcessInfo.processInfo.environment["KONGFOLIO_STORAGE"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
         self.storage = folder
+        self.readingDefaults = readingDefaults ?? (AppEnvironment.isTestRun ? UserDefaults(suiteName: "KongFolio.ReadingTests." + UUID().uuidString)! : .standard)
         self.documentTasks = DocumentTaskQueue(storage: folder)
         self.board = Board(storage: folder)
         self.batchQueue = BatchQueue(storage: AppEnvironment.isTestRun && storage == nil ? nil : folder)
@@ -130,7 +133,7 @@ import UniformTypeIdentifiers
         if recoveryExists(""), !entries.contains(where: { $0.slot.isEmpty }) { entries.insert(SessionEntry(slot: "", kind: .recovery), at: 0) }
         var selectedTab: UUID?
         for entry in entries {
-            let workspace = Workspace(storage: storage, slot: entry.slot)
+            let workspace = Workspace(storage: storage, slot: entry.slot, readingDefaults: readingDefaults)
             workspace.store = self
             // Unsaved changes win: a recovery copy exists, so the tab was not clean when the app ended.
             if entry.kind == .recovery || recoveryExists(entry.slot) {
@@ -140,6 +143,7 @@ import UniformTypeIdentifiers
                 workspace.needsLoad = true
                 if entry.kind == .project { workspace.projectURL = url } else { workspace.sourceURL = url }
                 workspace.pendingView = entry.position
+                workspace.pendingReadingLayout = entry.layout ?? ReadingProgress.load(path: path, defaults: readingDefaults).layout
                 workspace.needsLoad = true
             } else {
                 continue
@@ -174,7 +178,7 @@ import UniformTypeIdentifiers
     }
 
     @discardableResult func addWorkspace() -> Workspace {
-        let workspace = Workspace(storage: storage, slot: freshSlot())
+        let workspace = Workspace(storage: storage, slot: freshSlot(), readingDefaults: readingDefaults)
         workspace.store = self
         workspace.bootstrap()
         tabs.append(.document(workspace))
@@ -184,6 +188,7 @@ import UniformTypeIdentifiers
 
     func select(_ id: UUID) {
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        if selectedID != id { activeWorkspace?.saveReadingRecord() }
         selectedID = id
         focusedID = id
         forwarding = tab.changes.sink { [weak self] _ in self?.objectWillChange.send() }
@@ -241,6 +246,7 @@ import UniformTypeIdentifiers
 
     /// Opens files in the current tab when it is empty, otherwise in a new tab.
     func openInNewTab(_ urls: [URL]) {
+        if urls.contains(where: ReadingShortcut.handles) { openEach(urls); return }
         if urls.count == 1, let url = urls.first, TextImport.handles(url) { openNote(url); return }
         let target: Workspace
         if let current = activeWorkspace, current.count == 0, !current.needsLoad, !current.busy { target = current } else { target = addWorkspace() }
@@ -253,6 +259,10 @@ import UniformTypeIdentifiers
     func openEach(_ urls: [URL]) {
         var first: UUID?
         for url in urls {
+            if ReadingShortcut.handles(url) {
+                do { try openReadingShortcut(url); if first == nil { first = selectedID } } catch { present(error) }
+                continue
+            }
             if TextImport.handles(url) {
                 openNote(url)
                 if first == nil { first = selectedID }

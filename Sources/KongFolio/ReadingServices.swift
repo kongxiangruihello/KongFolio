@@ -298,11 +298,12 @@ extension Workspace {
     }
     func deleteBookmark(_ id: UUID) { checkpoint(); bookmarks.removeAll { $0.id == id }; edited(pdfChanged: false) }
     func openOutline(_ entry: OutlineEntry) { selectPage(entry.page); readingPoint = entry.point; navigationToken = UUID() }
-    func captureReadingPosition() {
+    func captureReadingPosition(scheduleSave: Bool = true) {
         guard let view = pdfView, view.document === document, let destination = view.currentDestination, let page = destination.page, document.index(for: page) == selection else { return }
         let point = destination.point, scale = view.autoScales ? nil : Double(view.scaleFactor)
         guard point.x.isFinite, point.y.isFinite, readingPoint != point || readingScale != scale else { return }
         readingPoint = point; readingScale = scale
+        if scheduleSave { scheduleReadingRecord() }
         scheduleRecovery()
     }
     /// What to select on the page for a search hit.

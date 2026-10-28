@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 @MainActor final class Workspace: ObservableObject {
     // MARK: Reading
     @Published var sidebarTab = SidebarTab.pages
-    @Published var readingLayout = ReadingLayout.continuous
+    @Published var readingLayout = ReadingLayout.continuous { didSet { if readingLayout != oldValue { scheduleReadingRecord() } } }
     @Published var bookmarks: [PageBookmark] = []
     @Published var bookmarkName = ""
     @Published var outlineEntries: [OutlineEntry] = []
@@ -38,9 +38,12 @@ import UniformTypeIdentifiers
     /// The outline as the reader has arranged it, kept while the tab is open so closing the editor loses nothing.
     var outlineDraft: OutlineDraft?
     @Published var showProgress = false
+    @Published var showReadingShortcut = false
     @Published var readingProgress = ReadingProgress()
     var progressLoadedFor: String?
     var progressTask: Task<Void, Never>?
+    var readingSaveTask: Task<Void, Never>?
+    let readingDefaults: UserDefaults
     @Published var reviewSelection = -1
     @Published var ocrSettings = OCRSettings.load() { didSet { if ocrSettings != oldValue { ocrSettings.save() } } }
     var estimateTask: Task<ExportEstimate, Error>?
@@ -174,6 +177,7 @@ import UniformTypeIdentifiers
     /// session, or unloaded to free memory. Selecting the tab loads it (`ensureLoaded`).
     @Published var needsLoad = false
     var pendingView: ViewPosition?
+    var pendingReadingLayout: ReadingLayout?
     /// A card's source to show as soon as this tab has loaded.
     var pendingReveal: SourceRef?
     var lastActive = Date()
@@ -187,6 +191,7 @@ import UniformTypeIdentifiers
     var pageVersions: [Int: Int] = [:]
     var history: [UndoEntry] = []
     var future: [UndoEntry] = []
+    var isImporting = false
     var activeJob: Task<JobResult, Error>?
     var lastJob: JobSpec?
     var ocrChain: OCRChain?
@@ -218,9 +223,10 @@ import UniformTypeIdentifiers
     let slot: String
     weak var store: WorkspaceStore?
 
-    init(storage: URL? = nil, slot: String = "", drawingDefaults: UserDefaults? = nil) {
+    init(storage: URL? = nil, slot: String = "", drawingDefaults: UserDefaults? = nil, readingDefaults: UserDefaults? = nil) {
         self.storage = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
         self.slot = slot
+        self.readingDefaults = readingDefaults ?? (AppEnvironment.isTestRun ? UserDefaults(suiteName: "KongFolio.ReadingTests." + UUID().uuidString)! : .standard)
         self.drawingDefaults = drawingDefaults ?? (AppEnvironment.isTestRun ? UserDefaults(suiteName: "KongFolio.StyleTests." + UUID().uuidString)! : .standard)
         loadDrawingStyles()
     }
@@ -642,7 +648,7 @@ import UniformTypeIdentifiers
     }
 
     func prepareToClose() -> Bool {
-        captureReadingPosition()
+        saveReadingRecord()
         guard !busy else { status = "请等待任务完成或点击取消任务"; return false }
         if dirty {
             guard confirmReplace() else { return false }
@@ -661,6 +667,7 @@ import UniformTypeIdentifiers
 
     /// Empties the workspace. With `keepingSource` the file it came from stays known, so the tab can load it again.
     private func clearDocument(keepingSource: Bool) {
+        saveReadingRecord(); progressTask?.cancel(); readingSaveTask?.cancel()
         try? persistWordDraft()
         try? persistTableDrafts()
         tableDrafts = []; pendingTableDraftID = nil
@@ -713,6 +720,7 @@ import UniformTypeIdentifiers
     }
 
     private func applyPendingView() {
+        if let layout = pendingReadingLayout { readingLayout = layout; pendingReadingLayout = nil }
         if let position = pendingView {
             pendingView = nil
             selection = max(0, min(position.selection, count - 1))
@@ -737,8 +745,8 @@ import UniformTypeIdentifiers
     }
 
     private func fileEntry(position: ViewPosition?) -> SessionEntry? {
-        if let url = projectURL { return SessionEntry(slot: slot, kind: .project, path: url.path, position: position) }
-        if let url = sourceURL { return SessionEntry(slot: slot, kind: .file, path: url.path, position: position) }
+        if let url = projectURL { return SessionEntry(slot: slot, kind: .project, path: url.path, position: position, layout: pendingReadingLayout ?? readingLayout) }
+        if let url = sourceURL { return SessionEntry(slot: slot, kind: .file, path: url.path, position: position, layout: pendingReadingLayout ?? readingLayout) }
         return nil
     }
 
@@ -771,7 +779,7 @@ import UniformTypeIdentifiers
 
     func pickFiles() -> [URL] {
         let panel = NSOpenPanel()
-        var types: [UTType] = [.pdf, .image, .html, .plainText, UTType(exportedAs: "com.kongfolio.project")]
+        var types: [UTType] = [ReadingShortcut.fileType, .pdf, .image, .html, .plainText, UTType(exportedAs: "com.kongfolio.project")]
         types += TextImport.markdownExtensions.compactMap { UTType(filenameExtension: $0) }
         panel.allowedContentTypes = types
         panel.allowsMultipleSelection = true
@@ -837,6 +845,10 @@ import UniformTypeIdentifiers
 
     func load(_ urls: [URL], insert: Bool = false, prepared: ImportPayload? = nil) {
         guard !urls.isEmpty else { return }
+        if prepared == nil, urls.contains(where: ReadingShortcut.handles) {
+            guard !insert, let store else { self.error = "阅读快捷方式请单独打开，不能作为 PDF 页面插入"; return }
+            store.openEach(urls); return
+        }
         // A document that is already open stays open: new files go to a new tab. Inserting pages and the
         // prepared (already read) payload of a tab's own import are not routed.
         if !insert, prepared == nil, count > 0, let store {
@@ -866,6 +878,7 @@ import UniformTypeIdentifiers
                 future.removeAll()
                 remember(urls)
                 scheduleRecovery()
+                prepareReadingResume(path: urls[0].path)
                 applyPendingView()
                 status = "项目已打开"
                 store?.loadedTabsChanged()
@@ -956,10 +969,9 @@ import UniformTypeIdentifiers
             }
             // A book opened on its own (not to a card's source, a link or a restored tab) goes on where it was last read (0.34).
             var resumed: Int?
-            if !insert, loaded.count == 1, pendingView == nil, pendingReveal == nil, AppInterface.resumeReading,
-               let page = ReadingProgress.load(path: urls[0].path).resumePage(pageCount: count) {
-                pendingView = ViewPosition(selection: page, x: nil, y: nil, scale: nil)
-                resumed = page
+            if !insert, loaded.count == 1 {
+                prepareReadingResume(path: urls[0].path)
+                resumed = pendingView?.selection
             }
             applyPendingView()
             remember(urls)
@@ -983,6 +995,7 @@ import UniformTypeIdentifiers
         readingPoint = nil
         navigationToken = UUID()
         selection = index
+        saveReadingRecord(capture: false)
         selectedAnnotation = nil
         scheduleRecovery()
     }

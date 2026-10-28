@@ -51,8 +51,12 @@ struct ReadingProgressSheet: View {
                     .buttonStyle(.plain)
                 }
             }
+            Button("保存这本书的阅读快捷方式…") {
+                workspace.showProgress = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { workspace.showReadingShortcut = true }
+            }.disabled(!workspace.canCreateReadingShortcut)
             Toggle("打开书时回到上次读到的页", isOn: $resumeReading)
-            Text("停留一会儿的页面才算读过；记录只保存在本机，按文件路径区分。KongSeek 的“最近阅读”和文件清单的“阅读进度”读取这份记录。").font(.caption).foregroundStyle(.secondary)
+            Text("停留一会儿的页面才算读过；记录只保存在本机，记录页码、页面位置、缩放和阅读布局；关闭后也保留。KongSeek 的“最近阅读”和文件清单的“阅读进度”读取这份记录。").font(.caption).foregroundStyle(.secondary)
         }
         .padding()
         .adaptiveSheet(width: 560, height: 520, minimumWidth: 360)

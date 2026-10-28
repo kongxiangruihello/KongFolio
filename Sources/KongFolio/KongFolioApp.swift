@@ -14,20 +14,15 @@ import AppKit
     }
 
     var body: some Scene {
-        Window("KongFolio", id: "workspace") {
+        WindowGroup("KongFolio", id: "workspace") {
             RootView(store: store)
+                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
                 .frame(minWidth: 380, minHeight: 300)
                 .background(WindowAccessor { window in delegate.attach(window) })
                 .onAppear { delegate.store = store; store.bootstrap() }
-                .onOpenURL { url in
-                    if let source = SourceLink.source(url) {
-                        do { store.reveal(try SourceLink.resolved(source, baseURL: store.activeNote?.fileURL?.deletingLastPathComponent()), beside: false) }
-                        catch { store.present(error) }
-                    }
-                    else if TextImport.handles(url) { store.openNote(url) }
-                    else { store.openInNewTab([url]) }
-                }
+                .onOpenURL { url in delegate.externalDocuments.receive([url]) }
         }
+        .handlesExternalEvents(matching: ["*"])
         // The window can be dragged to any size, from a narrow reading strip to a full screen.
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1280, height: 820)
@@ -46,6 +41,12 @@ import AppKit
                 Button("导出 PDF…") { store.exportActive() }.keyboardShortcut("e").disabled(!store.canSave)
                 Button("导出 Word…") { store.exportWordActive() }.disabled(!store.canSave)
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
+            }
+            CommandMenu("阅读") {
+                Button("阅读记录…") { store.showReadingHistory = true }
+                Button("当前书籍的阅读进度…") { store.commandWorkspace?.refreshProgress(); store.commandWorkspace?.showProgress = true }.disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Button("保存阅读快捷方式…") { store.commandWorkspace?.showReadingShortcut = true }.disabled(store.commandWorkspace?.canCreateReadingShortcut != true)
+                Button("拷贝继续阅读链接") { store.commandWorkspace?.report { try store.commandWorkspace?.copyReadingLink(mode: .resume) } }.disabled(store.commandWorkspace?.canCreateReadingShortcut != true)
             }
             CommandMenu("任务与历史") {
                 Button("导出检查…") { store.performCommand(.exportCheck) }
@@ -169,7 +170,8 @@ struct WindowAccessor: NSViewRepresentable {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    weak var store: WorkspaceStore?
+    let externalDocuments = ExternalDocumentRouter()
+    weak var store: WorkspaceStore? { didSet { if let store { externalDocuments.attach(store) } } }
     private weak var window: NSWindow?
     private var closingApproved = false
 
