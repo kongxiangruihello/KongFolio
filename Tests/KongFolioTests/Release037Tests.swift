@@ -84,6 +84,9 @@ final class Release037Tests: XCTestCase {
         try shortcut.write(to: file); try library.register(shortcut, file: file)
         let external = Data("external modification".utf8); try external.write(to: file)
         XCTAssertThrowsError(try library.exportShortcut(library.shortcuts[0].id, to: file)); XCTAssertEqual(try Data(contentsOf: file), external)
+        // The saved baseline must be checked inside the coordinated replacement, without recapturing newer bytes.
+        XCTAssertThrowsError(try shortcut.write(to: file, expected: library.shortcuts[0].baseline))
+        XCTAssertEqual(try Data(contentsOf: file), external)
     }
     @MainActor func testRelinkedNativeShortcutCanUpdateOriginalDockFile() throws {
         let root = try root(), original = try pdf(root), moved = try pdf(root, name: "移动.pdf"), defaults = suite(), library = BookLibrary(storage: root), file = root.appendingPathComponent("Dock.kongfoliolink")

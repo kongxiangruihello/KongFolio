@@ -67,11 +67,11 @@ struct ReadingShortcut: Codable, Equatable {
         guard FileManager.default.fileExists(atPath: path) else { throw FolioError(message: "找不到这本书：\(path)。请确认原文件仍在本机，或重新打开书籍后保存快捷方式。") }
         return original
     }
-    func write(to url: URL) throws {
+    func write(to url: URL, expected baseline: FileBaseline? = nil) throws {
         try validate()
         guard url.isFileURL, url.pathExtension.lowercased() == Self.fileExtension,
               !DocumentTaskOutput.sameFile(url, URL(fileURLWithPath: path)) else { throw FolioError(message: "请保存为独立的阅读快捷方式文件") }
-        let data = try JSONEncoder().encode(self), expected = try FileBaseline.capture(url)
+        let data = try JSONEncoder().encode(self), expected = try baseline ?? FileBaseline.capture(url)
         try DocumentTaskOutput.write(to: url, expected: expected) { try data.write(to: $0) }
     }
     func destination(progress: ReadingProgress, pageCount: Int) -> ViewPosition {

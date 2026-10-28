@@ -143,8 +143,10 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
     /// Update a known exported file only if it has not been externally replaced or edited.
     func exportShortcut(_ id: UUID, to target: URL) throws {
         guard let item = shortcuts.first(where: { $0.id == id }) else { return }
-        if target.standardizedFileURL == item.file?.standardizedFileURL { guard let baseline = item.baseline else { throw FileConflict() }; try baseline.verify(target) }
-        try resolve(item.shortcut).write(to: target)
+        let expected: FileBaseline
+        if target.standardizedFileURL == item.file?.standardizedFileURL { guard let baseline = item.baseline else { throw FileConflict() }; expected = baseline }
+        else { expected = try FileBaseline.capture(target) }
+        try resolve(item.shortcut).write(to: target, expected: expected)
         var next = catalog
         if let index = next.shortcuts.firstIndex(where: { $0.id == id }) { next.shortcuts[index].file = target; next.shortcuts[index].baseline = try FileBaseline.capture(target); try commit(next) }
     }
