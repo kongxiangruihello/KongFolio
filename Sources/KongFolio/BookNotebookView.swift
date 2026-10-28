@@ -56,17 +56,8 @@ struct BookNotebookView: View {
         do {
             let workspace = store.tabs.compactMap(\.workspace).first { $0.matches(path: book.path) && $0.count > 0 }
             guard workspace?.busy != true else { throw FolioError(message: "书籍正在处理，请稍后重新打开笔记") }
-            let current = try workspace?.pdfData(), outline = workspace?.outlineEntries, cards = store.board.cards, book = book
-            let worker = Task.detached(priority: .userInitiated) {
-                let data: Data
-                if let current { data = current }
-                else {
-                    let url = try ReadingShortcut(path: book.path, title: book.title, position: ViewPosition(selection: 0), bookmark: book.bookmark).resolvedURL()
-                    data = url.pathExtension.lowercased() == "kongfolio" ? try ProjectArchive.read(url).pdf : try Data(contentsOf: url)
-                }
-                return try BookNotebook.make(book: book, pdf: data, cards: cards, outline: outline)
-            }
-            snapshot = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
+            let current = try workspace?.pdfData()
+            snapshot = try await BookNotebook.load(book: book, currentPDF: current, cards: store.board.cards, outline: workspace?.outlineEntries)
             try Task.checkCancellation()
         } catch is CancellationError {} catch { message = error.localizedDescription }
         working = false

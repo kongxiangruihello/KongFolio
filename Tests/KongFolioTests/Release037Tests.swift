@@ -141,12 +141,12 @@ final class Release037Tests: XCTestCase {
         let link = URL(string: (snapshot.markdown as NSString).substring(with: match.range))!
         XCTAssertEqual(SourceLink.source(link)?.page, 1); XCTAssertEqual(SourceLink.source(link)?.path, file.path)
     }
-    @MainActor func testCurrentNotebookUsesUnsavedAnnotationSnapshot() throws {
+    @MainActor func testCurrentNotebookUsesUnsavedAnnotationSnapshot() async throws {
         let root = try root(), file = try pdf(root), store = WorkspaceStore(storage: root, readingDefaults: suite()); store.bootstrap()
         let w = try XCTUnwrap(store.activeWorkspace); let data = try Data(contentsOf: file); w.document = PDFDocument(data: data)!; w.cachedPDF = data; w.sourceURL = file
         let note = PDFAnnotation(bounds: CGRect(x: 10, y: 10, width: 20, height: 20), forType: .text, withProperties: nil); note.contents = "尚未保存的批注"; w.document.page(at: 0)!.addAnnotation(note); w.edited()
         store.openCurrentBookNotebook(); let book = try XCTUnwrap(store.notebookBook)
-        let snapshot = try BookNotebook.make(book: book, pdf: w.pdfData(), cards: [])
+        let snapshot = try await BookNotebook.load(book: book, currentPDF: w.pdfData(), cards: [], outline: nil)
         XCTAssertTrue(snapshot.markdown.contains("尚未保存的批注")); XCTAssertEqual(ReadingServices.notes(PDFDocument(url: file)!).count, 0)
     }
     func testHistorySettingsValidateAndPersistLimits() throws {
