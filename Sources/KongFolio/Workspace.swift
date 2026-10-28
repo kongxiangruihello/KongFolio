@@ -953,9 +953,17 @@ import UniformTypeIdentifiers
                 } else { fileBaseline = nil }
                 saveConflict = false; loadWordDraft(); loadTableDrafts()
             }
+            // A book opened on its own (not to a card's source, a link or a restored tab) goes on where it was last read (0.34).
+            var resumed: Int?
+            if !insert, loaded.count == 1, pendingView == nil, pendingReveal == nil, AppInterface.resumeReading,
+               let page = ReadingProgress.load(path: urls[0].path).resumePage(pageCount: count) {
+                pendingView = ViewPosition(selection: page, x: nil, y: nil, scale: nil)
+                resumed = page
+            }
             applyPendingView()
             remember(urls)
             status = "已载入 \(count) 页" + (rebuilt ? "（此文件带“禁止修改”限制，已转成可编辑文档；修改后自动保存）" : "")
+                + (resumed.map { "；回到上次读到的第 \($0 + 1) 页" } ?? "")
             store?.loadedTabsChanged()
         }
     }

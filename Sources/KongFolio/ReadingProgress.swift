@@ -4,6 +4,10 @@ import Foundation
 struct ReadingProgress: Equatable {
     var visited: Set<Int> = []
     var last = 0
+    /// When a page was last counted as read (0.34), so KongSeek can list recently read books.
+    var date: Date? = nil
+    /// Pages in the document at that time (0.34), for “读到第 N 页 / 共 M 页” in KongSeek.
+    var pages = 0
 
     struct Chapter: Equatable {
         var title: String
@@ -70,11 +74,22 @@ struct ReadingProgress: Equatable {
 
     static func load(path: String, defaults: UserDefaults = .standard) -> ReadingProgress {
         guard let stored = defaults.dictionary(forKey: key(path)) else { return ReadingProgress() }
-        return ReadingProgress(visited: decode(stored["visited"] as? String ?? ""), last: stored["last"] as? Int ?? 0)
+        return ReadingProgress(visited: decode(stored["visited"] as? String ?? ""), last: stored["last"] as? Int ?? 0,
+                               date: (stored["date"] as? Double).map { Date(timeIntervalSince1970: $0) }, pages: stored["pages"] as? Int ?? 0)
     }
 
+    /// Stored as a plain dictionary under "KongFolio.progress.<path>" in KongFolio's preferences; KongSeek reads
+    /// the same keys (visited, last, date, pages), so keep them stable.
     func save(path: String, defaults: UserDefaults = .standard) {
-        defaults.set(["visited": Self.encode(visited), "last": last], forKey: Self.key(path))
+        var stored: [String: Any] = ["visited": Self.encode(visited), "last": last]
+        if let date { stored["date"] = date.timeIntervalSince1970 }
+        if pages > 0 { stored["pages"] = pages }
+        defaults.set(stored, forKey: Self.key(path))
+    }
+
+    /// The page to reopen at: the last page read, when it is past the first page and still in the document.
+    func resumePage(pageCount: Int) -> Int? {
+        last > 0 && last < pageCount ? last : nil
     }
 
     static func clear(path: String, defaults: UserDefaults = .standard) { defaults.removeObject(forKey: key(path)) }
@@ -93,6 +108,8 @@ extension Workspace {
             if self.progressLoadedFor != path { self.readingProgress = ReadingProgress.load(path: path); self.progressLoadedFor = path }
             self.readingProgress.last = index
             self.readingProgress.visited.insert(index)
+            self.readingProgress.date = Date()
+            self.readingProgress.pages = self.count
             self.readingProgress.save(path: path)
         }
     }

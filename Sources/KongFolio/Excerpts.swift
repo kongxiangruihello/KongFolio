@@ -157,7 +157,7 @@ extension Workspace {
     }
 
     /// Scrolls to a place in the document and marks it for a moment.
-    func go(to position: ViewPosition, highlighting rects: [CGRect] = [], anchor: String? = nil) {
+    func go(to position: ViewPosition, highlighting rects: [CGRect] = [], anchor: String? = nil, keep: Bool = false) {
         guard count > 0 else { pendingView = position; return }
         var target = position
         var marks = rects
@@ -169,7 +169,7 @@ extension Workspace {
         selectedPages = [selection]
         readingPoint = target.point
         navigationToken = UUID()
-        flash(marks, on: selection)
+        flash(marks, on: selection, keep: keep)
     }
 
     /// For a tab that is still loading: shows the source once the document is on screen.
@@ -177,23 +177,24 @@ extension Workspace {
         Task { @MainActor [weak self] in
             for _ in 0..<12 {
                 if let self, self.pdfView?.document === self.document, self.count > 0 {
-                    self.go(to: source.position, highlighting: source.rects, anchor: source.anchor)
+                    self.go(to: source.position, highlighting: source.rects, anchor: source.anchor, keep: source.keep == true)
                     return
                 }
                 try? await Task.sleep(nanoseconds: 250_000_000)
             }
-            self?.go(to: source.position, highlighting: source.rects, anchor: source.anchor)
+            self?.go(to: source.position, highlighting: source.rects, anchor: source.anchor, keep: source.keep == true)
         }
     }
 
-    private func flash(_ rects: [CGRect], on index: Int) {
+    private func flash(_ rects: [CGRect], on index: Int, keep: Bool = false) {
         guard !rects.isEmpty, let page = document.page(at: index) else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let view = self?.pdfView, view.document === self?.document else { return }
             let marks = rects.compactMap { page.selection(for: $0) }
-            marks.forEach { $0.color = NSColor.systemOrange.withAlphaComponent(0.55) }
+            marks.forEach { $0.color = (keep ? NSColor.systemYellow : NSColor.systemOrange).withAlphaComponent(0.55) }
             view.highlightedSelections = marks
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { view.highlightedSelections = nil }
+            // Kept marks stay until the next search, reveal or flash replaces them.
+            if !keep { DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { view.highlightedSelections = nil } }
         }
     }
 }
@@ -225,7 +226,7 @@ extension WorkspaceStore {
             }
             if workspace.count == 0 { workspace.pendingView = position; workspace.pendingReveal = source }
             select(workspace.id)
-            if workspace.count > 0 { workspace.go(to: position, highlighting: source.rects, anchor: source.anchor) }
+            if workspace.count > 0 { workspace.go(to: position, highlighting: source.rects, anchor: source.anchor, keep: source.keep == true) }
             return true
         }
         guard FileManager.default.fileExists(atPath: source.path) else {

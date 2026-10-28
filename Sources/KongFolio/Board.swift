@@ -15,6 +15,9 @@ struct SourceRef: Codable, Equatable {
     /// The first words of the excerpt as PDFKit reads them. If the page numbers have changed since (pages added or
     /// removed), the excerpt is found again by this text.
     var anchor: String? = nil
+    /// Keep the marks on the page instead of letting them fade (0.34): KongSeek's search hits and quotation checks
+    /// open with this, so the words stay visible while the page is read.
+    var keep: Bool? = nil
 
     var pageDescription: String {
         "第 \(page + 1) 页" + (pageLabel.map { $0 == String(page + 1) ? "" : "（印刷页码 \($0)）" } ?? "")

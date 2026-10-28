@@ -279,3 +279,37 @@ final class Version19Tests: XCTestCase {
         XCTAssertEqual(doc.page(at: 0)?.annotations.filter { $0.type == "Square" }.count, 1)
     }
 }
+
+/// 0.34: reading time and page count are kept for KongSeek; reopening goes on where the reader stopped.
+final class ReadingProgressLinkTests: XCTestCase {
+    func testDateAndPagesAreStored() {
+        let suite = UserDefaults(suiteName: "kongfolio-progress-" + UUID().uuidString)!
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        ReadingProgress(visited: [4, 5], last: 5, date: date, pages: 300).save(path: "/书/论语.pdf", defaults: suite)
+        let loaded = ReadingProgress.load(path: "/书/论语.pdf", defaults: suite)
+        XCTAssertEqual(loaded.date, date)
+        XCTAssertEqual(loaded.pages, 300)
+        XCTAssertEqual(loaded.last, 5)
+        // The keys KongSeek reads.
+        let stored = suite.dictionary(forKey: "KongFolio.progress./书/论语.pdf")
+        XCTAssertEqual(stored?["last"] as? Int, 5)
+        XCTAssertEqual(stored?["pages"] as? Int, 300)
+        XCTAssertEqual(stored?["date"] as? Double, 1_800_000_000)
+    }
+
+    func testResumePage() {
+        XCTAssertEqual(ReadingProgress(visited: [0, 1, 9], last: 9).resumePage(pageCount: 20), 9)
+        XCTAssertNil(ReadingProgress(visited: [0], last: 0).resumePage(pageCount: 20))
+        XCTAssertNil(ReadingProgress(visited: [30], last: 30).resumePage(pageCount: 20), "the document got shorter")
+    }
+
+    func testKeepFlagIsOptionalInLinks() throws {
+        let old = try JSONDecoder().decode(SourceRef.self, from: Data(#"{"path":"/a.pdf","fileName":"a.pdf","page":2,"rects":[]}"#.utf8))
+        XCTAssertNil(old.keep)
+        let fromKongSeek = try JSONDecoder().decode(SourceRef.self, from: Data(#"{"path":"/a.pdf","fileName":"a.pdf","page":2,"rects":[[[10,20],[30,12]]],"keep":true}"#.utf8))
+        XCTAssertEqual(fromKongSeek.keep, true)
+        XCTAssertEqual(fromKongSeek.rects, [CGRect(x: 10, y: 20, width: 30, height: 12)])
+        let link = try XCTUnwrap(SourceLink.url(fromKongSeek))
+        XCTAssertEqual(SourceLink.source(link), fromKongSeek)
+    }
+}
