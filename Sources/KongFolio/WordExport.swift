@@ -106,6 +106,9 @@ struct WordExportOptions: Equatable, Codable {
     var printedPageLabels: Bool? = nil
     var tables: [WordTableInsertion]? = nil
     var includeTables: Bool? = nil
+    var editedBlocks: [Int: [WordPreparedBlock]]? = nil
+    var blockBaselines: [Int: String]? = nil
+    var editedSourceDigest: String? = nil
     var editedText: [Int: String]? = nil
     var editedFromRevision: UUID? = nil
 }
@@ -200,11 +203,12 @@ enum WordExport {
     }
 
     /// Writes the chosen pages of `document` as a Word file. `progress` runs on the calling thread.
-    static func write(_ document: PDFDocument, pages: [Int], outline: [OutlineEntry], options: WordExportOptions, regions: [Int: [RecognizedLine]] = [:], to url: URL, sourceDigest: String? = nil,
+    static func write(_ document: PDFDocument, pages: [Int], outline: [OutlineEntry], options: WordExportOptions, regions: [Int: [RecognizedLine]] = [:], to url: URL, sourceDigest: String? = nil, cache: URL? = nil,
                       progress: (Double) -> Void = { _ in }) throws -> WordExportReport {
         var report = WordExportReport()
         let prepared = options.content == .imagesOnly ? [] : try WordCleanup.inspect(document, pages: pages, options: options, regions: regions, sourceDigest: sourceDigest).pages
         let textByPage = Dictionary(uniqueKeysWithValues: prepared.map { ($0.index, $0) })
+        let cacheKey = cache == nil ? "" : try WordCachedPage.key(source: sourceDigest, index: -1, options: options, outline: outline, regions: regions)
         let zip = try ZipWriter(url: url)
         do {
             var body = "", relationships = ""
@@ -216,7 +220,19 @@ enum WordExport {
             for (offset, index) in pages.enumerated() {
                 try Task.checkCancellation()
                 try autoreleasepool {
+                    let checkpoint = cache?.appendingPathComponent("word-\(index).json")
+                    let key = cacheKey + ":" + String(index)
+                    if let checkpoint, let bytes = try? Data(contentsOf: checkpoint), let saved = try? JSONDecoder().decode(WordCachedPage.self, from: bytes), saved.key == key {
+                        if let image = saved.image {
+                            try zip.add("word/media/" + image.name, image.bytes)
+                            relationships += "<Relationship Id=\"rId\(image.id + 1)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/\(image.name)\"/>"
+                            pictureCount += 1; report.pictures += 1
+                        }
+                        body += saved.body; report.characters += saved.characters; report.pages += 1; return
+                    }
                     guard let page = document.page(at: index) else { return }
+                    let start = body.endIndex, characters = report.characters
+                    var storedImage: WordCachedImage?
                     for entry in outline where entry.page == index {
                         body += textParagraph(entry.label, style: "Heading\(min(entry.depth, 2) + 1)", size: 28, bold: true)
                     }
@@ -229,13 +245,14 @@ enum WordExport {
                         let image = try DocumentServices.render(page, maxDimension: options.imageSize.pixels)
                         if let data = jpeg(image, quality: options.imageSize.quality) {
                             pictureCount += 1
-                            let id = pictureCount
+                            let id = index + 1
                             let name = String(format: "page-%04d.jpg", index + 1)
                             let aspect = Double(image.height) / Double(max(image.width, 1))
                             var width = maxWidth, height = maxWidth * aspect
                             if height > maxHeight { height = maxHeight; width = maxHeight / max(aspect, 0.01) }
                             // Each picture goes straight into the file, so a book of hundreds of pages never holds them all in memory.
                             try zip.add("word/media/\(name)", data)
+                            storedImage = WordCachedImage(name: name, id: id, bytes: data)
                             relationships += "<Relationship Id=\"rId\(id + 1)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/\(name)\"/>"
                             body += picture(id: id, relationship: "rId\(id + 1)", name: name, width: Int(width), height: Int(height))
                             report.pictures += 1
@@ -249,12 +266,18 @@ enum WordExport {
                             case .paragraph(let paragraph):
                                 body += textParagraph(paragraph.text, style: paragraph.heading > 0 ? "Heading\(paragraph.heading)" : nil, size: paragraph.heading > 0 ? 32 : 24)
                                 report.characters += paragraph.text.filter { !$0.isWhitespace }.count
+                            case .spanningTable(let rows, let spans):
+                                body += WordTables.xml(rows, spans: spans); report.characters += rows.joined().reduce(0) { $0 + $1.filter { !$0.isWhitespace }.count }
                             case .table(let rows):
                                 body += WordTables.xml(rows); report.characters += rows.joined().reduce(0) { $0 + $1.filter { !$0.isWhitespace }.count }
                             }
                         }
                     }
                     report.pages += 1
+                    if let checkpoint {
+                        let saved = WordCachedPage(key: key, body: String(body[start...]), image: storedImage, characters: report.characters - characters)
+                        try JSONEncoder().encode(saved).write(to: checkpoint, options: .atomic)
+                    }
                 }
                 progress(Double(offset + 1) / Double(max(pages.count, 1)) * 0.9)
             }

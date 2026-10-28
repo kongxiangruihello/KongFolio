@@ -7,10 +7,12 @@ struct WordTableInsertion: Codable, Equatable, Identifiable {
     var page: Int
     var regions: [TableSourceRegion]
     var rows: [[String]]
+    var spans: [TableCellSpan]? = nil
 }
-enum WordPreparedBlock: Equatable {
+enum WordPreparedBlock: Codable, Equatable {
     case paragraph(WordPreparedParagraph)
     case table([[String]])
+    case spanningTable(rows: [[String]], spans: [TableCellSpan])
 }
 enum WordTables {
     static func validate(_ tables: [WordTableInsertion], document: PDFDocument, pages: [Int], options: WordExportOptions, sourceDigest: String?) throws {
@@ -21,6 +23,7 @@ enum WordTables {
             guard !table.rows.isEmpty, let first = table.rows.first, !first.isEmpty, first.count <= 100, table.rows.count * first.count <= 2000,
                   table.rows.allSatisfy({ $0.count == first.count }), !table.regions.isEmpty,
                   table.regions.contains(where: { $0.page == table.page }), table.regions.allSatisfy({ (0..<document.pageCount).contains($0.page) && TableGrid.validRect($0.rect) }) else { throw FolioError(message: "表格草稿范围无效") }
+            try TableStructure.validate(rows: table.rows, spans: table.spans ?? [])
             guard table.regions.allSatisfy({ selected.contains($0.page) }) else { throw FolioError(message: "导出范围只包含跨页表格的一部分，请选择全部来源页，或关闭表格插入") }
             guard table.regions.allSatisfy({ options.editedText?[$0.page] == nil }) else { throw FolioError(message: "表格来源页已有手动 Word 正文，请先拷贝并清除这些页的正文修改，或关闭表格插入") }
             for region in table.regions {
@@ -45,18 +48,24 @@ enum WordTables {
             try Task.checkCancellation()
             let y = Double(table.regions.first(where: { $0.page == index })!.rect.minY)
             try append(text.filter { $0.box.midY >= lower && $0.box.midY < y })
-            result.append(.table(table.rows)); lower = y
+            result.append((table.spans ?? []).isEmpty ? .table(table.rows) : .spanningTable(rows: table.rows, spans: table.spans!)); lower = y
         }
         try append(text.filter { $0.box.midY >= lower })
         return result
     }
-    static func xml(_ rows: [[String]]) -> String {
+    static func xml(_ rows: [[String]], spans: [TableCellSpan] = []) -> String {
         let columns = max(1, rows.first?.count ?? 1), width = 8880 / columns
         var result = "<w:tbl><w:tblPr><w:tblW w:w=\"8880\" w:type=\"dxa\"/><w:tblBorders>" + ["top","left","bottom","right","insideH","insideV"].map { "<w:\($0) w:val=\"single\" w:sz=\"4\" w:color=\"A6A6A6\"/>" }.joined() + "</w:tblBorders></w:tblPr><w:tblGrid>" + String(repeating: "<w:gridCol w:w=\"\(width)\"/>", count: columns) + "</w:tblGrid>"
         for (i, row) in rows.enumerated() {
             result += "<w:tr>" + (i == 0 ? "<w:trPr><w:tblHeader/></w:trPr>" : "")
-            for value in row {
-                result += "<w:tc><w:tcPr><w:tcW w:w=\"\(width)\" w:type=\"dxa\"/></w:tcPr>" + TextImport.normalized(value).components(separatedBy: "\n").map { WordExport.textParagraph($0, bold: i == 0) }.joined() + "</w:tc>"
+            for c in row.indices {
+                let span = spans.first { $0.contains(i,c) }
+                if let span, c != span.column { continue }
+                let columns = span?.columns ?? 1
+                let merge = span.map { $0.rows > 1 ? ($0.row == i ? "<w:vMerge w:val=\"restart\"/>" : "<w:vMerge/>") : "" } ?? ""
+                let grid = columns > 1 ? "<w:gridSpan w:val=\"\(columns)\"/>" : ""
+                let value = span.map { $0.row == i ? row[c] : "" } ?? row[c]
+                result += "<w:tc><w:tcPr><w:tcW w:w=\"\(width * columns)\" w:type=\"dxa\"/>" + grid + merge + "</w:tcPr>" + TextImport.normalized(value).components(separatedBy: "\n").map { WordExport.textParagraph($0, bold: i == 0) }.joined() + "</w:tc>"
             }
             result += "</w:tr>"
         }
@@ -64,12 +73,12 @@ enum WordTables {
     }
 }
 extension Workspace {
-    func wordOptionsWithTables() throws -> WordExportOptions {
+    func wordOptionsWithTables(allowUnregenerated: Bool = false) throws -> WordExportOptions {
         var result = wordOptions
         let included = tableDrafts.filter(\.includeInWord)
         if result.includeTables != false && result.content != .imagesOnly {
-            guard !included.contains(where: \.needsRegeneration) else { throw FolioError(message: "表格分隔线已修改，请重新生成并核对表格") }
-            result.tables = included.map { WordTableInsertion(id: $0.id, sourceDigest: $0.sourceDigest, page: $0.page, regions: $0.regions, rows: $0.rows) }
+            guard allowUnregenerated || !included.contains(where: \.needsRegeneration) else { throw FolioError(message: "表格分隔线已修改，请重新生成并核对表格") }
+            result.tables = included.map { WordTableInsertion(id: $0.id, sourceDigest: $0.sourceDigest, page: $0.page, regions: $0.regions, rows: $0.rows, spans: $0.spans) }
         } else { result.tables = nil }
         return result
     }

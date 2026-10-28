@@ -1,7 +1,7 @@
 import Foundation
 import PDFKit
 
-struct WordPreparedParagraph: Equatable { var text: String; var heading: Int = 0 }
+struct WordPreparedParagraph: Codable, Equatable { var text: String; var heading: Int = 0 }
 struct WordPreparedPage { var index: Int; var label: String?; var paragraphs: [WordPreparedParagraph]; var blocks: [WordPreparedBlock]? = nil }
 struct WordMarginCandidate: Identifiable { var id: String; var example: String; var pages: Int }
 
@@ -100,6 +100,12 @@ enum WordCleanup {
             var value = prepare(index: index, label: ReadingServices.pageLabel(document.page(at: index)!, index: index), text: text, regions: regions[index], options: options, margins: margins)
             if let blocks = try WordTables.blocks(page: document.page(at: index)!, index: index, tables: tables, options: options, margins: margins) {
                 value.blocks = blocks; value.paragraphs = blocks.compactMap { if case .paragraph(let p) = $0 { return p }; return nil }
+            }
+            if let edited = options.editedBlocks?[index] {
+                let base = value.blocks ?? value.paragraphs.map(WordPreparedBlock.paragraph)
+                guard options.editedSourceDigest == sourceDigest, options.blockBaselines?[index] == (try WordMixedDraft.digest(base)) else { throw FolioError(message: "第 \(index+1) 页的原文、表格或整理选项已变化，Word 混合草稿保留，请拷贝核对后清除本页修改") }
+                try WordMixedDraft.validate(edited, against: base)
+                value.blocks = edited; value.paragraphs = edited.compactMap { if case .paragraph(let p) = $0 { return p }; return nil }
             }
             return value
         }

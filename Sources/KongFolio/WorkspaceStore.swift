@@ -34,8 +34,9 @@ import UniformTypeIdentifiers
     let storage: URL
     /// The workspace shared by every tab: excerpts from any open document gather here.
     let board: Board
-    let documentTasks = DocumentTaskQueue()
+    let documentTasks: DocumentTaskQueue
     @Published var showBackgroundJobs = false
+    @Published var exportReview: ExportReviewRequest?
     @Published var showRecoveryCenter = false
     var pendingRecoveryURL: URL?
     let batchQueue: BatchQueue
@@ -50,9 +51,14 @@ import UniformTypeIdentifiers
     init(storage: URL? = nil) {
         let folder = storage ?? ProcessInfo.processInfo.environment["KONGFOLIO_STORAGE"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
         self.storage = folder
+        self.documentTasks = DocumentTaskQueue(storage: folder)
         self.board = Board(storage: folder)
         self.batchQueue = BatchQueue(storage: AppEnvironment.isTestRun && storage == nil ? nil : folder)
         self.folderSearch = FolderSearchModel(storage:folder)
+        documentTasks.didFinishPersistent = { [weak self] result in
+            guard result.file?.pathExtension == "json", let self else { return }
+            for workspace in self.tabs.compactMap(\.workspace) { workspace.loadTableDrafts() }
+        }
         connectBoardToDocuments()
     }
 
@@ -142,7 +148,7 @@ import UniformTypeIdentifiers
             tabs.append(.document(workspace))
             if entry.slot == session.selected { selectedTab = workspace.id }
         }
-        for note in MarkdownNote.restoreBackups(storage: storage) { tabs.append(.note(note)) }
+        for note in MarkdownNote.restoreBackups(storage: storage) { note.store = self; tabs.append(.note(note)) }
         if let backup = Board.restoreBackup(storage: storage) {
             board.load(backup.file, from: nil)
             board.dirty = true
@@ -276,7 +282,7 @@ import UniformTypeIdentifiers
 
     @discardableResult func newNote(format: TextDocumentFormat = .markdown) -> MarkdownNote {
         let note = MarkdownNote(storage: storage, format: format)
-        tabs.append(.note(note))
+        note.store = self; tabs.append(.note(note))
         select(note.id)
         return note
     }
@@ -288,7 +294,7 @@ import UniformTypeIdentifiers
         }
         do {
             let note = try MarkdownNote.open(url, storage: storage)
-            tabs.append(.note(note))
+            note.store = self; tabs.append(.note(note))
             select(note.id)
         } catch {
             present(error)
@@ -336,7 +342,7 @@ import UniformTypeIdentifiers
     /// Called when the window closes or the app quits. Walks through every tab; any cancel stops the quit.
     func prepareToClose() -> Bool {
         folderSearch.cancel()
-        if documentTasks.running { documentTasks.cancelAll(); showBackgroundJobs = true; return false }
+        if documentTasks.running { documentTasks.pauseAll() }
         if batchQueue.running {
             batchQueue.cancel()
             batchQueue.summary = "正在暂停任务；当前页结束后可再次关闭。未完成项会保留。"

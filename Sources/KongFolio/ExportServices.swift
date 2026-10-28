@@ -239,7 +239,8 @@ extension Workspace {
             catch is CancellationError {} catch { estimating = false; self.error = error.localizedDescription }
         }
     }
-    func configuredExport() {
+    func configuredExport(reviewed: Bool = false) {
+        if !reviewed { do { try reviewExport(.pdf) { [weak self] in self?.configuredExport(reviewed:true) } } catch { self.error=error.localizedDescription };return }
         guard checkDraftsForExport(), let data = try? pdfData(), !exportPages.isEmpty else { return }
         let options = exportOptions, pages = exportPages
         invalidateEstimate(); showExport = false

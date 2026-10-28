@@ -7,7 +7,9 @@ struct DocumentTasksView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("后台任务").font(.title2.bold())
-            Text("处理使用任务开始时的文档副本，可关闭面板继续阅读其他文件。取消不会覆盖原件或已有输出。").font(.caption).foregroundStyle(.secondary)
+            Text("处理使用任务开始时的文档副本，可关闭面板继续阅读其他文件。暂停和重启会保留已完成页面；继续前核对原件版本。取消不会覆盖原件或已有输出。").font(.caption).foregroundStyle(.secondary)
+            if !queue.persistenceMessage.isEmpty { Text(queue.persistenceMessage).font(.caption).foregroundStyle(.red) }
+            Button("只重试失败任务") { queue.retryFailed() }.disabled(!queue.items.contains { $0.state == .failed && queue.canResume($0.id) })
             if queue.items.isEmpty { Text("暂时没有后台任务").padding(.vertical, 24) }
             ForEach(queue.items) { item in
                 VStack(alignment: .leading, spacing: 6) {
@@ -15,11 +17,13 @@ struct DocumentTasksView: View {
                     if item.active { ProgressView(value: item.progress) }
                     Text(item.state.rawValue + (item.message.isEmpty ? "" : " · " + item.message)).font(.caption).textSelection(.enabled)
                     PanelRow {
-                        if item.active { Button("取消任务") { queue.cancel(item.id) }.disabled(item.state == .cancelling) }
+                        if item.active { Button("暂停") { queue.pause(item.id) }.disabled(!queue.canPause(item.id)); Button("取消任务") { queue.cancel(item.id) }.disabled(item.state == .cancelling) }
+                        if item.state == .queued { Button("取消等待") { queue.cancel(item.id) } }
+                        if queue.canResume(item.id) { Button(item.state == .failed ? "重试任务" : "继续处理") { do { try queue.resume(item.id) } catch { store.present(error) } } }
                         if let file = item.file {
                             Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
                             if file.pathExtension == "json" {
-                                Button("查看表格草稿") { store.pendingRecoveryURL = file; store.showBackgroundJobs = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { store.showRecoveryCenter = true } }
+                                Button("查看表格草稿") { for workspace in store.tabs.compactMap(\.workspace) { workspace.loadTableDrafts() }; store.pendingRecoveryURL = file; store.showBackgroundJobs = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { store.showRecoveryCenter = true } }
                             }
                             if file.pathExtension == "pdf" {
                                 Button("打开结果") { store.showBackgroundJobs = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { store.openInNewTab([file]) } }

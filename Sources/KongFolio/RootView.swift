@@ -17,6 +17,7 @@ struct RootView: View {
                 Color.clear
             }
         }
+        .sheet(item: $store.exportReview) { request in ExportReviewSheet(store: store, request: request) }
         .sheet(isPresented: $store.showBackgroundJobs) { DocumentTasksView(queue: store.documentTasks, store: store) }
         .sheet(isPresented: $store.showRecoveryCenter) { RecoveryCenterView(store: store) }
         .sheet(isPresented: $store.showDocumentComparison) { DocumentComparisonPanel() }

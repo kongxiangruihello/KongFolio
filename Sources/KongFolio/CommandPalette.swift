@@ -2,12 +2,13 @@ import SwiftUI
 
 enum FolioCommand: String, CaseIterable, Identifiable {
     case open, newPDF, newMarkdown, newHTML, newText, save, saveAs, exportPDF, exportWord, printDocument
-    case recoveryCenter, backgroundJobs, formTemplate
+    case recoveryCenter, backgroundJobs, formTemplate, exportCheck
     case find, searchFiles, rotate, extractPages, removePages, blankPage, annotation, signature, tools
     case table, forms, ocr, scan, compare, history, tasks, switchTabs, undo, redo
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .exportCheck: return "导出检查与问题定位"
         case .recoveryCenter: return "打开恢复中心"
         case .backgroundJobs: return "查看后台任务"
         case .formTemplate: return "制作或套用扫描表单模板"
@@ -44,6 +45,7 @@ enum FolioCommand: String, CaseIterable, Identifiable {
     }
     var keywords: String {
         switch self {
+        case .exportCheck: return "导出 检查 缺图 页码 草稿 preflight"
         case .recoveryCenter: return "恢复 备份 冲突 草稿 recovery"
         case .backgroundJobs: return "后台 进度 取消 任务 jobs"
         case .formTemplate: return "模板 扫描 表单 输入框 template"
@@ -74,7 +76,7 @@ extension WorkspaceStore {
         let w = commandWorkspace
         switch command {
         case .recoveryCenter, .backgroundJobs, .open, .newPDF, .newMarkdown, .newHTML, .newText, .searchFiles, .compare, .tasks, .switchTabs: return nil
-        case .save, .saveAs, .exportPDF, .exportWord, .printDocument:
+        case .exportCheck, .save, .saveAs, .exportPDF, .exportWord, .printDocument:
             if activeWorkspace?.busy == true { return "当前文档正在处理任务" }
             return canSave ? nil : "请先打开或新建文件"
         case .undo: return canUndo ? nil : "没有可以撤销的操作"
@@ -97,6 +99,7 @@ extension WorkspaceStore {
         } catch { commandWorkspace?.status = "无法记忆最近命令：\(error.localizedDescription)" }
         let w = commandWorkspace
         switch command {
+        case .exportCheck: if let workspace = activeWorkspace { workspace.startWordExport() } else { activeNote?.exportWord() }
         case .recoveryCenter: showRecoveryCenter = true
         case .backgroundJobs: showBackgroundJobs = true
         case .formTemplate: w?.showFormTemplate = true

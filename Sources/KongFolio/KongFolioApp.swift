@@ -48,6 +48,7 @@ import AppKit
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
             CommandMenu("任务与历史") {
+                Button("导出检查…") { store.performCommand(.exportCheck) }
                 Button("恢复中心…") { store.showRecoveryCenter = true }
                 Button("后台任务…") { store.showBackgroundJobs = true }
                 Button("制作 / 套用扫描表单模板…") { store.commandWorkspace?.showFormTemplate = true }.disabled((store.commandWorkspace?.count ?? 0) == 0 || store.commandWorkspace?.busy == true)
