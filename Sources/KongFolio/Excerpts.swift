@@ -34,6 +34,7 @@ extension Workspace {
     }
 
     func excerpt(selection selected: PDFSelection) {
+        if captureReadingExcerpt(selected) { return }
         guard let board = store?.board else { error = "工作区不可用。"; return }
         guard let raw = selected.string, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             error = "请先在 PDF 中选中文字。扫描页需先 OCR。"
@@ -66,6 +67,12 @@ extension Workspace {
 
     /// Sends a captured region of the page (a figure, a table, a scanned passage) to the workspace.
     func excerptRegion(imageData: Data, size: CGSize, page: PDFPage, pageRect: CGRect) {
+        if let store, store.readingMode {
+            guard !store.journal.unreadable else { error = store.journal.error; return }
+            let index = document.index(for:page)
+            let record = ReadingRecord(kind:.image,citations:[readingCitation(page:index == NSNotFound ? selection : index,rects:[pageRect])])
+            store.journal.add(record,image:imageData); store.readingRecordID = record.id; store.openReadingDesk(.excerpts); status = "图片摘录已保存到阅读记录"; return
+        }
         guard let board = store?.board else { error = "工作区不可用。"; return }
         let id = board.addImage(imageData, size: size, source: sourceReference(page: page, rects: [pageRect]))
         if Workspace.tintsSources { tint(cardID: id, color: board.card(id)?.color ?? .blue, pages: [(page, pageRect)], quote: "") }
@@ -129,6 +136,7 @@ extension Workspace {
 
     /// Clicking an excerpt's colour in the document shows its card in the workspace.
     func focusCard(_ id: UUID) {
+        if let store, store.journal.record(id) != nil { store.readingRecordID = id; store.openReadingDesk(.excerpts); return }
         guard let board = store?.board, board.card(id) != nil else { return }
         showBoardPane()
         board.focus(id)

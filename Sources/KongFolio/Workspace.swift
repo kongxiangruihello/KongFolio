@@ -301,8 +301,9 @@ import UniformTypeIdentifiers
         page.annotations.filter { !["Link", "Widget", "Popup"].contains($0.type ?? "") }
     }
 
+    func recordError(_ failure:Error) { if !FolioCancellation.matches(failure) { error = failure.localizedDescription } }
     func report(_ action: () throws -> Void) {
-        do { try action() } catch { self.error = error.localizedDescription }
+        do { try action() } catch { if !FolioCancellation.matches(error) { self.recordError(error) } }
     }
 
     func confirm(_ title: String, _ detail: String, action: String) -> Bool {
@@ -486,12 +487,15 @@ import UniformTypeIdentifiers
                 self.writer.write(archive, to: self.recoveryURL, generation: generation) { [weak self] error in
                     if error == nil { try? FileManager.default.removeItem(at: legacy) }
                     Task { @MainActor in
-                        self?.recoveryStatus = error == nil ? "已自动保存恢复副本" : "自动保存失败"
-                        if let error { self?.error = error.localizedDescription }
+                        guard let current = self, current.recoverySequence == generation else { return }
+                        current.recoveryStatus = error == nil ? "已自动保存恢复副本" : "自动保存失败"
+                        if let self, self.recoverySequence == generation, let error, !FolioCancellation.matches(error) { self.recordError(error) }
                     }
                 }
             } catch {
-                self.error = error.localizedDescription
+                guard !Task.isCancelled, self.recoverySequence == generation else { return }
+                if error is SnapshotOutdated { self.scheduleRecovery() }
+                else if !FolioCancellation.matches(error) { self.recordError(error) }
             }
         }
     }
@@ -504,7 +508,7 @@ import UniformTypeIdentifiers
             try? FileManager.default.removeItem(at: legacyRecoveryURL)
             return true
         } catch {
-            self.error = error.localizedDescription
+            self.recordError(error)
             return false
         }
     }
@@ -680,7 +684,7 @@ import UniformTypeIdentifiers
             try writer.flush(nil, to: recoveryURL)
             try? FileManager.default.removeItem(at: legacyRecoveryURL)
         } catch {
-            self.error = error.localizedDescription
+            self.recordError(error)
             return false
         }
         dirty = false
@@ -818,7 +822,7 @@ import UniformTypeIdentifiers
             if closePrepared { writer.discard(recoveryURL) } else { try writer.flush(nil, to: recoveryURL) }
             try? FileManager.default.removeItem(at: legacyRecoveryURL)
         } catch {
-            self.error = error.localizedDescription
+            self.recordError(error)
             return false
         }
         let closed = title
@@ -932,7 +936,7 @@ import UniformTypeIdentifiers
                 prepareReadingResume(path: urls[0].path)
                 applyPendingView()
                 status = "项目已打开"
-                validateResearchSource(); loadReadingRulerIfNeeded()
+                validateResearchSource(); loadReadingRulerIfNeeded(); store?.restoreReadingRecord(for:self)
             store?.loadedTabsChanged()
                 return
             }
@@ -1047,7 +1051,7 @@ import UniformTypeIdentifiers
             remember(urls)
             status = "已载入 \(count) 页" + (rebuilt ? "（此文件带“禁止修改”限制，已转成可编辑文档；修改后自动保存）" : "")
                 + (resumed.map { "；回到上次读到的第 \($0 + 1) 页" } ?? "")
-            validateResearchSource(); loadReadingRulerIfNeeded()
+            validateResearchSource(); loadReadingRulerIfNeeded(); store?.restoreReadingRecord(for:self)
             store?.loadedTabsChanged()
         } }
     }

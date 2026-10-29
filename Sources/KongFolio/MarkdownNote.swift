@@ -157,7 +157,7 @@ struct TextEdit: Equatable {
             let bytes = try Data(contentsOf: fileURL)
             text = TextImport.normalized(try TextImport.decode(bytes)); fileBaseline = try FileBaseline.capture(fileURL, data: bytes)
             dirty = false; saveConflict = false; removeBackup(); status = "已载入外部版本；此前修改保存在应用的 Conflicts 文件夹"
-        } catch { self.error = error.localizedDescription }
+        } catch { self.recordError(error) }
     }
 
     // MARK: Backup of unsaved text
@@ -212,9 +212,11 @@ struct TextEdit: Equatable {
         textView?.delegate = nil; textView = nil
     }
 
+    func recordError(_ failure:Error) { if !FolioCancellation.matches(failure) { error = failure.localizedDescription } }
     func refreshPreview() {
         previewTask?.cancel()
         guard !editorClosed else { return }
+        guard format != .plain else { preview = nil; previewMessage = ""; return }
         previewGeneration = UUID()
         let generation = previewGeneration
         previewTask = Task { [weak self] in

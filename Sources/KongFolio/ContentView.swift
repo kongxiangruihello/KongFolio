@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @ObservedObject var workspace: Workspace
+    var readingMode = false
     @StateObject private var comparisonSync = ComparisonSync()
     @State private var showSignatureImport = false
     @State private var showToolbarSettings = false
@@ -81,13 +82,14 @@ struct ContentView: View {
     }
 
     private func boardShown(width: CGFloat) -> Bool {
-        workspace.store != nil && LayoutMetrics.showsBoard(preferred: showBoard, width: width)
+        !readingMode && workspace.store != nil && LayoutMetrics.showsBoard(preferred: showBoard, width: width)
     }
 
     /// The window can be any size: panels and top bar controls adapt to the width (see `LayoutMetrics`).
     private func layout(width: CGFloat) -> some View {
         VStack(spacing: 0) {
-            topBar(width: width)
+            if readingMode, let store = workspace.store { ReadingToolbar(store:store,workspace:workspace,width:width) }
+            else { topBar(width:width) }
             if workspace.saveConflict { SaveConflictBanner(copy: workspace.chooseConflictCopy, reload: workspace.reloadAfterConflict) }
             Divider()
             HSplitView {
@@ -98,7 +100,10 @@ struct ContentView: View {
                         .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
                 }
                 if boardShown(width: width), let board = workspace.store?.board { BoardView(board: board, workspace: workspace).frame(minWidth: 280, idealWidth: 380, maxWidth: .infinity) }
-                if LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width), splitShown: splitShown(width: width)) { inspector.frame(minWidth: 220, idealWidth: 290, maxWidth: 340) }
+                if readingMode, width >= 850, let store = workspace.store, store.showReadingDesk {
+                    ReadingDeskView(store:store,journal:store.journal,section:Binding(get:{store.readingDeskSection},set:{store.readingDeskSection = $0}),compact:true).frame(minWidth:280,idealWidth:330,maxWidth:400)
+                }
+                if !readingMode && LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width), splitShown: splitShown(width: width)) { inspector.frame(minWidth: 220, idealWidth: 290, maxWidth: 340) }
             }
             Divider()
             statusBar(width: width)
@@ -169,7 +174,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 2) {
                 if style != .minimal { Text("KongFolio").font(.headline).lineLimit(1) }
                 Text(workspace.displayName + (workspace.dirty && workspace.count > 0 ? " •" : "")).font(style == .minimal ? .callout : .caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                    .help(workspace.displayPath ?? "")
+                    .help(workspace.displayName + (workspace.displayPath.map { "\n" + $0 } ?? ""))
                     .contentShape(Rectangle())
                     .onHover { workspace.showPathHint($0) }
                     .contextMenu {
@@ -199,7 +204,7 @@ struct ContentView: View {
         if twoRows { compactToolbar.frame(maxWidth: .infinity, alignment: .leading) }
 
         }
-        .contextMenu { Button("自定工具栏…") { showToolbarSettings = true } }
+        .contextMenu { Button("回到专注阅读界面") { workspace.store?.readingMode = true }; Button("自定工具栏…") { showToolbarSettings = true } }
         .padding(style == .full ? 16 : 10)
     }
 

@@ -27,6 +27,8 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         var books: [LibraryBook] = []
         var shortcuts: [ManagedReadingShortcut] = []
         var relocated: [String: String] = [:]
+        var manualOnly: Bool? = true
+        var pendingBooks: [LibraryBook]? = nil
     }
     private let catalogWriter = DispatchQueue(label: "com.kongfolio.library", qos: .utility)
     private var reflectionTask: Task<Void, Never>?
@@ -47,6 +49,14 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
                 let value = try JSONDecoder().decode(Catalog.self, from: Data(contentsOf: url))
                 guard value.version == 1 else { throw FolioError(message: "书架数据版本不受支持") }
                 catalog = value
+                if value.manualOnly != true {
+                    let backup = url.deletingLastPathComponent().appendingPathComponent("catalog-before-0.41.json")
+                    if !FileManager.default.fileExists(atPath:backup.path) { try FileManager.default.copyItem(at:url,to:backup) }
+                    var migrated = value
+                    migrated.pendingBooks = (value.pendingBooks ?? []) + value.books
+                    migrated.books = []; migrated.manualOnly = true
+                    try Self.writeCatalog(migrated,to:url); catalog = migrated
+                }
             } catch { self.error = "书架未能读取，原记录保留：" + error.localizedDescription }
         }
     }
@@ -135,7 +145,7 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         let identities = Self.historyIdentities(books.map(\.path) + history.map(\.path))
         try applyHistory(history,identities:identities)
     }
-    func refreshHistory(defaults: UserDefaults) async throws -> [String:ReadingProgress] {
+    func refreshHistory(defaults: UserDefaults, importNew: Bool = false) async throws -> [String:ReadingProgress] {
         let snapshot = defaults.dictionaryRepresentation(), paths = books.map(\.path)
         let worker = Task.detached(priority:.utility) { () throws -> ([ReadingProgress.HistoryItem],[String:String]) in
             try Task.checkCancellation()
@@ -144,7 +154,7 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
             try Task.checkCancellation(); return (history,identities)
         }
         let (history,identities) = try await withTaskCancellationHandler(operation:{ try await worker.value },onCancel:{ worker.cancel() })
-        try Task.checkCancellation(); try applyHistory(history,identities:identities)
+        try Task.checkCancellation(); if importNew { try applyHistory(history,identities:identities) }
         var byIdentity: [String:ReadingProgress] = [:]
         for item in history { byIdentity[identities[item.path] ?? item.path] = item.progress }
         return books.reduce(into:[:]) { result,book in result[book.path] = byIdentity[identities[book.path] ?? book.path] ?? ReadingProgress() }
@@ -155,8 +165,12 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
             guard Self.supports(url), FileManager.default.fileExists(atPath: url.path) else { throw FolioError(message: "请选择 PDF、项目或文本文件") }
             let path = ReadingProgress.canonicalPath(url.path)
             if next.books.contains(where: { ReadingProgress.canonicalPath($0.path) == path }) { continue }
-            next.books.append(LibraryBook(path: path, title: url.deletingPathExtension().lastPathComponent,
-                bookmark: try? url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)))
+            if var old = next.pendingBooks?.first(where: { ReadingProgress.canonicalPath($0.path) == path }) {
+                old.path = path; next.books.append(old); next.pendingBooks?.removeAll { $0.id == old.id }
+            } else {
+                next.books.append(LibraryBook(path: path, title: url.deletingPathExtension().lastPathComponent,
+                    bookmark: try? url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)))
+            }
         }
         try commit(next)
     }
@@ -164,6 +178,19 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         var next = catalog
         guard let index = next.books.firstIndex(where: { $0.id == book.id }) else { throw FolioError(message: "书籍已不在书架中") }
         next.books[index] = book; try commit(next)
+    }
+    func acceptPending(_ ids: Set<UUID>) throws {
+        var next = catalog
+        let known = Set(next.books.map(\.path))
+        next.books += (next.pendingBooks ?? []).filter { ids.contains($0.id) && !known.contains($0.path) }
+        next.pendingBooks?.removeAll { ids.contains($0.id) }; try commit(next)
+    }
+    func removeBooks(_ ids: Set<UUID>) throws {
+        var next = catalog
+        let retained = Set((next.pendingBooks ?? []).map(\.id))
+        if next.pendingBooks == nil { next.pendingBooks = [] }
+        next.pendingBooks?.append(contentsOf: next.books.filter { ids.contains($0.id) && !retained.contains($0.id) })
+        next.books.removeAll { ids.contains($0.id) }; try commit(next)
     }
     func register(_ shortcut: ReadingShortcut, file: URL? = nil) throws {
         try shortcut.validate()
@@ -205,7 +232,9 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
                 next.books.removeAll { $0.id == other.id }
             }
             if let index = next.books.firstIndex(where: { $0.id == id }) { next.books[index].path = path; next.books[index].bookmark = bookmark }
-        } else { next.books.append(LibraryBook(path: path, title: url.deletingPathExtension().lastPathComponent, bookmark: bookmark)) }
+        } else if let i = next.pendingBooks?.firstIndex(where:{ ReadingProgress.canonicalPath($0.path) == oldIdentity }) {
+            next.pendingBooks?[i].path = path; next.pendingBooks?[i].bookmark = bookmark
+        }
         // Redirect all aliases directly; moving a book back to an old path cannot form a cycle.
         for key in next.relocated.keys where next.relocated[key] == oldPath || next.relocated[key] == oldIdentity { next.relocated[key] = path }
         next.relocated.removeValue(forKey: path)
@@ -248,8 +277,7 @@ extension WorkspaceStore {
         guard let workspace = commandWorkspace, let path = workspace.progressPath else { return }
         do {
             workspace.saveReadingRecord()
-            try library.importHistory(defaults: readingDefaults)
-            notebookBook = library.book(path: path)
+            notebookBook = library.book(path: path) ?? LibraryBook(path:path,title:workspace.displayName)
         } catch { present(error) }
     }
     func openLibraryBook(_ book: LibraryBook) throws {
