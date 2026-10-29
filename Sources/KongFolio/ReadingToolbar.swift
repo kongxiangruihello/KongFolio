@@ -23,6 +23,8 @@ struct ReadingToolbar: View {
                     Button("完整 PDF 工具界面") { store.readingMode = false }
                     Button(store.showReadingDesk ? "收起阅读记录侧栏" : "显示阅读记录侧栏") { store.showReadingDesk.toggle() }
                     Button("打印…") { store.printActive() }.disabled(workspace.count == 0)
+                    Divider()
+                    Button("检查更新…") { AppUpdateWindow.shared.show() }
                 } label:{Image(systemName:"ellipsis.circle")}.menuIndicator(.hidden).menuStyle(.borderlessButton).frame(width:24).help("更多阅读与辅助工具")
             }
             if width < 1050 { actions.frame(maxWidth:.infinity,alignment:.leading) }

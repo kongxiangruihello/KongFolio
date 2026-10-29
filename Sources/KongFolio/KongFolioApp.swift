@@ -27,6 +27,9 @@ import AppKit
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1280, height: 820)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("检查更新…") { AppUpdateWindow.shared.show() }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("打开…") { store.open() }.keyboardShortcut("o")
                 Button("新建 PDF") { store.newPDF() }
