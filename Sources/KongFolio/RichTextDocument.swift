@@ -29,7 +29,7 @@ struct RichTextDocument {
         guard options.valid else { throw FolioError(message: "排版设置无效") }
         self.options = options
         switch format {
-        case .plain: blocks = TextImport.normalized(text).components(separatedBy: "\n").map { .paragraph(Self.styled($0.isEmpty ? " " : $0, options: options, markdown: false), heading: 0) }
+        case .plain: blocks = try TextImport.normalized(text).components(separatedBy: "\n").map { line in try Task.checkCancellation(); return .paragraph(Self.styled(line.isEmpty ? " " : line, options: options, markdown: false), heading: 0) }
         case .markdown: blocks = try Self.markdown(text, baseURL: baseURL, options: options)
         case .html: blocks = try HTMLRichParser.parse(text, baseURL: baseURL, options: options)
         }
@@ -72,6 +72,7 @@ struct RichTextDocument {
         var blocks: [RichBlock] = [], index = 0, fence: String?
         let images = try NSRegularExpression(pattern: #"!\[([^\]]*)\]\((<[^>]+>|[^\s)]+)(?:\s+\"[^\"]*\")?\)"#)
         while index < lines.count {
+            try Task.checkCancellation()
             let line = lines[index], trimmed = line.trimmingCharacters(in: .whitespaces); index += 1
             if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
                 let marker = String(trimmed.prefix(3)); if fence == nil { fence = marker } else if fence == marker { fence = nil }; continue

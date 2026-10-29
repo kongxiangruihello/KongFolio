@@ -50,6 +50,49 @@ final class ReadingLifecycleTests: XCTestCase {
         try await settle(host)
         return weak
     }
+    @MainActor func testTwentyAnnotatedBooksCanUnloadAndResumeUndo() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("kf-edited-stress-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let source = try inputs(root), storage = root.appendingPathComponent("storage")
+        let original = try source.map { OCRPageCache.digest(try Data(contentsOf: $0)) }
+        let copies = try source.enumerated().map { index, file in
+            let copy = root.appendingPathComponent("edit-\(index).pdf"); try FileManager.default.copyItem(at: file, to: copy); return copy
+        }
+        let store = WorkspaceStore(storage: storage, readingDefaults: UserDefaults(suiteName: "KongFolio.EditedStress." + UUID().uuidString)!)
+        store.bootstrap(); store.maxLoadedTabs = 3; store.openEach(copies)
+        let ids = store.tabs.map(\.id)
+        let host = NSHostingView(rootView: AnyView(RootView(store: store))); host.frame = NSRect(x: 0, y: 0, width: 1200, height: 800)
+        var retired: [WeakDocument] = []
+        for (index, id) in ids.enumerated() {
+            store.select(id)
+            let w = try XCTUnwrap(store.activeWorkspace), deadline = Date().addingTimeInterval(20)
+            while w.busy, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+            XCTAssertTrue(w.count > 0); try await settle(host)
+            autoreleasepool {
+                retired.append(WeakDocument(w.document))
+                let mark = PDFAnnotation(bounds: CGRect(x: 20, y: 20, width: 50, height: 30), forType: .text, withProperties: nil)
+                mark.contents = "第\(index + 1)本的批注"; w.document.page(at: 0)!.addAnnotation(mark); w.recordAnnotationsAdded([mark])
+                w.bookmarkName = "阅读书签"; w.addBookmark()
+            }
+            let saved = await w.saveInBackground(); XCTAssertTrue(saved); store.loadedTabsChanged()
+        }
+        for w in store.tabs.compactMap(\.workspace) { await w.unloadWorker?.value }
+        store.loadedTabsChanged()
+        for w in store.tabs.compactMap(\.workspace) { await w.unloadWorker?.value }
+        XCTAssertLessThanOrEqual(store.tabs.compactMap(\.workspace).filter { $0.count > 0 }.count, 3)
+        let deadline = Date().addingTimeInterval(20)
+        while retired.filter({ $0.value != nil }).count > 3, Date() < deadline { try await settle(host, milliseconds: 50) }
+        XCTAssertLessThanOrEqual(retired.filter { $0.value != nil }.count, 3)
+        store.select(ids[0]); let first = try XCTUnwrap(store.activeWorkspace)
+        while first.busy { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(first.bookmarks.map(\.label), ["阅读书签"]); XCTAssertTrue(first.canUndo)
+        first.undo(); first.undo(); XCTAssertTrue(first.currentAnnotations.isEmpty)
+        first.redo(); XCTAssertEqual(first.currentAnnotations.first?.contents, "第1本的批注")
+        XCTAssertEqual(try source.map { OCRPageCache.digest(try Data(contentsOf: $0)) }, original)
+        host.rootView = AnyView(EmptyView()); try await settle(host)
+        print("EDITED_STRESS books=20 loaded<=3 undo-and-bookmarks-restored=true source-unchanged=true")
+    }
     @MainActor func testThreeRoundsOfTwentyScansReleaseDocumentsAndStayResponsive() async throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("kf-stress-" + UUID().uuidString)

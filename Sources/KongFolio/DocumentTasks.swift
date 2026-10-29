@@ -150,15 +150,31 @@ struct DocumentTaskItem: Codable, Identifiable {
 
 /// Commit only once, after cancellation and destination-conflict checks. Temporary output is never the original.
 enum DocumentTaskOutput {
-    static func sameFile(_ a: URL, _ b: URL) -> Bool { a.resolvingSymlinksInPath().standardizedFileURL == b.resolvingSymlinksInPath().standardizedFileURL }
-    static func write(to destination: URL, expected: FileBaseline, generate: (URL) throws -> Void) throws {
+    static func sameFile(_ a: URL, _ b: URL) -> Bool {
+        if a.resolvingSymlinksInPath().standardizedFileURL == b.resolvingSymlinksInPath().standardizedFileURL { return true }
+        // Hard links are aliases too; comparing only path strings would allow overwriting the open source.
+        let keys: Set<URLResourceKey> = [.fileResourceIdentifierKey, .volumeIdentifierKey]
+        guard let x = try? a.resourceValues(forKeys: keys), let y = try? b.resourceValues(forKeys: keys),
+              let xi = x.fileResourceIdentifier as? NSObject, let yi = y.fileResourceIdentifier as? NSObject,
+              let xv = x.volumeIdentifier as? NSObject, let yv = y.volumeIdentifier as? NSObject else { return false }
+        return xi == yi && xv == yv
+    }
+    static func write(to destination: URL, expected: FileBaseline, protectedSource: URL? = nil, generate: (URL) throws -> Void) throws {
         let staging = destination.deletingLastPathComponent().appendingPathComponent(".KongFolio-\(UUID().uuidString).partial")
         defer { try? FileManager.default.removeItem(at: staging) }
+        if let protectedSource, sameFile(destination, protectedSource) { throw FolioError(message: "导出副本不能覆盖原件，请选择其他位置") }
         try Task.checkCancellation(); try generate(staging); try Task.checkCancellation()
-        try expected.writing(destination) { target in
-            try Task.checkCancellation()
-            if FileManager.default.fileExists(atPath: target.path) { _ = try FileManager.default.replaceItemAt(target, withItemAt: staging) }
-            else { try FileManager.default.moveItem(at: staging, to: target) }
+        do {
+            try expected.writing(destination) { target in
+                try Task.checkCancellation()
+                if let protectedSource, sameFile(target, protectedSource) || sameFile(destination, protectedSource) { throw FolioError(message: "导出位置已指向原件，未覆盖，请选择其他位置") }
+                if FileManager.default.fileExists(atPath: target.path) { _ = try FileManager.default.replaceItemAt(target, withItemAt: staging) }
+                else { try FileManager.default.moveItem(at: staging, to: target) }
+            }
+        } catch is FileConflict {
+            let copy = destination.deletingLastPathComponent().appendingPathComponent(destination.deletingPathExtension().lastPathComponent + "-导出副本-" + UUID().uuidString.prefix(8) + "." + destination.pathExtension)
+            try FileManager.default.moveItem(at: staging, to: copy)
+            throw ExportOutputConflict(copy: copy)
         }
     }
 }
@@ -169,4 +185,9 @@ extension Workspace {
         let data = try pdfData(), expected = try FileBaseline.capture(destination)
         try queue.startPersistent("固定表单副本 · \(displayName)", source: data, spec: PersistentDocumentTask(kind: .flatten, destination: destination, expected: expected, sourceBaseline: fileBaseline))
     }
+}
+
+struct ExportOutputConflict: LocalizedError {
+    let copy: URL
+    var errorDescription: String? { "导出位置已被其他软件修改，原文件保持不变；生成结果已保存为：" + copy.path }
 }

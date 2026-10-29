@@ -51,3 +51,6 @@ for file in "$ROOT"/Sources/KongFolio/*.swift; do
 done
 swiftc -swift-version 5 -parse-as-library "${SOURCES[@]}" "$ROOT/.build/smoke/Runner.swift" -o "$ROOT/.build/smoke/KongFolioTests"
 "$ROOT/.build/smoke/KongFolioTests"
+# Keep the existing CI entry point while checking timed autosave in a separate non-XCTest process.
+export KONGFOLIO_AUTOSAVE_REPORT="${KONGFOLIO_AUTOSAVE_REPORT:-$ROOT/.build/autosave/report.json}"
+"$ROOT/scripts/test-autosave.sh"

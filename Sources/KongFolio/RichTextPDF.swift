@@ -35,6 +35,7 @@ enum RichTextPDF {
                     if heading > 0, y - margin < CGFloat(document.options.fontSize * 5) { try nextPage() }
                     var location = 0
                     while location < text.length {
+                        try Task.checkCancellation()
                         if y - margin < CGFloat(document.options.fontSize * document.options.lineHeight + 4) { try nextPage() }
                         let visible = draw(text, range: CFRange(location: location, length: 0), rect: CGRect(x: margin, y: margin, width: width, height: y - margin))
                         guard visible > 0 else { throw FolioError(message: "文字无法排入页面，请减小字号或页边距") }
@@ -58,6 +59,7 @@ enum RichTextPDF {
                         var locations = Array(repeating: 0, count: columns)
                         var first = true
                         while first || zip(locations, cells).contains(where: { $0 < $1.length }) {
+                            try Task.checkCancellation()
                             first = false
                             let remaining = zip(locations, cells).map { location, text in text.attributedSubstring(from: NSRange(location: location, length: text.length - location)) }
                             let natural = (remaining.map { textHeight($0, width: cellWidth - 12) }.max() ?? 0) + 12

@@ -126,6 +126,14 @@ struct MarkdownTextView: NSViewRepresentable {
         if view.string != note.text { view.string = note.text }
     }
 
+    static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+        guard let view = scroll.documentView as? NSTextView else { return }
+        view.delegate = nil
+        if coordinator.note.textView === view { coordinator.note.textView = nil }
+        if let view = view as? NoteTextView { view.note = nil }
+        view.undoManager?.removeAllActions()
+    }
+
     @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
         let note: MarkdownNote
         init(note: MarkdownNote) { self.note = note }
@@ -147,6 +155,10 @@ struct MarkdownPreview: NSViewRepresentable {
         view.displayDirection = .vertical
         view.backgroundColor = .windowBackgroundColor
         return view
+    }
+
+    static func dismantleNSView(_ view: PDFView, coordinator: ()) {
+        view.clearSelection(); view.delegate = nil; view.document = nil
     }
 
     func updateNSView(_ view: PDFView, context: Context) {

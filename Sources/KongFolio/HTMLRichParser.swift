@@ -81,6 +81,7 @@ enum HTMLRichParser {
         var result: [RichBlock] = []
         let blockTags: Set<String> = ["html", "body", "p", "div", "section", "article", "main", "header", "footer", "ul", "ol", "li", "blockquote", "pre", "h1", "h2", "h3", "h4", "h5", "h6", "table", "img", "hr"]
         func walk(_ node: Node, heading: Int = 0) throws {
+            try Task.checkCancellation()
             if node.tag == "img" {
                 if let reference = node.attributes["src"] { result.append(.image(try TextMedia.read(reference, baseURL: baseURL), alt: node.attributes["alt"] ?? "图片")) }; return
             }

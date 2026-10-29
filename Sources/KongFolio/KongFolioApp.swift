@@ -176,7 +176,8 @@ struct WindowAccessor: NSViewRepresentable {
     let externalDocuments = ExternalDocumentRouter()
     weak var store: WorkspaceStore? { didSet { if let store { externalDocuments.attach(store) } } }
     private weak var window: NSWindow?
-    private var closingApproved = false
+    private weak var approvedWindow: NSWindow?
+    private var closeTaskRunning = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -191,14 +192,30 @@ struct WindowAccessor: NSViewRepresentable {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if closingApproved { return .terminateNow }
-        return store?.prepareToClose() == false ? .terminateCancel : .terminateNow
+        guard !closeTaskRunning else { return .terminateCancel }
+        closeTaskRunning = true
+        Task { [weak self] in
+            guard let self else { sender.reply(toApplicationShouldTerminate: false); return }
+            let saved = await self.store?.finishPendingSaves() ?? true
+            let approved = saved && self.store?.prepareToClose() != false
+            self.closeTaskRunning = false
+            sender.reply(toApplicationShouldTerminate: approved)
+        }
+        return .terminateLater
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard store?.prepareToClose() != false else { return false }
-        closingApproved = true
-        return true
+        if approvedWindow === sender { approvedWindow = nil; return true }
+        guard !closeTaskRunning else { return false }
+        closeTaskRunning = true
+        Task { [weak self, weak sender] in
+            guard let self else { return }
+            let saved = await self.store?.finishPendingSaves() ?? true
+            self.closeTaskRunning = false
+            guard saved, self.store?.prepareToClose() != false else { return }
+            self.approvedWindow = sender; sender?.performClose(nil)
+        }
+        return false
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

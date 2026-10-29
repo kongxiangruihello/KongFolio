@@ -11,15 +11,15 @@ extension Workspace {
         directSaveTask?.cancel()
         guard !AppEnvironment.isTestRun, !saveConflict, dirty, projectURL != nil || sourceURL?.pathExtension.lowercased() == "pdf" else { return }
         directSaveTask = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: 1_200_000_000) } catch { return }
+            do { try await Task.sleep(nanoseconds: UInt64(max(1.2, self?.recoveryDelay ?? 1.2) * 1_000_000_000)) } catch { return }
             guard let self, !Task.isCancelled, self.dirty else { return }
             if self.busy || self.drawingInProgress || self.placingSignature != nil { self.scheduleDirectSave(); return }
-            _ = self.saveDirectly(askForDestination: false)
+            _ = await self.saveInBackground()
         }
     }
     /// Existing documents save without confirmation. A new document asks for a destination only once.
     @discardableResult func saveDirectly(askForDestination: Bool = true) -> Bool {
-        guard !busy, count > 0, placingSignature == nil else { return false }
+        guard !busy, !saving, count > 0, placingSignature == nil else { return false }
         directSaveTask?.cancel()
         if projectURL != nil { return saveProject(background: false, automatic: !askForDestination) }
         let target: URL
@@ -36,6 +36,8 @@ extension Workspace {
             if !restoringHistory { try DocumentHistory.protectExisting(target, storage: storage) }
             let saved = try expected.writing(target) { try writePDFCopy(to: $0) }
             fileBaseline = saved
+            var companion = try snapshot(); companion.dirty = false; companion.fileBaseline = saved
+            try ReadingDocumentStore.write(companion, source: target, storage: storage)
             try SignaturePersistence.write(signatureEditArchives, pdf: target, storage: storage)
             sourceURL = target; dirty = false
             fileBaseline = saved; saveConflict = false

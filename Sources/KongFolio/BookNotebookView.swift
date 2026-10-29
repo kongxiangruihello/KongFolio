@@ -25,7 +25,8 @@ struct BookNotebookView: View {
             PanelRow { Text(book.title + " · 阅读笔记").font(.headline); Spacer(); Button("关闭") { if saveReflection() { dismiss() } }.keyboardShortcut(.cancelAction); Button("导出笔记…") { export() }.disabled(snapshot == nil || working); Button("生成可编辑笔记") { create() }.disabled(snapshot == nil || working) }
             Text("我的心得（自动保存在书架中）").font(.caption)
             TextEditor(text: $reflection).frame(minHeight: 70, maxHeight: 120).border(.quaternary)
-                .onChange(of: reflection) { _, _ in saveReflection() }
+                .onChange(of: reflection) { _, _ in scheduleReflection() }
+                .onChange(of: library.error) { _, error in if let error { message = error } }
             TextField("搜索高亮、批注、摘录", text: $query).textFieldStyle(.roundedBorder)
             if working { ProgressView("正在汇总书籍笔记…") }
             List {
@@ -50,6 +51,7 @@ struct BookNotebookView: View {
         }.padding(20).adaptiveSheet(width: 820, height: 680, minimumWidth: 360)
         .interactiveDismissDisabled(reflection != savedReflection)
         .task { await load() }
+        .onDisappear { _ = saveReflection() }
     }
     private func load() async {
         reflection = library.books.first { $0.id == book.id }?.reflection ?? book.reflection; savedReflection = reflection
@@ -61,6 +63,10 @@ struct BookNotebookView: View {
             try Task.checkCancellation()
         } catch is CancellationError {} catch { message = error.localizedDescription }
         working = false
+    }
+    private func scheduleReflection() {
+        do { try library.scheduleReflection(book.id, text: reflection) }
+        catch { message = "心得未保存：" + error.localizedDescription }
     }
     @discardableResult private func saveReflection() -> Bool {
         guard reflection != savedReflection else { return true }

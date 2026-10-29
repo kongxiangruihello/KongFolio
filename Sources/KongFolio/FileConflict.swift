@@ -73,7 +73,7 @@ extension Workspace {
                 try restore(ProjectArchive(sourcePath: original.path, pdf: bytes[0], title: title, selection: 0, selectedPages: [0], mode: .document, recipes: [:], drafts: [:], dirty: false, projectPath: nil))
             } else { loadedBaseline = nil }
             fileBaseline = loadedBaseline; dirty = false; saveConflict = false
-            history.removeAll(); future.removeAll(); loadWordDraft(); scheduleRecovery()
+            history.removeAll(); future.removeAll(); annotationResourceDocuments.removeAll(); loadWordDraft(); scheduleRecovery()
             status = "已重新载入原文件；此前修改保存在应用的 Conflicts 文件夹"
         } catch { self.error = error.localizedDescription }
     }

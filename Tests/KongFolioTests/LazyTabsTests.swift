@@ -65,7 +65,7 @@ final class LazyTabsTests: XCTestCase {
         tab.busy = false
         tab.checkpoint()   // undo history
         tab.dirty = false
-        XCTAssertFalse(tab.canUnload)
+        XCTAssertTrue(tab.canUnload)
         let anonymous = loadedTab(store, nil)   // not from a file: nothing to reload it from
         XCTAssertFalse(anonymous.canUnload)
     }

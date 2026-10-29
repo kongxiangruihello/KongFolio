@@ -70,13 +70,12 @@ enum ExportServices {
 
     /// Writes through a temporary file in the destination folder so a failed or cancelled export never leaves half a file.
     static func writeOptimized(_ doc: PDFDocument, pages: [Int], to target: URL) throws -> Int {
-        let temporary = target.deletingLastPathComponent().appendingPathComponent(".KongFolio-\(UUID().uuidString).pdf")
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        try optimizedPDF(doc, pages: pages, to: temporary)
-        try Task.checkCancellation()
-        let size = (try? FileManager.default.attributesOfItem(atPath: temporary.path)[.size] as? Int) ?? 0
-        if FileManager.default.fileExists(atPath: target.path) { _ = try FileManager.default.replaceItemAt(target, withItemAt: temporary) }
-        else { try FileManager.default.moveItem(at: temporary, to: target) }
+        let expected = try FileBaseline.capture(target)
+        var size = 0
+        try DocumentTaskOutput.write(to: target, expected: expected) { staging in
+            try optimizedPDF(doc, pages: pages, to: staging)
+            size = (try FileManager.default.attributesOfItem(atPath: staging.path)[.size] as? Int) ?? 0
+        }
         return size
     }
 
@@ -148,7 +147,12 @@ enum ExportServices {
         for index in sample { try Task.checkCancellation(); bytes += try autoreleasepool { try encode(render(doc.page(at: index).unwrap("页面读取失败"), dpi: options.dpi), options: options, pdfJPEG: true).count } }
         return ExportEstimate(bytes: Int(Double(bytes) / Double(sample.count) * Double(pages.count) * 1.03), sampled: sample.count, total: pages.count, exact: false)
     }
-    static func run(_ spec: JobSpec, progress: @escaping @Sendable (Double) -> Void) throws -> JobResult {
+    static func run(_ requested: JobSpec, progress: @escaping @Sendable (Double) -> Void) throws -> JobResult {
+        var spec = requested
+        if let target = spec.destination {
+            try spec.validateOutput(target)
+            if spec.outputBaseline == nil { spec.outputBaseline = try FileBaseline.capture(target) }
+        }
         guard let options = spec.exportOptions, let doc = PDFDocument(data: spec.source), !spec.pages.isEmpty,
               spec.pages.allSatisfy({ (0..<doc.pageCount).contains($0) }) else { throw FolioError(message: "导出设置无效") }
         let target = try spec.destination.unwrap("请选择导出位置")
@@ -182,16 +186,20 @@ enum ExportServices {
         if options.format == .pdf, options.pdfMode == .flatten {
             let flattened = try flattenedPDF(doc, pages: spec.pages, progress: progress)
             try Task.checkCancellation()
-            try flattened.write(to: target, options: .atomic)
+            try DocumentTaskOutput.write(to: target, expected: spec.outputBaseline!, protectedSource: spec.protectedSource) { try flattened.write(to: $0) }
             return JobResult(message: "PDF 已导出：标注已固化进页面，文字仍可搜索")
         }
         if options.format == .pdf, options.pdfMode == .preserve {
-            let data = try preservedPDF(doc, pages: spec.pages); try Task.checkCancellation(); try data.write(to: target, options: .atomic)
+            let data = try preservedPDF(doc, pages: spec.pages); try Task.checkCancellation(); try DocumentTaskOutput.write(to: target, expected: spec.outputBaseline!, protectedSource: spec.protectedSource) { try data.write(to: $0) }
             return JobResult(message: "PDF 已导出，保留页面内容与可编辑标注")
         }
         if options.format == .pdf, options.pdfMode == .optimized {
             let before = spec.pages == Array(0..<doc.pageCount) ? spec.source.count : try preservedPDF(doc, pages: spec.pages).count
-            let after = try writeOptimized(doc, pages: spec.pages, to: target)
+            var after = 0
+            try DocumentTaskOutput.write(to: target, expected: spec.outputBaseline!, protectedSource: spec.protectedSource) { staging in
+                try optimizedPDF(doc, pages: spec.pages, to: staging)
+                after = (try FileManager.default.attributesOfItem(atPath: staging.path)[.size] as? Int) ?? 0
+            }
             progress(1)
             let sizes = "\(ByteCountFormatter.string(fromByteCount: Int64(before), countStyle: .file)) → \(ByteCountFormatter.string(fromByteCount: Int64(after), countStyle: .file))"
             return JobResult(message: after < before ? "已压缩并保留文字：\(sizes)" : "已导出，但此文件没有变小（\(sizes)）；可改用图片型 PDF")
@@ -210,7 +218,8 @@ enum ExportServices {
             }
             progress(Double(offset + 1) / Double(spec.pages.count))
         }
-        try Task.checkCancellation(); try output.dataRepresentation().unwrap("导出失败").write(to: target, options: .atomic)
+        try Task.checkCancellation()
+        try DocumentTaskOutput.write(to: target, expected: spec.outputBaseline!, protectedSource: spec.protectedSource) { try output.dataRepresentation().unwrap("导出失败").write(to: $0) }
         return JobResult(message: "已导出图片型 PDF，\(options.dpi) DPI")
     }
 }

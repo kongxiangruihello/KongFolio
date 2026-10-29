@@ -159,6 +159,14 @@ import UniformTypeIdentifiers
     var drawingStylesReady = false
     var drawingDefaults = UserDefaults.standard
     var directSaveTask: Task<Void, Never>?
+    var saveWorker: Task<Bool, Never>?
+    var savePreparation: (@Sendable () throws -> Void)?
+    @Published var saving = false
+    var closePrepared = false
+    var closingInProgress = false
+    var privateDataGeneration = UUID()
+    var unloadWorker: Task<Void, Never>?
+    var spilledSession: URL?
     var drawingInProgress = false
     @Published var showScanWorkshop = false
     @Published var signatures: [SignatureTemplate] = []
@@ -191,6 +199,7 @@ import UniformTypeIdentifiers
     /// Bumped per page for annotation edits so only that page's thumbnail re-renders.
     var pageVersions: [Int: Int] = [:]
     var history: [UndoEntry] = []
+    var annotationResourceDocuments: [PDFDocument] = []
     var future: [UndoEntry] = []
     var isImporting = false
     var activeJob: Task<JobResult, Error>?
@@ -264,7 +273,7 @@ import UniformTypeIdentifiers
     /// Unchanged since it was opened or saved, so the file on disk is the document and no recovery copy is needed.
     var canRestoreFromFile: Bool { !dirty && (projectURL != nil || (sourceURL != nil && !hasPrivateReadingData)) }
     /// A loaded tab that can be dropped from memory and read again later without losing anything.
-    var canUnload: Bool { count > 0 && !busy && canRestoreFromFile && history.isEmpty && future.isEmpty }
+    var canUnload: Bool { count > 0 && !busy && !saving && !closingInProgress && unloadWorker == nil && !drawingInProgress && placingSignature == nil && !dirty && (historySource != nil || (canRestoreFromFile && history.isEmpty && future.isEmpty)) }
     var canUndo: Bool { !history.isEmpty }
     var canRedo: Bool { !future.isEmpty }
     var canRetry: Bool { lastJob != nil && !busy }
@@ -351,7 +360,7 @@ import UniformTypeIdentifiers
         if let moveSnapshot { return moveSnapshot }
         let pdf = try pdfData()
         alignMeta()
-        let reading = ReadingState(bookmarks: bookmarks, outline: outlineEntries, layout: readingLayout, point: readingPoint, scale: readingScale, bibliography: bibliography.isEmpty ? nil : bibliography)
+        let reading = ReadingState(bookmarks: bookmarks, outline: outlineEntries, layout: readingLayout, point: readingPoint, scale: readingScale, bibliography: bibliography)
         return ProjectArchive(tableDrafts: tableDrafts.isEmpty ? nil : tableDrafts, wordDraft: wordDraftArchive, fileBaseline: fileBaseline, reading: reading, signatureEdits: signatureEditArchives, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: .document, recipes: [:], drafts: [:], dirty: dirty, projectPath: projectURL?.path)
     }
 
@@ -431,6 +440,7 @@ import UniformTypeIdentifiers
     }
 
     func scheduleRecovery() {
+        privateDataGeneration = UUID(); closePrepared = false
         guard started, count > 0 else { return }
         autoTask?.cancel()
         guard dirty || hasPrivateReadingData else {
@@ -488,6 +498,7 @@ import UniformTypeIdentifiers
     /// Call after any change. `pdfChanged: false` for metadata such as bookmarks;
     /// `pages` limits thumbnail refresh to pages whose annotations changed.
     func edited(reset: Bool = false, pdfChanged: Bool = true, pages: Set<Int>? = nil) {
+        closePrepared = false
         dirty = true
         revision = UUID()
         if pdfChanged {
@@ -657,6 +668,7 @@ import UniformTypeIdentifiers
             if discarded { return true }
         }
         if count == 0 { return true }
+        if closePrepared && !saving && !dirty { autoTask?.cancel(); writer.discard(recoveryURL); return true }
         if canRestoreFromFile {
             // The file (or saved project) is this document; the session file remembers where to find it.
             autoTask?.cancel()
@@ -667,7 +679,8 @@ import UniformTypeIdentifiers
     }
 
     /// Empties the workspace. With `keepingSource` the file it came from stays known, so the tab can load it again.
-    private func clearDocument(keepingSource: Bool) {
+    func clearDocument(keepingSource: Bool) {
+        autoTask?.cancel()
         saveReadingRecord(); progressTask?.cancel(); readingSaveTask?.cancel()
         try? persistWordDraft()
         try? persistTableDrafts()
@@ -689,9 +702,9 @@ import UniformTypeIdentifiers
         readingPoint = nil; readingScale = nil
         hiddenKinds = []; outlineDraft = nil; selectedAnnotation = nil; comparison = nil; recognizedText = ""
         showOCRReview = false; reviewSelection = -1; exportEstimate = nil
-        history.removeAll(); future.removeAll(); lastJob = nil
+        history.removeAll(); future.removeAll(); annotationResourceDocuments.removeAll(); lastJob = nil
         if !keepingSource { projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil }
-        dirty = false; discarded = false
+        dirty = false; discarded = false; closePrepared = false
         thumbnails.clear(); pageVersions = [:]
         layoutRevision = UUID(); navigationToken = UUID(); revision = UUID()
         recoveryStatus = ""
@@ -703,25 +716,19 @@ import UniformTypeIdentifiers
     }
 
     /// Frees the memory of an unchanged document; the tab stays and reads the file again when it is selected.
-    func unload() {
-        guard canUnload else { return }
-        pendingView = currentViewPosition()
-        autoTask?.cancel()
-        writer.discard(recoveryURL)
-        clearDocument(keepingSource: true)
-        needsLoad = true
-        status = "已释放内存：再次选中此标签页时重新读取"
-    }
+    func unload() { beginUnload() }
 
-    /// Reads the file of a tab that was waiting (see `needsLoad`).
+    /// Reads the stored tab session first, preserving undo/redo and private reading data.
     func ensureLoaded() {
         guard needsLoad, count == 0, !busy, let url = projectURL ?? sourceURL else { return }
+        if spilledSession != nil { restoreSpilledSession(); return }
         needsLoad = false
         load([url])
     }
 
     /// Drops what a waiting tab was going to load (closing it, or giving up on a file that cannot be read).
     func forgetSource() {
+        if let spilledSession { try? FileManager.default.removeItem(at: spilledSession); self.spilledSession = nil; writer.discard(recoveryURL) }
         projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil
     }
 
@@ -747,6 +754,7 @@ import UniformTypeIdentifiers
             guard canRestoreFromFile else { return SessionEntry(slot: slot, kind: .recovery) }
             return fileEntry(position: currentViewPosition())
         }
+        if needsLoad, spilledSession != nil { return SessionEntry(slot: slot, kind: .recovery) }
         return needsLoad ? fileEntry(position: pendingView) : nil
     }
 
@@ -767,9 +775,14 @@ import UniformTypeIdentifiers
         guard count > 0 else { return false }
         guard !busy else { status = "请等待任务完成或点击取消任务"; return false }
         if dirty { guard confirmReplace() else { return false } }
+        guard !saving, unloadWorker == nil else { status = "正在完成保存，请稍候"; return false }
         autoTask?.cancel()
         do {
-            try writer.flush(nil, to: recoveryURL)
+            if !closePrepared, projectURL == nil, let sourceURL, sourceURL.pathExtension.lowercased() == "pdf", hasPrivateReadingData {
+                try baseline(for: sourceURL).verify(sourceURL)
+                try ReadingDocumentStore.write(snapshot(), source: sourceURL, storage: storage)
+            }
+            if closePrepared { writer.discard(recoveryURL) } else { try writer.flush(nil, to: recoveryURL) }
             try? FileManager.default.removeItem(at: legacyRecoveryURL)
         } catch {
             self.error = error.localizedDescription
@@ -849,7 +862,7 @@ import UniformTypeIdentifiers
         pendingImports = []
     }
 
-    func load(_ urls: [URL], insert: Bool = false, prepared: ImportPayload? = nil) {
+    func load(_ urls: [URL], insert: Bool = false, prepared: ImportPayload? = nil, reading preparedReading: PreparedReading? = nil) {
         guard !urls.isEmpty else { return }
         if prepared == nil, urls.contains(where: ReadingShortcut.handles) {
             guard !insert, let store else { self.error = "阅读快捷方式请单独打开，不能作为 PDF 页面插入"; return }
@@ -882,6 +895,7 @@ import UniformTypeIdentifiers
                 if archive.tableDrafts == nil { loadTableDrafts() }
                 history.removeAll()
                 future.removeAll()
+                annotationResourceDocuments.removeAll()
                 remember(urls)
                 scheduleRecovery()
                 prepareReadingResume(path: urls[0].path)
@@ -941,7 +955,7 @@ import UniformTypeIdentifiers
                 bibliography = ReadingServices.bibliography(from: combined)
                 document = combined
                 if loaded.count == 1, let bytes = data.first {
-                    restoreSignatureEdits(SignaturePersistence.read(pdf: urls[0], bytes: bytes, storage: storage))
+                    restoreSignatureEdits(preparedReading?.signatures ?? SignaturePersistence.read(pdf: urls[0], bytes: bytes, storage: storage))
                 } else { signatureLayers = [:] }
                 pageMeta = Array(repeating: PageMeta(), count: combined.pageCount)
                 title = urls.count == 1 ? urls[0].deletingPathExtension().lastPathComponent : "合并文档"
@@ -949,9 +963,12 @@ import UniformTypeIdentifiers
                 selectedPages = [0]
                 history.removeAll()
                 future.removeAll()
+                annotationResourceDocuments.removeAll()
                 projectURL = nil
                 if loaded.count == 1, !rebuilt { openedBytes = data.first }
+                restoringBaseline = true
                 sourceURL = loaded.count == 1 ? urls[0] : nil
+                restoringBaseline = false
             }
             readingPoint = nil
             readingScale = nil
@@ -969,9 +986,24 @@ import UniformTypeIdentifiers
                 wordOptions.editedBlocks = nil; wordOptions.blockBaselines = nil; wordOptions.editedSourceDigest = nil; wordOptions.editedText = nil; wordOptions.editedFromRevision = nil; wordDraftDigest = nil
                 if loaded.count == 1 {
                     dirty = false
-                    fileBaseline = try FileBaseline.capture(urls[0], data: urls[0].pathExtension.lowercased() == "pdf" ? data[0] : nil)
+                    fileBaseline = try preparedReading?.baseline ?? FileBaseline.capture(urls[0], data: urls[0].pathExtension.lowercased() == "pdf" ? data[0] : nil)
                 } else { fileBaseline = nil }
                 saveConflict = false; loadWordDraft(); loadTableDrafts()
+                if loaded.count == 1, urls[0].pathExtension.lowercased() == "pdf" {
+                    do {
+                        let companion: ProjectArchive?
+                        if let preparedReading { companion = preparedReading.companion; if let warning = preparedReading.warning { recoveryStatus = warning } }
+                        else { companion = try ReadingDocumentStore.read(source: urls[0], pdf: data[0], storage: storage) }
+                        if let saved = companion {
+                            bookmarks = saved.reading?.bookmarks ?? []
+                            bibliography = saved.reading?.bibliography ?? bibliography
+                            ocrOriginals = saved.ocrOriginals ?? [:]; ocrRegions = saved.ocrRegions ?? [:]
+                            if let signatures = saved.signatureEdits { restoreSignatureEdits(signatures) }
+                            if let word = saved.wordDraft { restoreWordDraft(word, sourceDigest: OCRPageCache.digest(data[0])) }
+                            if let tables = saved.tableDrafts { tableDrafts = tables }
+                        }
+                    } catch { recoveryStatus = error.localizedDescription }
+                }
             }
             // A book opened on its own (not to a card's source, a link or a restored tab) goes on where it was last read (0.34).
             var resumed: Int?

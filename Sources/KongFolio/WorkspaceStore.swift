@@ -241,7 +241,7 @@ import UniformTypeIdentifiers
     private func trimLoadedTabs() {
         let loaded = tabs.compactMap(\.workspace).filter { $0.count > 0 }
         guard loaded.count > maxLoadedTabs else { return }
-        var excess = loaded.count - maxLoadedTabs
+        var excess = loaded.count - maxLoadedTabs - loaded.filter { $0.unloadWorker != nil }.count
         let partners = Set(tabs.compactMap(\.workspace).compactMap { $0.splitPartner?.id })
         for workspace in loaded.filter({ $0.id != selectedID && !partners.contains($0.id) && $0.canUnload }).sorted(by: { $0.lastActive < $1.lastActive }) where excess > 0 {
             workspace.unload()
@@ -331,6 +331,23 @@ import UniformTypeIdentifiers
 
     // MARK: Closing
 
+    private var closingTabs = Set<UUID>()
+    private var completedCloseSave = Set<UUID>()
+    private func finishClosing(_ id: UUID) {
+        completedCloseSave.insert(id)
+        defer { completedCloseSave.remove(id) }
+        close(id)
+    }
+    /// Finish original-file writes before the existing session/termination checks run.
+    func finishPendingSaves() async -> Bool {
+        do { try await library.flushReflections() } catch { present(error); return false }
+        for workspace in tabs.compactMap(\.workspace) { await workspace.unloadWorker?.value }
+        for workspace in tabs.compactMap(\.workspace) where workspace.count > 0 && (workspace.dirty || workspace.saving || workspace.hasPrivateReadingData) {
+            if !(await workspace.finishPendingSave()) { select(workspace.id); return false }
+        }
+        return true
+    }
+
     func closeActive() { if let id = selectedID { close(id) } }
 
     /// Closes a tab after confirming unsaved work. The last tab is never removed: it returns to the start screen.
@@ -339,10 +356,28 @@ import UniformTypeIdentifiers
         switch tabs[index] {
         case .document(let workspace):
             guard !workspace.busy else { workspace.status = "请等待任务完成或点击取消任务"; return }
+            if let pending = workspace.unloadWorker {
+                guard !closingTabs.contains(id) else { return }
+                closingTabs.insert(id)
+                Task { await pending.value; closingTabs.remove(id); close(id) }
+                return
+            }
+            if !AppEnvironment.isTestRun, !completedCloseSave.contains(id), workspace.count > 0, workspace.dirty || workspace.saving || workspace.hasPrivateReadingData {
+                guard !closingTabs.contains(id) else { return }
+                closingTabs.insert(id)
+                Task {
+                    let saved = await workspace.finishPendingSave()
+                    closingTabs.remove(id)
+                    guard saved, !workspace.dirty, !workspace.saving else { return }
+                    finishClosing(id)
+                }
+                return
+            }
             if workspace.count > 0 { if !workspace.closeDocument() { return } } else { workspace.forgetSource() }
             if tabs.count == 1 { return }
         case .note(let note):
             guard note.confirmClose() else { return }
+            note.releaseEditorResources()
             if tabs.count == 1 {
                 tabs.removeAll()
                 addWorkspace()
@@ -383,7 +418,7 @@ import UniformTypeIdentifiers
 
     func saveActive(asNew: Bool = false) {
         if let workspace = activeWorkspace {
-            if asNew { workspace.saveProject(asNew: true) } else { workspace.saveDirectly() }
+            if asNew { workspace.saveProject(asNew: true) } else if workspace.historySource != nil { Task { _ = await workspace.saveInBackground(automatic: false, includePrivateData: true) } } else { workspace.saveDirectly() }
         }
         else { activeNote?.save(asNew: asNew) }
     }

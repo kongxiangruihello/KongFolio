@@ -11,6 +11,8 @@ struct JobSpec {
     var destination: URL?
     var revision: UUID
     var exportOptions: ExportOptions? = nil
+    var outputBaseline: FileBaseline? = nil
+    var protectedSource: URL? = nil
     /// For an `ocr` job whose `source` holds only some pages of the open document: where each of them belongs.
     var pageMap: [Int] = []
     var forceOCR = false
@@ -62,6 +64,8 @@ enum BackgroundJobs {
         if spec.operation == .chapters { return try splitChapters(spec, doc: doc, progress: progress) }
         if spec.operation == .compress {
             let target = try spec.destination.unwrap("没有导出位置")
+            try spec.validateOutput(target)
+            let expected = try spec.outputBaseline ?? FileBaseline.capture(target)
             let result: (data: Data, report: CompressReport)
             if let size = spec.compressTarget, spec.source.count > size {
                 result = try PDFCompressor.compress(source: spec.source, targetBytes: size, keepMarked: spec.compressKeepMarked, progress: progress)
@@ -75,18 +79,18 @@ enum BackgroundJobs {
             try Task.checkCancellation()
             // A file that did not get smaller is not written: the original is the better copy.
             guard result.report.smaller else { return JobResult(message: result.report.summary) }
-            try result.data.write(to: target, options: .atomic)
+            try DocumentTaskOutput.write(to: target, expected: expected, protectedSource: spec.protectedSource) { try result.data.write(to: $0) }
             return JobResult(destination: nil, message: result.report.summary)
         }
         if spec.operation == .word {
             let target = try spec.destination.unwrap("没有导出位置")
-            // Written next to the destination and moved into place, so a cancelled export never damages an existing file.
-            let staging = target.deletingLastPathComponent().appendingPathComponent(".KongFolio-\(UUID().uuidString).partial")
-            defer { try? FileManager.default.removeItem(at: staging) }
-            let report = try WordExport.write(doc, pages: spec.pages, outline: spec.outline, options: spec.word, regions: spec.regions, to: staging, sourceDigest: OCRPageCache.digest(spec.source), progress: progress)
-            try Task.checkCancellation()
-            if FileManager.default.fileExists(atPath: target.path) { _ = try FileManager.default.replaceItemAt(target, withItemAt: staging) } else { try FileManager.default.moveItem(at: staging, to: target) }
-            return JobResult(destination: nil, message: report.summary)
+            try spec.validateOutput(target)
+            let expected = try spec.outputBaseline ?? FileBaseline.capture(target)
+            var summary = ""
+            try DocumentTaskOutput.write(to: target, expected: expected, protectedSource: spec.protectedSource) { staging in
+                summary = try WordExport.write(doc, pages: spec.pages, outline: spec.outline, options: spec.word, regions: spec.regions, to: staging, sourceDigest: OCRPageCache.digest(spec.source), progress: progress).summary
+            }
+            return JobResult(destination: nil, message: summary)
         }
         var regions: [Int: [RecognizedLine]] = [:], originals: [Int: Data] = [:]
         var recognizedCount = 0, skipped = 0
@@ -198,8 +202,16 @@ extension Workspace {
         return spec
     }
 
-    func runJob(_ spec: JobSpec) {
+    func runJob(_ requested: JobSpec) {
         guard !busy else { return }
+        var spec = requested
+        if [.configured, .compress, .word].contains(spec.operation), let target = spec.destination {
+            do {
+                spec.protectedSource = historySource
+                try spec.validateOutput(target)
+                if spec.outputBaseline == nil { spec.outputBaseline = try FileBaseline.capture(target) }
+            } catch { self.error = error.localizedDescription; return }
+        }
         busy = true
         progress = 0
         if !spec.continuation && spec.operation != .ocr { ocrChain = nil }
@@ -381,5 +393,13 @@ extension Workspace {
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         runJob(JobSpec(operation: .split, source: source, pages: selectedOnly ? effectivePages : Array(0..<count), destination: folder, revision: revision))
+    }
+}
+
+extension JobSpec {
+    func validateOutput(_ target: URL) throws {
+        if let protectedSource, DocumentTaskOutput.sameFile(protectedSource, target) {
+            throw FolioError(message: "导出副本请选择与原文件不同的位置，原文件可用保存功能更新。")
+        }
     }
 }
