@@ -109,7 +109,7 @@ struct ContentView: View {
     private func statusBar(width: CGFloat) -> some View {
         HStack {
             Circle().fill(workspace.busy ? Color.orange : Color.green).frame(width: 6, height: 6)
-            Text(workspace.pathHint ?? workspace.status).lineLimit(1).truncationMode(.middle)
+            Text(workspace.pathHint ?? workspace.store?.research.warning(path:workspace.displayPath ?? "") ?? workspace.status).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 0)
             if workspace.count > 0 {
                 Text("\(workspace.selection + 1) / \(workspace.count) 页").lineLimit(1).fixedSize()
@@ -117,7 +117,7 @@ struct ContentView: View {
                     Text("印刷页码 \(label)").foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-            if width >= 760 { Text(workspace.recoveryStatus).foregroundStyle(.secondary).lineLimit(1) }
+            if width >= 760 { Text(workspace.savePhase.isEmpty ? workspace.recoveryStatus : workspace.savePhase + " \(Int(workspace.saveProgress*100))%").foregroundStyle(.secondary).lineLimit(1) }
             if workspace.canRetry { Button("重试任务") { workspace.retryJob() } }
             if width >= 640 { Text("KongFolio \(AppInfo.version)").foregroundStyle(.tertiary).lineLimit(1) }
         }

@@ -81,6 +81,9 @@ struct ReadingProgress: Equatable, Codable {
 
     static func load(path: String, defaults: UserDefaults = .standard) -> ReadingProgress {
         guard let stored = defaults.dictionary(forKey: key(path)) ?? defaults.dictionary(forKey: key(canonicalPath(path))) else { return ReadingProgress() }
+        return decodeStored(stored)
+    }
+    static func decodeStored(_ stored: [String:Any]) -> Self {
         return ReadingProgress(visited: decode(stored["visited"] as? String ?? ""), last: stored["last"] as? Int ?? 0,
                                date: (stored["date"] as? Double).map { Date(timeIntervalSince1970: $0) }, pages: stored["pages"] as? Int ?? 0,
                                x: finite(stored["x"] as? Double), y: finite(stored["y"] as? Double),
@@ -121,20 +124,19 @@ struct ReadingProgress: Equatable, Codable {
         var id: String { path }
         var title: String { progress.title ?? URL(fileURLWithPath: path).lastPathComponent }
     }
-    static func history(defaults: UserDefaults = .standard) -> [HistoryItem] {
+    static func history(defaults: UserDefaults = .standard) -> [HistoryItem] { history(snapshot:defaults.dictionaryRepresentation()) }
+    static func history(snapshot: [String:Any]) -> [HistoryItem] {
         let prefix = "KongFolio.progress."
-        let records: [HistoryItem] = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix(prefix + "/") }.compactMap { key -> HistoryItem? in
-            let path = String(key.dropFirst(prefix.count)), progress = load(path: path, defaults: defaults)
-            guard progress.last >= 0, progress.date != nil || !progress.visited.isEmpty else { return nil }
-            return HistoryItem(path: path, progress: progress)
-        }
-        var unique: [String: HistoryItem] = [:]
-        for record in records.sorted(by: { $0.path < $1.path }) {
-            let identity = canonicalPath(record.path)
+        var unique: [String:HistoryItem] = [:]
+        for key in snapshot.keys.sorted() where key.hasPrefix(prefix + "/") {
+            guard let stored = snapshot[key] as? [String:Any] else { continue }
+            let path = String(key.dropFirst(prefix.count)), progress = decodeStored(stored)
+            guard progress.last >= 0, progress.date != nil || !progress.visited.isEmpty else { continue }
+            let identity = canonicalPath(path), record = HistoryItem(path:path,progress:progress)
             if let old = unique[identity], (old.progress.date ?? .distantPast) >= (record.progress.date ?? .distantPast) { continue }
             unique[identity] = record
         }
-        return unique.values.sorted { a, b in
+        return unique.values.sorted { a,b in
             if a.progress.date != b.progress.date { return (a.progress.date ?? .distantPast) > (b.progress.date ?? .distantPast) }
             return a.path < b.path
         }
@@ -177,7 +179,15 @@ extension Workspace {
         record.last = selection; record.pages = count; record.date = Date(); record.title = displayName
         record.x = readingPoint.map { Double($0.x) }; record.y = readingPoint.map { Double($0.y) }
         record.scale = readingScale; record.layout = readingLayout
-        if record.bookmark == nil { record.bookmark = try? URL(fileURLWithPath: path).bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil) }
+        if record.bookmark == nil, readingBookmarkTask == nil {
+            readingBookmarkTask = Task { [weak self] in
+                let bytes = await Task.detached(priority:.utility) { try? URL(fileURLWithPath:path).bookmarkData(options:.minimalBookmark,includingResourceValuesForKeys:nil,relativeTo:nil) }.value
+                guard let self else { return }; defer { self.readingBookmarkTask = nil }
+                guard !Task.isCancelled, self.progressPath == path, self.count > 0, let bytes else { return }
+                var latest = ReadingProgress.load(path:path,defaults:self.readingDefaults); latest.bookmark = bytes
+                latest.save(path:path,defaults:self.readingDefaults); self.readingProgress = latest
+            }
+        }
         if markVisited { record.visited.insert(selection) }
         readingProgress = record; progressLoadedFor = path
         record.save(path: path, defaults: readingDefaults)

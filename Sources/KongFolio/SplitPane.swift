@@ -25,13 +25,13 @@ struct SplitPane: View {
         }
         .onChange(of: primary.selection) { _, page in
             if primary.synchronizedSelection == page { primary.synchronizedSelection = nil; return }
-            guard primary.splitSync, partner.count > 0 else { return }
+            guard primary.splitSync, partner.count > 0, primary.store?.research.warning(path:primary.displayPath ?? "") == nil, primary.store?.research.warning(path:partner.displayPath ?? "") == nil else { return }
             let target = min(max(0, primary.activeEdition?.mapped(page, fromLeft: primary.activeEdition?.isLeft(primary.displayPath) == true) ?? (page + primary.splitOffset)), partner.count - 1)
             if target != partner.selection { partner.synchronizedSelection = target; partner.selectPage(target) }
         }
         .onChange(of: partner.selection) { _, page in
             if partner.synchronizedSelection == page { partner.synchronizedSelection = nil; return }
-            guard primary.splitSync, primary.count > 0 else { return }
+            guard primary.splitSync, primary.count > 0, primary.store?.research.warning(path:primary.displayPath ?? "") == nil, primary.store?.research.warning(path:partner.displayPath ?? "") == nil else { return }
             let target = min(max(0, primary.activeEdition?.mapped(page, fromLeft: primary.activeEdition?.isLeft(primary.displayPath) != true) ?? (page - primary.splitOffset)), primary.count - 1)
             if target != primary.selection { primary.synchronizedSelection = target; primary.selectPage(target) }
         }

@@ -43,6 +43,7 @@ import UniformTypeIdentifiers
     var progressLoadedFor: String?
     var progressTask: Task<Void, Never>?
     var readingSaveTask: Task<Void, Never>?
+    var readingBookmarkTask: Task<Void,Never>?
     let readingDefaults: UserDefaults
     @Published var reviewSelection = -1
     @Published var ocrSettings = OCRSettings.load() { didSet { if ocrSettings != oldValue { ocrSettings.save() } } }
@@ -67,11 +68,18 @@ import UniformTypeIdentifiers
     @Published var taskLabel = ""
     @Published var dirty = false
     @Published var showTools = false
+    var openPanel: NSOpenPanel?
     @Published var comparison: PDFDocument?
     @Published var recognizedText = ""
     @Published var search = ""
     @Published var recentFiles: [String] = []
     @Published var recoveryStatus = ""
+    @Published var readingRuler = ReadingRuler() { didSet { scheduleReadingRuler() } }
+    var rulerPath: String?
+    var rulerTask: Task<Void,Never>?
+    var restoringRuler = false
+    @Published var savePhase = ""
+    @Published var saveProgress = 0.0
     @Published var pendingImports: [URL] = []
     @Published var showImportOrder = false
     @Published var selectedAnnotation: PDFAnnotation?
@@ -222,6 +230,7 @@ import UniformTypeIdentifiers
     @Published var tableDrafts: [TableDraftRecord] = []
     var pendingTableDraftID: UUID?
     var wordDraftDigest: String?
+    var preparingSnapshot = false
     var snapshotInFlight: (revision: UUID, task: Task<ProjectArchive, Error>)?
     var captureInProgress = false
     var incrementalBase: Data?
@@ -280,7 +289,7 @@ import UniformTypeIdentifiers
     /// Unchanged since it was opened or saved, so the file on disk is the document and no recovery copy is needed.
     var canRestoreFromFile: Bool { !dirty && (projectURL != nil || (sourceURL != nil && !hasPrivateReadingData)) }
     /// A loaded tab that can be dropped from memory and read again later without losing anything.
-    var canUnload: Bool { count > 0 && !busy && !saving && !closingInProgress && unloadWorker == nil && !drawingInProgress && placingSignature == nil && !dirty && (historySource != nil || (canRestoreFromFile && history.isEmpty && future.isEmpty)) }
+    var canUnload: Bool { count > 0 && !busy && !saving && !captureInProgress && !preparingSnapshot && !closingInProgress && unloadWorker == nil && !drawingInProgress && placingSignature == nil && !dirty && (historySource != nil || (canRestoreFromFile && history.isEmpty && future.isEmpty)) }
     var canUndo: Bool { !history.isEmpty }
     var canRedo: Bool { !future.isEmpty }
     var canRetry: Bool { lastJob != nil && !busy }
@@ -415,14 +424,14 @@ import UniformTypeIdentifiers
         selectedAnnotation = nil
     }
 
-    func bootstrap() {
+    func bootstrap(restoreRecovery: Bool = true) {
         guard !started else { return }
         started = true
         recentFiles = (try? JSONDecoder().decode([String].self, from: Data(contentsOf: storage.appendingPathComponent("Recent.json")))) ?? []
         signatures = (try? JSONDecoder().decode([SignatureTemplate].self, from: Data(contentsOf: storage.appendingPathComponent("Signatures.json")))) ?? []
         loadSignaturePositions()
         let candidate = [recoveryURL, legacyRecoveryURL].first { FileManager.default.fileExists(atPath: $0.path) }
-        if let candidate, count == 0 {
+        if restoreRecovery, let candidate, count == 0 {
             do {
                 try restore(ProjectArchive.read(candidate))
                 status = "已恢复上次工作，包括未导出的修改"
@@ -699,7 +708,7 @@ import UniformTypeIdentifiers
     /// Empties the workspace. With `keepingSource` the file it came from stays known, so the tab can load it again.
     func clearDocument(keepingSource: Bool) {
         autoTask?.cancel()
-        saveReadingRecord(); progressTask?.cancel(); readingSaveTask?.cancel()
+        saveReadingRecord(); progressTask?.cancel(); readingSaveTask?.cancel(); readingBookmarkTask?.cancel(); readingBookmarkTask = nil
         try? persistWordDraft()
         try? persistTableDrafts()
         tableDrafts = []; pendingTableDraftID = nil
@@ -712,6 +721,8 @@ import UniformTypeIdentifiers
         displayCache = nil; copiedAnnotations.removeAll()
         signatureLayers.removeAll(); movingSignature = nil; moveSnapshot = nil; placingSignature = nil
         drawingInProgress = false; pendingReveal = nil; deferredOpen = nil
+        if let path = rulerPath { try? readingRuler.save(path:path,storage:storage) }
+        rulerTask?.cancel(); rulerPath = nil
         document = PDFDocument(); cachedPDF = nil; incrementalBase = nil; incrementalPages = []
         pageMeta = []; selection = 0; selectedPages = [0]; rangeText = ""
         title = "未命名文档"; tool = .select; note = ""
@@ -814,20 +825,18 @@ import UniformTypeIdentifiers
 
     // MARK: Opening
 
-    func pickFiles() -> [URL] {
-        let panel = NSOpenPanel()
-        var types: [UTType] = [ReadingShortcut.fileType, .pdf, .image, .html, .plainText, UTType(exportedAs: "com.kongfolio.project")]
-        types += TextImport.markdownExtensions.compactMap { UTType(filenameExtension: $0) }
-        panel.allowedContentTypes = types
-        panel.allowsMultipleSelection = true
-        return panel.runModal() == .OK ? panel.urls : []
-    }
-
     func open(insert: Bool = false, merge: Bool = false) {
-        guard !busy else { return }
-        let urls = pickFiles()
-        guard !urls.isEmpty else { return }
-        openSelected(urls, insert: insert, merge: merge)
+        guard !busy, openPanel == nil else { return }
+        let panel = NSOpenPanel()
+        var types: [UTType] = [ReadingShortcut.fileType,.pdf,.image,.html,.plainText,UTType(exportedAs:"com.kongfolio.project")]
+        types += TextImport.markdownExtensions.compactMap { UTType(filenameExtension:$0) }
+        panel.allowedContentTypes = types; panel.allowsMultipleSelection = true; openPanel = panel
+        let completion: (NSApplication.ModalResponse) -> Void = { [weak self,weak panel] response in
+            guard let self else { return }; self.openPanel = nil
+            if response == .OK, let urls = panel?.urls, !urls.isEmpty { self.openSelected(urls,insert:insert,merge:merge) }
+        }
+        if let window = pdfView?.window ?? NSApp?.keyWindow { panel.beginSheetModal(for:window,completionHandler:completion) }
+        else { panel.begin(completionHandler:completion) }
     }
 
     /// Several files are opened side by side, one tab each. Only an explicit merge (or inserting pages into the
@@ -919,7 +928,8 @@ import UniformTypeIdentifiers
                 prepareReadingResume(path: urls[0].path)
                 applyPendingView()
                 status = "项目已打开"
-                store?.loadedTabsChanged()
+                validateResearchSource(); loadReadingRulerIfNeeded()
+            store?.loadedTabsChanged()
                 return
             }
             guard case .documents(let data) = prepared else { throw FolioError(message: "文档读取失败") }
@@ -1033,6 +1043,7 @@ import UniformTypeIdentifiers
             remember(urls)
             status = "已载入 \(count) 页" + (rebuilt ? "（此文件带“禁止修改”限制，已转成可编辑文档；修改后自动保存）" : "")
                 + (resumed.map { "；回到上次读到的第 \($0 + 1) 页" } ?? "")
+            validateResearchSource(); loadReadingRulerIfNeeded()
             store?.loadedTabsChanged()
         } }
     }

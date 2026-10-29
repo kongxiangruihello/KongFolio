@@ -60,13 +60,13 @@ struct PeriodicalRecord: Codable, Equatable {
     }
     var citation: String { [journal,year,volume,issue,date,edition].filter { !$0.isEmpty }.joined(separator: "，") }
 }
-struct ScopedCorrection: Codable, Identifiable {
+struct ScopedCorrection: Codable, Identifiable, Equatable {
     var id = UUID()
     var from: String
     var to: String
     var scope = "全局"
     var enabled = true
-    func applies(path: String, project: String) -> Bool { enabled && (scope == "全局" || scope == path || (!project.isEmpty && scope == project)) }
+    func applies(path: String, project: String) -> Bool { enabled && (scope == "全局" || scope == path || (scope.hasPrefix("/") && ReadingProgress.canonicalPath(scope) == ReadingProgress.canonicalPath(path)) || (!project.isEmpty && scope == project)) }
 }
 struct ResearchAnnotation: Codable, Identifiable {
     var id: String { key }
@@ -106,7 +106,7 @@ struct EditionCorrespondence: Codable, Identifiable {
     var pairs: [Pair]
     func validate(leftCount: Int, rightCount: Int) throws {
         let sorted = pairs.sorted { $0.left < $1.left }
-        guard !pairs.isEmpty, leftPath != rightPath,
+        guard !pairs.isEmpty, ReadingProgress.canonicalPath(leftPath) != ReadingProgress.canonicalPath(rightPath),
               pairs.allSatisfy({ (0..<leftCount).contains($0.left) && (0..<rightCount).contains($0.right) }),
               Set(pairs.map(\.left)).count == pairs.count, Set(pairs.map(\.right)).count == pairs.count,
               zip(sorted,sorted.dropFirst()).allSatisfy({ $0.right < $1.right }) else { throw FolioError(message: "版本对应页重复、越界、顺序不一致，或选择了同一文件") }
@@ -139,10 +139,13 @@ struct CitationTemplate: Codable {
         var annotations: [ResearchAnnotation] = []
         var editions: [EditionCorrespondence] = []
         var citation = CitationTemplate()
+        var topics: [ResearchTopic]? = nil
+        var bindings: [String:ResearchSourceBinding]? = nil
     }
     let storage: URL
     @Published private(set) var state = State()
     @Published private(set) var error: String?
+    @Published var sourceWarnings: [String:String] = [:]
     var url: URL { storage.appendingPathComponent("Research/catalog.json") }
     init(storage: URL) {
         self.storage = storage
@@ -162,6 +165,8 @@ struct CitationTemplate: Codable {
             for var group in other.groups { if next.groups.contains(where: { $0.id == group.id }) { group.id = UUID() }; next.groups.append(group) }
             if next.identities == nil { next.identities = [:] }
             next.identities?.merge(other.identities ?? [:]) { current, _ in current }
+            if next.topics == nil { next.topics = [] }; next.topics! += (other.topics ?? []).filter { topic in !next.topics!.contains { $0.id == topic.id } }
+            if next.bindings == nil { next.bindings = [:] }; next.bindings?.merge(other.bindings ?? [:]) { current,_ in current }
             next.labels.merge(other.labels) { current, _ in current }
             next.periodicals.merge(other.periodicals) { current, _ in current }
             next.dictionary += other.dictionary.filter { old in !next.dictionary.contains(where: { $0.id == old.id }) }
@@ -191,8 +196,9 @@ struct CitationTemplate: Codable {
         let values = state.labels[path] ?? state.labels.first { ReadingProgress.canonicalPath($0.key) == ReadingProgress.canonicalPath(path) }?.value
         return values?.first(where: { $0.start <= page && $0.end >= page })
     }
-    func label(path: String, page: Int) -> String? { segment(path: path, page: page)?.label(page) }
+    func label(path: String, page: Int) -> String? { warning(path:path) == nil ? segment(path:path,page:page)?.label(page) : nil }
     func displayLabel(path: String, page: Int, fallback: String) -> String {
+        if warning(path:path) != nil { return fallback }
         if let segment = segment(path: path, page: page) { return segment.label(page) ?? "无印刷页码" }
         return fallback
     }

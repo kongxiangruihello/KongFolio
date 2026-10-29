@@ -44,9 +44,11 @@ extension WorkspaceStore {
         for w in targets { close(w.id) }; return true
     }
     func indexResearchAnnotations() async throws {
-        let live = try Dictionary(uniqueKeysWithValues: tabs.compactMap(\.workspace).compactMap { w -> (String, Data)? in
-            guard w.count > 0, let path = w.displayPath else { return nil }; return (path, try w.pdfData())
-        })
+        var live: [String:Data] = [:]
+        for w in tabs.compactMap(\.workspace) where w.count > 0 {
+            if let path = w.displayPath { live[path] = try await w.snapshotForBackgroundSave().pdf }
+            try Task.checkCancellation()
+        }
         let books = library.books, previous = research.state.annotations
         let worker = Task.detached { () throws -> ([ResearchAnnotation],[String]) in
             var result: [ResearchAnnotation] = [], unreadable: [String] = []
@@ -94,6 +96,7 @@ extension Workspace {
     }
     func applyResearchEdition(_ edition: EditionCorrespondence) {
         guard let store else { return }
+        guard store.research.warning(path:displayPath ?? "") == nil, store.research.warning(path:edition.isLeft(displayPath) ? edition.rightPath : edition.leftPath) == nil else { error = "来源版本已变化，请先核对对应表"; return }
         guard edition.contains(displayPath) else { error = "此对应表不属于当前书籍"; return }
         let left = edition.isLeft(displayPath), other = left ? edition.rightPath : edition.leftPath
         store.openEach([URL(fileURLWithPath: other)])

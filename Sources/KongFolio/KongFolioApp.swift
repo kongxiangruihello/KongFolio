@@ -44,6 +44,9 @@ import AppKit
             }
             CommandMenu("阅读") {
                 Button("阅读与史料研究…") { store.showResearch = true }
+                Button("显示／隐藏阅读尺") { if let w = store.commandWorkspace { w.loadReadingRulerIfNeeded(); w.readingRuler.enabled.toggle() } }.disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Button("阅读尺前移") { store.commandWorkspace?.readingRuler.move(-0.04) }.keyboardShortcut(.upArrow,modifiers:[.command,.option])
+                Button("阅读尺后移") { store.commandWorkspace?.readingRuler.move(0.04) }.keyboardShortcut(.downArrow,modifiers:[.command,.option])
                 Button("复制当前选文的史料引文") { do { _ = try store.commandWorkspace?.copyResearchCitation() } catch { store.commandWorkspace?.error = error.localizedDescription } }
                 Button("个人书架与阅读记录…") { store.showReadingHistory = true }
                 Button("当前书籍的阅读笔记…") { store.openCurrentBookNotebook() }.disabled(store.commandWorkspace?.canCreateReadingShortcut != true)
@@ -200,6 +203,7 @@ struct WindowAccessor: NSViewRepresentable {
             guard let self else { sender.reply(toApplicationShouldTerminate: false); return }
             let saved = await self.store?.finishPendingSaves() ?? true
             let approved = saved && self.store?.prepareToClose() != false
+            if approved, let store = self.store { StartupProtection(storage:store.storage).clean() }
             self.closeTaskRunning = false
             sender.reply(toApplicationShouldTerminate: approved)
         }
@@ -215,6 +219,7 @@ struct WindowAccessor: NSViewRepresentable {
             let saved = await self.store?.finishPendingSaves() ?? true
             self.closeTaskRunning = false
             guard saved, self.store?.prepareToClose() != false else { return }
+            if let store = self.store { StartupProtection(storage:store.storage).clean() }
             self.approvedWindow = sender; sender?.performClose(nil)
         }
         return false

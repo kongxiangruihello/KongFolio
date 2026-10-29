@@ -20,6 +20,7 @@ struct DocumentTaskItem: Codable, Identifiable {
 
 /// Detached workers only receive immutable snapshots. The document in the reader stays editable.
 @MainActor final class DocumentTaskQueue: ObservableObject {
+    var maximumActive = 2
     @Published private(set) var items: [DocumentTaskItem] = []
     let storage: URL?
     private let transientStorage = FileManager.default.temporaryDirectory.appendingPathComponent("KongFolioTasks-" + UUID().uuidString, isDirectory: true)
@@ -61,7 +62,7 @@ struct DocumentTaskItem: Codable, Identifiable {
     func canResume(_ id: UUID) -> Bool { specs[id] != nil && items.first(where: { $0.id == id }).map { !$0.active && $0.state != .finished && $0.state != .queued } == true }
     func taskFolder(_ id: UUID) throws -> URL { (storage ?? transientStorage).appendingPathComponent("DocumentTasks/" + id.uuidString, isDirectory: true) }
     @discardableResult func startPersistent(_ title: String, source: Data, spec: PersistentDocumentTask, completion: ((DocumentTaskResult) -> Void)? = nil) throws -> UUID {
-        guard activeCount < 2 else { throw FolioError(message: "已有两个后台任务，请稍后重试") }
+        guard activeCount < maximumActive else { throw FolioError(message: "已有两个后台任务，请稍后重试") }
         guard items.count < 1000 else { throw FolioError(message: "保存的任务过多，请先完成已有任务") }
         let item = DocumentTaskItem(title: title), id = item.id, folder = try taskFolder(id)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -75,7 +76,7 @@ struct DocumentTaskItem: Codable, Identifiable {
         return id
     }
     func resume(_ id: UUID) throws {
-        guard canResume(id) || retryPending.contains(id), activeCount < 2, let spec = specs[id] else { throw FolioError(message: "任务不可继续，或已有两个任务在运行") }
+        guard canResume(id) || retryPending.contains(id), activeCount < maximumActive, let spec = specs[id] else { throw FolioError(message: "任务不可继续，或已有两个任务在运行") }
         let folder = try taskFolder(id)
         retryPending.removeAll { $0 == id }; pausing.remove(id); update(id) { $0.state = .running; $0.message = "正在核对原文件并读取检查点…" }; persist()
         launch(id) { progress in try spec.run(source: Data(contentsOf: folder.appendingPathComponent("source.pdf")), folder: folder, progress: progress) }
@@ -87,7 +88,7 @@ struct DocumentTaskItem: Codable, Identifiable {
         persist(); drainRetries()
     }
     private func drainRetries() {
-        while activeCount < 2, let id = retryPending.first {
+        while activeCount < maximumActive, let id = retryPending.first {
             do { try resume(id) }
             catch { retryPending.removeAll { $0 == id }; update(id) { $0.state = .failed; $0.message = error.localizedDescription }; persist() }
         }
@@ -103,7 +104,7 @@ struct DocumentTaskItem: Codable, Identifiable {
     var running: Bool { items.contains { $0.active || $0.state == .queued } }
     var activeCount: Int { items.filter(\.active).count }
     @discardableResult func start(_ title: String, completion: ((DocumentTaskResult) -> Void)? = nil, operation: @escaping @Sendable (@escaping @Sendable (Double) -> Void) throws -> DocumentTaskResult) throws -> UUID {
-        guard activeCount < 2 else { throw FolioError(message: "已有两个后台任务，请完成或取消其中一个后再开始") }
+        guard activeCount < maximumActive else { throw FolioError(message: "已有两个后台任务，请完成或取消其中一个后再开始") }
         let item = DocumentTaskItem(title: title), id = item.id
         items.insert(item, at: 0); completions[id] = completion
         while items.count > 20, let oldest = items.lastIndex(where: { !$0.active && ($0.state == .finished || specs[$0.id] == nil) }) { items.remove(at: oldest) }

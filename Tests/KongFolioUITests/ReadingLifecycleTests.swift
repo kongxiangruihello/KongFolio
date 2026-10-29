@@ -104,7 +104,7 @@ final class ReadingLifecycleTests: XCTestCase {
         let host = NSHostingView(rootView: AnyView(RootView(store: store))); host.frame = NSRect(x: 0, y: 0, width: 1280, height: 850)
         try await settle(host, milliseconds: 100)
         var documents: [WeakDocument] = [], memory: [Double] = [], largestStep = 0.0
-        let rounds = max(3, min(10, Int(ProcessInfo.processInfo.environment["KONGFOLIO_STRESS_ROUNDS"] ?? "3") ?? 3))
+        let rounds = max(3, min(20, Int(ProcessInfo.processInfo.environment["KONGFOLIO_STRESS_ROUNDS"] ?? "3") ?? 3))
         for round in 1...rounds {
             store.openEach(files)
             let ids = store.tabs.map(\.id)

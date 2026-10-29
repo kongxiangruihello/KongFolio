@@ -32,6 +32,14 @@ import UniformTypeIdentifiers
     @Published private(set) var tabs: [OpenTab] = []
     @Published private(set) var selectedID: UUID?
     @Published var showResearch = false
+    var startupSafetyEnabled = !AppEnvironment.isTestRun
+    @Published var showStartupReview = false
+    @Published var startupEntries: [SessionEntry] = []
+    @Published var startupSuspects: [String:Int] = [:]
+    var pendingStartupSelected: String?
+    var runtimeTimer: DispatchSourceTimer?
+    @Published var residentMemoryMB = 0
+    @Published var constrainedMemory = false
     lazy var research = ResearchStore(storage: storage)
     let storage: URL
     let readingDefaults: UserDefaults
@@ -118,8 +126,9 @@ import UniformTypeIdentifiers
         if let workspace = activeWorkspace { return workspace.count > 0 && !workspace.busy }
         return activeNote != nil
     }
-    var canUndo: Bool { commandWorkspace.map { $0.canUndo && !$0.busy } ?? (activeNote != nil) }
-    var canRedo: Bool { commandWorkspace.map { $0.canRedo && !$0.busy } ?? (activeNote != nil) }
+    var researchTextResponder: NSTextView? { NSApp?.keyWindow?.identifier?.rawValue == "research-workbench" ? NSApp?.keyWindow?.firstResponder as? NSTextView : nil }
+    var canUndo: Bool { if let text = researchTextResponder { return text.undoManager?.canUndo ?? false }; return commandWorkspace.map { $0.canUndo && !$0.busy } ?? (activeNote != nil) }
+    var canRedo: Bool { if let text = researchTextResponder { return text.undoManager?.canRedo ?? false }; return commandWorkspace.map { $0.canRedo && !$0.busy } ?? (activeNote != nil) }
 
     // MARK: Session
 
@@ -137,6 +146,13 @@ import UniformTypeIdentifiers
             monitor.setEventHandler { [weak self] in self?.trimLoadedTabs(pressure: true) }
             monitor.resume(); memoryMonitor = monitor
         }
+        if !AppEnvironment.isTestRun {
+            let timer = DispatchSource.makeTimerSource(queue: .main)
+            timer.schedule(deadline: .now()+2,repeating:5)
+            timer.setEventHandler { [weak self] in self?.sampleRuntimeMemory() }; timer.resume(); runtimeTimer = timer
+        }
+        let hadStartupMarker = FileManager.default.fileExists(atPath:StartupProtection(storage:storage).url.path)
+        let startup = startupSafetyEnabled ? ((try? StartupProtection(storage:storage).begin()) ?? StartupProtection.State(clean:false,reviewRequired:true)) : StartupProtection.State()
         let names = (try? FileManager.default.contentsOfDirectory(atPath: storage.path)) ?? []
         func recoveryExists(_ slot: String) -> Bool {
             slot.isEmpty ? (names.contains("Recovery.kfrecovery") || names.contains("Recovery.kongfolio")) : names.contains("Recovery-\(slot).kfrecovery")
@@ -149,6 +165,13 @@ import UniformTypeIdentifiers
             if !entries.contains(where: { $0.slot == slot }) { entries.append(SessionEntry(slot: slot, kind: .recovery)) }
         }
         if recoveryExists(""), !entries.contains(where: { $0.slot.isEmpty }) { entries.insert(SessionEntry(slot: "", kind: .recovery), at: 0) }
+        entries.removeAll { startup.excludedSlots.contains($0.slot) }
+        let needsStartupReview = startup.reviewRequired || (!hadStartupMarker && entries.contains { recoveryExists($0.slot) })
+        if startupSafetyEnabled && needsStartupReview && !entries.isEmpty {
+            try? StartupProtection(storage:storage).requireReview()
+            startupEntries = entries; startupSuspects = startup.interrupted; pendingStartupSelected = session.selected
+            addWorkspace(); showStartupReview = true; return
+        }
         var selectedTab: UUID?
         for entry in entries {
             let workspace = Workspace(storage: storage, slot: entry.slot, readingDefaults: readingDefaults)
@@ -183,7 +206,8 @@ import UniformTypeIdentifiers
     }
 
     func saveSession() {
-        let entries = tabs.compactMap { $0.workspace?.sessionEntry }
+        var entries = tabs.compactMap { $0.workspace?.sessionEntry }
+        entries += startupEntries.filter { pending in !entries.contains { $0.slot == pending.slot } }
         let session = Session(entries: entries, selected: activeWorkspace?.slot)
         try? FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
         try? JSONEncoder().encode(session).write(to: sessionURL, options: .atomic)
@@ -192,13 +216,13 @@ import UniformTypeIdentifiers
     // MARK: Tabs
 
     private func freshSlot() -> String {
-        tabs.contains { $0.workspace?.slot == "" } ? String(UUID().uuidString.prefix(8)).lowercased() : ""
+        (tabs.contains { $0.workspace?.slot == "" } || startupEntries.contains { $0.slot == "" } || (startupSafetyEnabled && StartupProtection(storage:storage).read().excludedSlots.contains(""))) ? String(UUID().uuidString.prefix(8)).lowercased() : ""
     }
 
     @discardableResult func addWorkspace() -> Workspace {
         let workspace = Workspace(storage: storage, slot: freshSlot(), readingDefaults: readingDefaults)
         workspace.store = self
-        workspace.bootstrap()
+        workspace.bootstrap(restoreRecovery:false)
         tabs.append(.document(workspace))
         select(workspace.id)
         return workspace
@@ -213,6 +237,7 @@ import UniformTypeIdentifiers
         recordActivity("切换标签页")
         tab.workspace?.lastActive = Date()
         tab.note?.lastActive = Date()
+        if startupSafetyEnabled, tab.workspace?.needsLoad == true { StartupProtection(storage:storage).opening(tab.workspace?.displayPath) }
         tab.workspace?.ensureLoaded()
         trimLoadedTabs()
     }
@@ -257,6 +282,9 @@ import UniformTypeIdentifiers
 
     private func trimLoadedTabs(pressure: Bool = false) {
         let loaded = tabs.compactMap(\.workspace).filter { $0.count > 0 }
+        let pressure = pressure || constrainedMemory
+        for w in loaded { w.thumbnails.constrain(pressure) }
+        if pressure { for w in loaded where w.id != selectedID { w.thumbnails.clear() } }
         var excess = loaded.count - (pressure ? 1 : maxLoadedTabs) - loaded.filter { $0.unloadWorker != nil }.count
         var bytes = loaded.reduce(0) { $0 + $1.estimatedResidentBytes }
         let budget = max(64, memoryBudgetMB) * 1024 * 1024
@@ -290,6 +318,9 @@ import UniformTypeIdentifiers
                 openNote(url)
                 if first == nil { first = selectedID }
                 continue
+            }
+            if let existing = tabs.compactMap(\.workspace).first(where: { $0.displayPath == url.path || $0.sourceURL?.standardizedFileURL == url.standardizedFileURL || $0.projectURL?.standardizedFileURL == url.standardizedFileURL }) {
+                if first == nil { first = existing.id }; continue
             }
             let target: Workspace
             if let current = activeWorkspace, current.count == 0, !current.needsLoad, !current.busy { target = current }
@@ -358,6 +389,7 @@ import UniformTypeIdentifiers
     }
     /// Finish original-file writes before the existing session/termination checks run.
     func finishPendingSaves() async -> Bool {
+        guard ResearchDraftRegistry.shared.flush(storage:storage) else { present(FolioError(message:"研究整理草稿未能保存，请处理后再关闭")); return false }
         do { try await library.flushReflections() } catch { present(error); return false }
         for workspace in tabs.compactMap(\.workspace) { await workspace.unloadWorker?.value }
         for workspace in tabs.compactMap(\.workspace) where workspace.count > 0 && (workspace.dirty || workspace.saving || workspace.hasPrivateReadingData) {
@@ -447,11 +479,13 @@ import UniformTypeIdentifiers
     }
 
     func undoActive() {
+        if let text = researchTextResponder { text.undoManager?.undo(); return }
         if let workspace = commandWorkspace { workspace.undo() }
         else { activeNote?.textView?.undoManager?.undo() }
     }
 
     func redoActive() {
+        if let text = researchTextResponder { text.undoManager?.redo(); return }
         if let workspace = commandWorkspace { workspace.redo() }
         else { activeNote?.textView?.undoManager?.redo() }
     }
@@ -505,5 +539,11 @@ extension WorkspaceStore {
     func exportWordActive() {
         if let note = activeNote { note.exportWord() }
         else { activeWorkspace?.showWordExport = true }
+    }
+}
+
+extension WorkspaceStore {
+    func tabsForStartup(_ workspace: Workspace) {
+        tabs.append(.document(workspace)); select(workspace.id)
     }
 }

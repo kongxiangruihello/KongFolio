@@ -47,6 +47,7 @@ enum ImportServices {
 extension Workspace {
     func startImport(_ urls: [URL], insert: Bool) {
         store?.recordActivity("准备打开文件")
+        if store?.startupSafetyEnabled == true { StartupProtection(storage: storage).opening(urls.first?.path) }
         isImporting = true; busy = true; progress = 0; taskLabel = "读取文件…"
         let root = storage
         let worker = Task.detached { () async throws -> (ImportPayload, PreparedReading?) in

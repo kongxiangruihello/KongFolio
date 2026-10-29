@@ -17,7 +17,11 @@ struct RootView: View {
                 Color.clear
             }
         }
-        .sheet(isPresented: $store.showResearch) { ResearchPanel(store: store, research: store.research) }
+        .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in store.checkOpenSourceChanges() }
+        .onChange(of: store.showResearch) { _,show in
+            if show { ResearchWindowManager.shared.show(store); store.showResearch = false }
+        }
+        .sheet(isPresented: $store.showStartupReview) { StartupReviewView(store:store) }
         .sheet(isPresented: $store.showReadingHistory) { ReadingHistorySheet(store: store) }
         .sheet(isPresented: $store.showHistorySettings) { HistorySettingsView(storage: store.storage) }
         .sheet(item: $store.notebookBook) { BookNotebookView(store: store, library: store.library, book: $0) }
@@ -187,3 +191,17 @@ private struct TabChip: View {
     }
 }
 
+
+@MainActor final class ResearchWindowManager {
+    static let shared = ResearchWindowManager()
+    private var windows: [ObjectIdentifier:NSWindowController] = [:]
+    func show(_ store: WorkspaceStore) {
+        let key = ObjectIdentifier(store)
+        if let controller = windows[key] { controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil); return }
+        let window = NSWindow(contentRect:NSRect(x:0,y:0,width:1060,height:820),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
+        window.identifier = NSUserInterfaceItemIdentifier("research-workbench"); window.title = "阅读与史料研究"; window.minSize = NSSize(width:660,height:420); window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView:ResearchPanel(store:store,research:store.research,onClose:{ [weak window] in window?.close() }))
+        let controller = NSWindowController(window:window); windows[key] = controller
+        window.center(); controller.showWindow(nil); window.makeKeyAndOrderFront(nil)
+    }
+}

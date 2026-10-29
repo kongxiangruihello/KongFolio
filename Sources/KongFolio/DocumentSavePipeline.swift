@@ -61,18 +61,18 @@ extension Workspace {
             do { try await Task.sleep(nanoseconds: 10_000_000) } catch { return false }
         }
         while let saveWorker { if !(await saveWorker.value) { return false } }
-        captureInProgress = true
-        defer { captureInProgress = false }
+        captureInProgress = true; savePhase = "准备保存"
+        defer { captureInProgress = false; savePhase = ""; saveProgress = 0 }
         guard count > 0, !busy, !drawingInProgress, placingSignature == nil else { return false }
         guard dirty || (includePrivateData && hasPrivateReadingData) else { return true }
         guard !saveConflict, let target = historySource else { return false }
         do {
-            let version = revision, privateVersion = privateDataGeneration, recoveryGeneration = recoverySequence, identity = target.standardizedFileURL
-            let archive = try await snapshotForBackgroundSave()
+            let identity = target.standardizedFileURL
+            let (archive,version,privateVersion,recoveryGeneration) = try await stableSaveSnapshot()
             guard let expected = fileBaseline, expected.path == target.standardizedFileURL.path else { throw FileConflict() }
             let request = DocumentSavePipeline.Request(archive: archive, target: target, expected: expected, storage: storage,
                 recovery: recoveryURL, automatic: automatic, restoringHistory: restoringHistory, preparation: savePreparation, recoveryGeneration: recoveryGeneration)
-            saving = true; status = "正在后台保存…"; store?.recordActivity("后台保存")
+            saving = true; savePhase = "写入文件与阅读资料"; status = "正在后台保存…"; store?.recordActivity("后台保存")
             let task = Task { [self] () -> Bool in
                 defer { saving = false; saveWorker = nil; store?.loadedTabsChanged() }
                 do {
@@ -100,8 +100,9 @@ extension Workspace {
             saveWorker = task
             return await task.value
         } catch {
-            if error is FileConflict { saveConflict = true; status = error.localizedDescription }
-            else { self.error = error.localizedDescription }
+            if error is SnapshotOutdated { status = "正在继续编辑，稍后保存最新修改"; scheduleDirectSave() }
+            else if error is FileConflict { saveConflict = true; status = error.localizedDescription }
+            else if !(error is CancellationError) { self.error = error.localizedDescription }
             return false
         }
     }
@@ -126,38 +127,61 @@ extension Workspace {
 extension Workspace {
     /// Only changed pages touch the live PDF. The independent original bytes are assembled on a worker.
     func snapshotForBackgroundSave() async throws -> ProjectArchive {
+        while preparingSnapshot { try Task.checkCancellation(); try await Task.sleep(nanoseconds: 5_000_000) }
+        preparingSnapshot = true
+        defer { preparingSnapshot = false; if !saving { savePhase = ""; saveProgress = 0 } }
         if let pending = snapshotInFlight {
             if pending.revision == revision { return try await pending.task.value }
             _ = try await pending.task.value
             if snapshotInFlight?.revision == pending.revision { snapshotInFlight = nil }
         }
-        guard cachedPDF == nil, let base = incrementalBase, !incrementalPages.isEmpty else { return try snapshot() }
-        let version = revision
-        let hidden = hiddenKinds
-        if !hidden.isEmpty { hiddenKinds = []; applyLayers() }
-        let replacements: [(Int, Data)]
-        do {
-            replacements = try incrementalPages.sorted().map { index in
-                guard (0..<count).contains(index) else { throw FolioError(message: "保存页码已变化") }
-                return (index, try DocumentServices.subset(document, indexes: [index]).dataRepresentation().unwrap("页面快照失败"))
-            }
-        } catch { if !hidden.isEmpty { hiddenKinds = hidden; applyLayers() }; throw error }
-        if !hidden.isEmpty { hiddenKinds = hidden; applyLayers() }
-        var captured = makeArchive(pdf: base)
-        let outline = outlineEntries
+        if let cachedPDF { return makeArchive(pdf: cachedPDF) }
+        guard count > 0 else { throw FolioError(message: "没有可保存的文档") }
+        if SnapshotSafety.requiresOriginalSerialization(document) {
+            let expected = revision; savePhase = "保留 PDF 交互结构，准备完整快照"
+            try await Task.sleep(nanoseconds:1_000_000)
+            guard revision == expected else { throw SnapshotOutdated() }
+            return try snapshot()
+        }
+        let version = revision, outline = outlineEntries
+        let base = incrementalBase
+        let indexes = base != nil && !incrementalPages.isEmpty ? incrementalPages.sorted() : Array(0..<count)
+        let full = base == nil || incrementalPages.isEmpty
+        var replacements: [(Int,Data)] = []
+        savePhase = full ? "准备完整快照" : "准备修改页快照"; saveProgress = 0
+        for (offset,index) in indexes.enumerated() {
+            try Task.checkCancellation()
+            guard revision == version, !drawingInProgress, (0..<count).contains(index) else { throw SnapshotOutdated() }
+            // Hidden annotation types are presentation state only. Restore visibility only while this page is copied.
+            let hidden = hiddenKinds
+            if !hidden.isEmpty { hiddenKinds = []; applyLayers() }
+            do { replacements.append((index,try DocumentServices.subset(document,indexes:[index]).dataRepresentation().unwrap("页面快照失败"))) }
+            catch { if !hidden.isEmpty { hiddenKinds = hidden; applyLayers() }; throw error }
+            if !hidden.isEmpty { hiddenKinds = hidden; applyLayers() }
+            saveProgress = Double(offset+1)/Double(indexes.count)
+            // Sleep yields the main run loop, including mouse and window events, even for a single very large book.
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        guard revision == version else { throw SnapshotOutdated() }
+        var captured = makeArchive(pdf: base ?? Data())
+        let attributes = document.documentAttributes
         let task = Task { [self] () throws -> ProjectArchive in
+            savePhase = "后台组装 PDF"
             let data = try await Task.detached(priority: .utility) {
-            let copy = try PDFDocument(data: base).unwrap("原始快照无法读取")
-            var resources: [PDFDocument] = []
-            for (index, bytes) in replacements {
-                let part = try PDFDocument(data: bytes).unwrap("页面快照无法读取")
-                guard let page = part.page(at: 0)?.copy() as? PDFPage else { throw FolioError(message: "页面复制失败") }
-                resources.append(part)
-                copy.removePage(at: index); copy.insert(page, at: index)
-            }
-            ReadingServices.applyOutline(outline, to: copy)
-            return try withExtendedLifetime(resources) { try copy.dataRepresentation().unwrap("保存快照失败") }
-        }.value
+                let copy: PDFDocument
+                if !full, let base { copy = try PDFDocument(data: base).unwrap("原始快照无法读取") } else { copy = PDFDocument() }
+                var resources: [PDFDocument] = []
+                for (index,bytes) in replacements {
+                    try Task.checkCancellation()
+                    let part = try PDFDocument(data:bytes).unwrap("页面快照无法读取")
+                    guard let page = part.page(at:0)?.copy() as? PDFPage else { throw FolioError(message:"页面复制失败") }
+                    resources.append(part)
+                    if !full { copy.removePage(at:index) }; copy.insert(page,at:index)
+                }
+                copy.documentAttributes = attributes
+                ReadingServices.applyOutline(outline,to:copy)
+                return try withExtendedLifetime(resources) { try copy.dataRepresentation().unwrap("保存快照失败") }
+            }.value
             captured.pdf = data
             if revision == version { cachedPDF = data; incrementalBase = nil; incrementalPages = [] }
             return captured
@@ -165,5 +189,18 @@ extension Workspace {
         snapshotInFlight = (version,task)
         defer { if snapshotInFlight?.revision == version { snapshotInFlight = nil } }
         return try await task.value
+    }
+}
+
+struct SnapshotOutdated: LocalizedError { var errorDescription: String? { "准备期间原书已有新修改，请核对后重试" } }
+extension Workspace {
+    func stableSaveSnapshot() async throws -> (ProjectArchive,UUID,UUID,Int) {
+        for attempt in 0..<3 {
+            try Task.checkCancellation()
+            let version = revision, privateVersion = privateDataGeneration, generation = recoverySequence
+            do { return (try await snapshotForBackgroundSave(),version,privateVersion,generation) }
+            catch is SnapshotOutdated { if attempt == 2 { throw SnapshotOutdated() }; await Task.yield() }
+        }
+        throw SnapshotOutdated()
     }
 }
