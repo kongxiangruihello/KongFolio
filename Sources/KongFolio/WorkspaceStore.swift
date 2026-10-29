@@ -31,6 +31,8 @@ import UniformTypeIdentifiers
 @MainActor final class WorkspaceStore: ObservableObject {
     @Published private(set) var tabs: [OpenTab] = []
     @Published private(set) var selectedID: UUID?
+    @Published var showResearch = false
+    lazy var research = ResearchStore(storage: storage)
     let storage: URL
     let readingDefaults: UserDefaults
     @Published var showReadingHistory = false
@@ -66,6 +68,9 @@ import UniformTypeIdentifiers
         documentTasks.didFinishPersistent = { [weak self] result in
             guard result.file?.pathExtension == "json", let self else { return }
             for workspace in self.tabs.compactMap(\.workspace) { workspace.loadTableDrafts() }
+        }
+        library.didRelink = { [weak self] old, url in
+            do { try self?.research.relink(from: old, to: url) } catch { self?.present(error) }
         }
         connectBoardToDocuments()
     }
@@ -124,6 +129,14 @@ import UniformTypeIdentifiers
     /// are only remembered by path and are read when selected, so many open files cost nothing at launch.
     func bootstrap() {
         guard tabs.isEmpty else { return }
+        if let value = readingDefaults.object(forKey: "KongFolio.maximumLoadedTabs") as? Int { maxLoadedTabs = min(24,max(1,value)) }
+        if let value = readingDefaults.object(forKey: "KongFolio.memoryBudgetMB") as? Int { memoryBudgetMB = min(4096,max(128,value)) }
+        if !AppEnvironment.isTestRun {
+            diagnosticMonitor = ResponsivenessMonitor(storage: storage)
+            let monitor = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+            monitor.setEventHandler { [weak self] in self?.trimLoadedTabs(pressure: true) }
+            monitor.resume(); memoryMonitor = monitor
+        }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: storage.path)) ?? []
         func recoveryExists(_ slot: String) -> Bool {
             slot.isEmpty ? (names.contains("Recovery.kfrecovery") || names.contains("Recovery.kongfolio")) : names.contains("Recovery-\(slot).kfrecovery")
@@ -197,6 +210,7 @@ import UniformTypeIdentifiers
         selectedID = id
         focusedID = id
         forwarding = tab.changes.sink { [weak self] _ in self?.objectWillChange.send() }
+        recordActivity("切换标签页")
         tab.workspace?.lastActive = Date()
         tab.note?.lastActive = Date()
         tab.workspace?.ensureLoaded()
@@ -234,18 +248,22 @@ import UniformTypeIdentifiers
 
     /// How many documents stay in memory. Beyond this, the ones used longest ago are released if nothing would be lost
     /// (no unsaved changes, no undo history, not busy); they are read again when selected.
-    var maxLoadedTabs = 8
+    @Published var maxLoadedTabs = 8 { didSet { readingDefaults.set(maxLoadedTabs, forKey: "KongFolio.maximumLoadedTabs"); trimLoadedTabs() } }
+    @Published var memoryBudgetMB = 768 { didSet { readingDefaults.set(memoryBudgetMB, forKey: "KongFolio.memoryBudgetMB"); trimLoadedTabs() } }
+    var memoryMonitor: DispatchSourceMemoryPressure?
+    var diagnosticMonitor: ResponsivenessMonitor?
 
     func loadedTabsChanged() { trimLoadedTabs() }
 
-    private func trimLoadedTabs() {
+    private func trimLoadedTabs(pressure: Bool = false) {
         let loaded = tabs.compactMap(\.workspace).filter { $0.count > 0 }
-        guard loaded.count > maxLoadedTabs else { return }
-        var excess = loaded.count - maxLoadedTabs - loaded.filter { $0.unloadWorker != nil }.count
+        var excess = loaded.count - (pressure ? 1 : maxLoadedTabs) - loaded.filter { $0.unloadWorker != nil }.count
+        var bytes = loaded.reduce(0) { $0 + $1.estimatedResidentBytes }
+        let budget = max(64, memoryBudgetMB) * 1024 * 1024
         let partners = Set(tabs.compactMap(\.workspace).compactMap { $0.splitPartner?.id })
-        for workspace in loaded.filter({ $0.id != selectedID && !partners.contains($0.id) && $0.canUnload }).sorted(by: { $0.lastActive < $1.lastActive }) where excess > 0 {
-            workspace.unload()
-            excess -= 1
+        for workspace in loaded.filter({ $0.id != selectedID && !partners.contains($0.id) && $0.canUnload }).sorted(by: { $0.lastActive < $1.lastActive }) {
+            guard excess > 0 || bytes > budget else { break }
+            bytes -= workspace.estimatedResidentBytes; workspace.unload(); excess -= 1
         }
     }
 

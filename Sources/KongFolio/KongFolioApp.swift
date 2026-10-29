@@ -43,6 +43,8 @@ import AppKit
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
             CommandMenu("阅读") {
+                Button("阅读与史料研究…") { store.showResearch = true }
+                Button("复制当前选文的史料引文") { do { _ = try store.commandWorkspace?.copyResearchCitation() } catch { store.commandWorkspace?.error = error.localizedDescription } }
                 Button("个人书架与阅读记录…") { store.showReadingHistory = true }
                 Button("当前书籍的阅读笔记…") { store.openCurrentBookNotebook() }.disabled(store.commandWorkspace?.canCreateReadingShortcut != true)
                 Button("当前书籍的阅读进度…") { store.commandWorkspace?.refreshProgress(); store.commandWorkspace?.showProgress = true }.disabled((store.commandWorkspace?.count ?? 0) == 0)

@@ -263,6 +263,7 @@ struct ReadingSidebar: View {
     }
 
     private func pageText(_ index: Int) -> String {
+        if let path = workspace.displayPath, let segment = workspace.store?.research.segment(path: path, page: index) { return "第 \(index + 1) 页 · " + (segment.label(index).map { "印刷页码 " + $0 } ?? "无印刷页码") }
         guard let page = workspace.document.page(at: index), let label = ReadingServices.pageLabel(page, index: index) else { return "第 \(index + 1) 页" }
         return "第 \(index + 1) 页 · 印刷页码 \(label)"
     }

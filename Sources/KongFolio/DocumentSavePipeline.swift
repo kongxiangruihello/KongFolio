@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 
 /// File coordination, hashing, recovery and version archives run on a serial worker, using immutable bytes only.
 /// PDFKit's live document remains owned by the main actor.
@@ -12,6 +13,7 @@ enum DocumentSavePipeline {
         let automatic: Bool
         let restoringHistory: Bool
         var preparation: (@Sendable () throws -> Void)? = nil
+        var recoveryGeneration: Int? = nil
     }
     struct Outcome {
         let baseline: FileBaseline
@@ -23,7 +25,7 @@ enum DocumentSavePipeline {
     private static func perform(_ request: Request) throws -> Outcome {
         try request.preparation?()
         var archive = request.archive
-        try RecoveryWriter.shared.flush(archive, to: request.recovery)
+        try RecoveryWriter.shared.flush(archive, to: request.recovery, generation: request.recoveryGeneration)
         try request.expected.verify(request.target)
         if !request.restoringHistory { try DocumentHistory.protectExisting(request.target, storage: request.storage) }
         let project = request.target.pathExtension.lowercased() == "kongfolio"
@@ -53,16 +55,24 @@ enum DocumentSavePipeline {
 extension Workspace {
     /// A running disk write is never cancelled by a new keystroke. The next save captures the newer revision.
     @discardableResult func saveInBackground(automatic: Bool = true, includePrivateData: Bool = false) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        while captureInProgress {
+            if Task.isCancelled { return false }
+            do { try await Task.sleep(nanoseconds: 10_000_000) } catch { return false }
+        }
         while let saveWorker { if !(await saveWorker.value) { return false } }
+        captureInProgress = true
+        defer { captureInProgress = false }
         guard count > 0, !busy, !drawingInProgress, placingSignature == nil else { return false }
         guard dirty || (includePrivateData && hasPrivateReadingData) else { return true }
         guard !saveConflict, let target = historySource else { return false }
         do {
-            let archive = try snapshot(), version = revision, privateVersion = privateDataGeneration, identity = target.standardizedFileURL
+            let version = revision, privateVersion = privateDataGeneration, recoveryGeneration = recoverySequence, identity = target.standardizedFileURL
+            let archive = try await snapshotForBackgroundSave()
             guard let expected = fileBaseline, expected.path == target.standardizedFileURL.path else { throw FileConflict() }
             let request = DocumentSavePipeline.Request(archive: archive, target: target, expected: expected, storage: storage,
-                recovery: recoveryURL, automatic: automatic, restoringHistory: restoringHistory, preparation: savePreparation)
-            saving = true; status = "正在后台保存…"
+                recovery: recoveryURL, automatic: automatic, restoringHistory: restoringHistory, preparation: savePreparation, recoveryGeneration: recoveryGeneration)
+            saving = true; status = "正在后台保存…"; store?.recordActivity("后台保存")
             let task = Task { [self] () -> Bool in
                 defer { saving = false; saveWorker = nil; store?.loadedTabsChanged() }
                 do {
@@ -110,5 +120,50 @@ extension Workspace {
             guard await saveInBackground(automatic: false, includePrivateData: true) else { return false }
         }
         return true
+    }
+}
+
+extension Workspace {
+    /// Only changed pages touch the live PDF. The independent original bytes are assembled on a worker.
+    func snapshotForBackgroundSave() async throws -> ProjectArchive {
+        if let pending = snapshotInFlight {
+            if pending.revision == revision { return try await pending.task.value }
+            _ = try await pending.task.value
+            if snapshotInFlight?.revision == pending.revision { snapshotInFlight = nil }
+        }
+        guard cachedPDF == nil, let base = incrementalBase, !incrementalPages.isEmpty else { return try snapshot() }
+        let version = revision
+        let hidden = hiddenKinds
+        if !hidden.isEmpty { hiddenKinds = []; applyLayers() }
+        let replacements: [(Int, Data)]
+        do {
+            replacements = try incrementalPages.sorted().map { index in
+                guard (0..<count).contains(index) else { throw FolioError(message: "保存页码已变化") }
+                return (index, try DocumentServices.subset(document, indexes: [index]).dataRepresentation().unwrap("页面快照失败"))
+            }
+        } catch { if !hidden.isEmpty { hiddenKinds = hidden; applyLayers() }; throw error }
+        if !hidden.isEmpty { hiddenKinds = hidden; applyLayers() }
+        var captured = makeArchive(pdf: base)
+        let outline = outlineEntries
+        let task = Task { [self] () throws -> ProjectArchive in
+            let data = try await Task.detached(priority: .utility) {
+            let copy = try PDFDocument(data: base).unwrap("原始快照无法读取")
+            var resources: [PDFDocument] = []
+            for (index, bytes) in replacements {
+                let part = try PDFDocument(data: bytes).unwrap("页面快照无法读取")
+                guard let page = part.page(at: 0)?.copy() as? PDFPage else { throw FolioError(message: "页面复制失败") }
+                resources.append(part)
+                copy.removePage(at: index); copy.insert(page, at: index)
+            }
+            ReadingServices.applyOutline(outline, to: copy)
+            return try withExtendedLifetime(resources) { try copy.dataRepresentation().unwrap("保存快照失败") }
+        }.value
+            captured.pdf = data
+            if revision == version { cachedPDF = data; incrementalBase = nil; incrementalPages = [] }
+            return captured
+        }
+        snapshotInFlight = (version,task)
+        defer { if snapshotInFlight?.revision == version { snapshotInFlight = nil } }
+        return try await task.value
     }
 }

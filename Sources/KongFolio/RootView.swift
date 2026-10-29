@@ -17,6 +17,7 @@ struct RootView: View {
                 Color.clear
             }
         }
+        .sheet(isPresented: $store.showResearch) { ResearchPanel(store: store, research: store.research) }
         .sheet(isPresented: $store.showReadingHistory) { ReadingHistorySheet(store: store) }
         .sheet(isPresented: $store.showHistorySettings) { HistorySettingsView(storage: store.storage) }
         .sheet(item: $store.notebookBook) { BookNotebookView(store: store, library: store.library, book: $0) }
@@ -57,6 +58,7 @@ struct TabBar: View {
             }
             Button { store.showReadingHistory = true } label: { Image(systemName: "books.vertical") }
                 .buttonStyle(.borderless).frame(width: 28).help("个人书架、阅读记录与书籍快捷方式")
+            Button { store.showResearch = true } label: { Image(systemName: "books.vertical.circle") }.buttonStyle(.borderless).help("阅读组、资料备份、卷期、引文与史料研究")
             DocumentTaskButton(queue: store.documentTasks, store: store)
             Menu {
                 ForEach(store.tabs) { tab in

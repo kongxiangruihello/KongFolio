@@ -258,25 +258,32 @@ final class RecoveryWriter: @unchecked Sendable {
     /// instead of competing with each other (and with file loading) for the disk.
     static let shared = RecoveryWriter()
     private let queue = DispatchQueue(label: "com.kongfolio.recovery", qos: .utility)
+    private var generations: [URL: Int] = [:]
 
     /// Removes a recovery copy after any write already queued for it.
     func discard(_ url: URL) {
-        queue.async { try? FileManager.default.removeItem(at: url) }
+        queue.async { try? FileManager.default.removeItem(at: url); self.generations[url] = nil }
     }
 
     /// Returns once everything queued so far has finished.
     func drain() { queue.sync {} }
 
-    func write(_ archive: ProjectArchive, to url: URL, completion: @escaping (Error?) -> Void) {
+    func write(_ archive: ProjectArchive, to url: URL, generation: Int? = nil, completion: @escaping (Error?) -> Void) {
         queue.async {
-            do { try RecoveryStore.write(archive, to: url); completion(nil) } catch { completion(error) }
+            do {
+                if let generation, generation < (self.generations[url] ?? -1) { completion(nil); return }
+                try RecoveryStore.write(archive, to: url)
+                if let generation { self.generations[url] = generation }
+                completion(nil)
+            } catch { completion(error) }
         }
     }
 
-    func flush(_ archive: ProjectArchive?, to url: URL) throws {
+    func flush(_ archive: ProjectArchive?, to url: URL, generation: Int? = nil) throws {
         try queue.sync {
-            if let archive { try RecoveryStore.write(archive, to: url) }
-            else if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+            if let generation, generation < (generations[url] ?? -1) { return }
+            if let archive { try RecoveryStore.write(archive, to: url); if let generation { generations[url] = generation } }
+            else { if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }; generations[url] = nil }
         }
     }
 }
