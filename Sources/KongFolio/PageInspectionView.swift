@@ -84,7 +84,7 @@ struct InspectionPDFPreview: NSViewRepresentable {
     let page: PDFPage
     final class Coordinator { var page: PDFPage? }
     func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeNSView(context: Context) -> PDFView { let view = PDFView(); view.autoScales = true; view.displayMode = .singlePage; return view }
+    func makeNSView(context: Context) -> PDFView { let view = ManagedPDFView(); view.autoScales = true; view.displayMode = .singlePage; return view }
     func updateNSView(_ view: PDFView, context: Context) {
         guard context.coordinator.page !== page else { return }
         context.coordinator.page = page

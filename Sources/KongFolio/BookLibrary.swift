@@ -109,14 +109,45 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         try commit(next)
     }
     static func supports(_ url: URL) -> Bool { ["pdf", "kongfolio"].contains(url.pathExtension.lowercased()) || TextImport.handles(url) }
-    func book(path: String) -> LibraryBook? { books.first { ReadingProgress.canonicalPath($0.path) == ReadingProgress.canonicalPath(path) } }
-    func importHistory(defaults: UserDefaults) throws {
+    func book(path: String) -> LibraryBook? {
+        if let exact = books.first(where: { $0.path == path }) { return exact }
+        let identity = ReadingProgress.canonicalPath(path)
+        return books.first { ReadingProgress.canonicalPath($0.path) == identity }
+    }
+    /// Canonicalize each distinct path once, then use a set rather than rescanning the entire shelf for every record.
+    nonisolated static func historyIdentities(_ paths: [String], resolve: (String)->String = ReadingProgress.canonicalPath) -> [String:String] {
+        var cache: [String:String] = [:]
+        for path in paths where cache[path] == nil { cache[path] = resolve(path) }
+        return cache
+    }
+    private func applyHistory(_ history: [ReadingProgress.HistoryItem], identities: [String:String]) throws {
         var next = catalog
-        for item in ReadingProgress.history(defaults: defaults) {
-            guard next.relocated[item.path] == nil, !next.books.contains(where: { ReadingProgress.canonicalPath($0.path) == ReadingProgress.canonicalPath(item.path) }) else { continue }
-            next.books.append(LibraryBook(path: item.path, title: item.title, bookmark: item.progress.bookmark, added: item.progress.date ?? Date()))
+        var known = Set(next.books.map { identities[$0.path] ?? $0.path })
+        for item in history {
+            let identity = identities[item.path] ?? item.path
+            guard next.relocated[item.path] == nil, next.relocated[identity] == nil, known.insert(identity).inserted else { continue }
+            next.books.append(LibraryBook(path:item.path,title:item.title,bookmark:item.progress.bookmark,added:item.progress.date ?? Date()))
         }
         if next != catalog { try commit(next) }
+    }
+    func importHistory(defaults: UserDefaults) throws {
+        let history = ReadingProgress.history(defaults:defaults)
+        let identities = Self.historyIdentities(books.map(\.path) + history.map(\.path))
+        try applyHistory(history,identities:identities)
+    }
+    func refreshHistory(defaults: UserDefaults) async throws -> [String:ReadingProgress] {
+        let snapshot = defaults.dictionaryRepresentation(), paths = books.map(\.path)
+        let worker = Task.detached(priority:.utility) { () throws -> ([ReadingProgress.HistoryItem],[String:String]) in
+            try Task.checkCancellation()
+            let history = ReadingProgress.history(snapshot:snapshot)
+            let identities = Self.historyIdentities(paths + history.map(\.path))
+            try Task.checkCancellation(); return (history,identities)
+        }
+        let (history,identities) = try await withTaskCancellationHandler(operation:{ try await worker.value },onCancel:{ worker.cancel() })
+        try Task.checkCancellation(); try applyHistory(history,identities:identities)
+        var byIdentity: [String:ReadingProgress] = [:]
+        for item in history { byIdentity[identities[item.path] ?? item.path] = item.progress }
+        return books.reduce(into:[:]) { result,book in result[book.path] = byIdentity[identities[book.path] ?? book.path] ?? ReadingProgress() }
     }
     func add(_ urls: [URL]) throws {
         var next = catalog

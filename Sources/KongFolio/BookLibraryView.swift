@@ -11,6 +11,8 @@ struct BookLibraryView: View {
     @State private var selected = Set<UUID>()
     @State private var message = ""
     @State private var notebook: LibraryBook?
+    @State private var refreshing = false
+    @State private var refreshToken = UUID()
     @State private var progress: [String: ReadingProgress] = [:]
     private var categories: [String] { ["全部分类"] + Set(library.books.map(\.category).filter { !$0.isEmpty }).sorted() }
     private var visible: [LibraryBook] {
@@ -27,7 +29,7 @@ struct BookLibraryView: View {
             }
             PanelRow {
                 Button("添加书籍…") { add() }
-                Button("刷新进度") { refresh() }
+                Button("刷新进度") { refreshToken = UUID() }.disabled(refreshing)
                 Button(selected.isEmpty ? "搜索全部书架…" : "搜索所选 \(selected.count) 本…") { search() }.disabled(library.books.isEmpty || store.folderSearch.running)
                 Text("⌘ 点选可同时选择多本").font(.caption).foregroundStyle(.secondary)
             }
@@ -37,7 +39,8 @@ struct BookLibraryView: View {
             if let error = library.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
             if !message.isEmpty { Text(message).font(.caption).textSelection(.enabled) }
             Text("书籍保留在原位置；书架只记录分类、心得与阅读进度。链接失效时可重新指定原文件。").font(.caption).foregroundStyle(.secondary)
-        }.onAppear { refresh() }.sheet(item: $notebook) { BookNotebookView(store: store, library: library, book: $0) }
+            if refreshing { HStack { ProgressView().controlSize(.small); Text("后台整理阅读记录，可继续搜索和浏览…").font(.caption) } }
+        }.task(id:refreshToken) { await refresh() }.sheet(item: $notebook) { BookNotebookView(store: store, library: library, book: $0) }
     }
     private func row(_ book: LibraryBook) -> some View {
         HStack(alignment: .top, spacing: 12) {
@@ -62,20 +65,21 @@ struct BookLibraryView: View {
             }
         }.padding(.vertical, 5)
     }
-    private func refresh() {
-        perform { store.commandWorkspace?.saveReadingRecord(); try library.importHistory(defaults: store.readingDefaults) }
-        progress = Dictionary(uniqueKeysWithValues: library.books.map { ($0.path, ReadingProgress.load(path: $0.path, defaults: store.readingDefaults)) })
+    private func refresh() async {
+        refreshing = true; defer { refreshing = false }
+        do { progress = try await library.refreshHistory(defaults:store.readingDefaults) }
+        catch is CancellationError {} catch { message = error.localizedDescription }
     }
     private func add() {
         let panel = NSOpenPanel(); panel.allowsMultipleSelection = true
         panel.message = "添加 PDF、KongFolio 项目、Markdown、HTML 或文本文件；原件保留在原位置。"
         guard panel.runModal() == .OK else { return }
-        perform { try library.add(panel.urls); refresh() }
+        perform { try library.add(panel.urls); refreshToken = UUID() }
     }
     private func relink(_ book: LibraryBook) {
         let panel = NSOpenPanel(); panel.message = "重新选择“\(book.title)”的原文件，保留进度、分类和心得。"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        perform { try library.relink(path: book.path, to: url, defaults: store.readingDefaults); refresh(); message = "已重新定位；阅读链接将使用新位置。" }
+        perform { try library.relink(path: book.path, to: url, defaults: store.readingDefaults); refreshToken = UUID(); message = "已重新定位；阅读链接将使用新位置。" }
     }
     private func search() {
         let books = selected.isEmpty ? library.books : library.books.filter { selected.contains($0.id) }
@@ -95,12 +99,11 @@ private struct LibraryCover: View {
             if let cover { Image(nsImage: cover).resizable().scaledToFit() }
             else { Image(systemName: "book.closed").font(.largeTitle).foregroundStyle(.blue).frame(maxWidth: .infinity, maxHeight: .infinity).background(.quaternary, in: RoundedRectangle(cornerRadius: 5)) }
         }.task(id: path) {
-            let worker = Task.detached(priority: .utility) { () -> Data? in
-                guard URL(fileURLWithPath: path).pathExtension.lowercased() == "pdf", let doc = PDFDocument(url: URL(fileURLWithPath: path)), !doc.isLocked, let page = doc.page(at: 0) else { return nil }
-                return page.thumbnail(of: NSSize(width: 100, height: 140), for: .cropBox).tiffRepresentation
-            }
-            let data = await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
-            if !Task.isCancelled { cover = data.flatMap(NSImage.init(data:)) }
+            do {
+                let data = try await LibraryCoverLoader.shared.load(URL(fileURLWithPath:path))
+                try Task.checkCancellation(); cover = data.flatMap(NSImage.init(data:))
+            } catch { cover = nil }
+
         }
     }
 }

@@ -223,3 +223,7 @@ struct BatchPlan: Codable, Equatable {
         else { try FileManager.default.moveItem(at: staged, to: url) }
     }
 }
+
+extension BatchQueue {
+    func stagePlan(_ value: BatchPlan) { guard !running else { return }; plan = value; summary = "已带入试做配方，请核对后开始"; try? persist() }
+}

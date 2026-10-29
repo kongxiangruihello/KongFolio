@@ -12,7 +12,7 @@ struct ResearchBackup: Codable {
     var originals: [String: Data]
     var companions: [Asset]
     var progress: [String: Data]
-    static let allowedFolders: Set<String> = ["ReadingDocuments", "SignatureEdits", "AcademicDrafts", "NoteAssets", "Boards", "WordDrafts", "TableDrafts", "Research", "Library", "History", "TextHistory", "Notes", "Conflicts"]
+    static let allowedFolders: Set<String> = ["ReadingRulers", "ReadingDocuments", "SignatureEdits", "AcademicDrafts", "NoteAssets", "Boards", "WordDrafts", "TableDrafts", "Research", "Library", "History", "TextHistory", "Notes", "Conflicts"]
     func validate() throws {
         guard version == 1, originals.count <= 10000, companions.count <= 100000 else { throw FolioError(message: "备份版本或数量无效") }
         guard Set(originals.keys) == Set(originalDigests.keys), Set(companions.map(\.path)).count == companions.count else { throw FolioError(message: "备份目录重复或原书索引不完整") }
@@ -203,7 +203,7 @@ struct ResearchBackup: Codable {
                 try rewritten(asset.bytes).write(to: output, options: .atomic)
             }
             for (old,new) in map where old != new {
-                for folder in ["ReadingDocuments", "SignatureEdits", "AcademicDrafts", "WordDrafts", "TableDrafts", "History", "TextHistory"] {
+                for folder in ["ReadingRulers", "ReadingDocuments", "SignatureEdits", "AcademicDrafts", "WordDrafts", "TableDrafts", "History", "TextHistory"] {
                     let oldURL = URL(fileURLWithPath: old), newURL = URL(fileURLWithPath: new)
                     let oldIdentity = folder == "ReadingDocuments" ? oldURL.resolvingSymlinksInPath().standardizedFileURL.path : oldURL.standardizedFileURL.path
                     let newIdentity = folder == "ReadingDocuments" ? newURL.resolvingSymlinksInPath().standardizedFileURL.path : newURL.standardizedFileURL.path

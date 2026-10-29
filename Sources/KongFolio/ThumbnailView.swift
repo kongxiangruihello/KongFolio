@@ -3,10 +3,10 @@ import PDFKit
 
 actor ThumbnailRenderer {
     static let shared = ThumbnailRenderer()
-    func render(_ data: Data) throws -> CGImage {
+    func render(_ data: Data, maxDimension: CGFloat = 310) throws -> CGImage {
         try Task.checkCancellation()
         guard let doc = PDFDocument(data: data), let page = doc.page(at: 0) else { throw FolioError(message: "缩略图读取失败") }
-        let image=try autoreleasepool { try DocumentServices.render(page, maxDimension: 310) }
+        let image=try autoreleasepool { try DocumentServices.render(page, maxDimension: maxDimension) }
         try Task.checkCancellation()
         return image
     }
@@ -31,7 +31,7 @@ struct ThumbnailView: View {
                 try await Task.sleep(nanoseconds:45_000_000)
                 try Task.checkCancellation()
                 guard let data=autoreleasepool(invoking:{ DocumentServices.subset(workspace.document,indexes:[index]).dataRepresentation() }) else { return }
-                let cg = try await ThumbnailRenderer.shared.render(data); try Task.checkCancellation()
+                let cg = try await ThumbnailRenderer.shared.render(data,maxDimension:workspace.store?.constrainedMemory == true ? 180 : 310); try Task.checkCancellation()
                 guard key==workspace.thumbnailKey(index) else { return }
                 let image = NSImage(cgImage: cg, size: .zero)
                 workspace.thumbnails.put(image, key: key, cost: cg.width * cg.height * 4); state.image = image

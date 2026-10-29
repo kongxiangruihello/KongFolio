@@ -394,6 +394,7 @@ extension Workspace {
 @MainActor final class ThumbnailCache {
     private let images = NSCache<NSString, NSImage>()
     init() { images.totalCostLimit = 32 * 1024 * 1024; images.countLimit = 160 }
+    func constrain(_ value: Bool) { images.totalCostLimit = (value ? 8 : 32)*1024*1024; images.countLimit = value ? 40 : 160 }
     func image(for key: String) -> NSImage? { images.object(forKey: key as NSString) }
     func put(_ image: NSImage, key: String, cost: Int) { images.setObject(image, forKey: key as NSString, cost: cost) }
     func clear() { images.removeAllObjects() }

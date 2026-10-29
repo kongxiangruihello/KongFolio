@@ -50,6 +50,7 @@ enum BackgroundJobs {
     }
 
     static func recognize(_ page: PDFPage, settings: OCRSettings) throws -> [RecognizedLine] {
+        try OCRResourceGate.shared.acquire(); defer { OCRResourceGate.shared.release() }
         var image = try DocumentServices.render(page, maxDimension: DocumentServices.ocrPixelDimension(for: page, dpi: settings.dpi))
         if settings.ignoresRedMarks { image = try DocumentServices.withoutRedMarks(image) }
         return settings.vertical

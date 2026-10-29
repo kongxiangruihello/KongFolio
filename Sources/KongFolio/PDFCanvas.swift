@@ -28,7 +28,8 @@ struct PDFCanvas: NSViewRepresentable {
         case .continuous: display = .singlePageContinuous
         }
         let layoutChanged = view.displayMode != display
-        if replaced { view.document = workspace.document }
+        if replaced { view.document = workspace.document; workspace.loadReadingRulerIfNeeded() }
+        view.refreshReadingRuler()
         if layoutChanged { view.displayMode = display }
         if replaced || layoutChanged || context.coordinator.navigation != workspace.navigationToken {
             if let scale = workspace.readingScale { view.autoScales = false; view.scaleFactor = scale } else { view.autoScales = true }
@@ -78,7 +79,7 @@ struct PDFCanvas: NSViewRepresentable {
                     workspace.scheduleRecovery()
                 }
                 if self.visitedPage !== page { self.visitedPage = page; workspace.noteVisit(index) }
-                workspace.captureReadingPosition()
+                workspace.captureReadingPosition(); view.refreshReadingRuler()
             }
         }
         @MainActor func observeScroll(view: DrawingPDFView) {
@@ -116,11 +117,17 @@ final class ReadingPDFContainer: NSView {
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 }
-final class DrawingPDFView: PDFView, SignaturePlacing {
+final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceReleasing {
     weak var workspace: Workspace?
     private var points: [CGPoint] = []
     private weak var drawingPage: PDFPage?
     private var provisional: PDFAnnotation?
+    private lazy var readingGuide = ReadingRulerOverlay(pdfView:self)
+    func refreshReadingRuler() {
+        if readingGuide.superview == nil { readingGuide.frame = bounds; readingGuide.autoresizingMask = [.width,.height]; addSubview(readingGuide) }
+        readingGuide.isHidden = workspace?.readingRuler.enabled != true; readingGuide.needsDisplay = true
+    }
+    override func layout() { super.layout(); readingGuide.needsDisplay = true }
     private lazy var strokePreview = StrokePreviewView(pdfView: self)
     private var moving: PDFAnnotation?
     private var pendingMove: [PendingAnnotationEdit] = []
@@ -158,7 +165,7 @@ final class DrawingPDFView: PDFView, SignaturePlacing {
         points.removeAll(); drawingPage = nil; provisional = nil; moving = nil
         pendingMove.removeAll(); contextSignature = nil; regionStart = nil
         strokePreview.annotation = nil; strokePreview.page = nil
-        strokePreview.removeFromSuperview(); regionView.removeFromSuperview()
+        strokePreview.removeFromSuperview(); regionView.removeFromSuperview(); readingGuide.removeFromSuperview()
         clearSelection(); highlightedSelections = nil; delegate = nil; document = nil; workspace = nil
 
     }
@@ -488,7 +495,7 @@ struct ComparisonCanvas: NSViewRepresentable {
     @ObservedObject var sync: ComparisonSync
 
     func makeNSView(context: Context) -> PDFView {
-        let view = PDFView()
+        let view = ManagedPDFView()
         view.autoScales = true
         view.document = document
         context.coordinator.observer = NotificationCenter.default.addObserver(forName: .PDFViewPageChanged, object: view, queue: .main) { [weak view, weak sync] _ in
@@ -629,5 +636,40 @@ final class ActionButton: NSButton {
         context.clip(to: page.bounds(for: .cropBox))
         annotation.draw(with: .cropBox, in: context)
         context.restoreGState()
+    }
+}
+
+final class ReadingRulerOverlay: NSView {
+    weak var pdfView: DrawingPDFView?
+    init(pdfView:DrawingPDFView) { self.pdfView = pdfView; super.init(frame:.zero) }
+    required init?(coder:NSCoder) { fatalError("not used") }
+    private var guideRect: CGRect? {
+        guard let view = pdfView, let w = view.workspace, w.readingRuler.enabled, let page = view.currentPage else { return nil }
+        let box = view.convert(page.bounds(for:.cropBox),from:page), ruler = w.readingRuler
+        if ruler.direction == .vertical { let width = box.width*ruler.thickness; return CGRect(x:box.minX+box.width*ruler.position-width/2,y:box.minY,width:width,height:box.height).intersection(bounds) }
+        let height = box.height*ruler.thickness
+        return CGRect(x:box.minX,y:box.maxY-box.height*ruler.position-height/2,width:box.width,height:height).intersection(bounds)
+    }
+    override func draw(_ dirtyRect:NSRect) {
+        guard let rect = guideRect, let ruler = pdfView?.workspace?.readingRuler else { return }
+        NSColor.systemYellow.withAlphaComponent(ruler.opacity).setFill(); NSBezierPath(rect:rect).fill()
+        NSColor.systemOrange.withAlphaComponent(0.6).setStroke(); let border = NSBezierPath(rect:rect); border.lineWidth = 1; border.stroke()
+        NSColor.systemOrange.withAlphaComponent(0.75).setFill()
+        let handle = ruler.direction == .vertical ? CGRect(x:rect.minX,y:rect.maxY-14,width:rect.width,height:14) : CGRect(x:rect.minX,y:rect.minY,width:14,height:rect.height)
+        NSBezierPath(roundedRect:handle,xRadius:3,yRadius:3).fill()
+    }
+    override func hitTest(_ point:NSPoint) -> NSView? {
+        guard pdfView?.workspace?.tool == .select, let rect = guideRect, let ruler = pdfView?.workspace?.readingRuler else { return nil }
+        let handle = ruler.direction == .vertical ? CGRect(x:rect.minX,y:rect.maxY-18,width:rect.width,height:18) : CGRect(x:rect.minX,y:rect.minY,width:18,height:rect.height)
+        let modifier = NSApp.currentEvent?.modifierFlags.contains(.option) == true
+        return handle.insetBy(dx:-3,dy:-3).contains(point) || (modifier && rect.contains(point)) ? self : nil
+    }
+    override func mouseDown(with event:NSEvent) { move(event) }
+    override func mouseDragged(with event:NSEvent) { move(event) }
+    private func move(_ event:NSEvent) {
+        guard let view = pdfView, let w = view.workspace, let page = view.currentPage else { return }
+        let point = convert(event.locationInWindow,from:nil), box = view.convert(page.bounds(for:.cropBox),from:page)
+        let value = w.readingRuler.direction == .vertical ? (point.x-box.minX)/max(1,box.width) : (box.maxY-point.y)/max(1,box.height)
+        w.readingRuler.position = min(1,max(0,value)); needsDisplay = true
     }
 }

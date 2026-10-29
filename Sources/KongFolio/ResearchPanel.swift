@@ -4,6 +4,7 @@ import PDFKit
 struct ResearchPanel: View {
     @ObservedObject var store: WorkspaceStore
     @ObservedObject var research: ResearchStore
+    var onClose: (() -> Void)? = nil
     @StateObject private var controller = ResearchController()
     @Environment(\.dismiss) private var dismiss
     @State private var tab = 0
@@ -28,26 +29,34 @@ struct ResearchPanel: View {
     @State private var template = CitationTemplate().text
     @State private var sampleRange = "1-3"
     @State private var recipeIndex = 0
+    @State private var topicName = ""
+    @State private var panelWidth: CGFloat = 1060
     private var workspace: Workspace? { store.commandWorkspace }
     private var path: String { workspace?.displayPath ?? "" }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack { Text("阅读与史料研究").font(.headline); Spacer(); Text(workspace?.displayName ?? "未打开书籍").lineLimit(1); Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction) }
-            Picker("功能", selection: $tab) {
-                Text("阅读组与备份").tag(0); Text("页码与卷期").tag(1); Text("批注与校对").tag(2); Text("版本重新关联").tag(3); Text("引文与 Word").tag(4); Text("批处理试做").tag(5)
-            }.pickerStyle(.segmented)
+            HStack { Text("阅读与史料研究").font(.headline); Spacer(); Text(workspace?.displayName ?? "未打开书籍").lineLimit(1); Button("关闭") { controller.flushAcademicDraft(); if let onClose { onClose() } else { dismiss() } }.keyboardShortcut(.cancelAction) }
+            if panelWidth < 900 { tabPicker.pickerStyle(.menu) } else { tabPicker.pickerStyle(.segmented) }
+            if let warning = research.warning(path:path) { VStack(alignment:.leading) { Text(warning).foregroundStyle(.orange); HStack { Button("检查原文件") { store.checkOpenSourceChanges() }; Button("保留备份并重新载入") { if let workspace { controller.reloadSource(workspace) } }; Button("核对后确认当前关联") { if let workspace { controller.confirmSource(workspace,research:research) } } } }.disabled(controller.busy) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    switch tab { case 0: groups; case 1: labels; case 2: annotations; case 3: editions; case 4: academic; default: trial }
+                    switch tab { case 0: groups; case 1: labels; case 2: annotations; case 3: editions; case 4: academic; case 5: trial; default: ResearchTopicEditor(research:research,store:store,controller:controller) }
                 }.padding(4)
             }
-            if controller.busy { ProgressView("正在处理，可继续等待…") }
+            if controller.busy { HStack { ProgressView(value:controller.progress); Text(controller.phase); Button("取消处理") { controller.cancel() } } }
             if let error = research.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
             Text(controller.message).font(.caption).textSelection(.enabled).lineLimit(8)
         }.padding(18).adaptiveSheet(width: 1060, height: 820, minimumWidth: 620)
+        .background(GeometryReader { geometry in Color.clear.onAppear { panelWidth = geometry.size.width }.onChange(of:geometry.size.width) { _,width in panelWidth = width } })
         .onAppear { loadSettings(); controller.attachAcademicDraft(store) }
         .onDisappear { controller.flushAcademicDraft() }
+        .onReceive(NotificationCenter.default.publisher(for:NSWindow.willCloseNotification)) { note in
+            if let window = note.object as? NSWindow, window.identifier?.rawValue == "research-workbench" { controller.flushAcademicDraft(); controller.sampleOriginal = nil; controller.sampleResult = nil; controller.academicPreviewURL = nil }
+        }
         .onChange(of: path) { _,_ in loadSettings(); controller.attachAcademicDraft(store) }
+    }
+    private var tabPicker: some View {
+        Picker("功能",selection:$tab) { Text("阅读组与备份").tag(0); Text("页码与卷期").tag(1); Text("批注与校对").tag(2); Text("版本重新关联").tag(3); Text("引文与 Word").tag(4); Text("批处理试做").tag(5); Text("专题稿").tag(6) }
     }
     private func action(_ operation: () throws -> Void) { do { try operation() } catch { controller.message = error.localizedDescription } }
     private func loadSettings() {
@@ -69,18 +78,20 @@ struct ResearchPanel: View {
             Toggle("连同原书一起备份（建议换机时开启）", isOn: $includeOriginals)
             HStack { Button("备份全部阅读资料…") { controller.backup(store, includeOriginals: includeOriginals) }; Button("恢复备份并载入书架…") { controller.restoreBackup(store) } }.disabled(controller.busy)
             Text("包含书签、OCR 校对、签名编辑资料、心得、链接、研究设置和阅读进度。恢复生成独立目录并合并书架；当前同名资料优先保留，缺失原件列出供重新定位。").font(.caption)
+            ResearchRestorePreview(controller:controller,store:store)
             Divider(); Text("运行状态与内存").font(.headline)
+            HStack { Text("实际驻留 \(store.residentMemoryMB) MB"); Text(store.constrainedMemory ? "已降低并行任务与后台加载" : "正常负载").foregroundStyle(store.constrainedMemory ? .orange : .secondary); Button("刷新状态") { store.sampleRuntimeMemory() } }
+            ForEach(store.tabs.compactMap(\.workspace).filter { $0.needsLoad },id:\.id) { w in Text("已暂时释放：" + (w.displayPath.map { URL(fileURLWithPath:$0).lastPathComponent } ?? "书籍")).font(.caption) }
+            if !store.startupEntries.isEmpty { Button("继续检查上次阅读现场") { store.showStartupReview = true } }
             HStack { Stepper("内存预算 \(store.memoryBudgetMB) MB", value: $store.memoryBudgetMB, in: 128...4096, step: 128); Stepper("最多加载 \(store.maxLoadedTabs) 本", value: $store.maxLoadedTabs, in: 1...24) }
             HStack { Button("整理后台内存") { store.loadedTabsChanged(); controller.message = "已请求安全释放后台文档，未保存的编辑继续保留" }; Button("查看卡顿诊断记录") { NSWorkspace.shared.activateFileViewerSelecting([store.storage.appendingPathComponent("Diagnostics")]) } }
-            Text("内存预算根据文件、页数与撤销快照估算；系统内存紧张时额外收紧。卡顿诊断只记录阶段与用量，不记录正文或自动上传。").font(.caption)
+            Text("结合实际驻留与文件估算调整负载；未保存和可见书籍继续保留，内存不会强制截断。诊断不记录正文，不自动上传。").font(.caption)
+            if let workspace { Divider(); ReadingRulerControls(workspace:workspace) }
         }
     }
     private var labels: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("印刷页码对应").font(.headline)
-            Text("每行：PDF起页 PDF末页 起始号码 样式 可选前缀。页码从 1 开始；样式为 数字／罗马数字／无页码。各段不能重叠。").font(.caption)
-            TextEditor(text: $segments).frame(height: 105).border(.quaternary)
-            HStack { Button("保存页码对应") { saveSegments() }.disabled(workspace == nil || path.isEmpty); TextField("印刷页码，如 iv、12", text: $jumpLabel); Button("按印刷页码跳转") { if let w = workspace, let page = research.page(path: path, label: jumpLabel, count: w.count) { w.selectPage(page) } else { controller.message = "未找到对应页码" } } }
+        VStack(alignment:.leading,spacing:12) {
+            if let workspace { PrintedPagesEditor(workspace:workspace,research:research,controller:controller) }
             Divider(); Text("当前书籍的报刊卷期").font(.headline)
             HStack { TextField("刊名", text: $journal.journal); TextField("年份", text: $journal.year); TextField("卷", text: $journal.volume) }
             HStack { TextField("期号（数字可检查缺期）", text: $journal.issue); TextField("日期 YYYY-MM-DD", text: $journal.date); TextField("版次", text: $journal.edition) }
@@ -90,17 +101,7 @@ struct ResearchPanel: View {
             ForEach(research.state.periodicals.keys.filter { periodicalQuery.isEmpty || (research.state.periodicals[$0]?.citation.localizedCaseInsensitiveContains(periodicalQuery) ?? false) }.sorted(by: { (research.state.periodicals[$0]?.date ?? "") < (research.state.periodicals[$1]?.date ?? "") }), id: \.self) { path in
                 HStack { Text(research.state.periodicals[path]?.citation ?? ""); Spacer(); Button("打开") { store.openEach([URL(fileURLWithPath: path)]) } }
             }
-        }
-    }
-    private func saveSegments() {
-        action {
-            guard let w = workspace else { return }
-            let parsed = try segments.split(separator: "\n").map { line -> PrintedPageSegment in
-                let cells = line.split(whereSeparator: \.isWhitespace).map(String.init)
-                guard cells.count >= 4, let start = Int(cells[0]), let end = Int(cells[1]), let first = Int(cells[2]), let style = PrintedPageSegment.Style(rawValue: cells[3]) else { throw FolioError(message: "页码格式无效：" + line) }
-                return PrintedPageSegment(start: start-1, end: end-1, first: first, prefix: cells.dropFirst(4).joined(separator: " "), style: style)
-            }
-            try PrintedPageSegment.validate(parsed, count: w.count); try research.update { $0.labels[path] = parsed; if $0.identities == nil { $0.identities = [:] }; $0.identities?[path] = w.fileBaseline?.digest }; controller.message = "页码对应已保存"
+            Divider(); PeriodicalBatchEditor(library:store.library,research:research,controller:controller)
         }
     }
     private var annotations: some View {
@@ -111,12 +112,21 @@ struct ResearchPanel: View {
             HStack { Picker("观察到修改的时间", selection: $recentDays) { Text("不限日期").tag(0); Text("最近7天").tag(7); Text("最近30天").tag(30) }; TextField("为命中批注设置标签，逗号分隔", text: $tagText); Button("给筛选结果加标签") { action { let ids = Set(filteredAnnotations.map(\.key)); try research.update { value in for index in value.annotations.indices where ids.contains(value.annotations[index].key) { value.annotations[index].tags = tagText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }; value.annotations[index].modified = Date() } } } } }
             ForEach(research.state.filters) { item in Button(item.name) { filter = item; recentDays = item.windowDays ?? 0 } }
             ForEach(Array(filteredAnnotations.prefix(200))) { note in HStack(alignment: .top) { Text(URL(fileURLWithPath: note.path).lastPathComponent + " · 第\(note.page+1)页\n" + note.quote + "\n" + note.comment).lineLimit(5); Spacer(); Button("原文") { action { try store.openReadingShortcut(ReadingShortcut(path: note.path, title: "批注原文", mode: .fixed, position: ViewPosition(selection: note.page))) } } } }
-            Divider(); Text("分书／分项目 OCR 校对词典").font(.headline)
-            HStack { TextField("误识文字", text: $from); TextField("改为", text: $to); TextField("范围：全局、完整书籍路径或书架分类名", text: $scope) }
-            Button("保存规则") { action { guard !from.isEmpty, from != to else { throw FolioError(message: "请输入不同的原文字和替换文字") }; try research.update { $0.dictionary.append(ScopedCorrection(from: from, to: to, scope: scope)) } } }
-            ForEach(research.state.dictionary) { rule in HStack { Text(rule.from + " → " + rule.to + "（" + rule.scope + "）"); Spacer(); Button(rule.enabled ? "停用" : "启用") { action { try research.update { value in if let i = value.dictionary.firstIndex(where: { $0.id == rule.id }) { value.dictionary[i].enabled.toggle() } } } } } }
-            HStack { Button("预览当前书籍命中") { controller.previewCorrections(store) }; Button("应用预览中的校正") { if let w = workspace, let revision = controller.correctionRevision { w.applyOCRBatch(controller.correctionHits, expected: revision); controller.message = "已发起校正；可用撤销回退" } }.disabled(controller.correctionHits.isEmpty) }
-            ForEach(Array(controller.correctionHits.prefix(100))) { hit in Text("第\(hit.page+1)页：" + hit.markedContext + " → " + hit.to).font(.caption) }
+            HStack { TextField("专题名称",text:$topicName); Button("将筛选结果加入专题") { addToTopic() }.disabled(filteredAnnotations.isEmpty) }
+            Divider(); CorrectionDictionaryView(research:research,library:store.library,controller:controller,workspace:workspace)
+        }
+    }
+    private func addToTopic() {
+        action {
+            let name = topicName.trimmingCharacters(in:.whitespacesAndNewlines)
+            guard !name.isEmpty else { throw FolioError(message:"请填写专题名称") }
+            let notes = filteredAnnotations
+            try research.update { value in
+                if value.topics == nil { value.topics = [] }
+                if let index = value.topics?.firstIndex(where: { $0.name == name }) { value.topics![index].add(notes) }
+                else { var topic = ResearchTopic(name:name); topic.add(notes); value.topics?.append(topic) }
+            }
+            controller.message = "已加入专题，可在“专题稿”中排序和补充论述"
         }
     }
     private var filteredAnnotations: [ResearchAnnotation] {
@@ -135,31 +145,7 @@ struct ResearchPanel: View {
             Toggle("同时复制已确认页面的标注（页面尺寸必须相同）", isOn: $includeAnnotations)
             Text("书签与目录按确认页迁移；像素相关的 OCR 原页、校对区域、签名编辑层与草稿保留在旧资料中，不直接套用新扫描页。").font(.caption)
             Button("确认对应并生成独立文档") { controller.applyReassociation(store, includeAnnotations: includeAnnotations) }.disabled(controller.pairs.isEmpty || controller.busy)
-            Divider(); Text("长期版本对照表与同步翻页").font(.headline)
-            HStack { TextField("对应表名称", text: $editionName); TextField("另一个版本路径", text: $rightPath); Button("选择…") { rightPath = controller.chooseFile(pdfOnly: true)?.path ?? rightPath } }
-            Text("每行：当前版本页码 对照版本页码 可选章节名；以下页码从1开始。锚点之间按页差同步。").font(.caption)
-            TextEditor(text: $editionText).frame(height: 90).border(.quaternary)
-            Button("保存版本对应表") { saveEdition() }
-            ForEach(research.state.editions) { edition in HStack { Text(edition.name); Spacer(); Button("并排对照并同步") { workspace?.applyResearchEdition(edition) } } }
-        }
-    }
-    private func saveEdition() {
-        action {
-            guard !path.isEmpty, !rightPath.isEmpty else { throw FolioError(message: "请选择当前书籍和另一版本") }
-            let pairs = try editionText.split(separator: "\n").map { line -> EditionCorrespondence.Pair in let cells = line.split(whereSeparator: \.isWhitespace); guard cells.count >= 2, let a = Int(cells[0]), let b = Int(cells[1]), a > 0, b > 0 else { throw FolioError(message: "对应页码无效") }; return EditionCorrespondence.Pair(left: a-1, right: b-1, title: cells.dropFirst(2).joined(separator: " ")) }
-            guard !pairs.isEmpty, Set(pairs.map(\.left)).count == pairs.count, Set(pairs.map(\.right)).count == pairs.count else { throw FolioError(message: "对应页重复或为空") }
-            let edition = EditionCorrespondence(name: editionName, leftPath: path, rightPath: rightPath, pairs: pairs), leftCount = workspace?.count ?? 0
-            let target = research
-            controller.perform {
-                let right = URL(fileURLWithPath: edition.rightPath)
-                try await CloudFilePreparation.prepare([right]) { _ in }
-                try await Task.detached {
-                    let document = try PDFDocument(data: Data(contentsOf: right)).unwrap("对照版本无法读取")
-                    try edition.validate(leftCount: leftCount, rightCount: document.pageCount)
-                }.value
-                try target.update { $0.editions.append(edition) }
-                return "版本对应表已保存，可双向同步翻页"
-            }
+            Divider(); if let workspace { EditionAnchorsEditor(workspace:workspace,research:research,controller:controller) }
         }
     }
     private var academic: some View {
@@ -171,7 +157,15 @@ struct ResearchPanel: View {
             Divider(); Text("Word 学术整理稿").font(.headline)
             Button("载入当前 PDF／文字文件正文") { controller.loadAcademic(store) }.disabled(controller.busy)
             Text("脚注：正文[^1]，另行 [^1]: 注释；尾注改用[~1]。:::caption 题注；:::page 原页码并分页。章节使用 # 标题，表格和图片沿用 Markdown。").font(.caption)
-            TextEditor(text: $controller.academicText).frame(minHeight: 300).border(.quaternary)
+            HStack { ForEach(AcademicInsertion.allCases) { kind in Button("插入"+kind.rawValue) { controller.insertAcademic(kind) } }; Button("刷新 Word 预览") { controller.previewAcademic() }.disabled(controller.busy) }
+            HSplitView {
+                AcademicTextEditor(controller:controller).frame(minWidth:260)
+                VStack(alignment:.leading) {
+                    if let url = controller.academicPreviewURL { AcademicFilePreview(url:url) }
+                    else { Text("点击“刷新 Word 预览”核对实际生成的 Word 文件").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity) }
+                    if let digest = controller.academicPreviewDigest, digest != OCRPageCache.digest(Data(controller.academicText.utf8)) { Text("草稿已修改，请刷新预览").foregroundStyle(.orange) }
+                }.frame(minWidth:250)
+            }.frame(height:420)
             HStack { Button("检查待核文字和注释") { action { controller.academicWarnings = try AcademicMarkup.parse(controller.academicText).warnings; controller.message = controller.academicWarnings.isEmpty ? "注释完整，未发现待核标记；仍请核对识别文字" : "请处理下方待核位置" } }; Button("导出学术 Word…") { controller.exportAcademic() }.disabled(controller.busy || controller.academicText.isEmpty) }
             ForEach(controller.academicWarnings, id: \.self) { Text($0).foregroundStyle(.orange) }
             if !controller.academicWarnings.isEmpty { Button("已核对，继续导出") { controller.exportAcademic(reviewed: true) }.disabled(controller.busy) }
@@ -186,6 +180,7 @@ struct ResearchPanel: View {
                 TextField("试做页码，例如 1-3（最多5页）", text: $sampleRange)
                 Button("试做并对照") { if recipes.indices.contains(recipeIndex) { controller.trial(store, recipe: recipes[recipeIndex], range: sampleRange) } }.disabled(controller.busy)
             } else { Text("请先在文件夹批处理中保存一个配方。") }
+            if let report = controller.trialReport { Text(report.summary).textSelection(.enabled); Button("将相同配方带入正式批处理…") { controller.promoteTrial(store) }.disabled(controller.busy || store.batchQueue.running) }
             if let folder = controller.trialFolder { Button("查看试做的 PDF／Word／章节文件") { NSWorkspace.shared.activateFileViewerSelecting([folder]) } }
             HStack { ResearchPDFPreview(document: controller.sampleOriginal, page: 0); ResearchPDFPreview(document: controller.sampleResult, page: 0) }.frame(height: 420)
             Text("左侧试做前，右侧试做后；不会改原件，也不会自动运行整批任务。确认效果后可关闭本面板，到文件夹批处理中应用同一配方。").font(.caption)
@@ -198,7 +193,7 @@ struct ResearchPDFPreview: NSViewRepresentable {
     var page: Int
     final class Coordinator { var lastPage: Int? }
     func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeNSView(context: Context) -> PDFView { let view = PDFView(); view.autoScales = true; view.displayMode = .singlePageContinuous; return view }
+    func makeNSView(context: Context) -> PDFView { let view = ManagedPDFView(); view.autoScales = true; view.displayMode = .singlePageContinuous; return view }
     func updateNSView(_ view: PDFView, context: Context) {
         if view.document !== document { view.document = document; context.coordinator.lastPage = nil }
         guard context.coordinator.lastPage != page else { return }

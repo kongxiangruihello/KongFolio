@@ -104,7 +104,7 @@ final class ReadingLifecycleTests: XCTestCase {
         let host = NSHostingView(rootView: AnyView(RootView(store: store))); host.frame = NSRect(x: 0, y: 0, width: 1280, height: 850)
         try await settle(host, milliseconds: 100)
         var documents: [WeakDocument] = [], memory: [Double] = [], largestStep = 0.0
-        let rounds = max(3, min(10, Int(ProcessInfo.processInfo.environment["KONGFOLIO_STRESS_ROUNDS"] ?? "3") ?? 3))
+        let rounds = max(3, min(20, Int(ProcessInfo.processInfo.environment["KONGFOLIO_STRESS_ROUNDS"] ?? "3") ?? 3))
         for round in 1...rounds {
             store.openEach(files)
             let ids = store.tabs.map(\.id)
@@ -121,6 +121,11 @@ final class ReadingLifecycleTests: XCTestCase {
             try await settle(host, milliseconds: 150)
             let live = documents.filter { $0.value != nil }.count
             memory.append(residentMB())
+            if live > 0 {
+                for (index, item) in documents.enumerated() {
+                    if let doc = item.value { print("RETAINED round=\(index / 20 + 1) item=\(index % 20 + 1) address=\(Unmanaged.passUnretained(doc).toOpaque()) pages=\(doc.pageCount)") }
+                }
+            }
             print("STRESS round=\(round) opened=20 closed=20 liveClosedDocuments=\(live) residentMB=\(memory.last!) longestStepSeconds=\(largestStep)")
             XCTAssertEqual(store.tabs.count, 1); XCTAssertEqual(store.activeWorkspace?.count, 0)
             XCTAssertEqual(live, 0, "Closed PDF documents must not accumulate between reading rounds")
@@ -142,6 +147,7 @@ final class ReadingLifecycleTests: XCTestCase {
         host.layoutSubtreeIfNeeded()
         let cachedView = try XCTUnwrap(workspace.pdfView)
         XCTAssertTrue(cachedView.document === doc)
+        if #available(macOS 26, *), cachedView.responds(to:NSSelectorFromString("setDocumentAnalysisEnabled:")) { XCTAssertEqual((cachedView as? ManagedPDFView)?.automaticAnalysisSuppressed,true) }
         host.rootView = AnyView(EmptyView()); host.layoutSubtreeIfNeeded()
         try await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertNil(cachedView.document, "A retired PDFView must drop the old PDF even if its native view is cached")
