@@ -45,7 +45,7 @@ struct ResearchPagePicker: NSViewRepresentable {
     @Binding var page: Int
     func makeCoordinator() -> Coordinator { Coordinator($page) }
     func makeNSView(context:Context) -> PDFView {
-        let view = PDFView(); view.autoScales = true; view.displayMode = .singlePageContinuous
+        let view = ManagedPDFView(); view.autoScales = true; view.displayMode = .singlePageContinuous
         context.coordinator.token = NotificationCenter.default.addObserver(forName:.PDFViewPageChanged,object:view,queue:.main) { [weak view,weak coordinator = context.coordinator] _ in
             guard let view, let current = view.currentPage, let document = view.document else { return }
             let index = document.index(for:current); guard index != NSNotFound else { return }

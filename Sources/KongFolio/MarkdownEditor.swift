@@ -149,7 +149,7 @@ struct MarkdownPreview: NSViewRepresentable {
     @ObservedObject var note: MarkdownNote
 
     func makeNSView(context: Context) -> PDFView {
-        let view = PDFView()
+        let view = ManagedPDFView()
         view.autoScales = true
         view.displayMode = .singlePageContinuous
         view.displayDirection = .vertical

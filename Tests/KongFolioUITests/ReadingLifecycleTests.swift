@@ -147,6 +147,7 @@ final class ReadingLifecycleTests: XCTestCase {
         host.layoutSubtreeIfNeeded()
         let cachedView = try XCTUnwrap(workspace.pdfView)
         XCTAssertTrue(cachedView.document === doc)
+        if #available(macOS 26, *), cachedView.responds(to:NSSelectorFromString("setDocumentAnalysisEnabled:")) { XCTAssertTrue(cachedView.automaticAnalysisSuppressed) }
         host.rootView = AnyView(EmptyView()); host.layoutSubtreeIfNeeded()
         try await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertNil(cachedView.document, "A retired PDFView must drop the old PDF even if its native view is cached")

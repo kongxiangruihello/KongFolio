@@ -31,7 +31,7 @@ struct PDFDifferenceCanvas: NSViewRepresentable {
         override func layout() { super.layout();laidOut?() }
     }
     final class Coordinator {
-        let views=[PDFView(),PDFView()]
+        let views=[ManagedPDFView(),ManagedPDFView()]
         var observers:[NSObjectProtocol]=[]
         var synchronizing=false
         var lastZoom:Double = -1

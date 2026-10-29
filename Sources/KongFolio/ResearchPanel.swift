@@ -193,7 +193,7 @@ struct ResearchPDFPreview: NSViewRepresentable {
     var page: Int
     final class Coordinator { var lastPage: Int? }
     func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeNSView(context: Context) -> PDFView { let view = PDFView(); view.autoScales = true; view.displayMode = .singlePageContinuous; return view }
+    func makeNSView(context: Context) -> PDFView { let view = ManagedPDFView(); view.autoScales = true; view.displayMode = .singlePageContinuous; return view }
     func updateNSView(_ view: PDFView, context: Context) {
         if view.document !== document { view.document = document; context.coordinator.lastPage = nil }
         guard context.coordinator.lastPage != page else { return }
