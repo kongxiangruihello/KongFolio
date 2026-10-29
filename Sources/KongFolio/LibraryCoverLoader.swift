@@ -18,7 +18,10 @@ actor LibraryCoverLoader {
         let metadata = try url.resourceValues(forKeys:[.isUbiquitousItemKey,.ubiquitousItemDownloadingStatusKey,.contentModificationDateKey,.fileSizeKey])
         var info = stat(); let found = url.withUnsafeFileSystemRepresentation { path -> Bool in guard let path else { return false }; return lstat(path,&info) == 0 }
         guard found, Self.mayReadCover(ubiquitous:metadata.isUbiquitousItem == true,status:metadata.ubiquitousItemDownloadingStatus,dataless:(info.st_flags & UInt32(SF_DATALESS)) != 0) else { return nil }
-        let key = (url.standardizedFileURL.path + ":" + String(metadata.fileSize ?? 0) + ":" + String(metadata.contentModificationDate?.timeIntervalSince1970 ?? 0)) as NSString
+        let path = url.standardizedFileURL.path
+        let size = metadata.fileSize ?? 0
+        let modified = metadata.contentModificationDate?.timeIntervalSince1970 ?? 0
+        let key = "\(path):\(size):\(modified)" as NSString
         if let found = cache.object(forKey:key) { return found as Data }
         let bytes: Data? = try autoreleasepool {
             try Task.checkCancellation()
