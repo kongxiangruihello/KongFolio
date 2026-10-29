@@ -64,3 +64,24 @@ struct ResearchTopic: Codable, Identifiable {
         return result
     }
 }
+
+struct ResearchRestoreRow: Identifiable {
+    var book: LibraryBook
+    var hasOriginal: Bool
+    var exists: Bool
+    var id: UUID { book.id }
+    static func prepare(books:[LibraryBook],originals:Set<String>,existing:[LibraryBook],canonicalize:(String)->String = ReadingProgress.canonicalPath) -> [Self] {
+        var cache:[String:String] = [:]
+        func identity(_ path:String) -> String {
+            if let old = cache[path] { return old }
+            let value = canonicalize(path); cache[path] = value; return value
+        }
+        let ids = Set(existing.map(\.id))
+        let paths = Set(existing.map { identity($0.path) })
+        let packed = Set(originals.map { identity($0) })
+        return books.map { book in
+            let key = identity(book.path)
+            return Self(book:book,hasOriginal:packed.contains(key),exists:ids.contains(book.id) || paths.contains(key))
+        }
+    }
+}

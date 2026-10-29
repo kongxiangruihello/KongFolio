@@ -21,6 +21,10 @@ final class Research040LifecycleTests: XCTestCase {
         XCTAssertGreaterThan(fields,20,"The edit rows must actually render")
         XCTAssertLessThan(fields,250,"The panel must not build thousands of editable text fields at once")
         XCTAssertEqual(library.books.count,1083)
+        var canonicalCalls = 0
+        let restored = ResearchRestoreRow.prepare(books:books,originals:Set(books.map(\.path)),existing:books) { path in canonicalCalls += 1; return path }
+        XCTAssertEqual(canonicalCalls,1083,"Backup preview must normalize each distinct path once, not scan the shelf for every row")
+        XCTAssertEqual(restored.count,1083); XCTAssertTrue(restored.allSatisfy { $0.hasOriginal && $0.exists })
         host.rootView = AnyView(EmptyView()); host.layoutSubtreeIfNeeded()
     }
     @MainActor func testPagePickerDetachesDocumentAndObserverOnExit() async throws {
