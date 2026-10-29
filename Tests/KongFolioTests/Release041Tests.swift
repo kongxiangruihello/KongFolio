@@ -3,7 +3,7 @@ import AppKit
 import PDFKit
 @testable import KongFolio
 
-final class Release041Tests:XCTestCase {
+final class Release041Tests: XCTestCase {
     func root() throws -> URL { try Release027Tests().folder() }
     func citation(_ path:String = "/原书.pdf",page:Int = 2) -> ReadingCitation { ReadingCitation(source:SourceRef(path:path,fileName:"原书.pdf",page:page,pageLabel:"十二"),title:"史料选编",author:"作者甲") }
     func record(_ path:String = "/原书.pdf") -> ReadingRecord { ReadingRecord(kind:.excerpt,quote:"这是原文。",note:"这是自己的思考。",citations:[citation(path)],tags:["史料"]) }
