@@ -4,7 +4,7 @@ import PDFKit
 struct PDFCanvas: NSViewRepresentable {
     @ObservedObject var workspace: Workspace
     func makeNSView(context: Context) -> ReadingPDFContainer {
-        let view = DrawingPDFView(); view.workspace = workspace; view.autoScales = true; view.displayMode = .singlePageContinuous; view.displayDirection = .vertical; view.backgroundColor = .windowBackgroundColor
+        let view = DrawingPDFView(); view.enableDataDetectors = false; view.workspace = workspace; view.autoScales = true; view.displayMode = .singlePageContinuous; view.displayDirection = .vertical; view.backgroundColor = .windowBackgroundColor
         workspace.pdfView = view
         let coordinator = context.coordinator
         coordinator.observer = NotificationCenter.default.addObserver(forName: .PDFViewPageChanged, object: view, queue: .main) { [weak view, weak coordinator] _ in
@@ -117,7 +117,7 @@ final class ReadingPDFContainer: NSView {
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 }
-final class DrawingPDFView: PDFView, SignaturePlacing {
+final class DrawingPDFView: PDFView, SignaturePlacing, ReadingResourceReleasing {
     weak var workspace: Workspace?
     private var points: [CGPoint] = []
     private weak var drawingPage: PDFPage?

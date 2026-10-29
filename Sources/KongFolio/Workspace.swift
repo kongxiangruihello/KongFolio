@@ -2,6 +2,8 @@ import SwiftUI
 import PDFKit
 import UniformTypeIdentifiers
 
+@MainActor protocol ReadingResourceReleasing: AnyObject { func releaseReadingResources() }
+
 @MainActor final class Workspace: ObservableObject {
     // MARK: Reading
     @Published var sidebarTab = SidebarTab.pages
@@ -717,7 +719,9 @@ import UniformTypeIdentifiers
         directSaveTask?.cancel()
         searchTask?.cancel(); estimateTask?.cancel()
         // Native views can outlive the SwiftUI tab. Detach before replacing the model document.
-        pdfView?.clearSelection(); pdfView?.document = nil; pdfView = nil
+        if let view = pdfView as? ReadingResourceReleasing { view.releaseReadingResources() }
+        else { pdfView?.clearSelection(); pdfView?.document = nil }
+        pdfView = nil
         displayCache = nil; copiedAnnotations.removeAll()
         signatureLayers.removeAll(); movingSignature = nil; moveSnapshot = nil; placingSignature = nil
         drawingInProgress = false; pendingReveal = nil; deferredOpen = nil

@@ -10,6 +10,11 @@ struct PeriodicalBatchEditor: View {
     @State private var volume = ""
     @State private var query = ""
     @State private var overviewYear = ""
+    @State private var page = 0
+    private let pageSize = 25
+    private var matchingIndices: [Int] { rows.indices.filter { matches(rows[$0]) } }
+    private var lastPage: Int { max(0,(matchingIndices.count-1)/pageSize) }
+    private var visibleIndices: [Int] { Array(matchingIndices.dropFirst(min(page,lastPage)*pageSize).prefix(pageSize)) }
     var body: some View {
         VStack(alignment:.leading,spacing:10) {
             Text("批量整理报刊卷期").font(.headline)
@@ -17,19 +22,28 @@ struct PeriodicalBatchEditor: View {
                 Button("套用到勾选项") { for i in rows.indices where rows[i].selected { if !journal.isEmpty { rows[i].record.journal = journal }; if !year.isEmpty { rows[i].record.year = year }; if !volume.isEmpty { rows[i].record.volume = volume } } }
             }
             HStack { TextField("筛选书名、刊名或年份",text:$query); Button("全选筛选结果") { for i in rows.indices where matches(rows[i]) { rows[i].selected = true } }; Button("清空勾选") { for i in rows.indices { rows[i].selected = false } }; Button("保存勾选卷期") { save() } }
-            ScrollView(.horizontal) {
+            HStack {
+                Text("共 \(matchingIndices.count) 本 · 已勾选 \(rows.filter(\.selected).count) 本").font(.caption)
+                Spacer()
+                Button("上一页") { page = max(0,page-1) }.disabled(page == 0)
+                Text("第 \(min(page,lastPage)+1) / \(lastPage+1) 页").font(.caption)
+                Button("下一页") { page += 1 }.disabled(page >= lastPage)
+            }
+            ScrollView([.horizontal,.vertical]) {
                 VStack(alignment:.leading) {
                     HStack { Text("书籍／刊名").frame(width:250,alignment:.leading); Text("年份").frame(width:70); Text("卷").frame(width:65); Text("期号").frame(width:75); Text("日期 YYYY-MM-DD").frame(width:140); Text("版次").frame(width:90) }.font(.caption)
-                    ForEach($rows) { $row in
-                        if matches(row) {
+                    ForEach(visibleIndices,id:\.self) { index in
+                        let row = rows[index]
+                        let binding = $rows[index]
+                        Group {
                             HStack {
-                                Toggle(row.title,isOn:$row.selected).frame(width:170,alignment:.leading).lineLimit(1).help(row.title)
-                                TextField("刊名",text:$row.record.journal).frame(width:110)
-                                TextField("年",text:$row.record.year).frame(width:70)
-                                TextField("卷",text:$row.record.volume).frame(width:65)
-                                TextField("期",text:$row.record.issue).frame(width:75)
-                                TextField("日期",text:$row.record.date).frame(width:140)
-                                TextField("版次",text:$row.record.edition).frame(width:90)
+                                Toggle(row.title,isOn:binding.selected).frame(width:170,alignment:.leading).lineLimit(1).help(row.title)
+                                TextField("刊名",text:binding.record.journal).frame(width:110)
+                                TextField("年",text:binding.record.year).frame(width:70)
+                                TextField("卷",text:binding.record.volume).frame(width:65)
+                                TextField("期",text:binding.record.issue).frame(width:75)
+                                TextField("日期",text:binding.record.date).frame(width:140)
+                                TextField("版次",text:binding.record.edition).frame(width:90)
                             }
                         }
                     }
@@ -43,10 +57,15 @@ struct PeriodicalBatchEditor: View {
                 Text(title + "：" + list.map { ($0.volume.isEmpty ? "" : "卷"+$0.volume+" ") + "第"+$0.issue+"期" }.joined(separator:"、")).textSelection(.enabled)
             }
             ForEach(research.periodicalProblems(),id:\.self) { Text($0).foregroundStyle(.orange) }
-        }.onAppear(perform:load)
+        }.task { await load() }.onChange(of:query) { _,_ in page = 0 }
     }
     private func matches(_ row:PeriodicalBatchRow) -> Bool { query.isEmpty || (row.title+row.record.citation).localizedCaseInsensitiveContains(query) }
-    private func load() { rows = library.books.map { PeriodicalBatchRow(path:$0.path,title:$0.title,record:research.periodical(path:$0.path) ?? PeriodicalRecord()) } }
+    private func load() async {
+        let books = library.books, records = research.state.periodicals
+        let loaded = await Task.detached(priority:.utility) { PeriodicalBatchRow.load(books:books,records:records) }.value
+        guard !Task.isCancelled else { return }
+        rows = loaded; page = 0
+    }
     private func save() {
         do { let selected = rows.filter(\.selected); guard !selected.isEmpty else { throw FolioError(message:"请先勾选书籍") }; for row in selected { try row.record.validate() }
             try research.update { value in for row in selected { value.periodicals[row.path] = row.record.citation.isEmpty ? nil : row.record } }; controller.message = "已保存 \(selected.count) 本卷期"

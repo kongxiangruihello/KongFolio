@@ -5,6 +5,24 @@ import PDFKit
 @testable import KongFolio
 
 final class Research040LifecycleTests: XCTestCase {
+    @MainActor func testThousandBookPeriodicalEditorBuildsBoundedControls() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("PeriodicalUI-"+UUID().uuidString)
+        let file = root.appendingPathComponent("Library/catalog.json")
+        try FileManager.default.createDirectory(at:file.deletingLastPathComponent(),withIntermediateDirectories:true)
+        let books = (1...1083).map { LibraryBook(path:root.appendingPathComponent("book-\($0).pdf").path,title:"阅读样本 \($0)") }
+        try JSONEncoder().encode(BookLibrary.Catalog(books:books)).write(to:file)
+        let library = BookLibrary(storage:root), research = ResearchStore(storage:root)
+        let host = NSHostingView(rootView:AnyView(PeriodicalBatchEditor(library:library,research:research,controller:ResearchController())))
+        host.frame = NSRect(x:0,y:0,width:1060,height:700)
+        host.layoutSubtreeIfNeeded(); try await Task.sleep(nanoseconds:200_000_000); host.layoutSubtreeIfNeeded()
+        func countFields(_ view:NSView) -> Int { (view is NSTextField ? 1 : 0) + view.subviews.reduce(0) { $0 + countFields($1) } }
+        let fields = countFields(host)
+        XCTAssertGreaterThan(fields,20,"The edit rows must actually render")
+        XCTAssertLessThan(fields,250,"The panel must not build thousands of editable text fields at once")
+        XCTAssertEqual(library.books.count,1083)
+        host.rootView = AnyView(EmptyView()); host.layoutSubtreeIfNeeded()
+    }
     @MainActor func testPagePickerDetachesDocumentAndObserverOnExit() async throws {
         _ = NSApplication.shared
         let doc = PDFDocument(); doc.insert(PDFPage(),at:0)

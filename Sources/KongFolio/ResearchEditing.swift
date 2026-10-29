@@ -17,6 +17,14 @@ struct PeriodicalBatchRow: Identifiable {
     var title: String
     var selected = false
     var record = PeriodicalRecord()
+    static func load(books: [LibraryBook], records: [String:PeriodicalRecord]) -> [Self] {
+        var byIdentity: [String:PeriodicalRecord] = [:]
+        for path in records.keys.sorted() { byIdentity[ReadingProgress.canonicalPath(path)] = records[path] }
+        return books.map { book in
+            let record = records[book.path] ?? (byIdentity.isEmpty ? nil : byIdentity[ReadingProgress.canonicalPath(book.path)]) ?? PeriodicalRecord()
+            return Self(path:book.path,title:book.title,record:record)
+        }
+    }
 }
 enum CorrectionConflicts {
     static func messages(_ rules: [ReplacementRule]) -> [String] {

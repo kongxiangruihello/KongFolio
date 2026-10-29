@@ -121,6 +121,11 @@ final class ReadingLifecycleTests: XCTestCase {
             try await settle(host, milliseconds: 150)
             let live = documents.filter { $0.value != nil }.count
             memory.append(residentMB())
+            if live > 0 {
+                for (index, item) in documents.enumerated() {
+                    if let doc = item.value { print("RETAINED round=\(index / 20 + 1) item=\(index % 20 + 1) address=\(Unmanaged.passUnretained(doc).toOpaque()) pages=\(doc.pageCount)") }
+                }
+            }
             print("STRESS round=\(round) opened=20 closed=20 liveClosedDocuments=\(live) residentMB=\(memory.last!) longestStepSeconds=\(largestStep)")
             XCTAssertEqual(store.tabs.count, 1); XCTAssertEqual(store.activeWorkspace?.count, 0)
             XCTAssertEqual(live, 0, "Closed PDF documents must not accumulate between reading rounds")
