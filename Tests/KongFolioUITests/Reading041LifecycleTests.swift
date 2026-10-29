@@ -18,7 +18,7 @@ final class Reading041LifecycleTests:XCTestCase {
         let host = NSHostingView(rootView:RootView(store:store)); host.frame = NSRect(x:0,y:0,width:1200,height:800); host.layoutSubtreeIfNeeded(); try await Task.sleep(nanoseconds:80_000_000)
         let a = try XCTUnwrap(w.document.page(at:0)?.selection(for:NSRange(location:0,length:8))), b = try XCTUnwrap(w.document.page(at:1)?.selection(for:NSRange(location:0,length:8))); a.add(b)
         w.excerpt(selection:a); let record = try XCTUnwrap(store.journal.record(store.readingRecordID))
-        XCTAssertEqual(record.citations.count,2); XCTAssertEqual(record.citations.first?.author,"作者甲"); XCTAssertEqual(record.citations.first?.title,"阅读记录验证书"); XCTAssertTrue(store.board.cards.isEmpty)
+        XCTAssertEqual(record.citations.first?.source.path,ReadingProgress.canonicalPath(file.path)); XCTAssertEqual(record.citations.count,2); XCTAssertEqual(record.citations.first?.author,"作者甲"); XCTAssertEqual(record.citations.first?.title,"阅读记录验证书"); XCTAssertTrue(store.board.cards.isEmpty)
         store.newReadingNote(linked:record); let note = try XCTUnwrap(store.readingRecordID); store.journal.editRecord(note) { $0.note = "我的论断与原文分开" }
         let essay = store.journal.newEssay(title:"跨书札记"); store.journal.insert(record,in:essay); store.journal.editEssay(essay) { $0.blocks[0].text = "先提出自己的论点" }
         w.selectPage(1); XCTAssertTrue(store.reveal(record.citations[0].source,beside:false)); XCTAssertEqual(w.selection,0)

@@ -15,6 +15,16 @@ final class Release041Tests:XCTestCase {
         let store = WorkspaceStore(storage:root,readingDefaults:defaults); store.bootstrap(); store.openEach([file]); try await Release038Tests().settle(store.activeWorkspace!); XCTAssertTrue(store.library.books.isEmpty)
         try library.add([file]); XCTAssertEqual(library.books.count,1); _ = try await library.refreshHistory(defaults:defaults); XCTAssertEqual(library.books.count,1)
     }
+    @MainActor func testManualBulkAdditionKeepsTheReaderResponsive() async throws {
+        let root = try root(), original = try Release038Tests().pdf(root), library = BookLibrary(storage:root)
+        let files = try (1...1083).map { i -> URL in let file = root.appendingPathComponent("手动加入-\(i).pdf"); try FileManager.default.linkItem(at:original,to:file); return file }
+        var beats = 0
+        let ticker = Task { @MainActor in while !Task.isCancelled { beats += 1; do { try await Task.sleep(nanoseconds:2_000_000) } catch { return } } }
+        defer { ticker.cancel() }
+        try await library.addInBackground(files)
+        XCTAssertEqual(library.books.count,1083); XCTAssertTrue(beats > 1)
+        try await library.addInBackground(files); XCTAssertEqual(library.books.count,1083)
+    }
     @MainActor func testLegacyShelfIsPreservedForManualConfirmation() throws {
         let root = try root(), folder = root.appendingPathComponent("Library"); try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
         let a = LibraryBook(path:"/旧书甲.pdf",title:"旧书甲",category:"原有分类",reflection:"我的心得"), b = LibraryBook(path:"/旧书乙.pdf",title:"旧书乙")
@@ -99,7 +109,7 @@ final class Release041Tests:XCTestCase {
         let root = try root(), store = WorkspaceStore(storage:root), replacement = try Release038Tests().pdf(root,name:"移动后的书.pdf"), ref = record("/已移动.pdf")
         store.journal.add(ref); let essay = store.journal.newEssay(); store.journal.insert(ref,in:essay)
         try store.library.relink(path:"/已移动.pdf",to:replacement,defaults:store.readingDefaults)
-        XCTAssertTrue(store.library.books.isEmpty); XCTAssertEqual(store.journal.record(ref.id)?.citations.first?.source.path,replacement.path); XCTAssertEqual(store.journal.essay(essay)?.blocks.last?.record?.citations.first?.source.path,replacement.path)
+        XCTAssertTrue(store.library.books.isEmpty); XCTAssertEqual(store.journal.record(ref.id)?.citations.first?.source.path,ReadingProgress.canonicalPath(replacement.path)); XCTAssertEqual(store.journal.essay(essay)?.blocks.last?.record?.citations.first?.source.path,ReadingProgress.canonicalPath(replacement.path))
     }
     func testCancellationClassificationDoesNotHideRealFailures() {
         XCTAssertTrue(FolioCancellation.matches(CancellationError())); XCTAssertTrue(FolioCancellation.matches(NSError(domain:"Swift.CancellationError",code:1)))

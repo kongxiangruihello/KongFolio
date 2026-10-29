@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ReadingEssayPane:View {
+struct ReadingEssayPane: View {
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var journal:ReadingJournal
     @State private var query = ""

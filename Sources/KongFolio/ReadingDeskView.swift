@@ -11,7 +11,7 @@ struct ReadingDeskView: View {
     @State private var recent = false
     @State private var removed = false
     @State private var page = 0
-    private var path:String? { store.commandWorkspace?.displayPath }
+    private var path:String? { store.commandWorkspace?.readingJournalPath }
     private var matches:[ReadingRecord] {
         journal.state.records.filter {
             ($0.removed != nil) == removed && (section == .search || (section == .notes ? $0.kind == .note : $0.kind != .note)) &&
@@ -182,7 +182,7 @@ struct ReadingRecordImage: View {
     @Published var section:ReadingDeskSection
     init(_ section:ReadingDeskSection) { self.section = section }
 }
-struct ReadingDeskWindowView:View {
+struct ReadingDeskWindowView: View {
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var session:ReadingDeskSession
     var body:some View { ReadingDeskView(store:store,journal:store.journal,section:$session.section).task { await store.importLegacyReadingRecords() } }
@@ -221,7 +221,7 @@ private enum ReadingDeskHit:Identifiable {
     var id:String { switch self { case .record(let value): return "record:"+value.id.uuidString; case .essay(let value): return "essay:"+value.id.uuidString } }
     var date:Date { switch self { case .record(let value): return value.modified; case .essay(let value): return value.modified } }
 }
-struct ReadingRecordPicker:View {
+struct ReadingRecordPicker: View {
     @ObservedObject var journal:ReadingJournal
     var choose:(ReadingRecord)->Void
     @Environment(\.dismiss) private var dismiss

@@ -5,6 +5,7 @@ import AppKit
 struct BookLibraryView: View {
     @ObservedObject var store: WorkspaceStore
     @ObservedObject var library: BookLibrary
+    @StateObject private var addition = ManualShelfAddition()
     @State private var query = ""
     @State private var favoritesOnly = false
     @State private var category = "全部分类"
@@ -36,7 +37,7 @@ struct BookLibraryView: View {
                 Picker("分类",selection:$category) { ForEach(categories,id:\.self) { Text($0).tag($0) } }.frame(maxWidth:220)
             }
             PanelRow {
-                Button("添加书籍…",action:add)
+                Button("添加书籍…",action:add).disabled(addition.busy)
                 Button("刷新进度") { refreshToken = UUID() }.disabled(refreshing)
                 Button("从旧版或已移出记录中添加…") { pending = true }.disabled((library.catalog.pendingBooks ?? []).isEmpty)
                 Button("移出所选书籍") { perform { try library.removeBooks(selected); selected = [] } }.disabled(selected.isEmpty)
@@ -53,6 +54,8 @@ struct BookLibraryView: View {
                 Text("第 \(min(page,lastPage)+1) / \(lastPage+1) 页").font(.caption)
                 Button("下一页") { page += 1 }.disabled(page >= lastPage)
             }
+            if addition.busy { HStack { ProgressView().controlSize(.small); Text("正在后台添加书籍，可继续阅读…"); Button("停止添加") { addition.cancel() } } }
+            if !addition.message.isEmpty { Text(addition.message).font(.caption) }
             if let error = library.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
             if !message.isEmpty { Text(message).font(.caption).textSelection(.enabled) }
             Text("书架由你手动维护；编辑书名、分类或心得不会改动原件。移出后，阅读记录和笔记继续保留。").font(.caption).foregroundStyle(.secondary)
@@ -93,7 +96,7 @@ struct BookLibraryView: View {
     private func add() {
         let panel = NSOpenPanel(); panel.allowsMultipleSelection = true; panel.message = "手动添加书籍；原件保留在原位置。"
         guard panel.runModal() == .OK else { return }
-        perform { try library.add(panel.urls); refreshToken = UUID() }
+        addition.add(panel.urls,to:library)
     }
     private func relink(_ book:LibraryBook) {
         let panel = NSOpenPanel(); panel.message = "重新选择“\(book.title)”的原文件，保留进度、分类和心得。"

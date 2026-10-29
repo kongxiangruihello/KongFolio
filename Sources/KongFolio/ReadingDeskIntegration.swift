@@ -4,10 +4,15 @@ import AppKit
 
 enum ReadingDeskSection:String,CaseIterable { case excerpts = "摘录", notes = "笔记", essays = "札记", search = "查找记录", exports = "导出" }
 extension Workspace {
+    var readingJournalPath:String? {
+        guard let path = displayPath else { return nil }
+        if let cached = journalSourceIdentity,cached.raw == path { return cached.canonical }
+        let canonical = ReadingProgress.canonicalPath(path); journalSourceIdentity = (path,canonical); return canonical
+    }
     func readingCitation(page index:Int? = nil,rects:[CGRect] = [],anchor:String? = nil) -> ReadingCitation {
         let i = index ?? selection
         let label = store?.research.displayLabel(path:displayPath ?? "",page:i,fallback:ReadingServices.pageLabel(document.page(at:i) ?? PDFPage(),index:i) ?? String(i+1))
-        return ReadingCitation(source:SourceRef(path:displayPath ?? "",fileName:displayName,page:max(0,i),pageLabel:label,rects:rects,anchor:anchor),title:bibliography.title.isEmpty ? title : bibliography.title,author:bibliography.author)
+        return ReadingCitation(source:SourceRef(path:readingJournalPath ?? "",fileName:displayName,page:max(0,i),pageLabel:label,rects:rects,anchor:anchor),title:bibliography.title.isEmpty ? title : bibliography.title,author:bibliography.author)
     }
     func captureReadingExcerpt(_ selection:PDFSelection) -> Bool {
         guard let store, store.readingMode else { return false }
@@ -38,7 +43,7 @@ extension WorkspaceStore {
         await journal.importLegacy(cards:board.cards,books:library.books+(library.catalog.pendingBooks ?? []),topics:research.state.topics ?? [],annotations:research.state.annotations)
     }
     func restoreReadingRecord(for workspace:Workspace) {
-        guard readingMode, let path = workspace.displayPath, let id = journal.state.lastNotes[path], let record = journal.record(id), record.removed == nil else { return }
+        guard readingMode, let path = workspace.readingJournalPath, let id = journal.state.lastNotes[path], let record = journal.record(id), record.removed == nil else { return }
         readingRecordID = id; readingDeskSection = record.kind == .note ? .notes : .excerpts
     }
     func newReadingEssay() { _ = journal.newEssay(); openReadingDesk(.essays,window:true) }

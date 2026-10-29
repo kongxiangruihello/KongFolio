@@ -233,6 +233,7 @@ import UniformTypeIdentifiers
     var pendingTableDraftID: UUID?
     var wordDraftDigest: String?
     var preparingSnapshot = false
+    var journalSourceIdentity:(raw:String,canonical:String)?
     var snapshotInFlight: (revision: UUID, task: Task<ProjectArchive, Error>)?
     var captureInProgress = false
     var incrementalBase: Data?
@@ -941,6 +942,7 @@ import UniformTypeIdentifiers
                 return
             }
             guard case .documents(let data) = prepared else { throw FolioError(message: "文档读取失败") }
+            journalSourceIdentity = nil
             var openedBytes: Data?
             // A file marked "no modification" would silently drop annotations on saving; it is rebuilt as an unrestricted copy.
             var rebuilt = false

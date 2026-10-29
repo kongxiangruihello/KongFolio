@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ReadingToolbar:View {
+struct ReadingToolbar: View {
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var workspace:Workspace
     let width:CGFloat
@@ -8,6 +8,7 @@ struct ReadingToolbar:View {
         VStack(spacing:8) {
             HStack(spacing:8) {
                 Button { let key = LayoutKeys.sidebar; UserDefaults.standard.set(!(UserDefaults.standard.object(forKey:key) as? Bool ?? true),forKey:key) } label:{Image(systemName:"sidebar.left")}.buttonStyle(.borderless).help("显示或隐藏页面导航")
+                if width > 650 { Image(systemName:"square.stack.3d.up.fill").font(.title2).foregroundStyle(Brand.accent) }
                 VStack(alignment:.leading,spacing:2) { if width > 650 { Text("KongFolio").font(.headline) }; Text(workspace.displayName).lineLimit(1).truncationMode(.middle).help(workspace.displayName+(workspace.displayPath.map{"\n"+$0} ?? "")) }.frame(minWidth:20,maxWidth:200,alignment:.leading)
                 NewFileIcons(store:store)
                 Spacer(minLength:0)

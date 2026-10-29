@@ -118,7 +118,7 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         next.relocated.merge(value.relocated) { current, _ in current }
         try commit(next)
     }
-    static func supports(_ url: URL) -> Bool { ["pdf", "kongfolio"].contains(url.pathExtension.lowercased()) || TextImport.handles(url) }
+    nonisolated static func supports(_ url: URL) -> Bool { ["pdf", "kongfolio"].contains(url.pathExtension.lowercased()) || TextImport.handles(url) }
     func book(path: String) -> LibraryBook? {
         if let exact = books.first(where: { $0.path == path }) { return exact }
         let identity = ReadingProgress.canonicalPath(path)
@@ -159,20 +159,42 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         for item in history { byIdentity[identities[item.path] ?? item.path] = item.progress }
         return books.reduce(into:[:]) { result,book in result[book.path] = byIdentity[identities[book.path] ?? book.path] ?? ReadingProgress() }
     }
-    func add(_ urls: [URL]) throws {
-        var next = catalog
+    struct PreparedManualBooks {
+        var books:[LibraryBook]
+        var identities:[String:String]
+    }
+    nonisolated static func prepareManualBooks(_ urls:[URL],catalog:Catalog) throws -> PreparedManualBooks {
+        var identities = historyIdentities(catalog.books.map(\.path)+(catalog.pendingBooks ?? []).map(\.path)+urls.map(\.path))
+        var known = Set(catalog.books.map{identities[$0.path] ?? $0.path})
+        var pending:[String:LibraryBook] = [:]
+        for book in catalog.pendingBooks ?? [] { pending[identities[book.path] ?? book.path] = book }
+        var books:[LibraryBook] = []
         for url in urls {
-            guard Self.supports(url), FileManager.default.fileExists(atPath: url.path) else { throw FolioError(message: "请选择 PDF、项目或文本文件") }
-            let path = ReadingProgress.canonicalPath(url.path)
-            if next.books.contains(where: { ReadingProgress.canonicalPath($0.path) == path }) { continue }
-            if var old = next.pendingBooks?.first(where: { ReadingProgress.canonicalPath($0.path) == path }) {
-                old.path = path; next.books.append(old); next.pendingBooks?.removeAll { $0.id == old.id }
-            } else {
-                next.books.append(LibraryBook(path: path, title: url.deletingPathExtension().lastPathComponent,
-                    bookmark: try? url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)))
-            }
+            try Task.checkCancellation()
+            guard supports(url),FileManager.default.fileExists(atPath:url.path) else { throw FolioError(message:"请选择可读取的 PDF、项目或文本文件") }
+            let path = identities[url.path] ?? ReadingProgress.canonicalPath(url.path); identities[url.path] = path
+            guard known.insert(path).inserted else { continue }
+            var book = pending[path] ?? LibraryBook(path:path,title:url.deletingPathExtension().lastPathComponent)
+            book.path = path; book.bookmark = (try? url.bookmarkData(options:.minimalBookmark,includingResourceValuesForKeys:nil,relativeTo:nil)) ?? book.bookmark
+            books.append(book)
         }
-        try commit(next)
+        return PreparedManualBooks(books:books,identities:identities)
+    }
+    private func applyManualBooks(_ prepared:PreparedManualBooks) throws {
+        var next = catalog, known = Set(catalog.books.map{prepared.identities[$0.path] ?? $0.path})
+        for candidate in prepared.books where known.insert(candidate.path).inserted {
+            var book = next.pendingBooks?.first(where:{$0.id == candidate.id}) ?? candidate
+            book.path = candidate.path; book.bookmark = candidate.bookmark; next.books.append(book)
+            next.pendingBooks?.removeAll{$0.id == book.id}
+        }
+        if next != catalog { try commit(next) }
+    }
+    func add(_ urls:[URL]) throws { try applyManualBooks(Self.prepareManualBooks(urls,catalog:catalog)) }
+    func addInBackground(_ urls:[URL]) async throws {
+        let snapshot = catalog
+        let worker = Task.detached(priority:.utility) { try Self.prepareManualBooks(urls,catalog:snapshot) }
+        let prepared = try await withTaskCancellationHandler(operation:{try await worker.value},onCancel:{worker.cancel()})
+        try Task.checkCancellation(); try applyManualBooks(prepared)
     }
     func update(_ book: LibraryBook) throws {
         var next = catalog
@@ -285,4 +307,19 @@ extension WorkspaceStore {
         let url = try shortcut.resolvedURL()
         if TextImport.handles(url) { openNote(url) } else { try openReadingShortcut(shortcut) }
     }
+}
+
+@MainActor final class ManualShelfAddition:ObservableObject {
+    @Published private(set) var busy = false
+    @Published private(set) var message = ""
+    private var task:Task<Void,Never>?
+    private var token = UUID()
+    func add(_ urls:[URL],to library:BookLibrary) {
+        cancel(); let current = UUID(); token = current; busy = true; message = ""
+        task = Task { [weak self] in
+            do { try await library.addInBackground(urls); guard let self,self.token == current else { return }; self.busy = false; self.message = "手动添加已完成" }
+            catch { guard let self,self.token == current else { return }; self.busy = false; self.message = FolioCancellation.matches(error) ? "已停止添加" : error.localizedDescription }
+        }
+    }
+    func cancel() { token = UUID(); task?.cancel(); task = nil; busy = false }
 }

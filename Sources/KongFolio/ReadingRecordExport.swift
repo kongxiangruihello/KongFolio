@@ -117,7 +117,7 @@ actor ReadingExportWorker {
         job = Task { [weak self] in
             do {
                 try await ReadingExportWorker.shared.export(snapshot,format:format,assets:assets,to:url,expected:expected)
-                guard let self, self.generation == token else { return }; self.busy = false; self.message = "已导出 "+url.lastPathComponent+"；请将 Markdown 与配套图片目录一起保存。"
+                guard let self, self.generation == token else { return }; self.busy = false; self.message = "已导出 "+url.lastPathComponent+(format == .markdown ? "；请将 Markdown 与配套图片目录一起保存。" : "")
             } catch { guard let self, self.generation == token else { return }; self.busy = false; self.message = FolioCancellation.matches(error) ? "已取消，已有记录保留" : "导出失败："+error.localizedDescription }
         }
     }

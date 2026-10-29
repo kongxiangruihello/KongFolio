@@ -155,14 +155,15 @@ actor ReadingJournalWriter {
     func insert(_ record:ReadingRecord,in essay:UUID) { editEssay(essay) { $0.blocks.append(ReadingEssay.Block(record:record)) } }
     func selectEssay(_ id:UUID) { guard state.currentEssay != id else { return }; change { $0.currentEssay = id } }
     func relink(old:String,to url:URL,recordID:UUID? = nil) {
+        let newPath = ReadingProgress.canonicalPath(url.path)
         func update(_ record:inout ReadingRecord) {
             guard recordID == nil || record.id == recordID else { return }
-            for i in record.citations.indices where record.citations[i].source.path == old { record.citations[i].source.path = url.path; record.citations[i].source.relativePath = nil; record.citations[i].source.fingerprint = nil }
+            for i in record.citations.indices where record.citations[i].source.path == old { record.citations[i].source.path = newPath; record.citations[i].source.relativePath = nil; record.citations[i].source.fingerprint = nil }
         }
         change { value in
             for i in value.records.indices { update(&value.records[i]) }
             for i in value.essays.indices { for j in value.essays[i].blocks.indices { if var record = value.essays[i].blocks[j].record { update(&record); value.essays[i].blocks[j].record = record } } }
-            if let last = value.lastNotes.removeValue(forKey:old) { value.lastNotes[url.path] = last }
+            if let last = value.lastNotes.removeValue(forKey:old) { value.lastNotes[newPath] = last }
         }
     }
     func flush() async throws {
@@ -226,6 +227,15 @@ actor ReadingJournalWriter {
             for item in topic.items { essay.blocks.append(ReadingEssay.Block(text:item.reflection,record:Self.legacyAnnotation(item.annotation))) }
             essays.append(essay)
         }
+        var paths:[String:String] = [:]
+        func normalize(_ record:inout ReadingRecord) {
+            for i in record.citations.indices {
+                let path = record.citations[i].source.path; guard !path.isEmpty else { continue }
+                let canonical = paths[path] ?? ReadingProgress.canonicalPath(path); paths[path] = canonical; record.citations[i].source.path = canonical
+            }
+        }
+        for i in additions.indices { normalize(&additions[i]) }
+        for i in essays.indices { for j in essays[i].blocks.indices { if var record = essays[i].blocks[j].record { normalize(&record); essays[i].blocks[j].record = record } } }
         return ReadingJournalTransfer(state:ReadingJournalState(records:additions,essays:essays),assets:assets)
     }
     nonisolated private static func legacyAnnotation(_ note:ResearchAnnotation) -> ReadingRecord {

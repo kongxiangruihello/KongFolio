@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ReadingExportPane:View {
+struct ReadingExportPane: View {
     enum Scope:String,CaseIterable { case selected = "所选记录", book = "当前书的全部记录", essay = "当前札记" }
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var journal:ReadingJournal
@@ -12,7 +12,7 @@ struct ReadingExportPane:View {
         if scope == .essay, let essay = journal.essay(journal.state.currentEssay) { return ReadingExportSnapshot(title:essay.title,essay:essay) }
         let ids = store.readingRecordSelection.isEmpty ? Set(store.readingRecordID.map { [$0] } ?? []) : store.readingRecordSelection
         let records = journal.state.records.filter { record in
-            record.removed == nil && (scope == .selected ? ids.contains(record.id) : (scope == .book && record.citations.contains{$0.source.path == store.commandWorkspace?.displayPath}))
+            record.removed == nil && (scope == .selected ? ids.contains(record.id) : (scope == .book && record.citations.contains{$0.source.path == store.commandWorkspace?.readingJournalPath}))
         }.sorted { $0.created < $1.created }
         return ReadingExportSnapshot(title:scope == .book ? (store.commandWorkspace?.title ?? "阅读记录")+" · 阅读笔记" : "摘录与笔记",records:records)
     }
@@ -28,7 +28,7 @@ struct ReadingExportPane:View {
                 if controller.busy { ProgressView().controlSize(.small); Button("取消") { controller.cancel() } }
             }
             if let file = controller.previewURL { AcademicFilePreview(url:file).frame(minHeight:260,maxHeight:.infinity) }
-            else { Text("先生成实际 Word 文件预览，核对内容和出处后导出。").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity) }
+            else { Text(format == .word ? "先生成实际 Word 文件预览，核对内容和出处后导出。" : "可直接导出，也可先查看 Word 排版预览。").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity) }
             if controller.previewURL != nil && controller.previewDigest != snapshot.digest { Text("记录已更改，请刷新预览后导出 Word。").foregroundStyle(.orange) }
             Text(controller.message).font(.caption).textSelection(.enabled)
         }.onAppear { scope = store.readingExportEssay ? .essay : ((store.readingRecordID != nil || !store.readingRecordSelection.isEmpty) ? .selected : .book) }

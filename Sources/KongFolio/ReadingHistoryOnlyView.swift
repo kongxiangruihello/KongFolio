@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ReadingHistoryOnlyView:View {
+struct ReadingHistoryOnlyView: View {
     @ObservedObject var store:WorkspaceStore
     @State private var history:[ReadingProgress.HistoryItem] = []
     @State private var query = ""
