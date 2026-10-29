@@ -34,6 +34,8 @@ final class Release041Tests:XCTestCase {
         XCTAssertEqual(try Data(contentsOf:folder.appendingPathComponent("catalog-before-0.41.json")),bytes)
         try library.acceptPending([a.id]); XCTAssertEqual(library.books.map(\.id),[a.id]); XCTAssertEqual(library.books[0].reflection,"我的心得"); XCTAssertEqual(library.books[0].category,"原有分类")
         let reopened = BookLibrary(storage:root); XCTAssertEqual(reopened.books.count,1); XCTAssertEqual(reopened.catalog.pendingBooks?.count,1)
+        let restored = BookLibrary(storage:try self.root()); try restored.importRestoredCatalog(reopened.catalog)
+        XCTAssertEqual(restored.books.count,1); XCTAssertEqual(restored.catalog.pendingBooks?.first?.id,b.id)
     }
     @MainActor func testRemovingShelfBookDoesNotLoseMetadataOrReaddIt() async throws {
         let root = try root(), file = try Release038Tests().pdf(root), library = BookLibrary(storage:root), defaults = UserDefaults(suiteName:"RemoveShelf-"+UUID().uuidString)!

@@ -114,6 +114,9 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         for var book in value.books where !next.books.contains(where: { $0.path == book.path }) {
             if next.books.contains(where: { $0.id == book.id }) { book.id = UUID() }; next.books.append(book)
         }
+        var known = Set(next.books.map(\.id) + (next.pendingBooks ?? []).map(\.id))
+        let pending = (value.pendingBooks ?? []).filter { known.insert($0.id).inserted }
+        if !pending.isEmpty { if next.pendingBooks == nil { next.pendingBooks = [] }; next.pendingBooks?.append(contentsOf:pending) }
         for var shortcut in value.shortcuts { shortcut.id = UUID(); next.shortcuts.append(shortcut) }
         next.relocated.merge(value.relocated) { current, _ in current }
         try commit(next)
