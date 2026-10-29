@@ -97,7 +97,14 @@ final class Release041Tests:XCTestCase {
             if format == .word {
                 let xml = try WordExportTests().unzip(["-p",file.path,"word/document.xml"]); XCTAssertTrue(xml.contains("原文 [特殊] **文字** &lt;史料&gt; &amp; 内容")); XCTAssertTrue(xml.contains("自己的笔记")); XCTAssertTrue(xml.contains("返回原文")); XCTAssertTrue(xml.contains("作者甲"))
                 let relations = try WordExportTests().unzip(["-p",file.path,"word/_rels/document.xml.rels"]); XCTAssertTrue(relations.contains("kongfolio://source")); XCTAssertTrue(relations.contains("relationships/image"))
-            } else if format == .pdf { let document = try XCTUnwrap(PDFDocument(url:file)); XCTAssertTrue((document.string ?? "").contains("自己的笔记")); XCTAssertTrue(document.pageCount > 0) }
+            } else if format == .pdf {
+                let document = try XCTUnwrap(PDFDocument(url:file)), extracted = document.string ?? ""
+                // PDFKit may return compatibility radicals or inserted spacing for CJK fonts on different macOS versions.
+                let searchable = extracted.precomposedStringWithCompatibilityMapping.filter { !$0.isWhitespace }
+                print("probe: reading record PDF extracted text = [\(extracted)]")
+                XCTAssertTrue(searchable.contains("自己的笔记"), "PDF text must retain the note: \(extracted)")
+                XCTAssertTrue(document.pageCount > 0)
+            }
             else { let md = try String(contentsOf:file); XCTAssertTrue(md.contains("\\# 原文")); XCTAssertTrue(md.contains("[返回原文](kongfolio://source")); let copy = root.appendingPathComponent("带空格的笔记-images").appendingPathComponent(ref.imageAsset!); XCTAssertTrue(FileManager.default.fileExists(atPath:copy.path)) }
         }
     }
