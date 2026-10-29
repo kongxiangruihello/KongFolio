@@ -1,7 +1,7 @@
 import Foundation
 
 /// Which pages of a book have been read, kept per file, so the reader can see how far they are and where to go on.
-struct ReadingProgress: Equatable {
+struct ReadingProgress: Equatable, Codable {
     var visited: Set<Int> = []
     var last = 0
     /// When a page was last counted as read (0.34), so KongSeek can list recently read books.

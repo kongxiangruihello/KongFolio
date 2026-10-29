@@ -33,6 +33,7 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
     private var reflectionPending = false
     private var reflectionWrite: Task<Void, Error>?
     private(set) var reflectionWriteCount = 0
+    var didRelink: ((String,URL) -> Void)?
     let storage: URL
     @Published private(set) var catalog = Catalog()
     @Published private(set) var error: String?
@@ -98,6 +99,15 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         if reflectionPending { try await flushReflections() }
     }
 
+    func importRestoredCatalog(_ value: Catalog) throws {
+        var next = catalog
+        for var book in value.books where !next.books.contains(where: { $0.path == book.path }) {
+            if next.books.contains(where: { $0.id == book.id }) { book.id = UUID() }; next.books.append(book)
+        }
+        for var shortcut in value.shortcuts { shortcut.id = UUID(); next.shortcuts.append(shortcut) }
+        next.relocated.merge(value.relocated) { current, _ in current }
+        try commit(next)
+    }
     static func supports(_ url: URL) -> Bool { ["pdf", "kongfolio"].contains(url.pathExtension.lowercased()) || TextImport.handles(url) }
     func book(path: String) -> LibraryBook? { books.first { ReadingProgress.canonicalPath($0.path) == ReadingProgress.canonicalPath(path) } }
     func importHistory(defaults: UserDefaults) throws {
@@ -181,6 +191,7 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         if progress.title == nil { progress.title = book(path: path)?.title }
         ReadingProgress.clear(path: oldPath, defaults: defaults)
         progress.save(path: path, defaults: defaults)
+        didRelink?(oldPath,url)
     }
     func renameShortcut(_ id: UUID, title: String) throws {
         var next = catalog

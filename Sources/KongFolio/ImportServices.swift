@@ -46,9 +46,15 @@ enum ImportServices {
 }
 extension Workspace {
     func startImport(_ urls: [URL], insert: Bool) {
+        store?.recordActivity("准备打开文件")
         isImporting = true; busy = true; progress = 0; taskLabel = "读取文件…"
         let root = storage
-        let worker = Task.detached { () throws -> (ImportPayload, PreparedReading?) in
+        let worker = Task.detached { () async throws -> (ImportPayload, PreparedReading?) in
+            try await CloudFilePreparation.prepare(urls) { phase in Task { @MainActor [weak self] in self?.taskLabel = phase } }
+            await MainActor.run { [weak self] in self?.taskLabel = "等候文件解析…" }
+            try await ImportLimiter.shared.acquire()
+            defer { Task { await ImportLimiter.shared.release() } }
+            await MainActor.run { [weak self] in self?.taskLabel = "正在解析文件…" }
             let payload = try ImportServices.read(urls)
             let reading: PreparedReading?
             if !insert, urls.count == 1, urls[0].pathExtension.lowercased() == "pdf", case .documents(let bytes) = payload {

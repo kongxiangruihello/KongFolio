@@ -79,12 +79,12 @@ extension Workspace {
             let position = currentViewPosition(), version = revision, privateVersion = privateDataGeneration
             let value = try TabMemoryStore.Session(archive: snapshot(), history: history.map { try TabMemoryStore.Entry($0) }, future: future.map { try TabMemoryStore.Entry($0) })
             let file = storage.appendingPathComponent("TabCache", isDirectory: true).appendingPathComponent(id.uuidString + ".plist")
-            let recovery = recoveryURL
+            let recovery = recoveryURL, generation = recoverySequence
             unloadWorker = Task { [weak self] in
                 do {
                     try await Task.detached(priority: .utility) {
                         try TabMemoryStore.write(value, to: file)
-                        try RecoveryWriter.shared.flush(value.archive, to: recovery)
+                        try RecoveryWriter.shared.flush(value.archive, to: recovery, generation: generation)
 
                     }.value
                     guard let self else { return }

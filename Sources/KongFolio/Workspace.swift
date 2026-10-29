@@ -118,6 +118,8 @@ import UniformTypeIdentifiers
     @Published var splitPartner: Workspace?
     @Published var splitSync = false
     var splitOffset = 0
+    var synchronizedSelection: Int?
+    var activeEdition: EditionCorrespondence?
     @Published var compressLevel = CompressLevel.standard
     /// Pages that carry annotations or links are left as they are instead of being redrawn.
     @Published var compressKeepMarked = true
@@ -165,6 +167,7 @@ import UniformTypeIdentifiers
     var closePrepared = false
     var closingInProgress = false
     var privateDataGeneration = UUID()
+    var recoverySequence = 0
     var unloadWorker: Task<Void, Never>?
     var spilledSession: URL?
     var drawingInProgress = false
@@ -219,6 +222,10 @@ import UniformTypeIdentifiers
     @Published var tableDrafts: [TableDraftRecord] = []
     var pendingTableDraftID: UUID?
     var wordDraftDigest: String?
+    var snapshotInFlight: (revision: UUID, task: Task<ProjectArchive, Error>)?
+    var captureInProgress = false
+    var incrementalBase: Data?
+    var incrementalPages = Set<Int>()
     var cachedPDF: Data?
     private var displayCache: (key: String, image: NSImage)?
     private var importAsInsert = false
@@ -358,7 +365,10 @@ import UniformTypeIdentifiers
 
     func snapshot() throws -> ProjectArchive {
         if let moveSnapshot { return moveSnapshot }
-        let pdf = try pdfData()
+        return makeArchive(pdf: try pdfData())
+    }
+
+    func makeArchive(pdf: Data) -> ProjectArchive {
         alignMeta()
         let reading = ReadingState(bookmarks: bookmarks, outline: outlineEntries, layout: readingLayout, point: readingPoint, scale: readingScale, bibliography: bibliography)
         return ProjectArchive(tableDrafts: tableDrafts.isEmpty ? nil : tableDrafts, wordDraft: wordDraftArchive, fileBaseline: fileBaseline, reading: reading, signatureEdits: signatureEditArchives, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: .document, recipes: [:], drafts: [:], dirty: dirty, projectPath: projectURL?.path)
@@ -440,7 +450,7 @@ import UniformTypeIdentifiers
     }
 
     func scheduleRecovery() {
-        privateDataGeneration = UUID(); closePrepared = false
+        privateDataGeneration = UUID(); recoverySequence += 1; closePrepared = false
         guard started, count > 0 else { return }
         autoTask?.cancel()
         guard dirty || hasPrivateReadingData else {
@@ -452,15 +462,17 @@ import UniformTypeIdentifiers
             return
         }
         recoveryStatus = "等待自动保存"
-        let delay = recoveryDelay
+        let delay = recoveryDelay, generation = recoverySequence
         autoTask = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) } catch { return }
             guard let self, !Task.isCancelled else { return }
             if self.drawingInProgress { self.scheduleRecovery(); return }
             do {
-                let archive = try self.snapshot()
+                let version = self.revision
+                let archive = try await self.snapshotForBackgroundSave()
+                guard self.revision == version, !Task.isCancelled else { self.scheduleRecovery(); return }
                 let legacy = self.legacyRecoveryURL
-                self.writer.write(archive, to: self.recoveryURL) { [weak self] error in
+                self.writer.write(archive, to: self.recoveryURL, generation: generation) { [weak self] error in
                     if error == nil { try? FileManager.default.removeItem(at: legacy) }
                     Task { @MainActor in
                         self?.recoveryStatus = error == nil ? "已自动保存恢复副本" : "自动保存失败"
@@ -476,7 +488,8 @@ import UniformTypeIdentifiers
     @discardableResult func flushRecovery() -> Bool {
         autoTask?.cancel()
         do {
-            try writer.flush(count > 0 ? snapshot() : nil, to: recoveryURL)
+            recoverySequence += 1
+            try writer.flush(count > 0 ? snapshot() : nil, to: recoveryURL, generation: recoverySequence)
             try? FileManager.default.removeItem(at: legacyRecoveryURL)
             return true
         } catch {
@@ -498,10 +511,15 @@ import UniformTypeIdentifiers
     /// Call after any change. `pdfChanged: false` for metadata such as bookmarks;
     /// `pages` limits thumbnail refresh to pages whose annotations changed.
     func edited(reset: Bool = false, pdfChanged: Bool = true, pages: Set<Int>? = nil) {
+        store?.recordActivity("编辑文档")
         closePrepared = false
         dirty = true
         revision = UUID()
         if pdfChanged {
+            if let pages {
+                if incrementalBase == nil { incrementalBase = cachedPDF }
+                incrementalPages.formUnion(pages)
+            } else { incrementalBase = nil; incrementalPages = [] }
             cachedPDF = nil
             if let pages {
                 for page in pages { pageVersions[page, default: 0] += 1 }
@@ -694,7 +712,7 @@ import UniformTypeIdentifiers
         displayCache = nil; copiedAnnotations.removeAll()
         signatureLayers.removeAll(); movingSignature = nil; moveSnapshot = nil; placingSignature = nil
         drawingInProgress = false; pendingReveal = nil; deferredOpen = nil
-        document = PDFDocument(); cachedPDF = nil
+        document = PDFDocument(); cachedPDF = nil; incrementalBase = nil; incrementalPages = []
         pageMeta = []; selection = 0; selectedPages = [0]; rangeText = ""
         title = "未命名文档"; tool = .select; note = ""
         bookmarks = []; bookmarkName = ""; outlineEntries = []; bibliography = Bibliography()
