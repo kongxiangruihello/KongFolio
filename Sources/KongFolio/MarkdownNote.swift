@@ -45,6 +45,8 @@ struct TextEdit: Equatable {
     weak var textView: NSTextView?
     var pendingSearchRange: NSRange?
     private var previewTask: Task<Void, Never>?
+    private var previewGeneration = UUID()
+    private var editorClosed = false
     private var backupTask: Task<Void, Never>?
 
     init(id: UUID = UUID(), text: String = "", fileURL: URL? = nil, dirty: Bool = false, storage: URL? = nil, format: TextDocumentFormat? = nil) {
@@ -204,17 +206,30 @@ struct TextEdit: Equatable {
         refreshPreview()
     }
 
+    func releaseEditorResources() {
+        editorClosed = true; previewGeneration = UUID()
+        previewTask?.cancel(); previewTask = nil; preview = nil
+        textView?.delegate = nil; textView = nil
+    }
+
     func refreshPreview() {
         previewTask?.cancel()
+        guard !editorClosed else { return }
+        previewGeneration = UUID()
+        let generation = previewGeneration
         previewTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            guard !Task.isCancelled else { return }
-            guard let self else { return }
+            do { try await Task.sleep(nanoseconds: 400_000_000) } catch { return }
+            guard !Task.isCancelled, let self else { return }
+            let text = self.text, format = self.format, options = self.layoutOptions
+            let base = self.fileURL?.deletingLastPathComponent() ?? self.recoveryBaseURL
             do {
-                let rendered = try self.renderDocument()
-                guard !Task.isCancelled else { return }
-                self.preview = rendered; self.previewMessage = ""
-            } catch { self.preview = nil; self.previewMessage = error.localizedDescription }
+                let data = try await TextPreviewRenderer.render(text, format: format, base: base, options: options)
+                guard !Task.isCancelled, !self.editorClosed, generation == self.previewGeneration else { return }
+                self.preview = data.flatMap(PDFDocument.init(data:)); self.previewMessage = ""
+            } catch is CancellationError {} catch {
+                guard !Task.isCancelled, generation == self.previewGeneration else { return }
+                self.preview = nil; self.previewMessage = error.localizedDescription
+            }
         }
     }
 

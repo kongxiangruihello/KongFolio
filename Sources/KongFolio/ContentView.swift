@@ -287,7 +287,7 @@ struct ContentView: View {
     }
 
     @ViewBuilder private func saveButton(iconOnly: Bool) -> some View {
-        Button { workspace.saveDirectly() } label: {
+        Button { if workspace.historySource != nil { Task { _ = await workspace.saveInBackground(automatic: false, includePrivateData: true) } } else { workspace.saveDirectly() } } label: {
             if iconOnly { Image(systemName: "square.and.arrow.down") } else { Text("保存") }
         }
         .disabled(workspace.count == 0).help("保存当前文件（⌘S）；已有 PDF 自动保存标注")

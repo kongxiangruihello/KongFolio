@@ -30,6 +30,9 @@ struct AnnotationChange {
     let id: String
     let before: PDFAnnotation?
     let after: PDFAnnotation?
+    // PDFKit copies retain appearance dictionaries referring to the parsed source PDF.
+    // Keep those sources alive for restored changes and any copies applied to the live document.
+    var resourceDocuments: [PDFDocument] = []
 }
 
 /// An annotation captured before an interactive edit (move, resize, text change, delete).
@@ -37,6 +40,7 @@ struct PendingAnnotationEdit {
     let page: Int
     let id: String
     let before: PDFAnnotation
+    var resourceDocument: PDFDocument? = nil
 }
 
 /// Undo history mixes cheap annotation-level entries with full snapshots. Annotation edits —
@@ -76,7 +80,7 @@ extension Workspace {
             let index = document.index(for: page)
             guard index != NSNotFound else { return nil }
             let id = AnnotationIdentity.id(of: annotation)
-            return AnnotationChange(page: index, id: id, before: nil, after: AnnotationIdentity.copy(annotation, id: id))
+            return AnnotationChange(page: index, id: id, before: nil, after: AnnotationIdentity.copy(annotation, id: id), resourceDocuments: [document])
         }
         guard !changes.isEmpty else { return }
         pushUndo(.annotations(changes))
@@ -91,7 +95,7 @@ extension Workspace {
             guard index != NSNotFound else { return nil }
             let id = AnnotationIdentity.id(of: annotation)
             guard let before = AnnotationIdentity.copy(annotation, id: id) else { return nil }
-            return PendingAnnotationEdit(page: index, id: id, before: before)
+            return PendingAnnotationEdit(page: index, id: id, before: before, resourceDocument: document)
         }
     }
 
@@ -99,7 +103,7 @@ extension Workspace {
     func commitAnnotationEdit(_ edits: [PendingAnnotationEdit]) {
         let changes = edits.map { edit -> AnnotationChange in
             let current = document.page(at: edit.page).flatMap { AnnotationIdentity.find(edit.id, on: $0) }
-            return AnnotationChange(page: edit.page, id: edit.id, before: edit.before, after: current.flatMap { AnnotationIdentity.copy($0, id: edit.id) })
+            return AnnotationChange(page: edit.page, id: edit.id, before: edit.before, after: current.flatMap { AnnotationIdentity.copy($0, id: edit.id) }, resourceDocuments: [edit.resourceDocument, document].compactMap { $0 })
         }
         guard !changes.isEmpty else { return }
         pushUndo(.annotations(changes))
@@ -107,6 +111,12 @@ extension Workspace {
     }
 
     func applyAnnotationChanges(_ changes: [AnnotationChange], restoringBefore: Bool) {
+        // Appearance streams in PDFKit copies may still point into their originating CGPDFDocument.
+        // Retain them outside the PDF tree (an annotation retaining its own document would form a cycle).
+        var retained = Set(annotationResourceDocuments.map(ObjectIdentifier.init))
+        for source in changes.flatMap(\.resourceDocuments) where source !== document {
+            if retained.insert(ObjectIdentifier(source)).inserted { annotationResourceDocuments.append(source) }
+        }
         for change in restoringBefore ? changes.reversed() : changes {
             guard let page = document.page(at: change.page) else { continue }
             if let current = AnnotationIdentity.find(change.id, on: page) { page.removeAnnotation(current) }
@@ -136,7 +146,7 @@ extension Workspace {
             guard let current = snapshotForHistory("撤销") else { return }
             history.removeLast()
             future.append(.snapshot(current))
-            report { try restore(archive, keepProjectURL: true); dirty = true; scheduleRecovery() }
+            report { try restore(archive, keepProjectURL: true); dirty = true; scheduleRecovery(); scheduleDirectSave() }
         case .annotations(let changes):
             history.removeLast()
             applyAnnotationChanges(changes, restoringBefore: true)
@@ -151,7 +161,7 @@ extension Workspace {
             guard let current = snapshotForHistory("重做") else { return }
             future.removeLast()
             history.append(.snapshot(current))
-            report { try restore(archive, keepProjectURL: true); dirty = true; scheduleRecovery() }
+            report { try restore(archive, keepProjectURL: true); dirty = true; scheduleRecovery(); scheduleDirectSave() }
         case .annotations(let changes):
             future.removeLast()
             applyAnnotationChanges(changes, restoringBefore: false)

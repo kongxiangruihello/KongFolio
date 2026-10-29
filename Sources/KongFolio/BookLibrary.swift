@@ -28,6 +28,11 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         var shortcuts: [ManagedReadingShortcut] = []
         var relocated: [String: String] = [:]
     }
+    private let catalogWriter = DispatchQueue(label: "com.kongfolio.library", qos: .utility)
+    private var reflectionTask: Task<Void, Never>?
+    private var reflectionPending = false
+    private var reflectionWrite: Task<Void, Error>?
+    private(set) var reflectionWriteCount = 0
     let storage: URL
     @Published private(set) var catalog = Catalog()
     @Published private(set) var error: String?
@@ -46,10 +51,53 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
     }
     private func commit(_ next: Catalog) throws {
         guard error == nil else { throw FolioError(message: error!) }
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(next).write(to: url, options: .atomic)
+        let destination = url
+        try catalogWriter.sync {
+            try Self.writeCatalog(next, to: destination)
+        }
         catalog = next
+        reflectionTask?.cancel(); reflectionPending = false
     }
+    nonisolated private static func writeCatalog(_ value: Catalog, to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(value).write(to: url, options: .atomic)
+    }
+    func scheduleReflection(_ id: UUID, text: String) throws {
+        guard error == nil else { throw FolioError(message: error!) }
+        guard let index = catalog.books.firstIndex(where: { $0.id == id }) else { throw FolioError(message: "书籍已不在书架中") }
+        guard catalog.books[index].reflection != text else { return }
+        catalog.books[index].reflection = text
+        reflectionPending = true; reflectionTask?.cancel()
+        reflectionTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 600_000_000) } catch { return }
+            guard let self else { return }
+            do { try await self.flushReflections() }
+            catch { self.error = "心得未保存，当前文字仍保留：" + error.localizedDescription }
+        }
+    }
+    func flushReflections() async throws {
+        reflectionTask?.cancel(); reflectionTask = nil
+        while let reflectionWrite { try await reflectionWrite.value }
+        guard reflectionPending else { return }
+        let next = catalog, destination = url
+        reflectionPending = false
+        let write = Task { [self] in
+            defer { reflectionWrite = nil }
+            do {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    catalogWriter.async {
+                        do { try Self.writeCatalog(next, to: destination); continuation.resume() }
+                        catch { continuation.resume(throwing: error) }
+                    }
+                }
+                reflectionWriteCount += 1
+            } catch { reflectionPending = true; throw error }
+        }
+        reflectionWrite = write
+        try await write.value
+        if reflectionPending { try await flushReflections() }
+    }
+
     static func supports(_ url: URL) -> Bool { ["pdf", "kongfolio"].contains(url.pathExtension.lowercased()) || TextImport.handles(url) }
     func book(path: String) -> LibraryBook? { books.first { ReadingProgress.canonicalPath($0.path) == ReadingProgress.canonicalPath(path) } }
     func importHistory(defaults: UserDefaults) throws {
@@ -125,6 +173,7 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         for index in next.shortcuts.indices where ReadingProgress.canonicalPath(next.shortcuts[index].shortcut.path) == oldIdentity {
             next.shortcuts[index].shortcut.path = path; next.shortcuts[index].shortcut.bookmark = bookmark
         }
+        try ReadingDocumentStore.relink(from: URL(fileURLWithPath: oldPath), to: url, storage: storage)
         try commit(next)
         let previous = ReadingProgress.load(path: oldPath, defaults: defaults), current = ReadingProgress.load(path: path, defaults: defaults)
         var progress = (previous.date ?? .distantPast) > (current.date ?? .distantPast) ? previous : current

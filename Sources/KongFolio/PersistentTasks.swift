@@ -28,7 +28,7 @@ struct PersistentDocumentTask: Codable {
             var value = try draft.unwrap("任务缺少表格草稿")
             let result = try TableMerge.extract(data: source, current: value, pages: pages, removeHeaders: removeHeaders, languages: languages, cache: folder, progress: progress)
             value.rows = result.rows; value.sourceRegions = result.regions; value.includeInWord = false; value.modified = Date(); try value.validate()
-            try DocumentTaskOutput.write(to: destination, expected: expected) { try JSONEncoder().encode(value).write(to: $0) }
+            try DocumentTaskOutput.write(to: destination, expected: expected, protectedSource: protectedSource ?? sourceBaseline.map { URL(fileURLWithPath: $0.path) }) { try JSONEncoder().encode(value).write(to: $0) }
             return DocumentTaskResult(message: "已合并 \(result.regions.count) 页，草稿可继续核对", file: destination)
         case .flatten:
             let output = PDFDocument()
@@ -49,11 +49,11 @@ struct PersistentDocumentTask: Codable {
                 }
                 output.insert(page, at: output.pageCount); progress(Double(index + 1) / Double(max(document.pageCount,1)))
             }
-            try DocumentTaskOutput.write(to: destination, expected: expected) { try output.dataRepresentation().unwrap("无法生成固定副本").write(to: $0) }
+            try DocumentTaskOutput.write(to: destination, expected: expected, protectedSource: protectedSource ?? sourceBaseline.map { URL(fileURLWithPath: $0.path) }) { try output.dataRepresentation().unwrap("无法生成固定副本").write(to: $0) }
             return DocumentTaskResult(message: "固定副本已保存，原件保留", file: destination)
         case .table:
             let draft = try draft.unwrap("没有表格草稿"); try draft.validate()
-            try DocumentTaskOutput.write(to: destination, expected: expected) { staging in
+            try DocumentTaskOutput.write(to: destination, expected: expected, protectedSource: protectedSource ?? sourceBaseline.map { URL(fileURLWithPath: $0.path) }) { staging in
                 switch suffix {
                 case "xlsx": try TableStructure.writeExcel(rows: draft.rows, spans: draft.spans ?? [], to: staging)
                 case "docx": try StructuredTableWord.write(draft, to: staging)
@@ -66,7 +66,7 @@ struct PersistentDocumentTask: Codable {
         case .word:
             let options = try word.unwrap("缺少 Word 导出选项")
             var summary = ""
-            try DocumentTaskOutput.write(to: destination, expected: expected) { staging in
+            try DocumentTaskOutput.write(to: destination, expected: expected, protectedSource: protectedSource ?? sourceBaseline.map { URL(fileURLWithPath: $0.path) }) { staging in
                 let report = try WordExport.write(document, pages: pages, outline: outline, options: options, regions: regions, to: staging, sourceDigest: sourceDigest, cache: folder, progress: progress)
                 summary = report.summary
             }
