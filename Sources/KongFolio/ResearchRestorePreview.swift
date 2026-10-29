@@ -24,7 +24,7 @@ struct ResearchRestorePreview: View {
                 Toggle("同时恢复公共笔记、图片资源和工作区",isOn:$controller.backupIncludeShared)
                 Text("所选书籍的书签、校对、阅读尺和草稿随书恢复；共享笔记可单独选择。所有文件先恢复到新目录，已有资料继续保留。").font(.caption)
                 HStack {
-                    Button("选择目录并恢复所选资料…") { controller.restoreSelectedBackup(store) }.disabled(controller.busy || loading || controller.backupSelection.isEmpty)
+                    Button("选择目录并恢复所选资料…") { controller.restoreSelectedBackup(store) }.disabled(controller.busy || loading || (controller.backupSelection.isEmpty && !controller.backupIncludeShared))
                     Button("关闭预览") { controller.backupPreview = nil }.disabled(controller.busy)
                 }
             }.padding(10).background(.quaternary.opacity(0.3))

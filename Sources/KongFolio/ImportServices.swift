@@ -67,7 +67,7 @@ extension Workspace {
         Task {
             do { let (payload, reading) = try await worker.value; try Task.checkCancellation(); guard !worker.isCancelled else { throw CancellationError() }; isImporting = false; busy = false; cancelAuxiliary = nil; load(urls, insert: insert, prepared: payload, reading: reading) }
             catch is CancellationError { isImporting = false; busy = false; cancelAuxiliary = nil; status = "已取消导入" }
-            catch { isImporting = false; busy = false; cancelAuxiliary = nil; self.error = error.localizedDescription }
+            catch { isImporting = false; busy = false; cancelAuxiliary = nil; self.recordError(error) }
         }
     }
 }

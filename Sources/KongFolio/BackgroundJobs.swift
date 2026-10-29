@@ -211,7 +211,7 @@ extension Workspace {
                 spec.protectedSource = historySource
                 try spec.validateOutput(target)
                 if spec.outputBaseline == nil { spec.outputBaseline = try FileBaseline.capture(target) }
-            } catch { self.error = error.localizedDescription; return }
+            } catch { self.recordError(error); return }
         }
         busy = true
         progress = 0
@@ -288,7 +288,7 @@ extension Workspace {
                 }
                 ocrChain = nil
             } catch {
-                self.error = error.localizedDescription
+                self.recordError(error)
                 status = ocrChain.map { $0.done > 0 ? "任务失败；前 \($0.done) 页的结果已保留，可重试或“继续识别”" : "任务失败，可重试" } ?? "任务失败，可重试"
             }
         }

@@ -12,7 +12,7 @@ struct ResearchBackup: Codable {
     var originals: [String: Data]
     var companions: [Asset]
     var progress: [String: Data]
-    static let allowedFolders: Set<String> = ["ReadingRulers", "ReadingDocuments", "SignatureEdits", "AcademicDrafts", "NoteAssets", "Boards", "WordDrafts", "TableDrafts", "Research", "Library", "History", "TextHistory", "Notes", "Conflicts"]
+    static let allowedFolders: Set<String> = ["ReadingJournal", "ReadingRulers", "ReadingDocuments", "SignatureEdits", "AcademicDrafts", "NoteAssets", "Boards", "WordDrafts", "TableDrafts", "Research", "Library", "History", "TextHistory", "Notes", "Conflicts"]
     func validate() throws {
         guard version == 1, originals.count <= 10000, companions.count <= 100000 else { throw FolioError(message: "备份版本或数量无效") }
         guard Set(originals.keys) == Set(originalDigests.keys), Set(companions.map(\.path)).count == companions.count else { throw FolioError(message: "备份目录重复或原书索引不完整") }
@@ -26,10 +26,14 @@ struct ResearchBackup: Codable {
     static func capture(storage: URL, catalog: BookLibrary.Catalog, research: ResearchStore.State, progress: [String: Data], includeOriginals: Bool) throws -> Self {
         var originals: [String: Data] = [:], companions: [Asset] = []
         if includeOriginals {
-            for book in catalog.books {
+            let journalFile = storage.appendingPathComponent("ReadingJournal/catalog.json")
+            let journal = FileManager.default.fileExists(atPath:journalFile.path) ? try JSONDecoder().decode(ReadingJournalState.self,from:Data(contentsOf:journalFile)) : nil
+            let records = (journal?.records ?? []) + (journal?.essays.flatMap{$0.blocks.compactMap(\.record)} ?? [])
+            let paths = Set(catalog.books.map(\.path) + records.flatMap{$0.citations.map(\.source.path)}.filter{!$0.isEmpty})
+            for path in paths {
                 try Task.checkCancellation()
-                let url = URL(fileURLWithPath: book.path), bytes = try Data(contentsOf: url, options: .mappedIfSafe)
-                originals[ReadingProgress.canonicalPath(book.path)] = bytes
+                let url = URL(fileURLWithPath: path), bytes = try Data(contentsOf: url, options: .mappedIfSafe)
+                originals[ReadingProgress.canonicalPath(path)] = bytes
                 if TextImport.handles(url), let text = try? TextImport.decode(bytes) {
                     for image in TextAssets.references(text, format: TextDocumentFormat.forURL(url)) {
                         if let file = TextMedia.resolve(image.reference, baseURL: url.deletingLastPathComponent()) {

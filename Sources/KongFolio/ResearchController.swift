@@ -98,9 +98,6 @@ import UniformTypeIdentifiers
             guard await store.finishPendingSaves() else { throw FolioError(message: "请先处理未保存的文档") }
             for note in store.tabs.compactMap(\.note) where note.dirty { try note.writeBackup() }
             if store.board.hasContent { try store.board.writeBackup() }
-            try store.library.importHistory(defaults: store.readingDefaults)
-            let opened = store.tabs.compactMap { tab in tab.workspace?.historySource ?? tab.note?.fileURL }.filter { BookLibrary.supports($0) && FileManager.default.fileExists(atPath: $0.path) }
-            if !opened.isEmpty { try store.library.add(opened) }
             let library = store.library.catalog, research = store.research.state, root = store.storage
             let progress = try Dictionary(uniqueKeysWithValues: ReadingProgress.history(defaults: store.readingDefaults).map { ($0.path, try JSONEncoder().encode($0.progress)) })
             let expected = try FileBaseline.capture(destination)
@@ -134,6 +131,9 @@ import UniformTypeIdentifiers
             let research = try JSONDecoder().decode(ResearchStore.State.self, from: Data(contentsOf: support.appendingPathComponent("Research/catalog.json")))
             try store.library.importRestoredCatalog(catalog)
             try store.research.merge(research)
+            if let transfer = try await self.background({ try ReadingJournalTransfer.read(support.appendingPathComponent("ReadingJournal")) }) {
+                store.journal.merge(transfer); try await store.journal.flush()
+            }
             let target = store.storage
             let copied = try await self.background { () throws -> Int in
                 var copied = 0

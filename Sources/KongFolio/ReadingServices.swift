@@ -328,7 +328,7 @@ extension Workspace {
         let job = Task.detached { [records] in try ReadingServices.search(data, query: query, records: records) }; searchTask = job
         Task {
             do { let hits = try await job.value; guard revision == version, query == search else { return }; searchResults = hits; searchMessage = hits.count == 1000 ? "显示前 1000 处匹配，请缩小搜索范围" : "找到 \(hits.count) 处匹配（忽略换行，简繁通查）" }
-            catch is CancellationError {} catch { self.error = error.localizedDescription }
+            catch is CancellationError {} catch { self.recordError(error) }
         }
     }
     func goToSearch(_ hit: SearchHit) {

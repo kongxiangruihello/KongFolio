@@ -10,13 +10,15 @@ struct RootView: View {
             Divider()
             if let tab = store.activeTab {
                 switch tab {
-                case .document(let workspace): ContentView(workspace: workspace).id(workspace.id)
+                case .document(let workspace): ContentView(workspace: workspace,readingMode:store.readingMode).id(workspace.id)
                 case .note(let note): MarkdownEditorView(note: note, store: store).id(note.id)
                 }
             } else {
                 Color.clear
             }
         }
+        .task { await store.importLegacyReadingRecords() }
+        .onChange(of:store.readingDeskWindowRequest) { _,request in if request != nil { ReadingDeskWindowManager.shared.show(store) } }
         .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in store.checkOpenSourceChanges() }
         .onChange(of: store.showResearch) { _,show in
             if show { ResearchWindowManager.shared.show(store); store.showResearch = false }
@@ -62,7 +64,7 @@ struct TabBar: View {
             }
             Button { store.showReadingHistory = true } label: { Image(systemName: "books.vertical") }
                 .buttonStyle(.borderless).frame(width: 28).help("个人书架、阅读记录与书籍快捷方式")
-            Button { store.showResearch = true } label: { Image(systemName: "books.vertical.circle") }.buttonStyle(.borderless).help("阅读组、资料备份、卷期、引文与史料研究")
+            Button { store.openReadingDesk(.search,window:true) } label: { Image(systemName: "note.text") }.buttonStyle(.borderless).help("查找自己的摘录、笔记与札记")
             DocumentTaskButton(queue: store.documentTasks, store: store)
             Menu {
                 ForEach(store.tabs) { tab in

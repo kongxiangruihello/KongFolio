@@ -13,15 +13,7 @@ struct MarkdownEditorView: View {
                 toolbar
                 if note.saveConflict { SaveConflictBanner(copy: { note.save(asNew: true) }, reload: note.reloadAfterConflict) }
                 Divider()
-                HSplitView {
-                    MarkdownTextView(note: note).frame(minWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
-                    if LayoutMetrics.showsPreview(preferred: note.showPreview, width: proxy.size.width) {
-                        VStack(spacing: 0) {
-                            if !note.previewMessage.isEmpty { Text(note.previewMessage).font(.caption).foregroundStyle(.orange).padding(8) }
-                            MarkdownPreview(note: note)
-                        }.frame(minWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                }
+                TextEditorPreviewSplit(note:note)
                 Divider()
                 HStack {
                     Text(note.status.isEmpty ? (note.fileURL?.path ?? "尚未保存到文件") : note.status).lineLimit(1).truncationMode(.middle)
@@ -78,7 +70,7 @@ struct MarkdownEditorView: View {
             Button { note.insertTable() } label: { Image(systemName: "tablecells") }.help("插入表格").disabled(note.format == .plain)
             Button("排版…") { showLayout = true }.help("字体、行距与页边距；用于预览、导出和打印")
             Spacer()
-            Toggle("预览", isOn: $note.showPreview).toggleStyle(.switch).controlSize(.small)
+            if note.format != .plain { Toggle("预览", isOn: $note.showPreview).toggleStyle(.switch).controlSize(.small) }
             Button("导出 Word…") { note.exportWord() }.help("导出为可编辑的 Word 文档（.docx）")
             Button("导出 PDF…") { note.exportPDF() }.help("按预览的版式导出为 PDF（⌘E）")
         }

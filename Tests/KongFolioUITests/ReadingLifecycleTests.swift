@@ -44,6 +44,11 @@ final class ReadingLifecycleTests: XCTestCase {
         try await settle(host)
         let nativeView = try XCTUnwrap(workspace.pdfView)
         let weak = WeakDocument(workspace.document)
+        if ProcessInfo.processInfo.environment["KONGFOLIO_STRESS_READING_DESK"] == "1" {
+            store.newReadingNote()
+            if let record = store.readingRecordID { store.journal.editRecord(record) { $0.note = "连续阅读的随文笔记" } }
+            try await store.journal.flush()
+        }
         if workspace.count > 1 { workspace.selectPage(workspace.count - 1); try await settle(host) }
         autoreleasepool { store.close(id) }
         XCTAssertNil(nativeView.document, "Closing must immediately detach the native preview")
@@ -100,6 +105,7 @@ final class ReadingLifecycleTests: XCTestCase {
         let files = try inputs(root), storage = root.appendingPathComponent("storage")
         let original = try files.map { OCRPageCache.digest(try Data(contentsOf: $0)) }
         let store = WorkspaceStore(storage: storage, readingDefaults: UserDefaults(suiteName: "KongFolio.Stress." + UUID().uuidString)!)
+        store.readingMode = ProcessInfo.processInfo.environment["KONGFOLIO_STRESS_READING_DESK"] == "1"
         store.bootstrap()
         let host = NSHostingView(rootView: AnyView(RootView(store: store))); host.frame = NSRect(x: 0, y: 0, width: 1280, height: 850)
         try await settle(host, milliseconds: 100)
@@ -129,6 +135,14 @@ final class ReadingLifecycleTests: XCTestCase {
             print("STRESS round=\(round) opened=20 closed=20 liveClosedDocuments=\(live) residentMB=\(memory.last!) longestStepSeconds=\(largestStep)")
             XCTAssertEqual(store.tabs.count, 1); XCTAssertEqual(store.activeWorkspace?.count, 0)
             XCTAssertEqual(live, 0, "Closed PDF documents must not accumulate between reading rounds")
+        }
+        if ProcessInfo.processInfo.environment["KONGFOLIO_STRESS_READING_DESK"] == "1" {
+            XCTAssertEqual(store.journal.state.records.count,rounds*20)
+            let snapshot = ReadingExportSnapshot(title:"连续阅读笔记",records:store.journal.state.records)
+            let output = root.appendingPathComponent("连续阅读笔记.docx")
+            try await ReadingExportWorker.shared.export(snapshot,format:.word,assets:store.journal.folder.appendingPathComponent("Assets"),to:output,expected:FileBaseline.capture(output))
+            XCTAssertTrue(FileManager.default.fileExists(atPath:output.path))
+            print("READING_RECORD_STRESS notes=\(store.journal.state.records.count) persisted=true wordExported=true")
         }
         XCTAssertLessThan(memory.last! - memory.first!, 256, "Memory must stabilize after warm-up")
         XCTAssertLessThan(largestStep, 20, "Each reading/closing step must complete")

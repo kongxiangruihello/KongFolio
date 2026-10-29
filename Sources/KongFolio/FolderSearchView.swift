@@ -134,7 +134,7 @@ struct FolderSearchView: View {
     private func start() {
         selected = []
         do {
-            if model.scope == .library, model.libraryFiles.isEmpty { try store.library.importHistory(defaults: store.readingDefaults); model.libraryFiles = store.library.books.map { URL(fileURLWithPath: $0.path) } }
+            if model.scope == .library, model.libraryFiles.isEmpty { model.libraryFiles = store.library.books.map { URL(fileURLWithPath: $0.path) } }
             model.start(live: model.includeLive ? try store.searchSnapshots() : [])
         }
         catch { model.message = error.localizedDescription }

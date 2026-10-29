@@ -6,7 +6,8 @@ extension ResearchBackup {
         func keep(_ path: String) -> Bool { selected.contains(ReadingProgress.canonicalPath(path)) }
         var value = self
         value.catalog.books = catalog.books.filter { keep($0.path) }
-        guard !value.catalog.books.isEmpty else { throw FolioError(message:"请至少选择一本书籍") }
+        guard !value.catalog.books.isEmpty || includeShared else { throw FolioError(message:"请至少选择一本书籍") }
+        value.catalog.pendingBooks = includeShared ? catalog.pendingBooks : catalog.pendingBooks?.filter { keep($0.path) }
         value.catalog.shortcuts = catalog.shortcuts.filter { keep($0.shortcut.path) }
         value.catalog.relocated = catalog.relocated.filter { keep($0.key) || keep($0.value) }
         value.research.labels = research.labels.filter { keep($0.key) }
@@ -26,7 +27,9 @@ extension ResearchBackup {
         let categories = Set(value.catalog.books.map(\.category))
         value.research.dictionary = research.dictionary.filter { $0.scope == "全局" || categories.contains($0.scope) || keep($0.scope) }
         let bookPaths = Set(catalog.books.map { ReadingProgress.canonicalPath($0.path) })
-        value.originals = originals.filter { !bookPaths.contains(ReadingProgress.canonicalPath($0.key)) || keep($0.key) }
+        let journal = try companions.first(where:{$0.path == "ReadingJournal/catalog.json"}).map { try JSONDecoder().decode(ReadingJournalState.self,from:$0.bytes) }
+        let journalPaths = Set(((journal?.records ?? [])+(journal?.essays.flatMap{$0.blocks.compactMap(\.record)} ?? [])).flatMap{$0.citations.map{ReadingProgress.canonicalPath($0.source.path)}})
+        value.originals = originals.filter { key,_ in let path = ReadingProgress.canonicalPath(key); return (!(bookPaths.contains(path) || journalPaths.contains(path))) || keep(key) || (includeShared && journalPaths.contains(path)) }
         value.originalDigests = originalDigests.filter { value.originals[$0.key] != nil }
         value.aliases = aliases?.filter { value.originals[$0.value] != nil }
         value.progress = progress.filter { keep($0.key) }
@@ -37,6 +40,20 @@ extension ResearchBackup {
             let parts = asset.path.split(separator:"/").map(String.init)
             if perBook.contains(parts[0]), parts.count > 1 { return hashes.contains(URL(fileURLWithPath:parts[1]).deletingPathExtension().lastPathComponent) || hashes.contains(parts[1]) }
             return parts[0] == "NoteAssets" || includeShared
+        }
+        if let asset = companions.first(where:{$0.path == "ReadingJournal/catalog.json"}) {
+            var journal = try JSONDecoder().decode(ReadingJournalState.self,from:asset.bytes)
+            if !includeShared {
+                journal.records = journal.records.filter { $0.citations.contains{keep($0.source.path)} }
+                journal.essays = journal.essays.filter { essay in let refs = essay.blocks.compactMap(\.record).flatMap(\.citations); return !refs.isEmpty && refs.allSatisfy{keep($0.source.path)} }
+            }
+            let ids = Set(journal.records.map(\.id)); journal.lastNotes = journal.lastNotes.filter{ids.contains($0.value)}
+            if !journal.essays.contains(where:{$0.id == journal.currentEssay}) { journal.currentEssay = nil }
+            let images = Set((journal.records+journal.essays.flatMap{$0.blocks.compactMap(\.record)}).compactMap(\.imageAsset))
+            value.companions.removeAll{$0.path.hasPrefix("ReadingJournal/")}
+            let bytes = try JSONEncoder().encode(journal)
+            value.companions.append(Asset(path:"ReadingJournal/catalog.json",bytes:bytes,digest:OCRPageCache.digest(bytes)))
+            value.companions += companions.filter{$0.path.hasPrefix("ReadingJournal/Assets/") && images.contains(URL(fileURLWithPath:$0.path).lastPathComponent)}
         }
         try value.validate(); return value
     }

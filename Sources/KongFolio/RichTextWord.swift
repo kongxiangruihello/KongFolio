@@ -48,6 +48,7 @@ enum RichTextWord {
         let contentWidth: Double = Double(TextImport.pageSize.width) - document.options.margin * 2
         let printableHeight: Double = Double(TextImport.pageSize.height) - document.options.margin * 2 - 12
         for block in document.blocks {
+            try Task.checkCancellation()
             switch block {
             case .paragraph(let content, let heading): body += paragraph(content, heading: heading)
             case .table(let rows):

@@ -31,6 +31,15 @@ import UniformTypeIdentifiers
 @MainActor final class WorkspaceStore: ObservableObject {
     @Published private(set) var tabs: [OpenTab] = []
     @Published private(set) var selectedID: UUID?
+    static let readingModeKey = "KongFolio.focusedReadingMode"
+    @Published var readingMode = true { didSet { readingDefaults.set(readingMode,forKey:Self.readingModeKey) } }
+    @Published var showReadingDesk = true
+    @Published var readingDeskSection = ReadingDeskSection.excerpts
+    @Published var readingRecordID:UUID?
+    @Published var readingRecordSelection = Set<UUID>()
+    @Published var readingExportEssay = false
+    @Published var readingDeskWindowRequest:UUID?
+    lazy var journal = ReadingJournal(storage:storage)
     @Published var showResearch = false
     var startupSafetyEnabled = !AppEnvironment.isTestRun
     @Published var showStartupReview = false
@@ -69,6 +78,7 @@ import UniformTypeIdentifiers
         self.storage = folder
         self.library = BookLibrary(storage: folder)
         self.readingDefaults = readingDefaults ?? (AppEnvironment.isTestRun ? UserDefaults(suiteName: "KongFolio.ReadingTests." + UUID().uuidString)! : .standard)
+        self.readingMode = self.readingDefaults.object(forKey:Self.readingModeKey) as? Bool ?? !AppEnvironment.isTestRun
         self.documentTasks = DocumentTaskQueue(storage: folder)
         self.board = Board(storage: folder)
         self.batchQueue = BatchQueue(storage: AppEnvironment.isTestRun && storage == nil ? nil : folder)
@@ -78,7 +88,7 @@ import UniformTypeIdentifiers
             for workspace in self.tabs.compactMap(\.workspace) { workspace.loadTableDrafts() }
         }
         library.didRelink = { [weak self] old, url in
-            do { try self?.research.relink(from: old, to: url) } catch { self?.present(error) }
+            do { try self?.research.relink(from: old, to: url); self?.journal.relink(old:old,to:url) } catch { self?.present(error) }
         }
         connectBoardToDocuments()
     }
@@ -374,7 +384,7 @@ import UniformTypeIdentifiers
     }
 
     func present(_ error: Error) {
-        guard AppEnvironment.isInteractive else { return }
+        guard !FolioCancellation.matches(error), AppEnvironment.isInteractive else { return }
         NSAlert(error: error).runModal()
     }
 
@@ -390,7 +400,8 @@ import UniformTypeIdentifiers
     /// Finish original-file writes before the existing session/termination checks run.
     func finishPendingSaves() async -> Bool {
         guard ResearchDraftRegistry.shared.flush(storage:storage) else { present(FolioError(message:"研究整理草稿未能保存，请处理后再关闭")); return false }
-        do { try await library.flushReflections() } catch { present(error); return false }
+        await importLegacyReadingRecords()
+        do { try await journal.flush(); try await library.flushReflections() } catch { present(error); return false }
         for workspace in tabs.compactMap(\.workspace) { await workspace.unloadWorker?.value }
         for workspace in tabs.compactMap(\.workspace) where workspace.count > 0 && (workspace.dirty || workspace.saving || workspace.hasPrivateReadingData) {
             if !(await workspace.finishPendingSave()) { select(workspace.id); return false }
@@ -449,7 +460,10 @@ import UniformTypeIdentifiers
             showTaskCenter = true
             return false
         }
-        if board.dirty, board.hasContent, !board.confirmClose() { return false }
+        if board.dirty, board.hasContent {
+            if readingMode { do { try board.writeBackup() } catch { present(error); return false } }
+            else if !board.confirmClose() { return false }
+        }
         for tab in tabs {
             switch tab {
             case .document(let workspace):

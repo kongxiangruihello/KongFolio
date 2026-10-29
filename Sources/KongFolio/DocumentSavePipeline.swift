@@ -102,7 +102,7 @@ extension Workspace {
         } catch {
             if error is SnapshotOutdated { status = "正在继续编辑，稍后保存最新修改"; scheduleDirectSave() }
             else if error is FileConflict { saveConflict = true; status = error.localizedDescription }
-            else if !(error is CancellationError) { self.error = error.localizedDescription }
+            else if !(error is CancellationError) { self.recordError(error) }
             return false
         }
     }
