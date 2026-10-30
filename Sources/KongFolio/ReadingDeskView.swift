@@ -11,19 +11,20 @@ struct ReadingDeskView: View {
     @State private var recent = false
     @State private var removed = false
     @State private var page = 0
+    @AppStorage("readingRecordsPageSize") private var pageSize = 10
     private var path:String? { store.commandWorkspace?.readingJournalPath }
     private var matches:[ReadingRecord] {
         journal.state.records.filter {
-            ($0.removed != nil) == removed && (section == .search || (section == .notes ? $0.kind == .note : $0.kind != .note)) &&
+            $0.hasContent && ($0.removed != nil) == removed && (section == .search || (section == .notes ? $0.kind == .note : $0.kind != .note)) &&
             $0.matches(query,book:section == .search || !bookOnly ? nil : path,tag:tag,after:recent ? Date().addingTimeInterval(-7*86400) : nil)
         }.sorted { $0.modified == $1.modified ? $0.id.uuidString < $1.id.uuidString : $0.modified > $1.modified }
     }
     private var hits:[ReadingDeskHit] {
         var values = matches.map { ReadingDeskHit.record($0) }
-        if section == .search { values += journal.state.essays.filter { ($0.removed != nil) == removed && $0.matches(query) && (tag.isEmpty || $0.tags.contains(tag)) && (!recent || $0.modified >= Date().addingTimeInterval(-7*86400)) }.map { ReadingDeskHit.essay($0) } }
-        return values.sorted { $0.date > $1.date }
+        if section == .search { values += journal.state.essays.filter { $0.hasContent && ($0.removed != nil) == removed && $0.matches(query) && (tag.isEmpty || $0.tags.contains(tag)) && (!recent || $0.modified >= Date().addingTimeInterval(-7*86400)) }.map { ReadingDeskHit.essay($0) } }
+        return values.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date }
     }
-    private var lastPage:Int { max(0,(hits.count-1)/30) }
+    private var pagination: ReadingPagination { ReadingPagination(total: hits.count, page: page, size: pageSize) }
     var body:some View {
         VStack(alignment:.leading,spacing:8) {
             HStack {
@@ -44,6 +45,9 @@ struct ReadingDeskView: View {
         }.padding(compact ? 10 : 18)
         .onChange(of:query) { _,_ in page = 0 }.onChange(of:tag) { _,_ in page = 0 }.onChange(of:path) { _,_ in page = 0 }
         .onChange(of:section) { _,_ in page = 0 }
+        .onChange(of:bookOnly) { _,_ in page = 0 }.onChange(of:recent) { _,_ in page = 0 }.onChange(of:removed) { _,_ in page = 0 }
+        .onChange(of:pageSize) { _,_ in page = 0 }.onChange(of:hits.count) { _,_ in page = pagination.index }
+        .onChange(of:journal.draftRecord?.id) { _,id in if id != nil { page = 0; query = ""; tag = ""; removed = false; recent = false } }
     }
     private var records:some View {
         VStack(alignment:.leading,spacing:8) {
@@ -57,7 +61,7 @@ struct ReadingDeskView: View {
                 Toggle("最近移除",isOn:$removed).font(.caption)
             }
             if section == .notes { Menu("新建笔记") { Button("当前页笔记") { store.newReadingNote() }; Button("整本书心得") { store.newReadingNote(bookWide:true) }; if let current = journal.record(store.readingRecordID) { Button("关联这条摘录的笔记") { store.newReadingNote(linked:current) } } }.disabled(journal.unreadable) }
-            List { ForEach(Array(hits.dropFirst(min(page,lastPage)*30).prefix(30))) { hit in
+            List { ForEach(Array(hits.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { hit in
                 switch hit {
                 case .record(let record): row(record)
                 case .essay(let essay): Button { journal.selectEssay(essay.id); section = .essays } label: { Label(essay.title+" · 札记",systemImage:"doc.text").lineLimit(2).help(essay.title) }.buttonStyle(.plain)
@@ -65,12 +69,8 @@ struct ReadingDeskView: View {
             } }
                 .frame(minHeight:100,maxHeight:store.readingRecordID == nil ? .infinity : 180)
                 .overlay { if hits.isEmpty { Text("这里保存你的摘录、笔记和札记").font(.caption).foregroundStyle(.secondary) } }
-            HStack {
-                Text("\(hits.count) 条").font(.caption); Spacer()
-                Button { page = max(0,page-1) } label:{ Image(systemName:"chevron.left") }.disabled(page == 0).help("上一页记录")
-                Text("\(min(page,lastPage)+1)/\(lastPage+1)").font(.caption)
-                Button { page += 1 } label:{ Image(systemName:"chevron.right") }.disabled(page >= lastPage).help("下一页记录")
-            }
+            ReadingPageControls(pagination: pagination, page: $page, size: $pageSize)
+            if let draft = journal.draftRecord, draft.id == store.readingRecordID { Text("空白笔记草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary) }
             if let record = journal.record(store.readingRecordID) { ReadingRecordDetail(store:store,journal:journal,record:record).id(record.id).disabled(journal.unreadable) }
         }
     }
@@ -122,11 +122,12 @@ struct ReadingRecordDetail: View {
                 }
                 if current.citations.count > 20 { Text("另有来源页，导出时一并保留").font(.caption) }
                 HStack {
-                    Button("加入札记") { let id = journal.state.currentEssay ?? journal.newEssay(); journal.insert(current,in:id); store.openReadingDesk(.essays,window:true) }
+                    Button("加入札记") { let id = journal.currentEssayID ?? journal.newEssay(); journal.insert(current,in:id); store.openReadingDesk(.essays,window:true) }
                     Button("导出这条记录") { store.readingRecordSelection = [record.id]; store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) }
-                }
+                }.disabled(journal.draftRecord?.id == record.id || !current.hasContent)
                 if current.kind != .note { Button("针对摘录写笔记") { store.newReadingNote(linked:current) } }
-                if current.removed != nil { Button("恢复记录") { journal.editRecord(record.id) { $0.removed = nil } } }
+                if journal.draftRecord?.id == record.id { Button("关闭空白草稿") { journal.discardNoteDraft(); store.readingRecordID = nil } }
+                else if current.removed != nil { Button("恢复记录") { journal.editRecord(record.id) { $0.removed = nil } } }
                 else { Button("移到最近移除") { journal.editRecord(record.id) { $0.removed = Date() }; store.readingRecordID = nil; store.readingRecordSelection.remove(record.id) } }
             }
         }.onDisappear { imageOCR.cancel() }.sheet(isPresented:$showLinkPicker) {
@@ -227,15 +228,18 @@ struct ReadingRecordPicker: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var page = 0
-    private var records:[ReadingRecord] { journal.state.records.filter{$0.kind != .note && $0.removed == nil && $0.matches(query)}.sorted{$0.modified > $1.modified} }
-    private var lastPage:Int { max(0,(records.count-1)/30) }
+    @AppStorage("readingRecordsPageSize") private var pageSize = 10
+    private var records:[ReadingRecord] { journal.state.records.filter{$0.hasContent && $0.kind != .note && $0.removed == nil && $0.matches(query)}.sorted{$0.modified == $1.modified ? $0.id.uuidString < $1.id.uuidString : $0.modified > $1.modified} }
+    private var pagination: ReadingPagination { ReadingPagination(total: records.count, page: page, size: pageSize) }
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
             Text("选择要关联的摘录").font(.headline); TextField("查找摘录或书名",text:$query)
-            List(Array(records.dropFirst(min(page,lastPage)*30).prefix(30))) { record in
+            List(Array(records.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { record in
                 HStack { VStack(alignment:.leading) { Text(record.displayTitle).lineLimit(2); Text(record.citations.map(\.display).joined(separator:" · ")).font(.caption).lineLimit(1) }; Spacer(); Button("关联") { choose(record); dismiss() } }
             }
-            HStack { Button("关闭") { dismiss() }; Spacer(); Button("上一页") { page = max(0,page-1) }.disabled(page == 0); Text("\(min(page,lastPage)+1)/\(lastPage+1)"); Button("下一页") { page += 1 }.disabled(page >= lastPage) }
+            ReadingPageControls(pagination: pagination, page: $page, size: $pageSize)
+            Button("关闭") { dismiss() }
         }.padding(18).adaptiveSheet(width:700,height:520,minimumWidth:360).onChange(of:query) { _,_ in page = 0 }
+        .onChange(of:pageSize) { _,_ in page = 0 }.onChange(of:records.count) { _,_ in page = pagination.index }
     }
 }

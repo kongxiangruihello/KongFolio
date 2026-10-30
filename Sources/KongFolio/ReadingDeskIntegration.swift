@@ -37,13 +37,13 @@ extension WorkspaceStore {
         let citation = commandWorkspace.flatMap { $0.count > 0 ? $0.readingCitation() : nil }
         let refs = linked?.citations ?? citation.map { [$0] } ?? []
         let record = ReadingRecord(kind:.note,title:bookWide ? "整本书心得" : "",quote:linked?.quote ?? "",citations:refs,linkedRecords:linked.map { [$0.id] } ?? [],wholeBook:bookWide)
-        journal.add(record); readingRecordID = record.id; openReadingDesk(.notes)
+        journal.beginNote(record); readingRecordID = record.id; openReadingDesk(.notes)
     }
     func importLegacyReadingRecords() async {
         await journal.importLegacy(cards:board.cards,books:library.books+(library.catalog.pendingBooks ?? []),topics:research.state.topics ?? [],annotations:research.state.annotations)
     }
     func restoreReadingRecord(for workspace:Workspace) {
-        guard readingMode, let path = workspace.readingJournalPath, let id = journal.state.lastNotes[path], let record = journal.record(id), record.removed == nil else { return }
+        guard readingMode, let path = workspace.readingJournalPath, let id = journal.state.lastNotes[path], let record = journal.record(id), record.removed == nil, record.hasContent else { return }
         readingRecordID = id; readingDeskSection = record.kind == .note ? .notes : .excerpts
     }
     func newReadingEssay() { _ = journal.newEssay(); openReadingDesk(.essays,window:true) }
