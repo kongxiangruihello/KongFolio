@@ -4,8 +4,7 @@ import KongFolioUpdateKit
 #endif
 
 enum AppUpdateInstaller {
-    // AppKit's terminateLater runs a nested event loop. Start it outside a Swift task,
-    // so the delegate's asynchronous save task can acquire the main actor.
+    // Let the current UI action finish before requesting the final approved exit.
     @MainActor static func deferTermination(_ action: @escaping @MainActor () -> Void) { DispatchQueue.main.async { action() } }
     static func prepare(_ file: URL, release: AppUpdateRelease, target: URL, expectedIdentifier: String, resultURL: URL, parentLaunchDate: Date?) throws -> UpdateInstallJob {
         try UpdateInstallCore.writableTarget(target)
@@ -48,8 +47,11 @@ enum AppUpdateInstaller {
     static func acknowledgeLaunch() {
         let arguments = CommandLine.arguments
         guard let index = arguments.firstIndex(of: "--kongfolio-update-job"), index+1 < arguments.count,
-              let job = try? UpdateInstallJob.load(URL(fileURLWithPath: arguments[index+1])),
-              Bundle.main.bundleURL.standardizedFileURL.resolvingSymlinksInPath() == job.target.standardizedFileURL.resolvingSymlinksInPath(),
+              let job = try? UpdateInstallJob.load(URL(fileURLWithPath: arguments[index+1])) else { return }
+        let details = ["actualPath": Bundle.main.bundleURL.path, "expectedPath": job.target.path, "actualVersion": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "", "expectedVersion": job.incoming.version, "actualIdentifier": Bundle.main.bundleIdentifier ?? ""]
+        let diagnostic = job.work.appendingPathComponent("launch-check.json")
+        if let data = try? JSONSerialization.data(withJSONObject: details) { try? data.write(to: diagnostic, options: .atomic); try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: diagnostic.path) }
+        guard Bundle.main.bundleURL.standardizedFileURL.resolvingSymlinksInPath() == job.target.standardizedFileURL.resolvingSymlinksInPath(),
               Bundle.main.bundleIdentifier == job.incoming.identifier,
               Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String == job.incoming.version else { return }
         try? job.signal(job.startedFile)

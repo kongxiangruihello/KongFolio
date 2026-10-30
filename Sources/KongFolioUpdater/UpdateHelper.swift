@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 import KongFolioUpdateKit
 
 @MainActor private final class UpdateLaunchReply {
@@ -58,6 +59,7 @@ import KongFolioUpdateKit
             bar.doubleValue = 4; status.stringValue = "更新完成，已重新打开。上一版本已保留。"; busy = false
             try? await Task.sleep(nanoseconds: 1_500_000_000); NSApp.terminate(nil)
         } catch {
+            NSLog("KongFolio update failed before completion: %@", String(describing: error as NSError))
             if let transaction {
                 let applications = NSWorkspace.shared.runningApplications.filter { !$0.isTerminated && $0.bundleURL?.standardizedFileURL.resolvingSymlinksInPath() == job.target.standardizedFileURL.resolvingSymlinksInPath() }
                 if !applications.isEmpty {
@@ -80,6 +82,11 @@ import KongFolioUpdateKit
         }
     }
     private func launch(_ url: URL, arguments: [String] = []) async throws -> NSRunningApplication {
+        // The bundle at this path has just been atomically exchanged. Refresh both
+        // its URL resource identity and Launch Services' cached app registration.
+        let url = URL(fileURLWithPath: url.path, isDirectory: true)
+        let registration = LSRegisterURL(url as CFURL, true)
+        guard registration == noErr else { throw UpdateInstallFailure("系统未能登记更新后的应用，可使用手动安装") }
         let configuration = NSWorkspace.OpenConfiguration(); configuration.activates = true; configuration.createsNewApplicationInstance = true; configuration.addsToRecentItems = false; configuration.arguments = arguments
         let reply = UpdateLaunchReply()
         NSWorkspace.shared.openApplication(at: url, configuration: configuration) { application, error in

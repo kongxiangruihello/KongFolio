@@ -22,7 +22,7 @@ import KongFolioUpdateKit
                 .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
                 .frame(minWidth: 380, minHeight: 300)
                 .background(WindowAccessor { window in delegate.attach(window) })
-                .onAppear { delegate.store = store; store.bootstrap() }
+                .onAppear { delegate.store = store; store.bootstrap(); AppUpdateInstaller.acknowledgeLaunch() }
                 .onOpenURL { url in delegate.externalDocuments.receive([url]) }
         }
         .handlesExternalEvents(matching: ["*"])
