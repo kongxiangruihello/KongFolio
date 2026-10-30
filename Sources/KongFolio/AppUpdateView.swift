@@ -46,6 +46,6 @@ struct AppUpdateView: View {
             window.contentView = NSHostingView(rootView: AppUpdateView(controller: controller, returnToReading: { [weak window] in window?.close() })); window.center(); self.window = window
         }
         window?.makeKeyAndOrderFront(nil)
-        if controller.phase == .idle { controller.check() }
+        controller.check()
     }
 }
