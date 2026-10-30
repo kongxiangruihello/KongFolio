@@ -190,6 +190,7 @@ struct WindowAccessor: NSViewRepresentable {
     private weak var window: NSWindow?
     private weak var approvedWindow: NSWindow?
     private var closeTaskRunning = false
+    private var terminationApproved = false
     private var pendingUpdate: (UpdateInstallJob, (Error?) -> Void)?
 
     func installAndRestart(_ job: UpdateInstallJob, completion: @escaping (Error?) -> Void) throws {
@@ -216,10 +217,11 @@ struct WindowAccessor: NSViewRepresentable {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if terminationApproved { return .terminateNow }
         guard !closeTaskRunning else { return .terminateCancel }
         closeTaskRunning = true
         Task { [weak self] in
-            guard let self else { sender.reply(toApplicationShouldTerminate: false); return }
+            guard let self else { return }
             let saved = await self.store?.finishPendingSaves() ?? true
             var approved = saved && self.store?.prepareToClose() != false
             if let (job, completion) = self.pendingUpdate {
@@ -230,9 +232,14 @@ struct WindowAccessor: NSViewRepresentable {
             }
             if approved, let store = self.store { StartupProtection(storage:store.storage).clean() }
             self.closeTaskRunning = false
-            sender.reply(toApplicationShouldTerminate: approved)
+            if approved {
+                self.terminationApproved = true
+                AppUpdateInstaller.deferTermination { sender.terminate(nil) }
+            }
         }
-        return .terminateLater
+        // Return to the ordinary event loop while asynchronous saves run. AppKit's
+        // terminateLater loop can stop main-queue tasks requested by an update.
+        return .terminateCancel
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
