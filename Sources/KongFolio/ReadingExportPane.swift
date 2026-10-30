@@ -9,10 +9,10 @@ struct ReadingExportPane: View {
     @State private var scope = Scope.selected
     @State private var format = ReadingRecordExport.Format.word
     private var snapshot:ReadingExportSnapshot {
-        if scope == .essay, let essay = journal.essay(journal.state.currentEssay) { return ReadingExportSnapshot(title:essay.title,essay:essay) }
+        if scope == .essay, let essay = journal.essay(journal.currentEssayID), journal.draftEssay?.id != essay.id, essay.hasContent { return ReadingExportSnapshot(title:essay.title,essay:essay) }
         let ids = store.readingRecordSelection.isEmpty ? Set(store.readingRecordID.map { [$0] } ?? []) : store.readingRecordSelection
         let records = journal.state.records.filter { record in
-            record.removed == nil && (scope == .selected ? ids.contains(record.id) : (scope == .book && record.citations.contains{$0.source.path == store.commandWorkspace?.readingJournalPath}))
+            record.hasContent && record.removed == nil && (scope == .selected ? ids.contains(record.id) : (scope == .book && record.citations.contains{$0.source.path == store.commandWorkspace?.readingJournalPath}))
         }.sorted { $0.created < $1.created }
         return ReadingExportSnapshot(title:scope == .book ? (store.commandWorkspace?.title ?? "阅读记录")+" · 阅读笔记" : "摘录与笔记",records:records)
     }

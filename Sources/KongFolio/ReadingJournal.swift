@@ -21,6 +21,10 @@ struct ReadingRecord: Codable, Identifiable, Equatable {
     var modified = Date()
     var removed: Date?
     var wholeBook = false
+    var hasContent: Bool {
+        let heading = wholeBook && title == "整本书心得" ? "" : title
+        return [heading, quote, note].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || imageAsset != nil || !linkedRecords.isEmpty || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
     var displayTitle: String {
         if !title.isEmpty { return title }
         let text = kind == .note ? note : quote
@@ -48,6 +52,9 @@ struct ReadingEssay: Codable, Identifiable, Equatable {
     var created = Date()
     var modified = Date()
     var removed: Date?
+    var hasContent: Bool {
+        (!title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && title != "未命名札记") || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || blocks.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.record?.hasContent == true }
+    }
     func matches(_ query:String) -> Bool {
         if query.isEmpty { return true }
         let paragraphs = blocks.map { block -> String in
@@ -100,6 +107,9 @@ actor ReadingJournalWriter {
 }
 @MainActor final class ReadingJournal: ObservableObject {
     @Published private(set) var state = ReadingJournalState()
+    // Empty editors are transient. Only meaningful input promotes them into the catalog.
+    @Published private(set) var draftRecord: ReadingRecord?
+    @Published private(set) var draftEssay: ReadingEssay?
     @Published private(set) var error: String?
     @Published private(set) var saving = false
     @Published private(set) var dirty = false
@@ -118,10 +128,14 @@ actor ReadingJournalWriter {
         do { let value = try JSONDecoder().decode(ReadingJournalState.self,from:Data(contentsOf:file)); try value.validate(); state = value }
         catch { unreadable = true; self.error = "阅读记录未能读取，原记录保留：" + error.localizedDescription }
     }
-    func record(_ id:UUID?) -> ReadingRecord? { state.records.first { $0.id == id } }
-    func essay(_ id:UUID?) -> ReadingEssay? { state.essays.first { $0.id == id } }
+    func record(_ id:UUID?) -> ReadingRecord? { if let draftRecord, draftRecord.id == id { return draftRecord }; return state.records.first { $0.id == id } }
+    func essay(_ id:UUID?) -> ReadingEssay? { if let draftEssay, draftEssay.id == id { return draftEssay }; return state.essays.first { $0.id == id } }
+    var currentEssayID: UUID? { draftEssay?.id ?? state.currentEssay }
+    func beginNote(_ record: ReadingRecord) { guard !unreadable else { return }; draftRecord = record }
+    func discardNoteDraft() { draftRecord = nil }
+    func discardEssayDraft() { draftEssay = nil }
     func assetURL(_ name:String) -> URL { folder.appendingPathComponent("Assets").appendingPathComponent(name) }
-    var saveStatus:String { error ?? (saving ? "正在保存记录…" : (dirty ? "等待保存…" : "记录已自动保存")) }
+    var saveStatus:String { error ?? (saving ? "正在保存记录…" : (dirty ? "等待保存…" : (draftRecord != nil || draftEssay != nil ? "空白草稿：输入内容后自动保存，不计入记录" : "记录已自动保存"))) }
     func change(_ operation:(inout ReadingJournalState)->Void) {
         guard !unreadable else { return }
         operation(&state); revision += 1; dirty = true
@@ -134,6 +148,8 @@ actor ReadingJournalWriter {
         guard !unreadable else { return record.id }
         var record = record
         if let image { let name = OCRPageCache.digest(image)+".png"; pendingAssets[name] = image; record.imageAsset = name }
+        if record.kind == .note && !record.hasContent { beginNote(record); return record.id }
+        if draftRecord?.id == record.id { draftRecord = nil }
         change { value in
             if let index = value.records.firstIndex(where:{$0.id == record.id}) { value.records[index] = record } else { value.records.append(record) }
             for citation in record.citations { value.lastNotes[citation.source.path] = record.id }
@@ -141,19 +157,38 @@ actor ReadingJournalWriter {
         return record.id
     }
     func editRecord(_ id:UUID,_ edit:(inout ReadingRecord)->Void) {
+        guard !unreadable else { return }
+        if var draft = draftRecord, draft.id == id {
+            edit(&draft); draft.modified = Date(); draftRecord = draft
+            if draft.hasContent { add(draft) }
+            return
+        }
         guard let i = state.records.firstIndex(where:{$0.id == id}) else { return }
         change { value in edit(&value.records[i]); value.records[i].modified = Date(); for citation in value.records[i].citations { value.lastNotes[citation.source.path] = id } }
     }
     @discardableResult func newEssay(title:String = "未命名札记") -> UUID {
         let essay = ReadingEssay(title:title)
+        guard !unreadable else { return essay.id }
+        if !essay.hasContent { draftEssay = essay; return essay.id }
+        draftEssay = nil
         change { $0.essays.append(essay); $0.currentEssay = essay.id }; return essay.id
     }
     func editEssay(_ id:UUID,_ edit:(inout ReadingEssay)->Void) {
+        guard !unreadable else { return }
+        if var draft = draftEssay, draft.id == id {
+            edit(&draft); draft.modified = Date(); draftEssay = draft
+            if draft.hasContent { draftEssay = nil; change { $0.essays.append(draft); $0.currentEssay = id } }
+            return
+        }
         guard let i = state.essays.firstIndex(where:{$0.id == id}) else { return }
         change { value in edit(&value.essays[i]); value.essays[i].modified = Date() }
     }
     func insert(_ record:ReadingRecord,in essay:UUID) { editEssay(essay) { $0.blocks.append(ReadingEssay.Block(record:record)) } }
-    func selectEssay(_ id:UUID) { guard state.currentEssay != id else { return }; change { $0.currentEssay = id } }
+    func selectEssay(_ id:UUID) {
+        guard draftEssay?.id != id, state.essays.contains(where: { $0.id == id }) else { return }
+        draftEssay = nil
+        guard state.currentEssay != id else { return }; change { $0.currentEssay = id }
+    }
     func relink(old:String,to url:URL,recordID:UUID? = nil) {
         let newPath = ReadingProgress.canonicalPath(url.path)
         func update(_ record:inout ReadingRecord) {
