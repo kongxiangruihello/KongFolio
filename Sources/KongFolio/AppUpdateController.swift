@@ -1,20 +1,26 @@
 import AppKit
+#if canImport(KongFolioUpdateKit)
+import KongFolioUpdateKit
+#endif
 
 @MainActor final class AppUpdateController: ObservableObject {
-    enum Phase: Equatable { case idle, checking, available, current, downloading, verifying, ready, opened, cancelled, failed }
+    enum Phase: Equatable { case idle, checking, available, current, downloading, verifying, ready, opened, cancelled, failed, preparingInstall, installing }
     @Published private(set) var phase = Phase.idle
     @Published private(set) var release: AppUpdateRelease?
     @Published private(set) var progress = AppUpdateProgress(received: 0, expected: 0)
     @Published private(set) var message = "点击“检查更新”获取最新正式版本。"
     @Published private(set) var file: URL?
+    @Published private(set) var installationResult: UpdateInstallResult?
     let current: AppUpdateVersion
     private let transport: any AppUpdateTransport
     private let folder: URL
     private var generation = UUID()
     private var job: Task<Void, Never>?
     init(current: AppUpdateVersion, folder: URL = FileManager.default.temporaryDirectory.appendingPathComponent("KongFolio-Updates", isDirectory: true), transport: any AppUpdateTransport = AppUpdateNetwork()) { self.current = current; self.folder = folder; self.transport = transport }
-    var busy: Bool { [.checking, .downloading, .verifying].contains(phase) }
+    var busy: Bool { [.checking, .downloading, .verifying, .preparingInstall, .installing].contains(phase) }
     var canDownload: Bool { release.map { $0.version > current } == true && !busy && file == nil }
+    var canInstall: Bool { release.map { $0.version > current } == true && !busy && file != nil }
+    func loadInstallationResult(_ url: URL) { if let data = try? Data(contentsOf: url), data.count < 128*1024 { installationResult = try? JSONDecoder().decode(UpdateInstallResult.self, from: data) } }
     func check() {
         guard !busy else { return }
         job?.cancel(); generation = UUID(); let token = generation
@@ -51,7 +57,7 @@ import AppKit
                 try Task.checkCancellation()
                 guard self.generation == token else { try? FileManager.default.removeItem(at: directory); return }
                 self.file = file; self.progress = AppUpdateProgress(received: release.size, expected: release.size)
-                self.phase = .ready; self.message = "安装包已下载并通过校验，可以打开安装。"
+                self.phase = .ready; self.message = "安装包已下载并通过校验，可以在线安装并重新打开。"
             } catch {
                 try? FileManager.default.removeItem(at: directory)
                 self?.complete(error, token: token)
@@ -59,9 +65,25 @@ import AppKit
         }
     }
     func cancel() {
-        guard busy else { return }
+        guard busy, phase != .installing else { return }
         generation = UUID(); job?.cancel(); job = nil
         phase = .cancelled; message = "已取消，可重新检查或下载。"
+    }
+    func install(target: URL, expectedIdentifier: String, resultURL: URL, parentLaunchDate: Date?, handoff: @escaping @MainActor (UpdateInstallJob, @escaping (Error?) -> Void) throws -> Void) {
+        guard canInstall, let file, let release else { return }
+        generation = UUID(); let token = generation; phase = .preparingInstall; message = "正在准备在线安装，阅读记录将在退出前保存…"
+        job = Task { [weak self] in
+            do {
+                let worker = Task.detached(priority: .userInitiated) { try AppUpdateInstaller.prepare(file, release: release, target: target, expectedIdentifier: expectedIdentifier, resultURL: resultURL, parentLaunchDate: parentLaunchDate) }
+                let prepared = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() }); try Task.checkCancellation()
+                guard let self, self.generation == token else { return }
+                self.phase = .installing; self.message = "正在保存阅读记录并交给安装组件，请稍候…"
+                try handoff(prepared) { [weak self] error in
+                    guard let self, self.generation == token, let error else { return }
+                    self.phase = .ready; self.message = error.localizedDescription
+                }
+            } catch { self?.complete(error, token: token) }
+        }
     }
     func openInstaller() {
         guard let file, let release, !busy else { return }

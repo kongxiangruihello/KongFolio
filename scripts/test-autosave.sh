@@ -9,5 +9,6 @@ for file in "$ROOT"/Sources/KongFolio/*.swift; do
   if grep -qE '^(@main|struct [A-Za-z]+: View|struct [A-Za-z]+: NSViewRepresentable)' "$file"; then continue; fi
   SOURCES+=("$file")
 done
+for file in "$ROOT"/Sources/KongFolioUpdateKit/*.swift; do SOURCES+=("$file"); done
 swiftc -swift-version 5 -parse-as-library "${SOURCES[@]}" "$ROOT/Tests/Manual/AutosaveRunner.swift" -o "$ROOT/.build/autosave/KongFolioAutosaveRunner"
 "$ROOT/.build/autosave/KongFolioAutosaveRunner"

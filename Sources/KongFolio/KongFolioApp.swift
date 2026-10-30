@@ -1,5 +1,8 @@
 import SwiftUI
 import AppKit
+#if canImport(KongFolioUpdateKit)
+import KongFolioUpdateKit
+#endif
 
 @main struct KongFolioApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
@@ -181,13 +184,22 @@ struct WindowAccessor: NSViewRepresentable {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    static weak var current: AppDelegate?
     let externalDocuments = ExternalDocumentRouter()
     weak var store: WorkspaceStore? { didSet { if let store { externalDocuments.attach(store) } } }
     private weak var window: NSWindow?
     private weak var approvedWindow: NSWindow?
     private var closeTaskRunning = false
+    private var pendingUpdate: (UpdateInstallJob, (Error?) -> Void)?
+
+    func installAndRestart(_ job: UpdateInstallJob, completion: @escaping (Error?) -> Void) throws {
+        guard !closeTaskRunning, pendingUpdate == nil else { throw UpdateInstallFailure("正在保存或关闭文档，请稍后再安装") }
+        pendingUpdate = (job, completion); NSApp.terminate(nil)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.current = self
+        AppUpdateInstaller.acknowledgeLaunch()
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         if UserDefaults.standard.bool(forKey: TooltipDiagnostics.key) { TooltipDiagnostics.shared.start() }
@@ -205,7 +217,13 @@ struct WindowAccessor: NSViewRepresentable {
         Task { [weak self] in
             guard let self else { sender.reply(toApplicationShouldTerminate: false); return }
             let saved = await self.store?.finishPendingSaves() ?? true
-            let approved = saved && self.store?.prepareToClose() != false
+            var approved = saved && self.store?.prepareToClose() != false
+            if let (job, completion) = self.pendingUpdate {
+                if approved {
+                    do { try await AppUpdateInstaller.launchHelper(job) } catch { approved = false; completion(error) }
+                } else { completion(UpdateInstallFailure("安装已取消，记录与原程序已保留，可稍后再试")) }
+                self.pendingUpdate = nil
+            }
             if approved, let store = self.store { StartupProtection(storage:store.storage).clean() }
             self.closeTaskRunning = false
             sender.reply(toApplicationShouldTerminate: approved)

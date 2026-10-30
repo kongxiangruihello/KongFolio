@@ -1,3 +1,3 @@
 // swift-tools-version: 5.9
 import PackageDescription
-let package = Package(name: "KongFolio", platforms: [.macOS(.v14)], products: [.executable(name: "KongFolio", targets: ["KongFolio"])], targets: [.executableTarget(name: "KongFolio"), .testTarget(name: "KongFolioTests", dependencies: ["KongFolio"]), .testTarget(name: "KongFolioUITests", dependencies: ["KongFolio"])])
+let package = Package(name: "KongFolio", platforms: [.macOS(.v14)], products: [.executable(name: "KongFolio", targets: ["KongFolio"]), .executable(name: "KongFolioUpdater", targets: ["KongFolioUpdater"])], targets: [.target(name: "KongFolioUpdateKit"), .executableTarget(name: "KongFolio", dependencies: ["KongFolioUpdateKit"]), .executableTarget(name: "KongFolioUpdater", dependencies: ["KongFolioUpdateKit"]), .testTarget(name: "KongFolioTests", dependencies: ["KongFolio", "KongFolioUpdateKit"]), .testTarget(name: "KongFolioUITests", dependencies: ["KongFolio"])])
