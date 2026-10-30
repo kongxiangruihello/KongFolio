@@ -4,6 +4,9 @@ import KongFolioUpdateKit
 #endif
 
 enum AppUpdateInstaller {
+    // AppKit's terminateLater runs a nested event loop. Start it outside a Swift task,
+    // so the delegate's asynchronous save task can acquire the main actor.
+    @MainActor static func deferTermination(_ action: @escaping @MainActor () -> Void) { DispatchQueue.main.async { action() } }
     static func prepare(_ file: URL, release: AppUpdateRelease, target: URL, expectedIdentifier: String, resultURL: URL, parentLaunchDate: Date?) throws -> UpdateInstallJob {
         try UpdateInstallCore.writableTarget(target)
         try AppUpdateValidation.verify(file, release: release); try Task.checkCancellation()

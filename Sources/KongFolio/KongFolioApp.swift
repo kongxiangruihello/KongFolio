@@ -194,7 +194,11 @@ struct WindowAccessor: NSViewRepresentable {
 
     func installAndRestart(_ job: UpdateInstallJob, completion: @escaping (Error?) -> Void) throws {
         guard !closeTaskRunning, pendingUpdate == nil else { throw UpdateInstallFailure("正在保存或关闭文档，请稍后再安装") }
-        pendingUpdate = (job, completion); NSApp.terminate(nil)
+        pendingUpdate = (job, completion)
+        AppUpdateInstaller.deferTermination { [weak self] in
+            guard self?.pendingUpdate?.0.id == job.id else { return }
+            NSApp.terminate(nil)
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

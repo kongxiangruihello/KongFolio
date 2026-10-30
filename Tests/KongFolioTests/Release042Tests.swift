@@ -74,6 +74,13 @@ final class Release042Tests: XCTestCase {
         let model = AppUpdateController(current: AppUpdateVersion("0.44.0")!, folder: try folder(), transport: Update042Fixture(release: release(), data: bytes()))
         model.check(); try await wait(model); XCTAssertEqual(model.phase, .current); XCTAssertFalse(model.canDownload)
     }
+    @MainActor func testTerminationHandoffRunsOutsideTheCallingSwiftTask() async throws {
+        var invoked = false, insideTask = true
+        AppUpdateInstaller.deferTermination { withUnsafeCurrentTask { insideTask = $0 != nil }; invoked = true }
+        XCTAssertFalse(invoked)
+        for _ in 0..<200 { if invoked { break }; try await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertTrue(invoked); XCTAssertFalse(insideTask, "AppKit terminateLater must not hold a Swift task's main actor while waiting for the save task")
+    }
     @MainActor func testOfflineCheckCanBeRetriedWithoutAnApplicationErrorDialog() async throws {
         let model = AppUpdateController(current: AppUpdateVersion("0.42.0")!, folder: try folder(), transport: Update042OfflineCheck(release: release()))
         model.check(); try await wait(model); XCTAssertEqual(model.phase, .failed); XCTAssertNil(model.file)
