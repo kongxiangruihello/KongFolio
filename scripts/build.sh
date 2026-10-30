@@ -12,7 +12,10 @@ STAGING="$(mktemp -d "${TMPDIR:-/tmp}/kongfolio-package.XXXXXX")"
 trap 'rm -rf "$STAGING"' EXIT
 APP="$STAGING/KongFolio.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/Helpers"
 cp "$BIN/KongFolio" "$APP/Contents/MacOS/KongFolio"
+cp "$BIN/KongFolioUpdater" "$APP/Contents/Helpers/KongFolioUpdater"
+codesign --force --sign - --identifier com.kongfolio.updater "$APP/Contents/Helpers/KongFolioUpdater"
 cp "$ROOT/Info.plist" "$APP/Contents/Info.plist"
 # A bundle without localization folders gets English standard menus (File, Edit, View…) even on a Chinese system.
 for language in zh-Hans en; do

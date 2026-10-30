@@ -49,6 +49,7 @@ for file in "$ROOT"/Sources/KongFolio/*.swift; do
   if grep -qE '^(@main|struct [A-Za-z]+: View|struct [A-Za-z]+: NSViewRepresentable)' "$file"; then continue; fi
   SOURCES+=("$file")
 done
+for file in "$ROOT"/Sources/KongFolioUpdateKit/*.swift; do SOURCES+=("$file"); done
 swiftc -swift-version 5 -parse-as-library "${SOURCES[@]}" "$ROOT/.build/smoke/Runner.swift" -o "$ROOT/.build/smoke/KongFolioTests"
 "$ROOT/.build/smoke/KongFolioTests"
 # Keep the existing CI entry point while checking timed autosave in a separate non-XCTest process.

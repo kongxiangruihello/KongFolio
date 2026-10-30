@@ -9,14 +9,14 @@
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string>KongFolio</string>
 			<key>CFBundleTypeName</key>
 			<string>KongFolio 阅读快捷方式</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
-			<key>CFBundleTypeIconFile</key>
-			<string>KongFolio</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>com.kongfolio.reading-shortcut</string>
@@ -99,7 +99,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.41.0</string>
+	<string>0.42.0</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -112,7 +112,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>43</string>
+	<string>44</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
@@ -137,16 +137,16 @@
 			</dict>
 		</dict>
 		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.kongfolio.reading-shortcut</string>
-			<key>UTTypeDescription</key>
-			<string>KongFolio 阅读快捷方式</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
 			</array>
+			<key>UTTypeDescription</key>
+			<string>KongFolio 阅读快捷方式</string>
 			<key>UTTypeIconFile</key>
 			<string>KongFolio</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.kongfolio.reading-shortcut</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
