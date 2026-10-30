@@ -14,7 +14,7 @@ struct ReadingPageControls: View {
             HStack {
                 Button { page = pagination.index - 1 } label: { Label("上一页", systemImage: "chevron.left") }.disabled(pagination.index == 0)
                 Spacer()
-                Text(pagination.label).font(.caption).accessibilityLabel("记录页码")
+                Text(pagination.label).font(.caption).accessibilityLabel("记录页码").accessibilityValue(pagination.label)
                 Spacer()
                 Button { page = pagination.index + 1 } label: { Label("下一页", systemImage: "chevron.right") }.disabled(pagination.index >= pagination.last)
             }

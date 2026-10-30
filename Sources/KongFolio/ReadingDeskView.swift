@@ -70,7 +70,7 @@ struct ReadingDeskView: View {
                 .frame(minHeight:100,maxHeight:store.readingRecordID == nil ? .infinity : 180)
                 .overlay { if hits.isEmpty { Text("这里保存你的摘录、笔记和札记").font(.caption).foregroundStyle(.secondary) } }
             ReadingPageControls(pagination: pagination, page: $page, size: $pageSize)
-            if journal.draftRecord?.id == store.readingRecordID { Text("空白笔记草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary) }
+            if let draft = journal.draftRecord, draft.id == store.readingRecordID { Text("空白笔记草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary) }
             if let record = journal.record(store.readingRecordID) { ReadingRecordDetail(store:store,journal:journal,record:record).id(record.id).disabled(journal.unreadable) }
         }
     }
