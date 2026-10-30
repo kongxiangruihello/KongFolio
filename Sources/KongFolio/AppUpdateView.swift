@@ -2,9 +2,10 @@ import SwiftUI
 
 struct AppUpdateView: View {
     @ObservedObject var controller: AppUpdateController
+    var returnToReading: () -> Void = {}
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Image(systemName: "arrow.down.app").font(.largeTitle).foregroundStyle(Brand.accent); VStack(alignment: .leading) { Text("KongFolio 更新").font(.title2.bold()); Text("当前版本 "+controller.current.description).foregroundStyle(.secondary) }; Spacer() }
+            HStack { Image(systemName: "arrow.down.app").font(.largeTitle).foregroundStyle(Brand.accent); VStack(alignment: .leading) { Text("KongFolio 更新").font(.title2.bold()); Text("当前版本 "+controller.current.description).foregroundStyle(.secondary) }; Spacer(); Button("返回阅读", action: returnToReading).keyboardShortcut(.cancelAction) }
             Text(controller.message).textSelection(.enabled).accessibilityLabel("更新状态").accessibilityValue(controller.message)
             if controller.phase == .downloading {
                 ProgressView(value: controller.progress.fraction).accessibilityLabel("更新下载进度")
@@ -41,8 +42,8 @@ struct AppUpdateView: View {
     func show() {
         if window == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 500), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-            window.title = "检查 KongFolio 更新"; window.identifier = NSUserInterfaceItemIdentifier("kongfolio-update"); window.minSize = NSSize(width: 500, height: 390); window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: AppUpdateView(controller: controller)); window.center(); self.window = window
+            window.title = "检查 KongFolio 更新"; window.identifier = NSUserInterfaceItemIdentifier("kongfolio-update"); window.contentMinSize = NSSize(width: 500, height: 390); window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: AppUpdateView(controller: controller, returnToReading: { [weak window] in window?.close() })); window.center(); self.window = window
         }
         window?.makeKeyAndOrderFront(nil)
         if controller.phase == .idle { controller.check() }
