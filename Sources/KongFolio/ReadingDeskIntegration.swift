@@ -2,7 +2,7 @@ import Foundation
 import PDFKit
 import AppKit
 
-enum ReadingDeskSection:String,CaseIterable { case excerpts = "摘录", notes = "笔记", essays = "札记", search = "查找记录", exports = "导出" }
+enum ReadingDeskSection:String,CaseIterable { case excerpts = "摘录", notes = "笔记", essays = "札记", search = "全部资料", exports = "导出" }
 extension Workspace {
     var readingJournalPath:String? {
         guard let path = displayPath else { return nil }

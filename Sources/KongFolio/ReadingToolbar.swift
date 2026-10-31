@@ -12,13 +12,13 @@ struct ReadingToolbar: View {
                 VStack(alignment:.leading,spacing:2) { if width > 650 { Text("KongFolio").font(.headline) }; Text(workspace.displayName).lineLimit(1).truncationMode(.middle).help(workspace.displayName+(workspace.displayPath.map{"\n"+$0} ?? "")) }.frame(minWidth:20,maxWidth:200,alignment:.leading)
                 NewFileIcons(store:store)
                 Spacer(minLength:0)
-                if width >= 1050 { actions }
+                if width >= 1200 { actions }
                 Button { workspace.open() } label:{Image(systemName:"folder")}.help("打开 PDF 文献")
                 Button { workspace.showAnnotationBar.toggle() } label:{Image(systemName:"pencil.tip.crop.circle")}.disabled(workspace.count == 0).help("标注工具")
                 Button { workspace.showTools = true } label:{Image(systemName:"square.grid.2x2")}.help("快捷工具：OCR、页面整理与转换")
                 Menu {
                     Button("个人书架（手动维护）") { store.showReadingHistory = true }
-                    Button("查找摘录、笔记与札记") { store.openReadingDesk(.search,window:true) }
+                    Button("阅读资料库：管理摘录、笔记与札记") { store.openReadingDesk(.search,window:true) }
                     Button("阅读组、备份与史料辅助工具") { store.showResearch = true }
                     Button("完整 PDF 工具界面") { store.readingMode = false }
                     Button(store.showReadingDesk ? "收起阅读记录侧栏" : "显示阅读记录侧栏") { store.showReadingDesk.toggle() }
@@ -27,11 +27,12 @@ struct ReadingToolbar: View {
                     Button("检查更新…") { AppUpdateWindow.shared.show() }
                 } label:{Image(systemName:"ellipsis.circle")}.menuIndicator(.hidden).menuStyle(.borderlessButton).frame(width:24).help("更多阅读与辅助工具")
             }
-            if width < 1050 { actions.frame(maxWidth:.infinity,alignment:.leading) }
+            if width < 1200 { actions.frame(maxWidth:.infinity,alignment:.leading) }
         }.padding(.horizontal,12).padding(.vertical,10)
     }
     private var actions:some View {
         HStack(spacing:10) {
+            Button { store.openReadingDesk(.search,window:true) } label:{Label("资料库",systemImage:"books.vertical.fill")}.help("统一新增、编辑、查找和删除摘录、笔记与札记")
             Menu {
                 Button("摘录选中文字") { workspace.excerptSelection() }
                 Button("框选图片摘录") { workspace.tool = .region; workspace.showAnnotationBar = true }

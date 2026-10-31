@@ -17,7 +17,7 @@ struct ReadingDeskView: View {
         journal.state.records.filter {
             $0.hasContent && ($0.removed != nil) == removed && (section == .search || (section == .notes ? $0.kind == .note : $0.kind != .note)) &&
             $0.matches(query,book:section == .search || !bookOnly ? nil : path,tag:tag,after:recent ? Date().addingTimeInterval(-7*86400) : nil)
-        }.sorted { $0.modified == $1.modified ? $0.id.uuidString < $1.id.uuidString : $0.modified > $1.modified }
+        }.sorted { $0.created == $1.created ? $0.id.uuidString < $1.id.uuidString : $0.created > $1.created }
     }
     private var hits:[ReadingDeskHit] {
         var values = matches.map { ReadingDeskHit.record($0) }
@@ -28,12 +28,13 @@ struct ReadingDeskView: View {
     var body:some View {
         VStack(alignment:.leading,spacing:8) {
             HStack {
-                Text("阅读记录").font(.headline)
+                Text(section == .search ? "阅读资料库" : "阅读记录").font(.headline)
                 Spacer()
                 if compact { Button { store.openReadingDesk(section,window:true) } label:{Image(systemName:"arrow.up.left.and.arrow.down.right")}.help("在独立窗口中打开阅读记录") }
             }
             Picker("记录类型",selection:$section) { ForEach(ReadingDeskSection.allCases,id:\.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.menu)
             if section == .exports { ReadingExportPane(store:store,journal:journal) }
+            else if section == .search { ReadingLibraryView(store:store,journal:journal,section:$section) }
             else if section == .essays { ReadingEssayPane(store:store,journal:journal) }
             else { records }
             Divider()
@@ -98,10 +99,10 @@ struct ReadingRecordDetail: View {
     var body:some View {
         ScrollView {
             VStack(alignment:.leading,spacing:10) {
-                TextField("记录标题（可留空）",text:binding(\.title))
+                StableTextField("记录标题（可留空）",text:binding(\.title))
                 if current.kind != .note {
                     HStack { Text("摘录原文").font(.caption); Spacer(); Button(editQuote ? "完成文字校正" : "校正摘录文字") { editQuote.toggle() } }
-                    if editQuote { TextEditor(text:binding(\.quote)).frame(height:100).border(.quaternary) }
+                    if editQuote { StableTextEditor(text:binding(\.quote),label:"摘录原文").frame(height:100).border(.quaternary) }
                     else if !current.quote.isEmpty { Text(current.quote).textSelection(.enabled) }
                 }
                 if current.kind == .note && !current.quote.isEmpty { Text("关联原文").font(.caption); Text(current.quote).textSelection(.enabled) }
@@ -109,8 +110,8 @@ struct ReadingRecordDetail: View {
                 if current.kind == .image { imageRecognition }
                 if current.kind == .note { Button("关联更多摘录…") { showLinkPicker = true } }
                 Text(current.kind == .note ? "我的笔记" : "我的理解与评论").font(.caption)
-                TextEditor(text:binding(\.note)).frame(minHeight:120).border(.quaternary).accessibilityLabel("阅读笔记正文")
-                TextField("标签，以逗号分隔",text:Binding(get:{current.tags.joined(separator:", ")},set:{ text in journal.editRecord(record.id) { $0.tags = Self.tags(text) } }))
+                StableTextEditor(text:binding(\.note),label:"阅读笔记正文").frame(minHeight:120).border(.quaternary).accessibilityLabel("阅读笔记正文")
+                StableTextField("标签，以逗号分隔",text:Binding(get:{current.tags.joined(separator:", ")},set:{ text in journal.editRecord(record.id) { $0.tags = Self.tags(text) } }))
                 ForEach(Array(current.citations.prefix(20).enumerated()),id:\.offset) { _,citation in
                     VStack(alignment:.leading) {
                         Text(current.wholeBook ? "《"+citation.title+"》 · 整本书" : citation.display).font(.caption).textSelection(.enabled)
@@ -130,7 +131,7 @@ struct ReadingRecordDetail: View {
                 else if current.removed != nil { Button("恢复记录") { journal.editRecord(record.id) { $0.removed = nil } } }
                 else { Button("移到最近移除") { journal.editRecord(record.id) { $0.removed = Date() }; store.readingRecordID = nil; store.readingRecordSelection.remove(record.id) } }
             }
-        }.onDisappear { imageOCR.cancel() }.sheet(isPresented:$showLinkPicker) {
+        }.onAppear { if journal.draftRecord?.id == record.id && record.kind != .note { editQuote = true } }.onDisappear { imageOCR.cancel() }.sheet(isPresented:$showLinkPicker) {
             ReadingRecordPicker(journal:journal) { other in
                 journal.editRecord(record.id) { value in
                     guard !value.linkedRecords.contains(other.id) else { return }
@@ -208,7 +209,7 @@ struct ReadingDeskWindowView: View {
     init(store:WorkspaceStore,section:ReadingDeskSection) {
         session = ReadingDeskSession(section)
         let window = NSWindow(contentRect:NSRect(x:0,y:0,width:940,height:760),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
-        window.title = "摘录、笔记与札记"; window.identifier = NSUserInterfaceItemIdentifier("reading-desk")
+        window.title = "阅读资料库 · 摘录、笔记与札记"; window.identifier = NSUserInterfaceItemIdentifier("reading-desk")
         window.minSize = NSSize(width:600,height:460); window.isReleasedWhenClosed = false
         super.init(window:window); window.delegate = self
         window.contentView = NSHostingView(rootView:ReadingDeskWindowView(store:store,session:session))
@@ -220,7 +221,7 @@ struct ReadingDeskWindowView: View {
 private enum ReadingDeskHit:Identifiable {
     case record(ReadingRecord),essay(ReadingEssay)
     var id:String { switch self { case .record(let value): return "record:"+value.id.uuidString; case .essay(let value): return "essay:"+value.id.uuidString } }
-    var date:Date { switch self { case .record(let value): return value.modified; case .essay(let value): return value.modified } }
+    var date:Date { switch self { case .record(let value): return value.created; case .essay(let value): return value.created } }
 }
 struct ReadingRecordPicker: View {
     @ObservedObject var journal:ReadingJournal

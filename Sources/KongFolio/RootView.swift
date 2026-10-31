@@ -64,7 +64,7 @@ struct TabBar: View {
             }
             Button { store.showReadingHistory = true } label: { Image(systemName: "books.vertical") }
                 .buttonStyle(.borderless).frame(width: 28).help("个人书架、阅读记录与书籍快捷方式")
-            Button { store.openReadingDesk(.search,window:true) } label: { Image(systemName: "note.text") }.buttonStyle(.borderless).help("查找自己的摘录、笔记与札记")
+            Button { store.openReadingDesk(.search,window:true) } label: { Label("资料库",systemImage: "books.vertical.fill") }.buttonStyle(.bordered).help("阅读资料库：统一新增、编辑、查找、删除摘录、笔记与札记")
             DocumentTaskButton(queue: store.documentTasks, store: store)
             Menu {
                 ForEach(store.tabs) { tab in
