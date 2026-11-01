@@ -19,6 +19,7 @@ struct PDFCanvas: NSViewRepresentable {
             context.coordinator.resetPosition()
         }
         workspace.pdfView = view
+        if workspace.readingLocked { view.hideSelectionToolbar() }
         view.workspace = workspace
         let replaced = view.document !== workspace.document
         let display: PDFDisplayMode
@@ -223,7 +224,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             default: break
             }
         }
-        if let workspace, workspace.showAnnotationBar, event.modifierFlags.intersection([.command, .option, .control]).isEmpty {
+        if let workspace, !workspace.readingLocked, workspace.showAnnotationBar, event.modifierFlags.intersection([.command, .option, .control]).isEmpty {
             if event.keyCode == 53 { workspace.selectTool(.select); return }
             if [51, 117].contains(event.keyCode), workspace.selectedAnnotation != nil { workspace.deleteAnnotation(); return }
             if let key = event.charactersIgnoringModifiers, key.count == 1, let match = AnnotationShortcuts.tool(for: key) {
@@ -235,6 +236,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        if workspace?.readingLocked == true { return nil }
         let menu = super.menu(for: event) ?? NSMenu()
         let location = convert(event.locationInWindow, from: nil)
         if let page = page(for: location, nearest: false), let workspace {
@@ -284,7 +286,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     /// Shows the marking buttons next to the selected text once the mouse is released.
     private func showSelectionToolbar() {
         hideSelectionToolbar()
-        guard let workspace, workspace.tool == .select, let selected = currentSelection,
+        guard let workspace, !workspace.readingLocked, workspace.tool == .select, let selected = currentSelection,
               !(selected.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let page = selected.pages.last else { return }
         let area = convert(selected.bounds(for: page), from: page)
@@ -340,6 +342,10 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         if let workspace { workspace.store?.focus(workspace) }
         guard let workspace, !workspace.busy else { super.mouseDown(with: event); return }
         let location = convert(event.locationInWindow, from: nil)
+        if workspace.readingLocked,workspace.tool != .region {
+            if let page = page(for:location,nearest:false),let hit = page.annotation(at:convert(location,to:page)),["Widget","FreeText","Text"].contains(hit.type ?? "") { return }
+            super.mouseDown(with:event);return
+        }
         // Double-clicking a signature placed in this session picks it up to move or resize it.
         if event.clickCount == 2, placement == nil, workspace.tool == .select || workspace.tool == .edit,
            let page = page(for: location, nearest: false),

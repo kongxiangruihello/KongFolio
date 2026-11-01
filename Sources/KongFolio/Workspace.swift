@@ -61,6 +61,7 @@ import UniformTypeIdentifiers
     @Published var rangeText = ""
     @Published var revision = UUID()
     @Published var title = "未命名文档"
+    @Published var readingLocked = false
     @Published var tool = AnnotationTool.select
     @Published var note = ""
     @Published var status = "所有处理均在本机完成"
@@ -1120,6 +1121,7 @@ import UniformTypeIdentifiers
     }
 
     func move(_ delta: Int) {
+        guard !readingLocked else { status = "请先切换到编辑模式";return }
         let selected = Set(effectivePages)
         guard !selected.isEmpty, (delta < 0 ? selected.min()! > 0 : selected.max()! < count - 1) else { return }
         var order = Array(0..<count)
@@ -1129,6 +1131,7 @@ import UniformTypeIdentifiers
     }
 
     func movePages(before target: Int, dragged: Int) {
+        guard !readingLocked else { status = "请先切换到编辑模式";return }
         guard (0...count).contains(target), (0..<count).contains(dragged) else { return }
         let moving = selectedPages.contains(dragged) ? effectivePages : [dragged]
         guard !moving.contains(target) else { return }
@@ -1141,6 +1144,7 @@ import UniformTypeIdentifiers
     }
 
     func duplicatePages() {
+        guard !readingLocked else { status = "请先切换到编辑模式";return }
         guard count > 0 else { return }
         let chosen = effectivePages
         let at = (chosen.last ?? selection) + 1
@@ -1151,6 +1155,7 @@ import UniformTypeIdentifiers
     }
 
     func remove() {
+        guard !readingLocked else { status = "请先切换到编辑模式";return }
         let chosen = Set(effectivePages)
         guard chosen.count < count else { error = "文档至少保留一页。"; return }
         let next = min(chosen.min() ?? 0, count - chosen.count - 1)
@@ -1159,6 +1164,7 @@ import UniformTypeIdentifiers
     }
 
     func rotate() {
+        guard !readingLocked else { status = "请先切换到编辑模式";return }
         guard count > 0 else { return }
         checkpoint()
         for i in effectivePages {
@@ -1223,6 +1229,7 @@ import UniformTypeIdentifiers
     /// With `annotate`, the new mark is selected so its note can be typed in the inspector.
     @discardableResult
     func mark(style: MarkupStyle, color: MarkupColor, note text: String = "", annotate: Bool = false) -> [PDFAnnotation] {
+        guard !readingLocked else { status = "请先切换到编辑模式";return [] }
         guard let selected = pdfView?.currentSelection, !(selected.string ?? "").isEmpty else { error = "请先在 PDF 中选中文字。扫描页需先 OCR。"; return [] }
         var added: [PDFAnnotation] = []
         for line in selected.selectionsByLine() {
@@ -1252,6 +1259,7 @@ import UniformTypeIdentifiers
     }
 
     func quick(_ item: QuickTool) {
+        guard !readingLocked else { status = "请先切换到编辑模式";return }
         showTools = false
         switch item {
         case .merge: open(insert: count > 0)

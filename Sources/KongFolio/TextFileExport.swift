@@ -6,7 +6,10 @@ import UniformTypeIdentifiers
 /// Exports the editor's current text, including edits that have not yet been saved.
 enum TextFileExport {
     static func writeWord(_ text: String, format: TextDocumentFormat, to destination: URL, baseURL: URL? = nil, options: TextLayoutOptions = TextLayoutOptions()) throws {
-        try RichTextWord.write(RichTextDocument(text, format: format, baseURL: baseURL, options: options), to: destination)
+        if format == .markdown,!EditorFootnotes.list(text).isEmpty {
+            let academic = try AcademicMarkup.parse(text)
+            try RichTextWord.write(RichTextDocument(academic.text,format:format,baseURL:baseURL,options:options),to:destination,academic:academic)
+        } else { try RichTextWord.write(RichTextDocument(text, format: format, baseURL: baseURL, options: options), to: destination) }
     }
 
 }
@@ -22,7 +25,7 @@ extension MarkdownNote {
         let panel = NSSavePanel(); panel.allowedContentTypes = [UTType(filenameExtension: "docx") ?? .data]
         panel.nameFieldStringValue = title + ".docx"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try TextFileExport.writeWord(try SourceLink.rebasedText(text, baseURL: fileURL?.deletingLastPathComponent() ?? recoveryBaseURL), format: format, to: url, baseURL: fileURL?.deletingLastPathComponent() ?? recoveryBaseURL, options: layoutOptions); status = "已导出可编辑的 Word 文档" }
+        do { try TextFileExport.writeWord(try SourceLink.rebasedText(textForExport, baseURL: fileURL?.deletingLastPathComponent() ?? recoveryBaseURL), format: format, to: url, baseURL: fileURL?.deletingLastPathComponent() ?? recoveryBaseURL, options: layoutOptions); status = "已导出可编辑的 Word 文档" }
         catch { self.error = "Word 导出失败：" + error.localizedDescription }
     }
 }

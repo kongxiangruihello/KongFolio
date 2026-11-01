@@ -22,6 +22,7 @@ struct WritingToolbar: View {
     @Environment(\.isEnabled) private var enabled
     @State private var showFind = false
     @State private var showCleanup = false
+    @State private var showReplacePreview = false
     @State private var query = ""
     @State private var replacement = ""
     @State private var confirmReplace = false
@@ -37,6 +38,7 @@ struct WritingToolbar: View {
                     Button { session.wrap("[","](https://)",placeholder:"链接文字") } label:{Image(systemName:"link")}.help("插入链接")
                     Button("清除格式") { session.clearFormatting() }
                     Button("查找替换") { showFind.toggle() }
+                    Button("逐项替换…") { showReplacePreview = true }
                     Button("整理粘贴…") { showCleanup = true }
                     Menu("文章大纲") { if session.analysis.headings.isEmpty { Text("使用标题后在这里跳转") };ForEach(session.analysis.headings) { h in Button(String(repeating:"　",count:max(0,h.level-1))+h.title) { session.go(h.range) } } }
                 }.buttonStyle(.borderless).font(.caption)
@@ -51,6 +53,7 @@ struct WritingToolbar: View {
         }
         .onChange(of:session.findRequest) { _,_ in showFind = true;queryFocused = true }
         .onChange(of:session.cleanupRequest) { _,_ in showCleanup = true }
+        .sheet(isPresented:$showReplacePreview) { EditorReplaceView(session:session) }
         .sheet(isPresented:$showCleanup) { WritingCleanupView(session:session) }
         .alert("替换全部匹配文字？",isPresented:$confirmReplace) {
             Button("取消",role:.cancel) {};Button("替换全部") { session.replace(query,with:replacement,all:true) }

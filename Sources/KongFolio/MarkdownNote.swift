@@ -21,6 +21,7 @@ struct TextEdit: Equatable {
         var layoutOptions: TextLayoutOptions? = nil
         var fileBaseline: FileBaseline? = nil
         var resourceBasePath: String? = nil
+        var baselineText: String? = nil
     }
 
     let id: UUID
@@ -34,6 +35,12 @@ struct TextEdit: Equatable {
     var restoringHistory = false
     var recoveryBaseURL: URL?
     var fileBaseline: FileBaseline?
+    var baselineText: String?
+    @Published var readOnly = false
+    @Published var editingTool: FileEditingTool?
+    @Published var followPreview = false
+    @Published var includeCorrections = true { didSet { refreshPreview() } }
+    weak var previewView: PDFView?
     @Published var saveConflict = false
     @Published var dirty = false
     @Published var showPreview = true
@@ -54,6 +61,7 @@ struct TextEdit: Equatable {
     init(id: UUID = UUID(), text: String = "", fileURL: URL? = nil, dirty: Bool = false, storage: URL? = nil, format: TextDocumentFormat? = nil) {
         self.id = id
         self.text = text
+        self.baselineText = fileURL == nil ? nil : text
         self.fileURL = fileURL
         self.fileBaseline = fileURL.flatMap { try? FileBaseline.capture($0) }
         self.format = format ?? fileURL.map { TextDocumentFormat.forURL($0) } ?? .markdown
@@ -89,7 +97,7 @@ struct TextEdit: Equatable {
             if !restoringHistory { try TextVersionHistory.protectExisting(url, storage: storage) }
             try prepared.write(to: $0, atomically: true, encoding: .utf8)
         }
-        fileBaseline = saved; saveConflict = false
+        fileBaseline = saved; baselineText = prepared; saveConflict = false
         fileURL = url
         text = prepared
         refreshPreview()
@@ -156,9 +164,9 @@ struct TextEdit: Equatable {
         do {
             let directory = storage.appendingPathComponent("Conflicts", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL.path, format: format, layoutOptions: layoutOptions, fileBaseline: fileBaseline, resourceBasePath: recoveryBaseURL?.path)).write(to: directory.appendingPathComponent(UUID().uuidString + ".json"), options: .atomic)
+            try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL.path, format: format, layoutOptions: layoutOptions, fileBaseline: fileBaseline, resourceBasePath: recoveryBaseURL?.path, baselineText: baselineText)).write(to: directory.appendingPathComponent(UUID().uuidString + ".json"), options: .atomic)
             let bytes = try Data(contentsOf: fileURL)
-            text = TextImport.normalized(try TextImport.decode(bytes)); fileBaseline = try FileBaseline.capture(fileURL, data: bytes)
+            text = TextImport.normalized(try TextImport.decode(bytes)); baselineText = text; fileBaseline = try FileBaseline.capture(fileURL, data: bytes)
             dirty = false; saveConflict = false; removeBackup(); status = "已载入外部版本；此前修改保存在应用的 Conflicts 文件夹"
         } catch { self.recordError(error) }
     }
@@ -169,7 +177,7 @@ struct TextEdit: Equatable {
 
     func writeBackup() throws {
         try FileManager.default.createDirectory(at: backupURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL?.path, format: format, layoutOptions: layoutOptions, fileBaseline: fileBaseline, resourceBasePath: recoveryBaseURL?.path)).write(to: backupURL, options: .atomic)
+        try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL?.path, format: format, layoutOptions: layoutOptions, fileBaseline: fileBaseline, resourceBasePath: recoveryBaseURL?.path, baselineText: baselineText)).write(to: backupURL, options: .atomic)
     }
 
     func removeBackup() {
@@ -195,6 +203,7 @@ struct TextEdit: Equatable {
             let note = MarkdownNote(id: backup.id, text: backup.text, fileURL: backup.path.map { URL(fileURLWithPath: $0) }, dirty: true, storage: storage, format: backup.format)
             if let options = backup.layoutOptions, options.valid { note.layoutOptions = options }
             note.fileBaseline = backup.fileBaseline
+            note.baselineText = backup.baselineText
             note.recoveryBaseURL = backup.resourceBasePath.map { URL(fileURLWithPath: $0) }
             note.status = "已恢复上次未保存的内容"
             return note
@@ -226,7 +235,7 @@ struct TextEdit: Equatable {
         previewTask = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: 400_000_000) } catch { return }
             guard !Task.isCancelled, let self else { return }
-            let text = self.text, format = self.format, options = self.layoutOptions
+            let text = self.textForExport, format = self.format, options = self.layoutOptions
             let base = self.fileURL?.deletingLastPathComponent() ?? self.recoveryBaseURL
             do {
                 let data = try await TextPreviewRenderer.render(text, format: format, base: base, options: options)
@@ -290,11 +299,8 @@ struct TextEdit: Equatable {
     }
 
     func apply(_ edit: TextEdit) {
-        guard let view = textView, !view.hasMarkedText(), view.shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
-        view.textStorage?.replaceCharacters(in: edit.range, with: edit.replacement)
-        view.didChangeText()
-        view.setSelectedRange(edit.selection)
-        view.window?.makeFirstResponder(view)
+        guard !readOnly, let view = textView, view.isEditable, !view.hasMarkedText() else { status = "请切换到编辑模式，并完成正在输入的文字";return }
+        WritingEdit.apply(edit,to:view)
     }
 
     func wrap(_ prefix: String, _ suffix: String, placeholder: String) {

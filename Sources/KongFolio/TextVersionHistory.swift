@@ -55,7 +55,7 @@ enum TextVersionHistory {
 extension MarkdownNote {
     var versionSnapshot: TextVersionSnapshot { TextVersionSnapshot(text: text, format: format, resourceBasePath: fileURL?.deletingLastPathComponent().path ?? recoveryBaseURL?.path) }
     @discardableResult func restoreTextVersion(_ entry: HistoryEntry) -> Bool {
-        guard let source = fileURL else { return false }
+        guard !readOnly,let source = fileURL else { return false }
         do {
             let archived = try TextVersionHistory.read(entry, source: source, storage: storage)
             // Retain current unsaved work and verify the original before making any change.

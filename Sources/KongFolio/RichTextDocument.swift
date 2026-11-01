@@ -28,6 +28,8 @@ struct RichTextDocument {
     init(_ text: String, format: TextDocumentFormat, baseURL: URL? = nil, options: TextLayoutOptions = TextLayoutOptions()) throws {
         guard options.valid else { throw FolioError(message: "排版设置无效") }
         self.options = options
+        let hidden = try! NSRegularExpression(pattern:#"<!--kongfolio-(?:correction:[A-Za-z0-9+/=]+|original-image:[^>]+|image:(?:start|end))-->"#)
+        let text = hidden.stringByReplacingMatches(in:text,range:NSRange(location:0,length:text.utf16.count),withTemplate:"")
         switch format {
         case .plain: blocks = try TextImport.normalized(text).components(separatedBy: "\n").map { line in try Task.checkCancellation(); return .paragraph(Self.styled(line.isEmpty ? " " : line, options: options, markdown: false), heading: 0) }
         case .markdown: blocks = try Self.markdown(text, baseURL: baseURL, options: options)
