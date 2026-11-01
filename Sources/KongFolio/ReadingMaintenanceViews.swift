@@ -95,6 +95,7 @@ struct ReadingBackupView: View {
                         }
                     }.frame(minHeight:80,maxHeight:170).padding(8).background(.quaternary)
                 }
+                if records.count == 1,let item = records.first { ReadingCompareView(journal:journal,backup:backup,item:item) { index,expected in run { try await journal.restoreParagraph(backup.id,item:item,index:index,expected:expected);message = "已恢复这一段；恢复前手动备份已保留";await refresh() } } }
                 Button("恢复所选 \(records.count) 条记录") { let id = backup.id, selection = records; run { try await journal.restoreBackup(id,ids:selection); message = "所选记录已恢复，其他记录保持不变；恢复前备份已保留"; await refresh() } }.disabled(records.isEmpty || busy || journal.unreadable)
             } else { Text(backups.isEmpty ? "暂无备份，记录保存后会自动建立每日备份。" : "请选择日期，预览后恢复单条或多条记录。").foregroundStyle(.secondary).frame(maxHeight:.infinity) }
             if !message.isEmpty { Text(message).font(.caption).textSelection(.enabled) }

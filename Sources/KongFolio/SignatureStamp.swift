@@ -134,28 +134,31 @@ final class SignatureLayer {
 extension Workspace {
     private var signaturesFile: URL { storage.appendingPathComponent("Signatures.json") }
 
-    private func storeSignatures(_ updated: [SignatureTemplate]) {
-        report {
-            try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
-            try JSONEncoder().encode(updated).write(to: signaturesFile, options: .atomic)
+    @discardableResult func updateSignatureLibrary(_ mutate:(inout [SignatureTemplate])->Void) -> Bool {
+        do {
+            var updated = try SignatureLibrary.read(storage:storage)
+            mutate(&updated)
+            try SignatureLibrary.write(updated,storage:storage)
             signatures = updated
-        }
+            for tab in store?.tabs ?? [] where tab.workspace?.storage.standardizedFileURL == storage.standardizedFileURL { tab.workspace?.signatures = updated }
+            return true
+        } catch { self.error = "签名尚未保存："+error.localizedDescription; return false }
     }
-
-    /// Saves an imported, processed signature in the library.
-    func addSignatureImage(_ image: CGImage, name: String? = nil) {
-        guard let png = SignatureImage.pngData(image) else { error = "无法保存这张签名图片。"; return }
-        let template = SignatureTemplate(name: name ?? "图片签名 \(signatures.filter { $0.image != nil }.count + 1)", pdf: Data(), image: png)
-        storeSignatures(signatures + [template])
-        status = "签名已保存在本机"
+    func refreshSignatureLibrary() {
+        do { signatures = try SignatureLibrary.read(storage:storage) }
+        catch { self.error = "签名库未能读取，原文件已保留："+error.localizedDescription }
     }
-
-    func renameSignature(_ id: UUID, to name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        storeSignatures(signatures.map { var t = $0; if t.id == id { t.name = trimmed }; return t })
+    /// Commit to disk before dismissing the import sheet. Every mutation merges the current shared library.
+    @discardableResult func addSignatureImage(_ image:CGImage,name:String? = nil) -> SignatureTemplate? {
+        guard let png = SignatureImage.pngData(image) else { error = "无法保存这张签名图片。"; return nil }
+        let template = SignatureTemplate(name:name ?? "图片签名",pdf:Data(),image:png)
+        guard updateSignatureLibrary({ $0.append(template) }) else { return nil }
+        status = "签名已保存在本机"; return template
     }
-
+    func renameSignature(_ id:UUID,to name:String) {
+        let trimmed = name.trimmingCharacters(in:.whitespacesAndNewlines); guard !trimmed.isEmpty else { return }
+        _ = updateSignatureLibrary { list in if let i = list.firstIndex(where:{$0.id == id}) { list[i].name = trimmed } }
+    }
     /// Shows the signature on the page; it is only written into the PDF by `confirmSignaturePlacement`.
     func beginPlacing(_ template: SignatureTemplate) {
         guard let data = template.image, let image = Self.decodePNG(data) else { insertSignature(template); return }

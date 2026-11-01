@@ -43,6 +43,8 @@ struct TextEdit: Equatable {
     @Published var status = ""
     var lastActive = Date()
     weak var textView: NSTextView?
+    let writingSession = WritingSession()
+    var characterCount:Int { text.reduce(0){$0+($1.isWhitespace ? 0 : 1)} }
     var pendingSearchRange: NSRange?
     private var previewTask: Task<Void, Never>?
     private var previewGeneration = UUID()
@@ -57,13 +59,14 @@ struct TextEdit: Equatable {
         self.format = format ?? fileURL.map { TextDocumentFormat.forURL($0) } ?? .markdown
         self.dirty = dirty
         self.storage = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
+        writingSession.analyze(text)
         if !text.isEmpty { refreshPreview() }
     }
 
     var title: String { fileURL?.deletingPathExtension().lastPathComponent ?? "未命名笔记" }
 
     /// Characters without whitespace, which is how Chinese text is usually counted.
-    var characterCount: Int { text.reduce(0) { $0 + ($1.isWhitespace ? 0 : 1) } }
+
 
     static func open(_ url: URL, storage: URL? = nil) throws -> MarkdownNote {
         let bytes = try Data(contentsOf: url)
@@ -203,6 +206,7 @@ struct TextEdit: Equatable {
     private func textChanged() {
         dirty = true
         scheduleBackup()
+        writingSession.analyze(text)
         refreshPreview()
     }
 

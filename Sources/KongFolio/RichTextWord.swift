@@ -3,7 +3,8 @@ import CoreText
 
 enum RichTextWord {
     static func attribute(_ value: String) -> String { WordExport.escape(value).replacingOccurrences(of: "\"", with: "&quot;").replacingOccurrences(of: "'", with: "&apos;") }
-    static func write(_ document: RichTextDocument, to destination: URL, academic: AcademicMarkup? = nil) throws {
+    static func write(_ document: RichTextDocument, to destination: URL, academic: AcademicMarkup? = nil,readingFootnotes:[String:String] = [:]) throws {
+        let noteParts = academic ?? (readingFootnotes.isEmpty ? nil : AcademicMarkup(text:"",footnotes:readingFootnotes,endnotes:[:],warnings:[]))
         var body = "", relationships = "", media: [(String, Data)] = [], linkNumber = 0
         var hasContent = false, hasChapter = false, pageJustMarked = false
         func paragraph(_ content: NSAttributedString, heading: Int = 0) -> String {
@@ -22,6 +23,9 @@ enum RichTextWord {
             if academic != nil, content.string.hasPrefix(":::caption ") { return WordExport.textParagraph(String(content.string.dropFirst(11)), style: "Caption", size: 20, centered: true) }
             var runs = ""
             content.enumerateAttributes(in: NSRange(location: 0, length: content.length)) { attributes, range, _ in
+                if let key = attributes[NSAttributedString.Key("KongFolioFootnote")] as? String,let index = readingFootnotes.keys.sorted().firstIndex(of:key) {
+                    runs += "<w:r><w:rPr><w:vertAlign w:val=\"superscript\"/></w:rPr><w:footnoteReference w:id=\"\(index+1)\"/></w:r>";return
+                }
                 var size = document.options.fontSize, bold = false, italic = false
                 if let value = attributes[TextImport.fontKey] {
                     let font = value as! CTFont; size = CTFontGetSize(font)
@@ -74,7 +78,7 @@ enum RichTextWord {
             }
         }
         var extraTypes = ""
-        if let academic {
+        if let academic = noteParts {
             for (end, empty) in [(false,academic.footnotes.isEmpty),(true,academic.endnotes.isEmpty)] where !empty {
                 let name = end ? "endnotes" : "footnotes"
                 extraTypes += "<Override PartName=\"/word/\(name).xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.\(name)+xml\"/>"
@@ -88,11 +92,11 @@ enum RichTextWord {
         let zip = try ZipWriter(url: temporary)
         do {
             try zip.add("[Content_Types].xml", Data(WordExport.contentTypes.replacingOccurrences(of: "</Types>", with: "<Default Extension=\"png\" ContentType=\"image/png\"/>" + extraTypes + "</Types>").utf8))
-            try zip.add("_rels/.rels", Data(WordExport.rootRelationships.utf8)); try zip.add("word/styles.xml", Data((academic == nil ? WordExport.styles : WordExport.styles.replacingOccurrences(of: "</w:styles>", with: "<w:style w:type=\"paragraph\" w:styleId=\"Caption\"><w:name w:val=\"caption\"/><w:basedOn w:val=\"Normal\"/><w:rPr><w:sz w:val=\"20\"/></w:rPr></w:style><w:style w:type=\"paragraph\" w:styleId=\"FootnoteText\"><w:name w:val=\"footnote text\"/><w:basedOn w:val=\"Normal\"/><w:rPr><w:sz w:val=\"20\"/></w:rPr></w:style><w:style w:type=\"paragraph\" w:styleId=\"EndnoteText\"><w:name w:val=\"endnote text\"/><w:basedOn w:val=\"Normal\"/><w:rPr><w:sz w:val=\"20\"/></w:rPr></w:style></w:styles>")).utf8))
+            try zip.add("_rels/.rels", Data(WordExport.rootRelationships.utf8)); try zip.add("word/styles.xml", Data((noteParts == nil ? WordExport.styles : WordExport.styles.replacingOccurrences(of: "</w:styles>", with: "<w:style w:type=\"paragraph\" w:styleId=\"Caption\"><w:name w:val=\"caption\"/><w:basedOn w:val=\"Normal\"/><w:rPr><w:sz w:val=\"20\"/></w:rPr></w:style><w:style w:type=\"paragraph\" w:styleId=\"FootnoteText\"><w:name w:val=\"footnote text\"/><w:basedOn w:val=\"Normal\"/><w:rPr><w:sz w:val=\"20\"/></w:rPr></w:style><w:style w:type=\"paragraph\" w:styleId=\"EndnoteText\"><w:name w:val=\"endnote text\"/><w:basedOn w:val=\"Normal\"/><w:rPr><w:sz w:val=\"20\"/></w:rPr></w:style></w:styles>")).utf8))
             try zip.add("word/document.xml", Data(xml.utf8))
             try zip.add("word/_rels/document.xml.rels", Data((WordExport.header + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>" + relationships + "</Relationships>").utf8))
             for (name, bytes) in media { try zip.add("word/media/" + name, bytes) }
-            if let academic {
+            if let academic = noteParts {
                 if !academic.footnotes.isEmpty { try zip.add("word/footnotes.xml", Data(academic.notesXML(end: false).utf8)) }
                 if !academic.endnotes.isEmpty { try zip.add("word/endnotes.xml", Data(academic.notesXML(end: true).utf8)) }
             }

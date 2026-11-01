@@ -33,13 +33,18 @@ import UniformTypeIdentifiers
     @Published private(set) var selectedID: UUID?
     static let readingModeKey = "KongFolio.focusedReadingMode"
     @Published var readingMode = true { didSet { readingDefaults.set(readingMode,forKey:Self.readingModeKey) } }
-    @Published var showReadingDesk = true
+    @Published var showReadingDesk = false
     @Published var readingDeskSection = ReadingDeskSection.excerpts
+    @Published var showQuickReadingNote = false
+    @Published var readingEssayBlockID:UUID?
     @Published var readingRecordID:UUID?
     @Published var readingRecordSelection = Set<UUID>()
     @Published var readingExportEssay = false
     @Published var readingDeskWindowRequest:UUID?
     lazy var journal = ReadingJournal(storage:storage)
+    lazy var readingExportBatch = ReadingExportBatch()
+    lazy var readingPackage = ReadingPackageController()
+    var readingLibraryExportSelection:Set<ReadingLibraryID> = []
     @Published var showResearch = false
     var startupSafetyEnabled = !AppEnvironment.isTestRun
     @Published var showStartupReview = false
@@ -136,7 +141,8 @@ import UniformTypeIdentifiers
         if let workspace = activeWorkspace { return workspace.count > 0 && !workspace.busy }
         return activeNote != nil
     }
-    var researchTextResponder: NSTextView? { NSApp?.keyWindow?.identifier?.rawValue == "research-workbench" ? NSApp?.keyWindow?.firstResponder as? NSTextView : nil }
+    static func textUndoResponder(in window:NSWindow?) -> NSTextView? { guard let view = window?.firstResponder as? NSTextView,view.isEditable,!view.hasMarkedText() else { return nil };return view }
+    var researchTextResponder:NSTextView? { Self.textUndoResponder(in:NSApp?.keyWindow) }
     var canUndo: Bool { if let text = researchTextResponder { return text.undoManager?.canUndo ?? false }; return commandWorkspace.map { $0.canUndo && !$0.busy } ?? (activeNote != nil) }
     var canRedo: Bool { if let text = researchTextResponder { return text.undoManager?.canRedo ?? false }; return commandWorkspace.map { $0.canRedo && !$0.busy } ?? (activeNote != nil) }
 
@@ -243,6 +249,7 @@ import UniformTypeIdentifiers
         if selectedID != id { activeWorkspace?.saveReadingRecord() }
         selectedID = id
         focusedID = id
+        tab.workspace?.refreshSignatureLibrary()
         forwarding = tab.changes.sink { [weak self] _ in self?.objectWillChange.send() }
         recordActivity("切换标签页")
         tab.workspace?.lastActive = Date()
@@ -399,6 +406,7 @@ import UniformTypeIdentifiers
     }
     /// Finish original-file writes before the existing session/termination checks run.
     func finishPendingSaves() async -> Bool {
+        await readingExportBatch.stopAndWait();await readingPackage.stopAndWait();WritingPositions.shared.flush()
         guard ResearchDraftRegistry.shared.flush(storage:storage) else { present(FolioError(message:"研究整理草稿未能保存，请处理后再关闭")); return false }
         await importLegacyReadingRecords()
         do { await journal.waitForMaintenance(); try await journal.flush(); try await library.flushReflections() } catch { present(error); return false }
@@ -416,6 +424,7 @@ import UniformTypeIdentifiers
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         switch tabs[index] {
         case .document(let workspace):
+            if workspace.isImporting { workspace.cancelImport() }
             guard !workspace.busy else { workspace.status = "请等待任务完成或点击取消任务"; return }
             if let pending = workspace.unloadWorker {
                 guard !closingTabs.contains(id) else { return }

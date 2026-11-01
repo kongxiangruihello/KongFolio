@@ -45,29 +45,41 @@ enum ImportServices {
     }
 }
 extension Workspace {
-    func startImport(_ urls: [URL], insert: Bool) {
+    /// Detach cancelled reads immediately; their eventual results must not mutate a reused tab.
+    func cancelImport() {
+        guard isImporting else { return }
+        importGeneration = UUID()
+        let cancel = cancelAuxiliary;cancelAuxiliary = nil;cancel?()
+        isImporting = false;busy = false;progress = 0;taskLabel = "";status = "已取消读取，可关闭或重试"
+    }
+    func startImport(_ urls:[URL],insert:Bool) {
         store?.recordActivity("准备打开文件")
-        if store?.startupSafetyEnabled == true { StartupProtection(storage: storage).opening(urls.first?.path) }
-        isImporting = true; busy = true; progress = 0; taskLabel = "读取文件…"
+        if store?.startupSafetyEnabled == true { StartupProtection(storage:storage).opening(urls.first?.path) }
+        let generation = UUID();importGeneration = generation
+        isImporting = true;busy = true;progress = 0;taskLabel = "读取文件…"
         let root = storage
-        let worker = Task.detached { () async throws -> (ImportPayload, PreparedReading?) in
-            try await CloudFilePreparation.prepare(urls) { phase in Task { @MainActor [weak self] in self?.taskLabel = phase } }
-            await MainActor.run { [weak self] in self?.taskLabel = "等候文件解析…" }
-            try await ImportLimiter.shared.acquire()
-            defer { Task { await ImportLimiter.shared.release() } }
-            await MainActor.run { [weak self] in self?.taskLabel = "正在解析文件…" }
+        let worker = Task.detached { () async throws -> (ImportPayload,PreparedReading?) in
+            try await CloudFilePreparation.prepare(urls) { phase in Task { @MainActor [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = phase } }
+            await MainActor.run { [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = "等候文件解析…" }
+            try await ImportLimiter.shared.acquire();defer { Task { await ImportLimiter.shared.release() } }
+            await MainActor.run { [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = "正在解析文件…" }
             let payload = try ImportServices.read(urls)
-            let reading: PreparedReading?
-            if !insert, urls.count == 1, urls[0].pathExtension.lowercased() == "pdf", case .documents(let bytes) = payload {
-                reading = try PreparedReading.read(urls[0], bytes: bytes[0], storage: root)
-            } else { reading = nil }
-            try Task.checkCancellation()
-            return (payload, reading)
-        }; cancelAuxiliary = { worker.cancel() }
+            let reading:PreparedReading?
+            if !insert,urls.count == 1,urls[0].pathExtension.lowercased() == "pdf",case .documents(let bytes) = payload { reading = try PreparedReading.read(urls[0],bytes:bytes[0],storage:root) } else { reading = nil }
+            try Task.checkCancellation();return (payload,reading)
+        }
+        cancelAuxiliary = { worker.cancel() }
         Task {
-            do { let (payload, reading) = try await worker.value; try Task.checkCancellation(); guard !worker.isCancelled else { throw CancellationError() }; isImporting = false; busy = false; cancelAuxiliary = nil; load(urls, insert: insert, prepared: payload, reading: reading) }
-            catch is CancellationError { isImporting = false; busy = false; cancelAuxiliary = nil; status = "已取消导入" }
-            catch { isImporting = false; busy = false; cancelAuxiliary = nil; self.recordError(error) }
+            do {
+                let (payload,reading) = try await worker.value;try Task.checkCancellation()
+                guard importGeneration == generation,!worker.isCancelled else { return }
+                isImporting = false;busy = false;cancelAuxiliary = nil
+                load(urls,insert:insert,prepared:payload,reading:reading)
+            } catch {
+                guard importGeneration == generation else { return }
+                isImporting = false;busy = false;cancelAuxiliary = nil
+                if FolioCancellation.matches(error) { status = "已取消导入" } else { recordError(error) }
+            }
         }
     }
 }

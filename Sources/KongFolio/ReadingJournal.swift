@@ -4,6 +4,7 @@ struct ReadingCitation: Codable, Equatable {
     var source: SourceRef
     var title: String
     var author = ""
+    var edition:String? = nil
     var display: String { (author.isEmpty ? "" : author + "：") + "《" + title + "》，" + source.pageDescription }
 }
 struct ReadingRecord: Codable, Identifiable, Equatable {
@@ -13,6 +14,8 @@ struct ReadingRecord: Codable, Identifiable, Equatable {
     var title = ""
     var quote = ""
     var note = ""
+    var originalQuote:String? = nil
+    var originalOCR:String? = nil
     var citations: [ReadingCitation] = []
     var linkedRecords: [UUID] = []
     var imageAsset: String?
@@ -128,6 +131,7 @@ actor ReadingJournalWriter {
     let folder: URL
     private let writer = ReadingJournalWriter()
     private var revision = 0
+    var revisionID:Int { revision }
     private var savedRevision = 0
     private var pendingAssets: [String:Data] = [:]
     private var timer: Task<Void,Never>?
@@ -197,7 +201,17 @@ actor ReadingJournalWriter {
         guard let i = state.essays.firstIndex(where:{$0.id == id}) else { return }
         change { value in edit(&value.essays[i]); value.essays[i].modified = Date() }
     }
-    func insert(_ record:ReadingRecord,in essay:UUID) { editEssay(essay) { $0.blocks.append(ReadingEssay.Block(record:record)) } }
+    @discardableResult func insert(_ record:ReadingRecord,in essay:UUID,after block:UUID? = nil,at selection:NSRange? = nil) -> UUID {
+        let id = UUID()
+        editEssay(essay) { value in
+            guard let block,let i = value.blocks.firstIndex(where:{$0.id == block}) else { value.blocks.append(ReadingEssay.Block(id:id,record:record));return }
+            let ns = value.blocks[i].text as NSString
+            let split = min(ns.length,selection.map{NSMaxRange(MarkdownNote.clamp($0,to:ns.length))} ?? ns.length)
+            let safe = split == ns.length ? split : ns.rangeOfComposedCharacterSequence(at:split).location
+            let tail = ns.substring(from:safe);value.blocks[i].text = ns.substring(to:safe)
+            value.blocks.insert(ReadingEssay.Block(id:id,text:tail,record:record),at:i+1)
+        };return id
+    }
     func selectEssay(_ id:UUID) {
         guard draftEssay?.id != id, state.essays.contains(where: { $0.id == id }) else { return }
         draftEssay = nil
@@ -326,5 +340,34 @@ struct ReadingJournalTransfer {
         var assets:[String:Data] = [:]
         for name in Set((state.records+state.essays.flatMap{$0.blocks.compactMap(\.record)}).compactMap(\.imageAsset)) { try Task.checkCancellation(); assets[name] = try Data(contentsOf:folder.appendingPathComponent("Assets").appendingPathComponent(name),options:.mappedIfSafe) }
         return Self(state:state,assets:assets)
+    }
+}
+
+extension ReadingEssay {
+    mutating func move(_ id:UUID,before destination:UUID) {
+        guard id != destination,let from = blocks.firstIndex(where:{$0.id == id}),blocks.contains(where:{$0.id == destination}) else { return }
+        let block = blocks.remove(at:from);if let to = blocks.firstIndex(where:{$0.id == destination}) { blocks.insert(block,at:to) }
+    }
+}
+
+extension ReadingJournal {
+    func restoreParagraph(_ backupID:String,item:ReadingLibraryID,index:Int,expected:ReadingJournalState) async throws {
+        guard state == expected,!restoring,!unreadable else { throw FolioError(message:"正文已变化，请刷新对照后恢复") }
+        restoring = true;defer { restoring = false }
+        let backup = try await Task.detached { try ReadingBackupStorage.read(backupID,folder:self.folder) }.value
+        let parts = ReadingVersionCompare.paragraphs(item,state:backup.state)
+        guard parts.indices.contains(index),state == expected else { throw FolioError(message:"段落已变化，请重新核对") }
+        _ = try await makeBackup()
+        guard state == expected else { throw FolioError(message:"正文已变化，请重新核对") }
+        let paragraph = parts[index]
+        switch item {
+        case .record(let id):
+            guard record(id)?.removed == nil,state.records.contains(where:{$0.id == id}) else { throw FolioError(message:"请先恢复完整记录") }
+            editRecord(id) { value in var current = value.note.components(separatedBy:"\n\n");if index<current.count { current[index] = paragraph } else { current.append(paragraph) };value.note = current.joined(separator:"\n\n") }
+        case .essay(let id):
+            guard let saved = backup.state.essays.first(where:{$0.id == id}),saved.blocks.indices.contains(index),let live = essay(id),live.removed == nil,let target = live.blocks.firstIndex(where:{$0.id == saved.blocks[index].id}) else { throw FolioError(message:"该段落已被移除，请使用完整记录恢复") }
+            editEssay(id) { $0.blocks[target].text = paragraph }
+        }
+        try await flush()
     }
 }

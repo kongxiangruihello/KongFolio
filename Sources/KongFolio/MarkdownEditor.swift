@@ -11,6 +11,7 @@ struct MarkdownEditorView: View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
                 toolbar
+                WritingToolbar(session:note.writingSession)
                 if note.saveConflict { SaveConflictBanner(copy: { note.save(asNew: true) }, reload: note.reloadAfterConflict) }
                 Divider()
                 TextEditorPreviewSplit(note:note)
@@ -18,7 +19,7 @@ struct MarkdownEditorView: View {
                 HStack {
                     Text(note.status.isEmpty ? (note.fileURL?.path ?? "尚未保存到文件") : note.status).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
-                    Text("\(note.characterCount) 字").lineLimit(1).fixedSize()
+                    WritingCharacterCount(session:note.writingSession).lineLimit(1).fixedSize()
                 }
                 .font(.caption).foregroundStyle(.secondary)
                 .padding(.horizontal, 16).padding(.vertical, 8)
@@ -89,6 +90,7 @@ struct MarkdownTextView: NSViewRepresentable {
         scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
         let view = NoteTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
         view.note = note
+        view.positionKey = note.fileURL.map{"text-file:"+ReadingProgress.canonicalPath($0.path)} ?? "markdown:"+note.id.uuidString; view.supportsMarkdownLists = note.format == .markdown;note.writingSession.view = view;view.writingSession = note.writingSession
         view.minSize = NSSize(width: 0, height: 400); view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         view.isVerticallyResizable = true; view.isHorizontallyResizable = false
         view.autoresizingMask = [.width]
@@ -107,12 +109,15 @@ struct MarkdownTextView: NSViewRepresentable {
         view.textContainerInset = NSSize(width: 14, height: 12)
         view.string = note.text
         note.textView = view
+        WritingPositions.shared.restore(view,key:view.positionKey)
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        guard let view = scroll.documentView as? NSTextView else { return }
+        guard let view = scroll.documentView as? NoteTextView else { return }
         note.textView = view
+        let nextKey = note.fileURL.map{"text-file:"+ReadingProgress.canonicalPath($0.path)} ?? "markdown:"+note.id.uuidString
+        if nextKey != view.positionKey { WritingPositions.shared.capture(view,key:view.positionKey);view.positionKey = nextKey;WritingRegistry.attach(view,key:nextKey);WritingPositions.shared.capture(view,key:nextKey) }
         view.minSize = NSSize(width: 0, height: max(1, scroll.contentSize.height))
         if view.frame.height < scroll.contentSize.height { view.setFrameSize(NSSize(width: scroll.contentSize.width, height: scroll.contentSize.height)) }
         // Only an outside change (such as a restored backup) differs from the view; typing already matches.
@@ -133,6 +138,7 @@ struct MarkdownTextView: NSViewRepresentable {
         let input: StableInputCoordinator
         init(note: MarkdownNote) { self.note = note; input = StableInputCoordinator(read:{note.text},write:{note.text = $0}) }
 
+        func textViewDidChangeSelection(_ notification:Notification) { if let view = notification.object as? ComposingTextView { WritingPositions.shared.capture(view,key:view.positionKey) } }
         func textDidChange(_ notification: Notification) {
             guard let view = notification.object as? NSTextView else { return }; commit(view)
         }

@@ -16,6 +16,7 @@ actor ReadingImageOCRWorker {
 @MainActor final class ReadingImageOCRController:ObservableObject {
     @Published var busy = false
     @Published var text = ""
+    @Published private(set) var originalText = ""
     @Published var message = ""
     private var task:Task<Void,Never>?
     private var generation = UUID()
@@ -27,7 +28,7 @@ actor ReadingImageOCRWorker {
             do {
                 let result = try await ReadingImageOCRWorker.shared.recognize(file:file,pending:pending,vertical:vertical)
                 guard !Task.isCancelled, let self, self.generation == token else { return }
-                self.text = result; self.busy = false; self.message = result.isEmpty ? "未识别到文字，可保留图片摘录" : "请核对后采用；原图与原 PDF 保留"
+                self.text = result; self.originalText = result; self.busy = false; self.message = result.isEmpty ? "未识别到文字，可保留图片摘录" : "请核对后采用；原图与原 PDF 保留"
             } catch { guard let self, self.generation == token else { return }; self.busy = false; self.message = FolioCancellation.matches(error) ? "已取消识别" : error.localizedDescription }
         }
     }

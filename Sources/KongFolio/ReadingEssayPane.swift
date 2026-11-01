@@ -7,7 +7,7 @@ struct ReadingEssayPane: View {
     @State private var page = 0
     @AppStorage("readingRecordsPageSize") private var pageSize = 10
     private var current:ReadingEssay? { journal.essay(journal.currentEssayID) }
-    private var essays:[ReadingEssay] { journal.state.essays.filter{$0.hasContent && $0.removed == nil && $0.matches(query)}.sorted{$0.created == $1.created ? $0.id.uuidString < $1.id.uuidString : $0.created > $1.created} }
+    @State private var essays:[ReadingEssay] = []
     private var pagination: ReadingPagination { ReadingPagination(total: essays.count, page: page, size: pageSize) }
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
@@ -19,6 +19,10 @@ struct ReadingEssayPane: View {
             ReadingPageControls(pagination:pagination,page:$page,size:$pageSize)
             if let essay = current { ReadingEssayDetail(store:store,journal:journal,id:essay.id).id(essay.id) }
             else { Spacer(); Text("把摘录与自己的思考写成一篇札记").foregroundStyle(.secondary); Spacer() }
+        }.task(id:ReadingSearchRequest(revision:journal.revisionID,query:query)) {
+            do { try await Task.sleep(nanoseconds:300_000_000) } catch { return }
+            let values = await ReadingSearchWorker.shared.essays(journal.state,query:query)
+            if !Task.isCancelled { essays = values }
         }.onChange(of:query) { _,_ in page = 0 }.onChange(of:pageSize) { _,_ in page = 0 }
         .onChange(of:essays.count) { _,_ in page = pagination.index }
         .onChange(of:journal.draftEssay?.id) { _,id in if id != nil { page = 0; query = "" } }

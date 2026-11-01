@@ -19,6 +19,7 @@ extension Workspace {
     }
     /// Existing documents save without confirmation. A new document asks for a destination only once.
     @discardableResult func saveDirectly(askForDestination: Bool = true) -> Bool {
+        if askForDestination,!commitPendingSignatureForSave() { return false }
         guard !busy, !saving, count > 0, placingSignature == nil else { return false }
         directSaveTask?.cancel()
         if projectURL != nil { return saveProject(background: false, automatic: !askForDestination) }

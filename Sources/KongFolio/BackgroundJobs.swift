@@ -295,6 +295,7 @@ extension Workspace {
     }
 
     func cancelJob() {
+        if isImporting { cancelImport();return }
         activeJob?.cancel()
         cancelAuxiliary?()
         taskLabel = "正在取消（完成当前页后停止）"

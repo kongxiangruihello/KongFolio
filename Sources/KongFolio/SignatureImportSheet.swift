@@ -104,10 +104,9 @@ struct SignatureImportSheet: View {
 
     private func save(place: Bool) {
         guard let processed else { return }
-        workspace.addSignatureImage(processed, name: name.trimmingCharacters(in: .whitespaces).isEmpty ? nil : name)
-        let saved = workspace.signatures.last
+        guard let saved = workspace.addSignatureImage(processed, name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : name) else { message = workspace.error ?? "保存失败，请重试"; workspace.error = nil; return }
         dismiss()
-        if place, let saved { workspace.beginPlacing(saved) }
+        if place { workspace.beginPlacing(saved) }
     }
 }
 

@@ -12,7 +12,7 @@ extension Workspace {
     func readingCitation(page index:Int? = nil,rects:[CGRect] = [],anchor:String? = nil) -> ReadingCitation {
         let i = index ?? selection
         let label = store?.research.displayLabel(path:displayPath ?? "",page:i,fallback:ReadingServices.pageLabel(document.page(at:i) ?? PDFPage(),index:i) ?? String(i+1))
-        return ReadingCitation(source:SourceRef(path:readingJournalPath ?? "",fileName:displayName,page:max(0,i),pageLabel:label,rects:rects,anchor:anchor),title:bibliography.title.isEmpty ? title : bibliography.title,author:bibliography.author)
+        return ReadingCitation(source:SourceRef(path:readingJournalPath ?? "",fileName:displayName,page:max(0,i),pageLabel:label,rects:rects,anchor:anchor),title:bibliography.title.isEmpty ? title : bibliography.title,author:bibliography.author,edition:bibliography.edition.isEmpty ? nil : bibliography.edition)
     }
     func captureReadingExcerpt(_ selection:PDFSelection) -> Bool {
         guard let store, store.readingMode else { return false }
@@ -47,4 +47,11 @@ extension WorkspaceStore {
         readingRecordID = id; readingDeskSection = record.kind == .note ? .notes : .excerpts
     }
     func newReadingEssay() { _ = journal.newEssay(); openReadingDesk(.essays,window:true) }
+}
+
+extension WorkspaceStore {
+    func insertReadingRecord(_ record:ReadingRecord,in essay:UUID) {
+        let key = readingEssayBlockID.map{"essay:"+essay.uuidString+":"+$0.uuidString} ?? ""
+        readingEssayBlockID = journal.insert(record,in:essay,after:readingEssayBlockID,at:WritingRegistry.selection(key))
+    }
 }
