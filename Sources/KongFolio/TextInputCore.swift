@@ -2,6 +2,9 @@ import AppKit
 
 /// Native text storage owns the composition, selection and undo stack; model echoes never replace it.
 class ComposingTextView: NSTextView {
+    private let editingHistory = UndoManager()
+    override var undoManager:UndoManager? { editingHistory }
+    func finishEditingSession() { committed = nil; delegate = nil; editingHistory.removeAllActions() }
     var committed: ((NSTextView) -> Void)?
     override func insertText(_ text: Any, replacementRange: NSRange) { super.insertText(text, replacementRange:replacementRange); if !hasMarkedText() { committed?(self) } }
     override func unmarkText() { super.unmarkText(); committed?(self) }
@@ -18,6 +21,9 @@ class ComposingTextView: NSTextView {
         let commonSuffix = min(suffix,min(oldLength-prefix,newLength-prefix))
         let oldEnd = oldLength-commonSuffix, newEnd = newLength-commonSuffix
         func mapped(_ offset:Int) -> Int { if offset <= prefix { return offset }; if offset >= oldEnd { return max(0,min(newLength,offset+newEnd-oldEnd)) }; return min(newEnd,prefix+offset-prefix) }
+        // An explicit outside replacement (restore/reload) invalidates old text ranges.
+        // Typing echoes and marked text return before this point and keep their undo history.
+        view.undoManager?.removeAllActions()
         view.string = value
         view.selectedRanges = selections.map { item in let r = item.rangeValue; let start = mapped(min(r.location,oldLength)), end = mapped(min(NSMaxRange(r),oldLength)); return NSValue(range:NSRange(location:start,length:max(0,end-start))) }
         if let origin, let scroll = view.enclosingScrollView { scroll.contentView.scroll(to:origin); scroll.reflectScrolledClipView(scroll.contentView) }

@@ -6,6 +6,7 @@ enum ReadingLibraryItem: Identifiable {
     var id:ReadingLibraryID { switch self { case .record(let r): .record(r.id); case .essay(let e): .essay(e.id) } }
     var title:String { switch self { case .record(let r): r.displayTitle; case .essay(let e): e.title } }
     var kind:String { switch self { case .record(let r): r.kind.rawValue; case .essay: "札记" } }
+    var tags:[String] { switch self { case .record(let r): r.tags; case .essay(let e): e.tags } }
     var created:Date { switch self { case .record(let r): r.created; case .essay(let e): e.created } }
     var key:String { switch self { case .record(let r): "r:"+r.id.uuidString; case .essay(let e): "e:"+e.id.uuidString } }
     static func results(_ state:ReadingJournalState,query:String = "",kind:String = "全部",tag:String = "",removed:Bool = false) -> [Self] {

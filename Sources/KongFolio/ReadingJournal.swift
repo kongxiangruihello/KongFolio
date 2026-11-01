@@ -87,6 +87,8 @@ struct ReadingJournalState: Codable, Equatable {
 }
 actor ReadingJournalWriter {
     private var latest = -1
+    private var dailyChecked:Date?
+    private(set) var backupError:String?
     func write(_ state:ReadingJournalState, revision:Int, assets:[String:Data], folder:URL) throws {
         guard revision >= latest else { return }
         try state.validate()
@@ -99,6 +101,13 @@ actor ReadingJournalWriter {
         }
         let file = folder.appendingPathComponent("catalog.json")
         let bytes = try JSONEncoder().encode(state)
+        if dailyChecked.map({ !Calendar.current.isDateInToday($0) }) ?? true {
+            do {
+                let previous = (try? Data(contentsOf:file)).flatMap { try? JSONDecoder().decode(ReadingJournalState.self,from:$0) }
+                let daily = previous.flatMap { $0.records.isEmpty && $0.essays.isEmpty ? nil : $0 } ?? state
+                try ReadingBackupStorage.daily(daily,folder:folder); dailyChecked = Date(); backupError = nil
+            } catch { backupError = error.localizedDescription }
+        }
         if let old = try? Data(contentsOf:file), (try? JSONDecoder().decode(ReadingJournalState.self,from:old)) != nil {
             try old.write(to:folder.appendingPathComponent("catalog.previous.json"),options:.atomic)
         }
@@ -112,6 +121,8 @@ actor ReadingJournalWriter {
     @Published private(set) var draftEssay: ReadingEssay?
     @Published private(set) var error: String?
     @Published private(set) var saving = false
+    @Published private(set) var backupError:String?
+    @Published private(set) var restoring = false
     @Published private(set) var dirty = false
     private(set) var unreadable = false
     let folder: URL
@@ -127,6 +138,9 @@ actor ReadingJournalWriter {
         guard FileManager.default.fileExists(atPath:file.path) else { return }
         do { let value = try JSONDecoder().decode(ReadingJournalState.self,from:Data(contentsOf:file)); try value.validate(); state = value }
         catch { unreadable = true; self.error = "阅读记录未能读取，原记录保留：" + error.localizedDescription }
+        if !unreadable { let snapshot = state, destination = folder; Task { [weak self] in
+            do { try await self?.writer.ensureDaily(snapshot,folder:destination) } catch { self?.backupError = error.localizedDescription }
+        } }
     }
     func record(_ id:UUID?) -> ReadingRecord? { if let draftRecord, draftRecord.id == id { return draftRecord }; return state.records.first { $0.id == id } }
     func essay(_ id:UUID?) -> ReadingEssay? { if let draftEssay, draftEssay.id == id { return draftEssay }; return state.essays.first { $0.id == id } }
@@ -212,10 +226,30 @@ actor ReadingJournalWriter {
         worker = task
         do {
             try await task.value
+            backupError = await writer.backupError
             worker = nil; savedRevision = number; for name in assets.keys { pendingAssets[name] = nil }
             dirty = revision != number; error = nil; saving = false
         } catch { worker = nil; saving = false; dirty = true; self.error = "阅读记录尚未保存：" + error.localizedDescription; throw error }
         if dirty { try await flush() }
+    }
+    func waitForMaintenance() async { while restoring { try? await Task.sleep(nanoseconds:20_000_000) } }
+    func makeBackup() async throws -> ReadingBackup {
+        try await flush(); let value = try await writer.checkpoint(state,folder:folder,kind:.manual); backupError = nil; return value
+    }
+    func restoreBackup(_ id:String,ids:Set<ReadingLibraryID>) async throws {
+        guard !unreadable, !restoring else { throw FolioError(message:"请等待当前恢复完成，或先处理记录读取问题") }
+        restoring = true; defer { restoring = false }
+        try await flush(); let before = revision, destination = folder
+        let transfer = try await Task.detached(priority:.userInitiated) { try ReadingBackupStorage.selection(id,ids:ids,folder:destination) }.value
+        guard revision == before else { throw FolioError(message:"记录刚有更改，请重新预览后恢复") }
+        _ = try await writer.checkpoint(state,folder:folder,kind:.beforeRestore)
+        guard revision == before else { throw FolioError(message:"记录刚有更改，请重新预览后恢复") }
+        pendingAssets.merge(transfer.assets) { old,_ in old }
+        change { value in
+            for record in transfer.state.records { if let i = value.records.firstIndex(where:{$0.id == record.id}) { value.records[i] = record } else { value.records.append(record) } }
+            for essay in transfer.state.essays { if let i = value.essays.firstIndex(where:{$0.id == essay.id}) { value.essays[i] = essay } else { value.essays.append(essay) } }
+        }
+        try await flush()
     }
     func recoverPrevious() throws {
         let fm = FileManager.default, old = folder.appendingPathComponent("catalog.previous.json"), file = folder.appendingPathComponent("catalog.json")
