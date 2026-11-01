@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @ObservedObject var workspace: Workspace
     var readingMode = false
+    var showsPrimaryToolbar = true
     @StateObject private var comparisonSync = ComparisonSync()
     @State private var showSignatureImport = false
     @State private var showToolbarSettings = false
@@ -88,8 +89,10 @@ struct ContentView: View {
     /// The window can be any size: panels and top bar controls adapt to the width (see `LayoutMetrics`).
     private func layout(width: CGFloat) -> some View {
         VStack(spacing: 0) {
-            if readingMode, let store = workspace.store { ReadingToolbar(store:store,workspace:workspace,width:width) }
-            else { topBar(width:width) }
+            if showsPrimaryToolbar {
+                if readingMode, let store = workspace.store { ReadingToolbar(store:store,workspace:workspace,width:width) }
+                else { topBar(width:width) }
+            }
             if workspace.saveConflict { SaveConflictBanner(copy: workspace.chooseConflictCopy, reload: workspace.reloadAfterConflict) }
             Divider()
             HSplitView {

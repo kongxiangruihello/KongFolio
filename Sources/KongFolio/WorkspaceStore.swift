@@ -37,6 +37,7 @@ import UniformTypeIdentifiers
     @Published var readingDeskSection = ReadingDeskSection.excerpts
     @Published var showQuickReadingNote = false
     @Published var readingEssayBlockID:UUID?
+    @Published var readingLibraryNavigation:ReadingLibraryID?
     @Published var readingRecordID:UUID?
     @Published var readingRecordSelection = Set<UUID>()
     @Published var readingExportEssay = false
@@ -48,6 +49,8 @@ import UniformTypeIdentifiers
     @Published var showResearch = false
     var startupSafetyEnabled = !AppEnvironment.isTestRun
     @Published var showStartupReview = false
+    @Published var showReadingSettings = false
+    lazy var incrementalExport = ReadingIncrementalController()
     @Published var startupEntries: [SessionEntry] = []
     @Published var startupSuspects: [String:Int] = [:]
     var pendingStartupSelected: String?
@@ -188,8 +191,11 @@ import UniformTypeIdentifiers
             startupEntries = entries; startupSuspects = startup.interrupted; pendingStartupSelected = session.selected
             addWorkspace(); showStartupReview = true; return
         }
+        let policy = ReadingLaunchPolicy(rawValue:readingDefaults.string(forKey:ReadingLaunchPolicy.key) ?? "") ?? .all
+        let permitted = policy.entries(entries,selected:session.selected)
+        startupEntries = entries.filter { !permitted.contains($0) }
         var selectedTab: UUID?
-        for entry in entries {
+        for entry in permitted {
             let workspace = Workspace(storage: storage, slot: entry.slot, readingDefaults: readingDefaults)
             workspace.store = self
             // Unsaved changes win: a recovery copy exists, so the tab was not clean when the app ended.
@@ -406,7 +412,7 @@ import UniformTypeIdentifiers
     }
     /// Finish original-file writes before the existing session/termination checks run.
     func finishPendingSaves() async -> Bool {
-        await readingExportBatch.stopAndWait();await readingPackage.stopAndWait();WritingPositions.shared.flush()
+        await readingExportBatch.stopAndWait();await readingPackage.stopAndWait();await incrementalExport.stopAndWait();WritingPositions.shared.flush()
         guard ResearchDraftRegistry.shared.flush(storage:storage) else { present(FolioError(message:"研究整理草稿未能保存，请处理后再关闭")); return false }
         await importLegacyReadingRecords()
         do { await journal.waitForMaintenance(); try await journal.flush(); try await library.flushReflections() } catch { present(error); return false }

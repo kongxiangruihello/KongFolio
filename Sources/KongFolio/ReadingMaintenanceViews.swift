@@ -22,6 +22,7 @@ struct ReadingOrganizationSheet: View {
 struct ReadingReferencesView: View {
     @ObservedObject var journal:ReadingJournal
     let id:ReadingLibraryID
+    var open:((ReadingLibraryID)->Void)? = nil
     @Environment(\.dismiss) private var dismiss
     var body:some View {
         let links = journal.references(to:id)
@@ -43,6 +44,7 @@ struct ReadingReferencesView: View {
     private func reference(_ entry:ReadingReference) -> some View {
         VStack(alignment:.leading,spacing:6) {
             Text(entry.kind+" · "+entry.title).font(.headline)
+            if let item = entry.item,let open,!entry.removed { Button("打开这条"+entry.kind) { dismiss();open(item) } }
             if entry.removed { Text("当前已删除或原条目不在资料库，引用内容仍保留").font(.caption).foregroundStyle(.secondary) }
             if !entry.text.isEmpty { Text(entry.text).textSelection(.enabled) }
         }.frame(maxWidth:.infinity,alignment:.leading).padding(10).background(.quaternary,in:RoundedRectangle(cornerRadius:8))
@@ -73,6 +75,7 @@ struct ReadingBackupView: View {
             HStack {
                 Button("立即备份") { run { _ = try await journal.makeBackup(); message = "已保存手动备份"; await refresh() } }.disabled(busy || journal.unreadable)
                 Button("刷新") { Task { await refresh() } }.disabled(busy)
+                Button("应急目录预览…") { importEmergency() }.disabled(busy || journal.unreadable)
                 Button("显示备份目录") { let folder = ReadingBackupStorage.root(journal.folder); NSWorkspace.shared.activateFileViewerSelecting([folder]) }
                 if busy { ProgressView().controlSize(.small) }
             }
@@ -121,6 +124,12 @@ struct ReadingBackupView: View {
         case .essay(let id): names = backup.state.essays.first{$0.id == id}?.blocks.compactMap{$0.record?.imageAsset} ?? []
         }
         return Array(Set(names.compactMap{backup.assets[$0]})).sorted()
+    }
+    private func importEmergency() {
+        let panel = NSOpenPanel();panel.canChooseFiles = false;panel.canChooseDirectories = true;panel.message = "选择应急 ZIP 解压后的 ReadingJournal 子目录；这里只导入预览备份，核对后再恢复所选记录"
+        guard panel.runModal() == .OK,let source = panel.url else { return }
+        let folder = journal.folder
+        run { let value = try await Task.detached(priority:.utility) { try ReadingBackupStorage.importEmergency(source,folder:folder) }.value;await refresh();selected = value.id;message = "应急副本已加入预览；当前记录尚未替换，请核对后恢复所选项" }
     }
     private func refresh() async {
         let folder = journal.folder

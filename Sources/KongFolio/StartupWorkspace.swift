@@ -7,7 +7,7 @@ extension WorkspaceStore {
         documentTasks.maximumActive = constrainedMemory ? 1 : 2
         OCRResourceGate.shared.setMaximum(constrainedMemory ? 1 : 2)
         Task { await ImportLimiter.shared.setMaximum(constrainedMemory ? 1 : 2) }
-        loadedTabsChanged(); recordActivity("内存采样")
+        releaseIdleTabs(); loadedTabsChanged(); recordActivity("内存采样")
     }
     func restoreStartup(_ entry: SessionEntry) throws {
         guard startupEntries.contains(where: { $0.slot == entry.slot }) else { return }

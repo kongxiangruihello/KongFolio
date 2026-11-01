@@ -16,6 +16,7 @@ struct ReadingRecord: Codable, Identifiable, Equatable {
     var note = ""
     var originalQuote:String? = nil
     var originalOCR:String? = nil
+    var ocrSegments:[ReadingOCRSegment]? = nil
     var citations: [ReadingCitation] = []
     var linkedRecords: [UUID] = []
     var imageAsset: String?
@@ -81,6 +82,7 @@ struct ReadingJournalState: Codable, Equatable {
     func validate() throws {
         guard version == 1, Set(records.map(\.id)).count == records.count, Set(essays.map(\.id)).count == essays.count else { throw FolioError(message:"阅读记录格式或编号无效，原文件已保留") }
         for record in records + essays.flatMap({$0.blocks.compactMap(\.record)}) {
+            if let segments = record.ocrSegments { guard segments.count <= 10000,Set(segments.map(\.id)).count == segments.count,segments.allSatisfy({$0.box.minX.isFinite && $0.box.minY.isFinite && $0.box.width.isFinite && $0.box.height.isFinite}) else { throw FolioError(message:"摘录校订段落无效") } }
             if let image = record.imageAsset {
                 guard image == URL(fileURLWithPath:image).lastPathComponent, !image.contains(".."), !image.contains("/"), !image.contains("\\") else { throw FolioError(message:"摘录图片路径无效") }
             }
@@ -100,7 +102,10 @@ actor ReadingJournalWriter {
         for (name,data) in assets {
             guard name == URL(fileURLWithPath:name).lastPathComponent else { throw FolioError(message:"图片名称无效") }
             let file = assetFolder.appendingPathComponent(name)
-            if !fm.fileExists(atPath:file.path) { try data.write(to:file,options:.atomic) }
+            if fm.fileExists(atPath:file.path) {
+                guard try Data(contentsOf:file) == data else { throw FolioError(message:"已有摘录图片与待保存内容不一致，应急副本可保留当前图片") }
+            } else { try data.write(to:file,options:.atomic) }
+            guard try Data(contentsOf:file) == data else { throw FolioError(message:"摘录图片保存后校验失败") }
         }
         let file = folder.appendingPathComponent("catalog.json")
         let bytes = try JSONEncoder().encode(state)
@@ -114,7 +119,10 @@ actor ReadingJournalWriter {
         if let old = try? Data(contentsOf:file), (try? JSONDecoder().decode(ReadingJournalState.self,from:old)) != nil {
             try old.write(to:folder.appendingPathComponent("catalog.previous.json"),options:.atomic)
         }
-        try bytes.write(to:file,options:.atomic); latest = revision
+        try bytes.write(to:file,options:.atomic)
+        let saved = try Data(contentsOf:file)
+        guard saved == bytes,try JSONDecoder().decode(ReadingJournalState.self,from:saved) == state else { throw FolioError(message:"保存后的记录校验失败，请保留当前窗口并另存应急副本") }
+        latest = revision
     }
 }
 @MainActor final class ReadingJournal: ObservableObject {
@@ -124,6 +132,7 @@ actor ReadingJournalWriter {
     @Published private(set) var draftEssay: ReadingEssay?
     @Published private(set) var error: String?
     @Published private(set) var saving = false
+    @Published private(set) var lastVerifiedSave:Date?
     @Published private(set) var backupError:String?
     @Published private(set) var restoring = false
     @Published private(set) var dirty = false
@@ -134,6 +143,7 @@ actor ReadingJournalWriter {
     var revisionID:Int { revision }
     private var savedRevision = 0
     private var pendingAssets: [String:Data] = [:]
+    var pendingImages:[String:Data] { pendingAssets }
     private var timer: Task<Void,Never>?
     private var worker: Task<Void,Error>?
     init(storage:URL) {
@@ -242,7 +252,7 @@ actor ReadingJournalWriter {
             try await task.value
             backupError = await writer.backupError
             worker = nil; savedRevision = number; for name in assets.keys { pendingAssets[name] = nil }
-            dirty = revision != number; error = nil; saving = false
+            dirty = revision != number; error = nil; saving = false;lastVerifiedSave = Date()
         } catch { worker = nil; saving = false; dirty = true; self.error = "阅读记录尚未保存：" + error.localizedDescription; throw error }
         if dirty { try await flush() }
     }

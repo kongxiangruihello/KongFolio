@@ -29,10 +29,7 @@ struct ReadingDeskView: View {
             else if section == .essays { ReadingEssayPane(store:store,journal:journal) }
             else { records }
             Divider()
-            HStack {
-                Text(journal.saveStatus).font(.caption).foregroundStyle(journal.error == nil ? Color.secondary : .red).lineLimit(3)
-                if journal.error != nil { Button("重试保存") { Task { try? await journal.flush() } } }
-            }
+            ReadingSaveRecoveryFooter(journal:journal)
             if let backupError = journal.backupError { Text("记录保存不受影响，自动备份尚未完成："+backupError).font(.caption).foregroundStyle(.orange) }
             if journal.unreadable { Button("保留损坏文件并恢复上一份记录") { do { try journal.recoverPrevious() } catch { store.present(error) } } }
         }.padding(compact ? 10 : 18)
@@ -105,13 +102,13 @@ struct ReadingRecordDetail: View {
                 }
                 if current.kind == .note && !current.quote.isEmpty { Text("关联原文").font(.caption); Text(current.quote).textSelection(.enabled) }
                 if let image = current.imageAsset, imageOCR.text.isEmpty { ReadingRecordImage(url:journal.assetURL(image),pending:journal.pendingImage(image)).frame(maxHeight:220) }
-                if current.kind == .image { imageRecognition }
+                if current.kind == .image { imageRecognition.onAppear { imageOCR.restoreSegments(current) } }
                 if let original = current.originalQuote ?? current.originalOCR { DisclosureGroup("校订前文字（保留）") { Text(original).textSelection(.enabled) } }
                 Text("原文引用与我的笔记分别保存；校订只修改摘录副本。").font(.caption).foregroundStyle(.secondary)
                 if current.kind == .note { Button("关联更多摘录…") { showLinkPicker = true } }
                 Text(current.kind == .note ? "我的笔记" : "我的理解与评论").font(.caption)
                 ReadingWritingEditor(text:binding(\.note),label:"阅读笔记正文",identity:"note:"+record.id.uuidString).frame(minHeight:120).border(.quaternary)
-                StableTextField("标签，以逗号分隔",text:Binding(get:{current.tags.joined(separator:", ")},set:{ text in journal.editRecord(record.id) { $0.tags = Self.tags(text) } }))
+                ReadingTagField(journal:journal,label:"标签，以逗号分隔",text:Binding(get:{current.tags.joined(separator:", ")},set:{ text in journal.editRecord(record.id) { $0.tags = Self.tags(text) } }))
                 ForEach(Array(current.citations.prefix(20).enumerated()),id:\.offset) { index,citation in
                     VStack(alignment:.leading) {
                         ReadingCitationEditor(journal:journal,record:record.id,index:index)
@@ -149,6 +146,7 @@ struct ReadingRecordDetail: View {
                 Menu("识别摘录图片文字") {
                     Button("横排文字") { imageOCR.recognize(current,journal:journal,vertical:false) }
                     Button("竖排文字") { imageOCR.recognize(current,journal:journal,vertical:true) }
+                    Button("竖排古籍（优先繁体）") { imageOCR.recognize(current,journal:journal,vertical:true,traditional:true) }
                 }.disabled(imageOCR.busy)
                 if imageOCR.busy { ProgressView().controlSize(.small); Button("取消识别") { imageOCR.cancel() } }
             }
@@ -157,7 +155,8 @@ struct ReadingRecordDetail: View {
                     if let image = current.imageAsset { ReadingRecordImage(url:journal.assetURL(image),pending:journal.pendingImage(image)).frame(minWidth:100,minHeight:180) }
                     ReadingWritingEditor(text:$imageOCR.text,label:"对照校订识别文字",identity:"ocr:"+record.id.uuidString).frame(minWidth:180,minHeight:180)
                 }
-                Button("采用识别文字") { journal.editRecord(record.id) { $0.originalQuote = $0.originalQuote ?? ($0.quote.isEmpty ? nil : $0.quote);$0.originalOCR = imageOCR.originalText;$0.quote = imageOCR.text }; editQuote = true }
+                ReadingOCRSegmentEditor(controller:imageOCR)
+                Button("采用识别文字") { journal.editRecord(record.id) { $0.originalQuote = $0.originalQuote ?? ($0.quote.isEmpty ? nil : $0.quote);$0.originalOCR = $0.originalOCR ?? imageOCR.originalText;$0.quote = imageOCR.text;$0.ocrSegments = imageOCR.segments }; editQuote = true }
             }
             if !imageOCR.message.isEmpty { Text(imageOCR.message).font(.caption) }
         }

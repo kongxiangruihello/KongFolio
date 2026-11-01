@@ -5,6 +5,15 @@ struct ReadingLibraryView: View {
     @ObservedObject var journal:ReadingJournal
     @Binding var section:ReadingDeskSection
     @State private var query = ""
+    @State private var recent = false
+    @State private var untagged = false
+    @State private var filters:[SavedReadingFilter] = []
+    @State private var selectedFilter:UUID?
+    @State private var pendingFilterPage:Int?
+    @State private var pendingNavigation:ReadingLibraryID?
+    @State private var filterMessage = ""
+    @State private var showTags = false
+    @State private var showRelink = false
     @State private var kind = "全部"
     @State private var tag = ""
     @State private var removed = false
@@ -17,7 +26,7 @@ struct ReadingLibraryView: View {
     @State private var editing:ReadingLibraryID?
     @AppStorage("readingRecordsPageSize") private var size = 10
     @State private var items:[ReadingLibraryItem] = []
-    private var request:ReadingSearchRequest { ReadingSearchRequest(revision:journal.revisionID,query:query,kind:kind,tag:tag,topic:topic,removed:removed) }
+    private var request:ReadingSearchRequest { ReadingSearchRequest(revision:journal.revisionID,query:query,kind:kind,tag:tag,topic:topic,removed:removed,recent:recent,untagged:untagged) }
     private var pagination:ReadingPagination { ReadingPagination(total:items.count,page:page,size:size) }
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
@@ -34,6 +43,19 @@ struct ReadingLibraryView: View {
                 Button("备份恢复") { showBackups = true }
                 Button(removed ? "恢复所选" : "删除所选") { journal.setRemoved(selection,removed:!removed); selection = []; editing = nil }.disabled(selection.isEmpty || journal.unreadable)
             }
+            HStack {
+                Menu("常用筛选") {
+                    Button("近七天笔记") { applyFilter(SavedReadingFilter(name:"近七天笔记",kind:"笔记",recent:true)) }
+                    Button("尚未整理的记录") { applyFilter(SavedReadingFilter(name:"尚未整理",untagged:true)) }
+                    Divider()
+                    ForEach(filters) { value in Button(value.name) { applyFilter(value) } }
+                    Divider();Button("保存当前筛选…") { saveFilter() }
+                    if let selectedFilter { Button("删除当前常用筛选") { removeFilter(selectedFilter) } }
+                }
+                Toggle("近七天",isOn:$recent);Toggle("未加标签",isOn:$untagged)
+                Menu("资料整理") { Button("统一整理标签…") { showTags = true };Button("批量重新关联原文…") { showRelink = true } }
+            }
+            if !filterMessage.isEmpty { Text(filterMessage).font(.caption).foregroundStyle(.orange) }
             HStack {
                 Picker("类型",selection:$kind) { ForEach(["全部","摘录","图片摘录","笔记","札记"],id:\.self) { Text($0) } }.fixedSize()
                 TextField("按标签筛选",text:$tag)
@@ -58,18 +80,49 @@ struct ReadingLibraryView: View {
             let request = request
             do { try await Task.sleep(nanoseconds:300_000_000) } catch { return }
             let result = await ReadingSearchWorker.shared.library(journal.state,request:request)
-            if !Task.isCancelled { items = result }
+            if !Task.isCancelled { items = result;if let desired = pendingFilterPage { page = ReadingPagination(total:result.count,page:desired,size:size).index;pendingFilterPage = nil };if let target = pendingNavigation ?? store.readingLibraryNavigation,let i = result.firstIndex(where:{$0.id == target}) { page = i/size;editing = target;selection = [target];pendingNavigation = nil;store.readingLibraryNavigation = nil } }
         }
+        .onAppear { do { filters = try SavedReadingFilter.load(journal.folder) } catch { filterMessage = error.localizedDescription };if let target = store.readingLibraryNavigation { navigate(target) } }
+        .onChange(of:store.readingLibraryNavigation) { _,target in if let target { navigate(target) } }
+        .onChange(of:page) { _,_ in rememberPage() }
+        .onChange(of:recent) { _,_ in resetPage() }.onChange(of:untagged) { _,_ in resetPage() }
         .onChange(of:selection) { _,ids in if ids.count == 1,let id = ids.first { editing = id; if case .record(let r) = id { store.readingRecordID = r } } }
         .onChange(of:query) { _,_ in resetPage() }.onChange(of:kind) { _,_ in resetPage() }.onChange(of:tag) { _,_ in resetPage() }.onChange(of:removed) { _,_ in resetPage() }
         .onChange(of:topic) { _,_ in resetPage() }
         .onChange(of:size) { _,_ in page = 0 }.onChange(of:items.count) { _,_ in page = pagination.index }
         .sheet(isPresented:$showOrganization) { ReadingOrganizationSheet(journal:journal,ids:selection) }
-        .sheet(isPresented:$showReferences) { if let editing { ReadingReferencesView(journal:journal,id:editing) } }
+        .sheet(isPresented:$showReferences) { if let editing { ReadingReferencesView(journal:journal,id:editing,open:{ target in showReferences = false;navigate(target) }) } }
+        .sheet(isPresented:$showTags) { ReadingTagManager(journal:journal) }
+        .sheet(isPresented:$showRelink) { ReadingBatchRelinkView(store:store,journal:journal) }
         .sheet(isPresented:$showBackups) { ReadingBackupView(journal:journal) }
     }
+
+    private func applyFilter(_ value:SavedReadingFilter) {
+        let previous = request
+        pendingFilterPage = value.page;selectedFilter = filters.contains(where:{$0.id == value.id}) ? value.id : nil
+        query = value.query;kind = value.kind;tag = value.tag;topic = value.topic;recent = value.recent;untagged = value.untagged;removed = value.removed;size = value.size
+        selection = [];editing = nil
+        if previous == request { page = ReadingPagination(total:items.count,page:value.page,size:size).index;pendingFilterPage = nil }
+    }
+    private func saveFilter() {
+        guard let name = TextPrompt.ask("保存常用筛选",detail:"保存关键词、类型、标签、专题和当前分页位置",button:"保存"),!name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { return }
+        do { var values = try SavedReadingFilter.load(journal.folder);let value = SavedReadingFilter(name:name,query:query,kind:kind,tag:tag,topic:topic,recent:recent,untagged:untagged,removed:removed,page:page,size:size);values.append(value);try SavedReadingFilter.save(values,folder:journal.folder);filters = values;selectedFilter = value.id;filterMessage = "已保存筛选" } catch { filterMessage = error.localizedDescription }
+    }
+    private func removeFilter(_ id:UUID) {
+        do { var values = try SavedReadingFilter.load(journal.folder);values.removeAll{$0.id == id};try SavedReadingFilter.save(values,folder:journal.folder);filters = values;selectedFilter = nil } catch { filterMessage = error.localizedDescription }
+    }
+    private func rememberPage() {
+        guard pendingFilterPage == nil,let id = selectedFilter,let current = filters.first(where:{$0.id == id}),current.query == query,current.kind == kind,current.tag == tag,current.topic == topic,current.recent == recent,current.untagged == untagged,current.removed == removed else { return }
+        do { var values = try SavedReadingFilter.load(journal.folder);guard let i = values.firstIndex(where:{$0.id == id}) else { return };values[i].page = page;values[i].size = size;try SavedReadingFilter.save(values,folder:journal.folder);filters = values } catch { filterMessage = error.localizedDescription }
+    }
+    private func navigate(_ target:ReadingLibraryID) {
+        let previous = request;resetForNew();selection = [target];editing = target
+        if previous != request { pendingNavigation = target } else { store.readingLibraryNavigation = nil }
+        if case .record(let id) = target { store.readingRecordID = id }
+        if let i = items.firstIndex(where:{$0.id == target}) { page = i/size }
+    }
     private var editingDraft:Bool { switch editing { case .record(let id): return journal.draftRecord?.id == id; case .essay(let id): return journal.draftEssay?.id == id; case nil: return false } }
-    private func resetPage() { page = 0; selection = []; if !editingDraft { editing = nil } }
-    private func resetForNew() { query = ""; tag = ""; topic = ""; kind = "全部"; removed = false; page = 0 }
+    private func resetPage() { if pendingFilterPage == nil { page = 0 }; selection = []; if !editingDraft { editing = nil } }
+    private func resetForNew() { selectedFilter = nil;pendingFilterPage = nil;recent = false;untagged = false;query = ""; tag = ""; topic = ""; kind = "全部"; removed = false; page = 0 }
     private func newRecord(_ kind:ReadingRecord.Kind) { resetForNew(); let record = ReadingRecord(kind:kind); journal.beginNote(record); store.readingRecordID = record.id; selection = []; editing = .record(record.id) }
 }

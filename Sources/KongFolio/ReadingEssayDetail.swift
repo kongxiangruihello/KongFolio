@@ -14,7 +14,7 @@ struct ReadingEssayDetail: View {
             VStack(alignment:.leading,spacing:10) {
                 if journal.draftEssay?.id == essay.id { HStack { Text("空白札记草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary);Spacer();Button("关闭空白草稿") { journal.discardEssayDraft() } } }
                 StableTextField("札记标题",text:Binding(get:{current?.title ?? ""},set:{text in journal.editEssay(id) { $0.title = text } }))
-                StableTextField("札记标签，以逗号分隔",text:Binding(get:{current?.tags.joined(separator:", ") ?? ""},set:{text in journal.editEssay(id) { $0.tags = ReadingRecordDetail.tags(text) } }))
+                ReadingTagField(journal:journal,label:"札记标签，以逗号分隔",text:Binding(get:{current?.tags.joined(separator:", ") ?? ""},set:{text in journal.editEssay(id) { $0.tags = ReadingRecordDetail.tags(text) } }))
                 ScrollViewReader { proxy in
                     VStack(alignment:.leading,spacing:8) {
                         controls(essay)

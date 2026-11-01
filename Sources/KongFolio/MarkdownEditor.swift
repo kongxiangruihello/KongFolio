@@ -5,12 +5,13 @@ import SwiftUI
 struct MarkdownEditorView: View {
     @ObservedObject var note: MarkdownNote
     var store: WorkspaceStore? = nil
+    var showsPrimaryToolbar = true
     @State private var showLayout = false
 
     var body: some View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
-                toolbar
+                if showsPrimaryToolbar { toolbar }
                 WritingToolbar(session:note.writingSession)
                 if note.saveConflict { SaveConflictBanner(copy: { note.save(asNew: true) }, reload: note.reloadAfterConflict) }
                 Divider()

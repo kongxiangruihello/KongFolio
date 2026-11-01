@@ -8,10 +8,12 @@ struct RootView: View {
         VStack(spacing: 0) {
             TabBar(store: store)
             Divider()
+            FunctionToolbar(store:store)
+            Divider()
             if let tab = store.activeTab {
                 switch tab {
-                case .document(let workspace): ContentView(workspace: workspace,readingMode:store.readingMode).id(workspace.id)
-                case .note(let note): MarkdownEditorView(note: note, store: store).id(note.id)
+                case .document(let workspace): ContentView(workspace: workspace,readingMode:store.readingMode,showsPrimaryToolbar:false).id(workspace.id)
+                case .note(let note): MarkdownEditorView(note: note, store: store,showsPrimaryToolbar:false).id(note.id)
                 }
             } else {
                 Color.clear
@@ -23,6 +25,7 @@ struct RootView: View {
         .onChange(of: store.showResearch) { _,show in
             if show { ResearchWindowManager.shared.show(store); store.showResearch = false }
         }
+        .sheet(isPresented:$store.showReadingSettings) { ReadingRuntimeSettings(store:store) }
         .sheet(isPresented: $store.showStartupReview) { StartupReviewView(store:store) }
         .sheet(isPresented: $store.showReadingHistory) { ReadingHistorySheet(store: store) }
         .sheet(isPresented: $store.showHistorySettings) { HistorySettingsView(storage: store.storage) }
@@ -62,10 +65,6 @@ struct TabBar: View {
                     withAnimation { proxy.scrollTo(id, anchor: .center) }
                 }
             }
-            Button { store.showReadingHistory = true } label: { Image(systemName: "books.vertical") }
-                .buttonStyle(.borderless).frame(width: 28).help("个人书架、阅读记录与书籍快捷方式")
-            Button { store.openReadingDesk(.search,window:true) } label: { Label("资料库",systemImage: "books.vertical.fill") }.buttonStyle(.borderless).help("阅读资料库：统一新增、编辑、查找、删除摘录、笔记与札记")
-            DocumentTaskButton(queue: store.documentTasks, store: store)
             Menu {
                 ForEach(store.tabs) { tab in
                     Button { store.select(tab.id) } label: {
@@ -77,19 +76,8 @@ struct TabBar: View {
             .menuIndicator(.hidden)
             .frame(width: 28)
             .help("所有已打开的文件（共 \(store.tabs.count) 个）")
-            Menu {
-                Button("打开文档…") { store.open() }
-                Button("跨文件全文搜索…") { store.showFolderSearch=true }
-                Divider()
-                Button("新建 Markdown 笔记") { store.newNote() }
-                Button("新建 HTML 文件") { store.newNote(format: .html) }
-                Button("新建文本文件") { store.newNote(format: .plain) }
-                Button("编辑文本文件…") { store.editMarkdownFile() }
-            } label: { Image(systemName: "plus") }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .frame(width: 28)
-            .help("新建标签页：打开文件，或新建/编辑 Markdown")
+            Button { store.addWorkspace() } label: { Image(systemName:"plus") }
+            .buttonStyle(.borderless).frame(width:28).help("新建空白标签页")
             .padding(.trailing, 8)
         }
         .frame(height: 32)

@@ -795,7 +795,7 @@ import UniformTypeIdentifiers
             return fileEntry(position: currentViewPosition())
         }
         if needsLoad, spilledSession != nil { return SessionEntry(slot: slot, kind: .recovery) }
-        return needsLoad ? fileEntry(position: pendingView) : nil
+        return (needsLoad || isImporting) ? fileEntry(position: pendingView) : nil
     }
 
     private func fileEntry(position: ViewPosition?) -> SessionEntry? {
