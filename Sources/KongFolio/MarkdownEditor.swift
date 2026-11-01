@@ -121,7 +121,7 @@ struct MarkdownTextView: NSViewRepresentable {
 
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
         guard let view = scroll.documentView as? NSTextView else { return }
-        (view as? ComposingTextView)?.committed = nil
+        (view as? ComposingTextView)?.finishEditingSession()
         view.delegate = nil
         if coordinator.note.textView === view { coordinator.note.textView = nil }
         if let view = view as? NoteTextView { view.note = nil }

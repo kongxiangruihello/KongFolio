@@ -5,24 +5,27 @@ struct ReadingExportSnapshot: Codable, Equatable {
     var title: String
     var records: [ReadingRecord] = []
     var essay: ReadingEssay?
+    var options:ReadingExportOptions? = nil
     var allRecords:[ReadingRecord] { records + (essay?.blocks.compactMap(\.record) ?? []) }
     var digest:String { let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]; return OCRPageCache.digest((try? encoder.encode(self)) ?? Data()) }
 }
 enum ReadingRecordExport {
-    enum Format:String,CaseIterable { case word = "Word", markdown = "Markdown", pdf = "PDF"; var ext:String { self == .word ? "docx" : (self == .markdown ? "md" : "pdf") } }
+    enum Format:String,CaseIterable,Codable { case word = "Word", markdown = "Markdown", pdf = "PDF"; var ext:String { self == .word ? "docx" : (self == .markdown ? "md" : "pdf") } }
     static func rich(_ snapshot:ReadingExportSnapshot, assets:URL) throws -> RichTextDocument {
-        var document = try RichTextDocument("",format:.plain)
-        let options = document.options
+        let preferences = snapshot.options ?? ReadingExportOptions()
+        guard preferences.valid else { throw FolioError(message:"导出设置无效，请检查字体、字号和内容选项") }
+        var options = TextLayoutOptions(); options.fontName = preferences.fontName; options.fontSize = preferences.fontSize
+        var document = try RichTextDocument("",format:.plain,options:options)
         var blocks:[RichBlock] = [.paragraph(RichTextDocument.styled(snapshot.title,options:options,heading:1,markdown:false),heading:1)]
         func paragraph(_ text:String,heading:Int = 0) {
             for line in text.components(separatedBy:"\n") where !line.isEmpty { blocks.append(.paragraph(RichTextDocument.styled(line,options:options,heading:heading,markdown:false),heading:heading)) }
         }
         func record(_ record:ReadingRecord, heading:Bool) throws {
-            if heading { paragraph(record.displayTitle,heading:2) }
-            if !record.quote.isEmpty { paragraph("原文：\n"+record.quote) }
-            if let name = record.imageAsset { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(name),options:.mappedIfSafe),alt:"图片摘录")) }
-            if !record.note.isEmpty { paragraph((record.kind == .note ? "" : "我的笔记：\n")+record.note) }
-            for citation in record.citations {
+            if heading { paragraph(preferences.heading(record),heading:2) }
+            if preferences.includeQuote && !record.quote.isEmpty { paragraph("原文：\n"+record.quote) }
+            if preferences.includeQuote, let name = record.imageAsset { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(name),options:.mappedIfSafe),alt:"图片摘录")) }
+            if preferences.includeNote && !record.note.isEmpty { paragraph((record.kind == .note ? "" : "我的笔记：\n")+record.note) }
+            for citation in preferences.includeSources ? record.citations : [] {
                 let value = NSMutableAttributedString(attributedString:RichTextDocument.styled(citation.display,options:options,markdown:false))
                 if let link = SourceLink.url(citation.source) {
                     let suffix = RichTextDocument.styled("　返回原文",options:options,markdown:false)
@@ -33,7 +36,7 @@ enum ReadingRecordExport {
             if !record.tags.isEmpty { paragraph("标签："+record.tags.joined(separator:"、")) }
         }
         if let essay = snapshot.essay {
-            for block in essay.blocks { try Task.checkCancellation(); if let ref = block.record { try record(ref,heading:false) }; paragraph(block.text) }
+            for block in essay.blocks { try Task.checkCancellation(); if let ref = block.record { try record(ref,heading:false) }; if preferences.includeNote { paragraph(block.text) } }
         } else { for ref in snapshot.records { try Task.checkCancellation(); try record(ref,heading:true) } }
         document.blocks = blocks; return document
     }
@@ -43,24 +46,26 @@ enum ReadingRecordExport {
         return value
     }
     static func markdown(_ snapshot:ReadingExportSnapshot,imageFolder:String) -> String {
+        let preferences = snapshot.options ?? ReadingExportOptions()
         var lines = ["# "+literal(snapshot.title),""]
         func record(_ ref:ReadingRecord,heading:Bool) {
-            if heading { lines += ["## "+literal(ref.displayTitle),""] }
-            if !ref.quote.isEmpty { lines += ref.quote.components(separatedBy:"\n").map { "> "+literal($0) }; lines.append("") }
-            if let image = ref.imageAsset { lines += ["![图片摘录](<"+imageFolder+"/"+image+">)",""] }
-            if !ref.note.isEmpty { lines += [(ref.kind == .note ? "" : "我的笔记：\n\n")+literal(ref.note),""] }
-            for citation in ref.citations {
+            if heading { lines += ["## "+literal(preferences.heading(ref)),""] }
+            if preferences.includeQuote && !ref.quote.isEmpty { lines += ref.quote.components(separatedBy:"\n").map { "> "+literal($0) }; lines.append("") }
+            if preferences.includeQuote, let image = ref.imageAsset { lines += ["![图片摘录](<"+imageFolder+"/"+image+">)",""] }
+            if preferences.includeNote && !ref.note.isEmpty { lines += [(ref.kind == .note ? "" : "我的笔记：\n\n")+literal(ref.note),""] }
+            for citation in preferences.includeSources ? ref.citations : [] {
                 lines.append(literal(citation.display))
                 if let url = SourceLink.url(citation.source) { lines.append("[返回原文]("+url.absoluteString+")") }
             }
             if !ref.tags.isEmpty { lines += ["标签："+literal(ref.tags.joined(separator:"、"))] }
             lines.append("")
         }
-        if let essay = snapshot.essay { for block in essay.blocks { if let ref = block.record { record(ref,heading:false) }; lines += [literal(block.text),""] } }
+        if let essay = snapshot.essay { for block in essay.blocks { if let ref = block.record { record(ref,heading:false) }; if preferences.includeNote { lines += [literal(block.text),""] } } }
         else { for ref in snapshot.records { record(ref,heading:true) } }
         return lines.joined(separator:"\n")
     }
     static func write(_ snapshot:ReadingExportSnapshot,format:Format,assets:URL,to destination:URL,expected:FileBaseline) throws {
+        guard (snapshot.options ?? ReadingExportOptions()).valid else { throw FolioError(message:"导出设置无效") }
         let fm = FileManager.default
         let sources = Set(snapshot.allRecords.flatMap { $0.citations.map(\.source.path) }.filter { !$0.isEmpty })
         for source in sources where DocumentTaskOutput.sameFile(URL(fileURLWithPath:source),destination) { throw FolioError(message:"请选择新的导出位置，避免覆盖原书") }
@@ -73,7 +78,7 @@ enum ReadingRecordExport {
                 let parent = destination.deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath()
                 let folder = parent.appendingPathComponent(name).standardizedFileURL.resolvingSymlinksInPath()
                 guard folder.path.hasPrefix(parent.path+"/") else { throw FolioError(message:"图片目录指向其他位置，请更换导出位置") }
-                for image in Set(snapshot.allRecords.compactMap(\.imageAsset)) {
+                for image in (snapshot.options?.includeQuote == false ? Set<String>() : Set(snapshot.allRecords.compactMap(\.imageAsset))) {
                     try Task.checkCancellation()
                     let bytes = try Data(contentsOf:assets.appendingPathComponent(image)); try fm.createDirectory(at:folder,withIntermediateDirectories:true)
                     let out = folder.appendingPathComponent(image)

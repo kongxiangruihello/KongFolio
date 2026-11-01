@@ -2,6 +2,9 @@ import AppKit
 
 /// Native text storage owns the composition, selection and undo stack; model echoes never replace it.
 class ComposingTextView: NSTextView {
+    private let editingHistory = UndoManager()
+    override var undoManager:UndoManager? { editingHistory }
+    func finishEditingSession() { committed = nil; delegate = nil; editingHistory.removeAllActions() }
     var committed: ((NSTextView) -> Void)?
     override func insertText(_ text: Any, replacementRange: NSRange) { super.insertText(text, replacementRange:replacementRange); if !hasMarkedText() { committed?(self) } }
     override func unmarkText() { super.unmarkText(); committed?(self) }

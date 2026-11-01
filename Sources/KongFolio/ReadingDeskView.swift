@@ -42,6 +42,7 @@ struct ReadingDeskView: View {
                 Text(journal.saveStatus).font(.caption).foregroundStyle(journal.error == nil ? Color.secondary : .red).lineLimit(3)
                 if journal.error != nil { Button("重试保存") { Task { try? await journal.flush() } } }
             }
+            if let backupError = journal.backupError { Text("记录保存不受影响，自动备份尚未完成："+backupError).font(.caption).foregroundStyle(.orange) }
             if journal.unreadable { Button("保留损坏文件并恢复上一份记录") { do { try journal.recoverPrevious() } catch { store.present(error) } } }
         }.padding(compact ? 10 : 18)
         .onChange(of:query) { _,_ in page = 0 }.onChange(of:tag) { _,_ in page = 0 }.onChange(of:path) { _,_ in page = 0 }

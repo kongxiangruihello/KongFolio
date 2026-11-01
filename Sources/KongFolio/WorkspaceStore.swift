@@ -401,7 +401,7 @@ import UniformTypeIdentifiers
     func finishPendingSaves() async -> Bool {
         guard ResearchDraftRegistry.shared.flush(storage:storage) else { present(FolioError(message:"研究整理草稿未能保存，请处理后再关闭")); return false }
         await importLegacyReadingRecords()
-        do { try await journal.flush(); try await library.flushReflections() } catch { present(error); return false }
+        do { await journal.waitForMaintenance(); try await journal.flush(); try await library.flushReflections() } catch { present(error); return false }
         for workspace in tabs.compactMap(\.workspace) { await workspace.unloadWorker?.value }
         for workspace in tabs.compactMap(\.workspace) where workspace.count > 0 && (workspace.dirty || workspace.saving || workspace.hasPrivateReadingData) {
             if !(await workspace.finishPendingSave()) { select(workspace.id); return false }

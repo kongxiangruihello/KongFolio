@@ -13,7 +13,7 @@ struct StableTextEditor: NSViewRepresentable {
         view.isEditable = enabled; view.setAccessibilityLabel(label); view.delegate = context.coordinator; view.committed = { [weak coordinator = context.coordinator] in coordinator?.publish($0) }; scroll.documentView = view; return scroll
     }
     func updateNSView(_ scroll:NSScrollView,context:Context) { context.coordinator.read = { text }; context.coordinator.write = { text = $0 }; if let view = scroll.documentView as? NSTextView { view.isEditable = enabled; context.coordinator.synchronize(view) } }
-    static func dismantleNSView(_ scroll:NSScrollView,coordinator:StableInputCoordinator) { if let view = scroll.documentView as? ComposingTextView { view.committed = nil; view.delegate = nil }; scroll.documentView = nil }
+    static func dismantleNSView(_ scroll:NSScrollView,coordinator:StableInputCoordinator) { if let view = scroll.documentView as? ComposingTextView { view.finishEditingSession() }; scroll.documentView = nil }
 }
 
 struct StableTextField: NSViewRepresentable {
