@@ -43,7 +43,17 @@ struct EditorTable {
     }
     func edit(format:TextDocumentFormat) -> TextEdit {
         let value:String
-        if format == .html { value = "<table>\n"+rows.enumerated().map { i,row in "<tr>"+row.map{"<\(i == 0 ? "th" : "td")>"+TextTableEntities.escape($0)+"</\(i == 0 ? "th" : "td")>"}.joined()+"</tr>" }.joined(separator:"\n")+"\n</table>\n" }
+        if format == .html {
+            var output = "<table>\n"
+            for (index,row) in rows.enumerated() {
+                let tag:String = index == 0 ? "th" : "td"
+                output += "<tr>"
+                for cell in row { output += "<"+tag+">"+TextTableEntities.escape(cell)+"</"+tag+">" }
+                output += "</tr>\n"
+            }
+            output += "</table>\n"
+            value = output
+        }
         else {
             var lines = rows.map { "| "+$0.map{$0.replacingOccurrences(of:"\\",with:"\\\\").replacingOccurrences(of:"|",with:"\\|").replacingOccurrences(of:"\n",with:" ")}.joined(separator:" | ")+" |" }
             lines.insert("| "+Array(repeating:"---",count:rows.first?.count ?? 1).joined(separator:" | ")+" |",at:min(1,lines.count));value = lines.joined(separator:"\n")+"\n"
