@@ -81,7 +81,7 @@ final class Release047Tests: XCTestCase {
     }
     @MainActor func testFileChooserOnlyReusesAnIdleBlankTab() throws {
         let store = WorkspaceStore(storage:try folder()),blank = store.addWorkspace();store.newNote();XCTAssertTrue(store.emptyFileChooserWorkspace === blank)
-        blank.isImporting = true;XCTAssertNil(store.emptyFileChooserWorkspace);blank.isImporting = false;blank.projectURL = URL(fileURLWithPath:"/tmp/deferred.kongfolio");XCTAssertNil(store.emptyFileChooserWorkspace)
+        blank.busy = true;XCTAssertNil(store.emptyFileChooserWorkspace);blank.busy = false;blank.isImporting = true;XCTAssertNil(store.emptyFileChooserWorkspace);blank.isImporting = false;blank.projectURL = URL(fileURLWithPath:"/tmp/deferred.kongfolio");XCTAssertNil(store.emptyFileChooserWorkspace)
     }
 
 }

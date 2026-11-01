@@ -358,7 +358,7 @@ import UniformTypeIdentifiers
 
     /// The "open" command: shows the file panel for an empty document tab, creating one when a note is in front.
     var emptyFileChooserWorkspace:Workspace? {
-        tabs.compactMap(\.workspace).first { $0.count == 0 && !$0.needsLoad && !$0.busy && $0.sourceURL == nil && $0.projectURL == nil }
+        tabs.compactMap(\.workspace).first { $0.count == 0 && !$0.needsLoad && !$0.busy && !$0.isImporting && $0.sourceURL == nil && $0.projectURL == nil }
     }
     func open() {
         let target: Workspace
