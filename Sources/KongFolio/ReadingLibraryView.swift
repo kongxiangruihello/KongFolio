@@ -116,10 +116,13 @@ struct ReadingLibraryView: View {
         do { var values = try SavedReadingFilter.load(journal.folder);guard let i = values.firstIndex(where:{$0.id == id}) else { return };values[i].page = page;values[i].size = size;try SavedReadingFilter.save(values,folder:journal.folder);filters = values } catch { filterMessage = error.localizedDescription }
     }
     private func navigate(_ target:ReadingLibraryID) {
-        let previous = request;resetForNew();selection = [target];editing = target
-        if previous != request { pendingNavigation = target } else { store.readingLibraryNavigation = nil }
+        let previous = request
+        resetForNew();pendingNavigation = target;editing = target;selection = []
         if case .record(let id) = target { store.readingRecordID = id }
-        if let i = items.firstIndex(where:{$0.id == target}) { page = i/size }
+        // A new window has no search rows yet. Keep the target until the asynchronous result installs it.
+        if previous == request,let i = items.firstIndex(where:{$0.id == target}) {
+            page = i/size;selection = [target];pendingNavigation = nil;store.readingLibraryNavigation = nil
+        }
     }
     private var editingDraft:Bool { switch editing { case .record(let id): return journal.draftRecord?.id == id; case .essay(let id): return journal.draftEssay?.id == id; case nil: return false } }
     private func resetPage() { if pendingFilterPage == nil { page = 0 }; selection = []; if !editingDraft { editing = nil } }
