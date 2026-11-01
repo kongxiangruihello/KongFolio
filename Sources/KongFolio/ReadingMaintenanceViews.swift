@@ -54,6 +54,7 @@ struct ReadingBackupView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var backups:[ReadingBackup] = []
     @State private var selected:String?
+    @State private var query = ""
     @State private var records:Set<ReadingLibraryID> = []
     @State private var busy = false
     @State private var message = ""
@@ -62,7 +63,7 @@ struct ReadingBackupView: View {
     private var backup:ReadingBackup? { backups.first{$0.id == selected} }
     private var entries:[ReadingLibraryItem] {
         guard let backup else { return [] }
-        return (backup.state.records.filter(\.hasContent).map(ReadingLibraryItem.record)+backup.state.essays.filter(\.hasContent).map(ReadingLibraryItem.essay)).sorted{$0.key < $1.key}
+        return (backup.state.records.filter{$0.hasContent && $0.matches(query)}.map(ReadingLibraryItem.record)+backup.state.essays.filter{$0.hasContent && $0.matches(query)}.map(ReadingLibraryItem.essay)).sorted{$0.key < $1.key}
     }
     private var pagination:ReadingPagination { ReadingPagination(total:entries.count,page:page,size:size) }
     var body:some View {
@@ -81,6 +82,7 @@ struct ReadingBackupView: View {
             }
             if let backup {
                 Text("备份含 \(backup.state.records.count) 条记录、\(backup.state.essays.count) 篇札记。选择后先核对下方内容，再恢复。").font(.caption)
+                TextField("在备份中搜索标题、正文或出处",text:$query).textFieldStyle(.roundedBorder)
                 List(selection:$records) { ForEach(Array(entries.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { entry in
                     VStack(alignment:.leading) { Text(entry.kind+" · "+entry.title).lineLimit(2); Text(status(entry,backup:backup)).font(.caption).foregroundStyle(.secondary) }.tag(entry.id)
                 } }.frame(minHeight:110,maxHeight:180)
@@ -97,7 +99,7 @@ struct ReadingBackupView: View {
             } else { Text(backups.isEmpty ? "暂无备份，记录保存后会自动建立每日备份。" : "请选择日期，预览后恢复单条或多条记录。").foregroundStyle(.secondary).frame(maxHeight:.infinity) }
             if !message.isEmpty { Text(message).font(.caption).textSelection(.enabled) }
         }.padding(20).adaptiveSheet(width:720,height:720,minimumWidth:460)
-        .task { await refresh() }.onChange(of:selected) { _,_ in records = []; page = 0 }.onChange(of:size) { _,_ in page = 0 }
+        .task { await refresh() }.onChange(of:selected) { _,_ in records = []; page = 0; query = "" }.onChange(of:query) { _,_ in records = []; page = 0 }.onChange(of:size) { _,_ in page = 0 }
     }
     private func status(_ entry:ReadingLibraryItem,backup:ReadingBackup) -> String {
         switch entry {
