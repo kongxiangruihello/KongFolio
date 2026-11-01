@@ -25,6 +25,7 @@ struct WritingToolbar: View {
     @State private var query = ""
     @State private var replacement = ""
     @State private var confirmReplace = false
+    @FocusState private var queryFocused:Bool
     var body:some View {
         VStack(alignment:.leading,spacing:5) {
             ScrollView(.horizontal,showsIndicators:false) {
@@ -41,12 +42,14 @@ struct WritingToolbar: View {
                 }.buttonStyle(.borderless).font(.caption)
             }
             if showFind {
-                HStack { TextField("查找文字",text:$query).onSubmit { session.find(query) };TextField("替换为",text:$replacement);Button("上一处") { session.find(query,backward:true) };Button("下一处") { session.find(query) };Button("替换") { session.replace(query,with:replacement,all:false) };Button("全部替换…") { confirmReplace = true }.disabled(query.isEmpty) }
-                .font(.caption)
+                VStack(spacing:4) {
+                    HStack { TextField("查找文字",text:$query).focused($queryFocused).onSubmit { session.find(query) };Button("上一处") { session.find(query,backward:true) };Button("下一处") { session.find(query) } }
+                    HStack { TextField("替换为",text:$replacement);Button("替换") { session.replace(query,with:replacement,all:false) };Button("全部替换…") { confirmReplace = true }.disabled(query.isEmpty) }
+                }.font(.caption)
             }
             if !session.message.isEmpty { Text(session.message).font(.caption).foregroundStyle(.secondary) }
         }
-        .onChange(of:session.findRequest) { _,_ in showFind = true }
+        .onChange(of:session.findRequest) { _,_ in showFind = true;queryFocused = true }
         .onChange(of:session.cleanupRequest) { _,_ in showCleanup = true }
         .sheet(isPresented:$showCleanup) { WritingCleanupView(session:session) }
         .alert("替换全部匹配文字？",isPresented:$confirmReplace) {

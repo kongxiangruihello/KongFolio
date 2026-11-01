@@ -110,7 +110,7 @@ struct ReadingRecordDetail: View {
                 Text("原文引用与我的笔记分别保存；校订只修改摘录副本。").font(.caption).foregroundStyle(.secondary)
                 if current.kind == .note { Button("关联更多摘录…") { showLinkPicker = true } }
                 Text(current.kind == .note ? "我的笔记" : "我的理解与评论").font(.caption)
-                ReadingWritingEditor(text:binding(\.note),label:"阅读笔记正文",identity:"note:"+record.id.uuidString).frame(minHeight:120).border(.quaternary).accessibilityLabel("阅读笔记正文")
+                ReadingWritingEditor(text:binding(\.note),label:"阅读笔记正文",identity:"note:"+record.id.uuidString).frame(minHeight:120).border(.quaternary)
                 StableTextField("标签，以逗号分隔",text:Binding(get:{current.tags.joined(separator:", ")},set:{ text in journal.editRecord(record.id) { $0.tags = Self.tags(text) } }))
                 ForEach(Array(current.citations.prefix(20).enumerated()),id:\.offset) { index,citation in
                     VStack(alignment:.leading) {
