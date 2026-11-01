@@ -41,6 +41,9 @@ struct TextEdit: Equatable {
     @Published var followPreview = false
     @Published var includeCorrections = true { didSet { refreshPreview() } }
     weak var previewView: PDFView?
+    var previewFollowTask: Task<Void,Never>?
+    var lastFollowedParagraph: NSRange?
+    weak var lastFollowedDocument: PDFDocument?
     @Published var saveConflict = false
     @Published var dirty = false
     @Published var showPreview = true
@@ -221,6 +224,7 @@ struct TextEdit: Equatable {
 
     func releaseEditorResources() {
         editorClosed = true; previewGeneration = UUID()
+        previewFollowTask?.cancel();previewFollowTask = nil
         previewTask?.cancel(); previewTask = nil; preview = nil
         textView?.delegate = nil; textView = nil
     }

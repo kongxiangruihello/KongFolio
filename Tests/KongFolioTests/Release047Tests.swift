@@ -59,4 +59,14 @@ final class Release047Tests: XCTestCase {
     func testInvalidImageCropIsRejected() throws { XCTAssertThrowsError(try EditorImageTransform(x:0.9,y:0,width:0.5,height:1,outputWidth:100).png(image()));XCTAssertThrowsError(try EditorImageTransform(outputWidth:50000).png(image())) }
     func testOriginalImageMetadataSurvivesSaveAsAndDoesNotRender() throws { let d = try folder(),u = d.appendingPathComponent("原.png");try image().write(to:u);let s = "正文\n<!--kongfolio-original-image:"+u.absoluteString+"-->",dest = d.appendingPathComponent("副本.md"),saved = try TextAssets.saving(s,format:.markdown,oldBase:d,destination:dest);XCTAssertFalse(saved.contains(u.absoluteString));let ref = try XCTUnwrap(TextAssets.references(saved,format:.markdown).first);XCTAssertNotNil(try TextMedia.read(ref.reference,baseURL:d));let doc = try RichTextDocument(saved,format:.markdown,baseURL:d);XCTAssertFalse(try doc.pdf().string?.contains("original-image") ?? true) }
     @MainActor func testWordFootnotesUseRealOOXMLParts() throws { let d = try folder(),u = d.appendingPathComponent("脚注.docx");try TextFileExport.writeWord("正文[^note000001]\n\n[^note000001]: 自己的解释",format:.markdown,to:u);let p = Process();p.executableURL = URL(fileURLWithPath:"/usr/bin/unzip");p.arguments = ["-p",u.path,"word/footnotes.xml"];let pipe = Pipe();p.standardOutput = pipe;try p.run();let bytes = pipe.fileHandleForReading.readDataToEndOfFile();p.waitUntilExit();let xml = String(decoding:bytes,as:UTF8.self);XCTAssertEqual(p.terminationStatus,0);XCTAssertTrue(xml.contains("自己的解释"));XCTAssertTrue(xml.contains("footnote")) }
+    @MainActor func testAutomaticFollowDebouncesAndKeepsSourceSelection() async throws {
+        let n = MarkdownNote(text:"甲段\n乙段",storage:try folder()),v = ComposingTextView();v.string = n.text;n.textView = v;n.followPreview = true
+        v.setSelectedRange(NSRange(location:0,length:0));n.followSourceSelection();v.setSelectedRange(NSRange(location:3,length:0));n.followSourceSelection()
+        try await Task.sleep(nanoseconds:450_000_000)
+        XCTAssertEqual(v.selectedRange(),NSRange(location:3,length:0));XCTAssertEqual(n.lastFollowedParagraph?.location,3)
+    }
+    @MainActor func testReleasingEditorCancelsPendingPreviewFollow() throws {
+        let n = MarkdownNote(text:"甲",storage:try folder()),v = ComposingTextView();v.string = n.text;n.textView = v;n.followPreview = true;n.followSourceSelection();XCTAssertNotNil(n.previewFollowTask);n.releaseEditorResources();XCTAssertNil(n.previewFollowTask);XCTAssertNil(n.textView)
+    }
+
 }

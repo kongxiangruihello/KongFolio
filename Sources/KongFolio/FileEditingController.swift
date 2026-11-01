@@ -35,7 +35,15 @@ extension MarkdownNote {
         if let fileURL { try TextVersionHistory.record(versionSnapshot,source:fileURL,storage:storage,label:label) }
     }
     func followSourceSelection() {
-        guard followPreview,let view = textView,!view.hasMarkedText() else { return };locatePreview(focus:false)
+        previewFollowTask?.cancel()
+        guard followPreview,let view = textView,!view.hasMarkedText() else { return }
+        let ns = view.string as NSString,range = ns.paragraphRange(for:MarkdownNote.clamp(view.selectedRange(),to:ns.length))
+        guard range != lastFollowedParagraph || previewView?.document !== lastFollowedDocument else { return }
+        previewFollowTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds:350_000_000) } catch { return }
+            guard let self,!Task.isCancelled,self.followPreview,self.textView?.hasMarkedText() != true else { return }
+            self.lastFollowedParagraph = range;self.lastFollowedDocument = self.previewView?.document;self.locatePreview(focus:false)
+        }
     }
     func locatePreview(focus:Bool = false) {
         guard let sourceView = textView,let previewView,let document = previewView.document,!sourceView.hasMarkedText() else { return }
@@ -44,7 +52,18 @@ extension MarkdownNote {
         if format == .markdown { query = query.replacingOccurrences(of:#"^[#>\s*-]+"#,with:"",options:.regularExpression).replacingOccurrences(of:"**",with:"") }
         if format == .html { query = TextTableEntities.decode(query.replacingOccurrences(of:#"<[^>]+>"#,with:"",options:.regularExpression)) }
         guard !query.isEmpty else { return };query = String(query.prefix(100))
-        let hits = document.findString(query,withOptions:.caseInsensitive)
+        let hits:[PDFSelection]
+        if focus { hits = document.findString(query,withOptions:.caseInsensitive) }
+        else {
+            let current = max(0,min(max(0,document.pageCount-1),previewView.currentPage.map{document.index(for:$0)} ?? 0))
+            let estimated = min(max(0,document.pageCount-1),Int(Double(r.location)/Double(max(1,ns.length))*Double(document.pageCount)))
+            let pages = Set((max(0,current-2)...min(max(0,document.pageCount-1),current+2)).map{$0}+(max(0,estimated-3)...min(max(0,document.pageCount-1),estimated+3)).map{$0})
+            hits = pages.sorted().compactMap { index in
+                guard let page = document.page(at:index),let text = page.string else { return nil }
+                let hit = (text as NSString).range(of:query,options:.caseInsensitive)
+                return hit.location == NSNotFound ? nil : page.selection(for:hit)
+            }
+        }
         let currentPage = previewView.currentPage.map { document.index(for:$0) } ?? 0
         func distance(_ selection:PDFSelection)->Int { guard let page = selection.pages.first else { return Int.max };return abs(document.index(for:page)-currentPage) }
         guard let hit = hits.min(by:{ distance($0) < distance($1) }) else { if focus { status = "此段暂未在预览中找到；可选取较短的正文文字再定位" };return }
@@ -54,7 +73,7 @@ extension MarkdownNote {
     func locateSource(focus:Bool) {
         guard let value = previewView?.currentSelection?.string?.trimmingCharacters(in:.whitespacesAndNewlines),!value.isEmpty,let view = textView,!view.hasMarkedText() else { if focus { status = "请先在预览里选中一段文字" };return }
         let query = String(value.prefix(150)),ns = text as NSString;var matches:[NSRange] = [],p = 0
-        while p < ns.length { let hit = ns.range(of:query,options:.caseInsensitive,range:NSRange(location:p,length:ns.length-p));if hit.location == NSNotFound { break };matches.append(hit);p = NSMaxRange(hit) }
+        while p < ns.length && matches.count < 2000 { let hit = ns.range(of:query,options:.caseInsensitive,range:NSRange(location:p,length:ns.length-p));if hit.location == NSNotFound { break };matches.append(hit);p = NSMaxRange(hit) }
         guard let range = matches.min(by:{abs($0.location-view.selectedRange().location)<abs($1.location-view.selectedRange().location)}) else { if focus { status = "选中文字含排版换行，请选取较短文字再定位" };return }
         view.scrollRangeToVisible(range)
         if focus { view.setSelectedRange(range);view.window?.makeFirstResponder(view);status = "已返回正文位置" }

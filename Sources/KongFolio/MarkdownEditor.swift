@@ -183,6 +183,7 @@ struct MarkdownPreview: NSViewRepresentable {
         // Keep the reading position while the text is retyped.
         let pageIndex = view.currentPage.flatMap { view.document?.index(for: $0) }
         view.document = note.preview
+        note.lastFollowedDocument = nil;note.followSourceSelection()
         if let pageIndex, let page = note.preview?.page(at: min(pageIndex, max(0, (note.preview?.pageCount ?? 1) - 1))) { view.go(to: page) }
     }
     @MainActor final class Coordinator {
