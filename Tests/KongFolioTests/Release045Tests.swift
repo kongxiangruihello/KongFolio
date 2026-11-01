@@ -139,4 +139,24 @@ final class Release045Tests: XCTestCase {
         try await Task.sleep(nanoseconds:600_000_000);XCTAssertEqual(session.analysis.headings.map(\.title),["新标题"]);XCTAssertEqual(session.analysis.characters,7)
     }
 
+    @MainActor func testOpenPanelLeavesCloudDownloadsToCancellableAppImport() {
+        let panel = NSOpenPanel();panel.canChooseFiles = false;panel.canChooseDirectories = true
+        DocumentOpenPanel.configure(panel)
+        XCTAssertFalse(panel.canDownloadUbiquitousContents);XCTAssertTrue(panel.canChooseFiles);XCTAssertFalse(panel.canChooseDirectories);XCTAssertTrue(panel.canResolveUbiquitousConflicts)
+    }
+
+    @MainActor func testCancelledImportCannotClearNewImportOrInstallOldPages() async throws {
+        let folder = try root(),a = folder.appendingPathComponent("旧文件.pdf"),b = folder.appendingPathComponent("新文件.pdf")
+        try XCTUnwrap(SignaturePositionTests().document(pages:2).dataRepresentation()).write(to:a);try XCTUnwrap(SignaturePositionTests().document(pages:1).dataRepresentation()).write(to:b)
+        let w = Workspace(storage:folder.appendingPathComponent("storage"));w.load([a]);XCTAssertTrue(w.isImporting);w.cancelJob();XCTAssertFalse(w.busy);w.load([b])
+        let deadline = Date().addingTimeInterval(10);while w.busy,Date()<deadline { try await Task.sleep(nanoseconds:10_000_000) }
+        XCTAssertFalse(w.busy);XCTAssertEqual(w.count,1);XCTAssertEqual(w.sourceURL?.path,b.path);XCTAssertNil(w.error)
+        try await Task.sleep(nanoseconds:100_000_000);XCTAssertEqual(w.count,1);XCTAssertEqual(w.sourceURL?.path,b.path)
+    }
+    @MainActor func testClosingLoadingTabImmediatelyCancelsAndDoesNotReopenIt() async throws {
+        let folder = try root(),file = folder.appendingPathComponent("稍后读取.pdf");try XCTUnwrap(SignaturePositionTests().document(pages:2).dataRepresentation()).write(to:file)
+        let store = WorkspaceStore(storage:folder.appendingPathComponent("storage")),w = store.addWorkspace();w.load([file]);XCTAssertTrue(w.busy);store.close(w.id);XCTAssertFalse(w.busy);XCTAssertFalse(w.isImporting);XCTAssertNil(w.sourceURL)
+        try await Task.sleep(nanoseconds:150_000_000);XCTAssertEqual(w.count,0);XCTAssertNil(w.sourceURL);XCTAssertEqual(store.tabs.count,1)
+    }
+
 }

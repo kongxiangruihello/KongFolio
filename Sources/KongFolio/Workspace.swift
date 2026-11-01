@@ -71,6 +71,7 @@ import UniformTypeIdentifiers
     @Published var dirty = false
     @Published var showTools = false
     var openPanel: NSOpenPanel?
+    var importGeneration = UUID()
     @Published var comparison: PDFDocument?
     @Published var recognizedText = ""
     @Published var search = ""
@@ -840,10 +841,15 @@ import UniformTypeIdentifiers
         let panel = NSOpenPanel()
         var types: [UTType] = [ReadingShortcut.fileType,.pdf,.image,.html,.plainText,UTType(exportedAs:"com.kongfolio.project")]
         types += TextImport.markdownExtensions.compactMap { UTType(filenameExtension:$0) }
-        panel.allowedContentTypes = types; panel.allowsMultipleSelection = true; openPanel = panel
+        panel.allowedContentTypes = types; panel.allowsMultipleSelection = true; DocumentOpenPanel.configure(panel); openPanel = panel
         let completion: (NSApplication.ModalResponse) -> Void = { [weak self,weak panel] response in
-            guard let self else { return }; self.openPanel = nil
-            if response == .OK, let urls = panel?.urls, !urls.isEmpty { self.openSelected(urls,insert:insert,merge:merge) }
+            // Retain the chosen URLs before releasing our last reference to the chooser.
+            let urls = response == .OK ? (panel?.urls ?? []) : []
+            guard let self else { return }
+            self.openPanel = nil
+            guard !urls.isEmpty else { return }
+            // Return to AppKit so its sheet can dismiss before installing a batch of native PDF views.
+            DispatchQueue.main.async { [weak self] in self?.openSelected(urls,insert:insert,merge:merge) }
         }
         if let window = pdfView?.window ?? NSApp?.keyWindow { panel.beginSheetModal(for:window,completionHandler:completion) }
         else { panel.begin(completionHandler:completion) }

@@ -424,6 +424,7 @@ import UniformTypeIdentifiers
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         switch tabs[index] {
         case .document(let workspace):
+            if workspace.isImporting { workspace.cancelImport() }
             guard !workspace.busy else { workspace.status = "请等待任务完成或点击取消任务"; return }
             if let pending = workspace.unloadWorker {
                 guard !closingTabs.contains(id) else { return }
