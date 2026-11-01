@@ -97,6 +97,7 @@ struct MarkdownTextView: NSViewRepresentable {
         scroll.documentView = view
         view.registerForDraggedTypes([.fileURL, .png, .tiff])
         view.delegate = context.coordinator
+        view.committed = { [weak coordinator = context.coordinator] in coordinator?.commit($0) }
         view.isRichText = false
         view.allowsUndo = true
         view.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
@@ -115,11 +116,12 @@ struct MarkdownTextView: NSViewRepresentable {
         view.minSize = NSSize(width: 0, height: max(1, scroll.contentSize.height))
         if view.frame.height < scroll.contentSize.height { view.setFrameSize(NSSize(width: scroll.contentSize.width, height: scroll.contentSize.height)) }
         // Only an outside change (such as a restored backup) differs from the view; typing already matches.
-        if view.string != note.text { view.string = note.text }
+        context.coordinator.input.synchronize(view)
     }
 
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
         guard let view = scroll.documentView as? NSTextView else { return }
+        (view as? ComposingTextView)?.committed = nil
         view.delegate = nil
         if coordinator.note.textView === view { coordinator.note.textView = nil }
         if let view = view as? NoteTextView { view.note = nil }
@@ -128,11 +130,14 @@ struct MarkdownTextView: NSViewRepresentable {
 
     @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
         let note: MarkdownNote
-        init(note: MarkdownNote) { self.note = note }
+        let input: StableInputCoordinator
+        init(note: MarkdownNote) { self.note = note; input = StableInputCoordinator(read:{note.text},write:{note.text = $0}) }
 
         func textDidChange(_ notification: Notification) {
-            guard let view = notification.object as? NSTextView, note.text != view.string else { return }
-            note.text = view.string
+            guard let view = notification.object as? NSTextView else { return }; commit(view)
+        }
+        func commit(_ view:NSTextView) {
+            input.publish(view)
         }
     }
 }

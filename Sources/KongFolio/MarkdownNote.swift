@@ -255,7 +255,8 @@ struct TextEdit: Equatable {
     /// Adds `prefix` to every non-empty line touched by the selection, or removes it when all of them already have it.
     nonisolated static func lineEdit(in text: String, selection: NSRange, prefix: String) -> TextEdit {
         let source = text as NSString
-        let range = source.lineRange(for: clamp(selection, to: source.length))
+        let selected = clamp(selection, to:source.length)
+        let range = source.lineRange(for:selected)
         let block = source.substring(with: range)
         var lines = block.components(separatedBy: "\n")
         var endsWithNewline = false
@@ -268,12 +269,24 @@ struct TextEdit: Equatable {
             return remove ? String(line.dropFirst(prefix.count)) : prefix + line
         }
         let replacement = changed.joined(separator: "\n") + (endsWithNewline ? "\n" : "")
-        let length = (replacement as NSString).length - (endsWithNewline ? 1 : 0)
-        return TextEdit(range: range, replacement: replacement, selection: NSRange(location: range.location, length: max(0, length)))
+        let prefixLength = (prefix as NSString).length
+        func position(_ offset:Int) -> Int {
+            var start = range.location, delta = 0
+            for line in lines {
+                if start > offset { break }
+                if content.isEmpty || !line.isEmpty {
+                    if remove { delta -= min(prefixLength,max(0,offset-start)) } else { delta += prefixLength }
+                }
+                start += (line as NSString).length+1
+            }
+            return max(0,offset+delta)
+        }
+        let start = position(selected.location), end = position(NSMaxRange(selected))
+        return TextEdit(range:range,replacement:replacement,selection:NSRange(location:start,length:max(0,end-start)))
     }
 
     func apply(_ edit: TextEdit) {
-        guard let view = textView, view.shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
+        guard let view = textView, !view.hasMarkedText(), view.shouldChangeText(in: edit.range, replacementString: edit.replacement) else { return }
         view.textStorage?.replaceCharacters(in: edit.range, with: edit.replacement)
         view.didChangeText()
         view.setSelectedRange(edit.selection)
