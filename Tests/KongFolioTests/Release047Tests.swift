@@ -75,4 +75,13 @@ final class Release047Tests: XCTestCase {
         XCTAssertEqual((source as NSString).substring(with:EditorNavigation.scope(source,selection:selected,explicit:false)),"第一段中文😀正文\n")
     }
 
+    @MainActor func testFileChooserDoesNotReuseUnloadedOrFailedSourceTab() throws {
+        let store = WorkspaceStore(storage:try folder()),unloaded = store.addWorkspace();unloaded.sourceURL = URL(fileURLWithPath:"/tmp/deferred.pdf");unloaded.needsLoad = true;store.newNote();XCTAssertNil(store.emptyFileChooserWorkspace)
+        unloaded.needsLoad = false;XCTAssertNil(store.emptyFileChooserWorkspace)
+    }
+    @MainActor func testFileChooserOnlyReusesAnIdleBlankTab() throws {
+        let store = WorkspaceStore(storage:try folder()),blank = store.addWorkspace();store.newNote();XCTAssertTrue(store.emptyFileChooserWorkspace === blank)
+        blank.isImporting = true;XCTAssertNil(store.emptyFileChooserWorkspace);blank.isImporting = false;blank.projectURL = URL(fileURLWithPath:"/tmp/deferred.kongfolio");XCTAssertNil(store.emptyFileChooserWorkspace)
+    }
+
 }
