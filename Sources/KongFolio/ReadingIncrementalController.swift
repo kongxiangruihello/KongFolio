@@ -15,7 +15,7 @@ import Combine
 }
 extension WorkspaceStore {
     func openReadingItem(_ item:ReadingLibraryID) {
-        readingLibraryNavigation = item
+        readingLibraryNavigation = item;readingLibraryNavigationRequest = UUID()
         switch item { case .record(let id):readingRecordID = id;case .essay(let id):journal.selectEssay(id) }
         openReadingDesk(.search,window:true)
     }

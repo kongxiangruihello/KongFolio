@@ -80,10 +80,10 @@ struct ReadingLibraryView: View {
             let request = request
             do { try await Task.sleep(nanoseconds:300_000_000) } catch { return }
             let result = await ReadingSearchWorker.shared.library(journal.state,request:request)
-            if !Task.isCancelled { items = result;if let desired = pendingFilterPage { page = ReadingPagination(total:result.count,page:desired,size:size).index;pendingFilterPage = nil };if let target = pendingNavigation ?? store.readingLibraryNavigation,let i = result.firstIndex(where:{$0.id == target}) { page = i/size;editing = target;selection = [target];pendingNavigation = nil;store.readingLibraryNavigation = nil } }
+            if !Task.isCancelled { items = result;if let desired = pendingFilterPage { page = ReadingPagination(total:result.count,page:desired,size:size).index;pendingFilterPage = nil };if let target = pendingNavigation,let i = result.firstIndex(where:{$0.id == target}) { page = i/size;editing = target;selection = [target];pendingNavigation = nil } }
         }
         .onAppear { do { filters = try SavedReadingFilter.load(journal.folder) } catch { filterMessage = error.localizedDescription };if let target = store.readingLibraryNavigation { navigate(target) } }
-        .onChange(of:store.readingLibraryNavigation) { _,target in if let target { navigate(target) } }
+        .onChange(of:store.readingLibraryNavigationRequest) { _,_ in if let target = store.readingLibraryNavigation { navigate(target) } }
         .onChange(of:page) { _,_ in rememberPage() }
         .onChange(of:recent) { _,_ in resetPage() }.onChange(of:untagged) { _,_ in resetPage() }
         .onChange(of:selection) { _,ids in if ids.count == 1,let id = ids.first { editing = id; if case .record(let r) = id { store.readingRecordID = r } } }
@@ -91,7 +91,7 @@ struct ReadingLibraryView: View {
         .onChange(of:topic) { _,_ in resetPage() }
         .onChange(of:size) { _,_ in page = 0 }.onChange(of:items.count) { _,_ in page = pagination.index }
         .sheet(isPresented:$showOrganization) { ReadingOrganizationSheet(journal:journal,ids:selection) }
-        .sheet(isPresented:$showReferences) { if let editing { ReadingReferencesView(journal:journal,id:editing,open:{ target in showReferences = false;navigate(target) }) } }
+        .sheet(isPresented:$showReferences) { if let editing { ReadingReferencesView(journal:journal,id:editing,open:{ target in showReferences = false;store.openReadingItem(target) }) } }
         .sheet(isPresented:$showTags) { ReadingTagManager(journal:journal) }
         .sheet(isPresented:$showRelink) { ReadingBatchRelinkView(store:store,journal:journal) }
         .sheet(isPresented:$showBackups) { ReadingBackupView(journal:journal) }
@@ -121,7 +121,7 @@ struct ReadingLibraryView: View {
         if case .record(let id) = target { store.readingRecordID = id }
         // A new window has no search rows yet. Keep the target until the asynchronous result installs it.
         if previous == request,let i = items.firstIndex(where:{$0.id == target}) {
-            page = i/size;selection = [target];pendingNavigation = nil;store.readingLibraryNavigation = nil
+            page = i/size;selection = [target];pendingNavigation = nil
         }
     }
     private var editingDraft:Bool { switch editing { case .record(let id): return journal.draftRecord?.id == id; case .essay(let id): return journal.draftEssay?.id == id; case nil: return false } }

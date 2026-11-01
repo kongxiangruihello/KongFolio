@@ -139,4 +139,8 @@ final class Release046Tests: XCTestCase {
         let folder = try root(),source = folder.appendingPathComponent("external");try FileManager.default.createDirectory(at:source,withIntermediateDirectories:true);try Data("坏记录".utf8).write(to:source.appendingPathComponent("catalog.json"));XCTAssertThrowsError(try ReadingBackupStorage.importEmergency(source,folder:folder.appendingPathComponent("live")));XCTAssertFalse(FileManager.default.fileExists(atPath:folder.appendingPathComponent("live/catalog.json").path))
     }
 
+    @MainActor func testRepeatedNavigationToSameRecordHasIndependentRequestIdentity() throws {
+        let store = WorkspaceStore(storage:try root()),r = note();store.journal.add(r);store.openReadingItem(.record(r.id));let first = store.readingLibraryNavigationRequest;store.openReadingItem(.record(r.id));XCTAssertFalse(first == store.readingLibraryNavigationRequest);XCTAssertEqual(store.readingLibraryNavigation,.record(r.id));XCTAssertEqual(store.journal.state.records.count,1)
+    }
+
 }

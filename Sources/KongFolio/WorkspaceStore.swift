@@ -38,6 +38,7 @@ import UniformTypeIdentifiers
     @Published var showQuickReadingNote = false
     @Published var readingEssayBlockID:UUID?
     @Published var readingLibraryNavigation:ReadingLibraryID?
+    @Published var readingLibraryNavigationRequest = UUID()
     @Published var readingRecordID:UUID?
     @Published var readingRecordSelection = Set<UUID>()
     @Published var readingExportEssay = false
