@@ -12,7 +12,7 @@ struct AcademicTextEditor: NSViewRepresentable {
     }
     func updateNSView(_ scroll:NSScrollView,context:Context) {
         guard let view = scroll.documentView as? NSTextView else { return }
-        if !view.hasMarkedText(), view.string != controller.academicText { view.string = controller.academicText; let max = (view.string as NSString).length; let range = controller.academicSelection; view.setSelectedRange(NSRange(location:min(range.location,max),length:min(range.length,max-min(range.location,max)))) }
+        if !view.hasMarkedText(), view.string != controller.academicText { TextInputSync.replaceExternal(view,with:controller.academicText); let max = (view.string as NSString).length; let range = controller.academicSelection; view.setSelectedRange(NSRange(location:min(range.location,max),length:min(range.length,max-min(range.location,max)))) }
     }
     static func dismantleNSView(_ scroll:NSScrollView,coordinator:Coordinator) { if coordinator.controller.academicTextView === scroll.documentView { coordinator.controller.academicTextView = nil }; (scroll.documentView as? ComposingTextView)?.finishEditingSession(); scroll.documentView = nil }
     @MainActor final class Coordinator:NSObject,NSTextViewDelegate {

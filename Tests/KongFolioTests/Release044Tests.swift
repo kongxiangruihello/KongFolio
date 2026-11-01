@@ -91,6 +91,8 @@ final class Release044Tests: XCTestCase {
     @MainActor func testEditorUndoHistoriesAreIndependentAndClearedOnClose() {
         let a = ComposingTextView(), b = ComposingTextView(); XCTAssertFalse(a.undoManager === b.undoManager)
         a.undoManager?.registerUndo(withTarget:a) { $0.string = "旧文字" }; a.finishEditingSession(); XCTAssertFalse(a.undoManager?.canUndo ?? true)
+        b.string = "恢复前长文字"; b.undoManager?.registerUndo(withTarget:b) { $0.string = "旧状态" }
+        TextInputSync.replaceExternal(b,with:"恢复后"); XCTAssertFalse(b.undoManager?.canUndo ?? true); XCTAssertEqual(b.string,"恢复后")
     }
     @MainActor func testSustainedChineseEditingAcrossRecordSwitches() async throws {
         let duration = min(600,max(1,Double(ProcessInfo.processInfo.environment["KONGFOLIO_LONG_INPUT_SECONDS"] ?? "1") ?? 1)), root = try root(), journal = ReadingJournal(storage:root)
