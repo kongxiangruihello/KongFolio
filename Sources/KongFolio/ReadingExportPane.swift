@@ -14,6 +14,8 @@ struct ReadingExportPane: View {
     @State private var excluded:Set<String> = []
     @State private var page = 0
     @State private var showBatch = false
+    @State private var showReview = false
+    @State private var showIncremental = false
     private var format:ReadingRecordExport.Format { preferences.format }
     private var candidates:[ReadingExportItem] {
         if scope == .essay { guard let essay = journal.essay(journal.currentEssayID),journal.draftEssay?.id != essay.id,essay.hasContent else { return [] };return [.essay(essay)] }
@@ -38,6 +40,7 @@ struct ReadingExportPane: View {
         VStack(alignment:.leading,spacing:10) {
             settings
             DisclosureGroup("导出清单 · 已选 \(snapshot.orderedItems.count)/\(candidates.count) 项") { selectionList }
+            HStack { Button("检查图片、原文与出处…") { showReview = true }.disabled(empty || controller.busy);Button("新增与修改内容导出…") { showIncremental = true } }
             ForEach(ReadingExportOrdering.warnings(snapshot),id:\.self) { Text($0).font(.caption).foregroundStyle(.orange) }
             HStack {
                 Button("刷新实际预览") { controller.preview(snapshot,assets:assets,format:format) }.disabled(empty || !preferences.options.valid || controller.busy)
@@ -52,6 +55,8 @@ struct ReadingExportPane: View {
         }.onAppear { scope = store.readingExportEssay ? .essay : ((!store.readingLibraryExportSelection.isEmpty || store.readingRecordID != nil || !store.readingRecordSelection.isEmpty) ? .selected : .book) }
         .onDisappear { controller.close() }.onChange(of:preferences) { _,value in value.save() }
         .onChange(of:scope) { _,_ in page = 0;excluded = [];order = [] }.onChange(of:candidates.count) { _,_ in page = pagination.index }
+        .sheet(isPresented:$showReview) { ReadingOutputReviewView(store:store,snapshot:snapshot,assets:assets) }
+        .sheet(isPresented:$showIncremental) { ReadingIncrementalExportView(journal:journal,controller:store.incrementalExport,options:preferences.options) }
         .sheet(isPresented:$showBatch) { ReadingExportBatchView(store:store,journal:journal,snapshot:snapshot) }
     }
     private var assets:URL { journal.folder.appendingPathComponent("Assets") }

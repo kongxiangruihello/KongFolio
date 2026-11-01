@@ -238,9 +238,9 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         return result
     }
     /// Relinking never changes either original. Progress and metadata follow the explicitly chosen replacement.
-    func relink(path oldPath: String, to url: URL, defaults: UserDefaults) throws {
+    func relink(path oldPath: String, to url: URL, defaults: UserDefaults, validated:Bool = false) throws {
         guard Self.supports(url), FileManager.default.fileExists(atPath: url.path) else { throw FolioError(message: "请选择可读取的书籍文件") }
-        if url.pathExtension.lowercased() == "pdf" {
+        if !validated, url.pathExtension.lowercased() == "pdf" {
             guard let doc = PDFDocument(url: url), !doc.isLocked, doc.pageCount > 0 else { throw FolioError(message: "无法读取这本 PDF，请先解锁或选择其他文件") }
         }
         let path = ReadingProgress.canonicalPath(url.path)

@@ -5,8 +5,9 @@ struct DocumentTasksView: View {
     @ObservedObject var queue: DocumentTaskQueue
     @ObservedObject var store: WorkspaceStore
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        ScrollView { VStack(alignment: .leading, spacing: 12) {
             Text("后台任务").font(.title2.bold())
+            ReadingOpenQueue(store:store)
             Text("处理使用任务开始时的文档副本，可关闭面板继续阅读其他文件。暂停和重启会保留已完成页面；继续前核对原件版本。取消不会覆盖原件或已有输出。").font(.caption).foregroundStyle(.secondary)
             if !queue.persistenceMessage.isEmpty { Text(queue.persistenceMessage).font(.caption).foregroundStyle(.red) }
             Button("只重试失败任务") { queue.retryFailed() }.disabled(!queue.items.contains { $0.state == .failed && queue.canResume($0.id) })
@@ -34,7 +35,7 @@ struct DocumentTasksView: View {
                 }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
             }
             Button("关闭") { store.showBackgroundJobs = false }.keyboardShortcut(.cancelAction)
-        }.padding(24).adaptiveSheet(width: 620, height: 620, minimumWidth: 350, flexibleHeight: true)
+        } }.padding(24).adaptiveSheet(width: 620, height: 620, minimumWidth: 350, flexibleHeight: true)
     }
 }
 struct DocumentTaskButton: View {

@@ -91,3 +91,18 @@ extension ReadingJournalWriter {
     func ensureDaily(_ state:ReadingJournalState,folder:URL) throws { try ReadingBackupStorage.daily(state,folder:folder) }
     func checkpoint(_ state:ReadingJournalState,folder:URL,kind:ReadingBackup.Kind) throws -> ReadingBackup { try ReadingBackupStorage.capture(state,folder:folder,kind:kind) }
 }
+
+extension ReadingBackupStorage {
+    /// Import an extracted emergency catalog as a previewable backup, without changing live records.
+    static func importEmergency(_ source:URL,folder:URL) throws -> ReadingBackup {
+        let catalog = source.appendingPathComponent("catalog.json");try checked(catalog)
+        let attributes = try FileManager.default.attributesOfItem(atPath:catalog.path)
+        guard (attributes[.size] as? NSNumber)?.intValue ?? Int.max <= 128*1024*1024 else { throw FolioError(message:"应急目录记录过大") }
+        guard let transfer = try ReadingJournalTransfer.read(source) else { throw FolioError(message:"请选择解压后的 ReadingJournal 目录") }
+        let base = root(folder),blobs = base.appendingPathComponent("Assets",isDirectory:true);try checked(base);try checked(blobs);try FileManager.default.createDirectory(at:blobs,withIntermediateDirectories:true)
+        var assets:[String:String] = [:]
+        for (name,data) in transfer.assets { try Task.checkCancellation();let hash = OCRPageCache.digest(data),file = blobs.appendingPathComponent(hash);try checked(file);if FileManager.default.fileExists(atPath:file.path) { guard try Data(contentsOf:file) == data else { throw FolioError(message:"备份图片校验失败") } } else { try data.write(to:file,options:.atomic) };assets[name] = hash }
+        let value = ReadingBackup(kind:.manual,state:transfer.state,assets:assets,digest:OCRPageCache.digest(try bytes(transfer.state)))
+        try JSONEncoder().encode(value).write(to:try file(value.id,folder:folder),options:.atomic);return value
+    }
+}

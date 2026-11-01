@@ -5,8 +5,8 @@ struct StartupReviewView: View {
     @State private var message = ""
     var body: some View {
         VStack(alignment:.leading,spacing:14) {
-            Text("上次退出未完成，请逐本恢复").font(.headline)
-            Text("先恢复需要的书籍。原件与恢复副本均保留；曾中断打开的文件单独提示，不自动再次载入。")
+            Text("选择需要恢复的文献").font(.headline)
+            Text("按需恢复需要的书籍。原件与恢复副本均保留；曾中断打开的文件单独提示，不自动再次载入。")
             ScrollView {
                 ForEach(store.startupEntries,id:\.slot) { entry in
                     HStack {
