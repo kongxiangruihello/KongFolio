@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct QuickReadingNote:View {
+struct QuickReadingNote: View {
     @ObservedObject var store:WorkspaceStore
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""

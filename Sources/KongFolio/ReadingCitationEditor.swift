@@ -1,5 +1,5 @@
 import SwiftUI
-struct ReadingCitationEditor:View {
+struct ReadingCitationEditor: View {
     @ObservedObject var journal:ReadingJournal
     let record:UUID
     let index:Int

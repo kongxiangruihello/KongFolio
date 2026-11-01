@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ReadingExportBatchView:View {
+struct ReadingExportBatchView: View {
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var journal:ReadingJournal
     let snapshot:ReadingExportSnapshot

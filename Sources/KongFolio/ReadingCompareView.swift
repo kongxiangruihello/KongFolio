@@ -1,5 +1,5 @@
 import SwiftUI
-struct ReadingCompareView:View {
+struct ReadingCompareView: View {
     @ObservedObject var journal:ReadingJournal
     let backup:ReadingBackup
     let item:ReadingLibraryID

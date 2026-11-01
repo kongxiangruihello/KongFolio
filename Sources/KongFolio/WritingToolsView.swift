@@ -1,10 +1,10 @@
 import SwiftUI
 
-struct WritingCharacterCount:View {
+struct WritingCharacterCount: View {
     @ObservedObject var session:WritingSession
     var body:some View { Text("\(session.analysis.characters) 字") }
 }
-struct ReadingWritingEditor:View {
+struct ReadingWritingEditor: View {
     @Binding var text:String
     let label:String
     let identity:String
@@ -17,7 +17,7 @@ struct ReadingWritingEditor:View {
         }.onAppear { session.analyze(text) }.onChange(of:text) { _,value in session.analyze(value) }
     }
 }
-struct WritingToolbar:View {
+struct WritingToolbar: View {
     @ObservedObject var session:WritingSession
     @Environment(\.isEnabled) private var enabled
     @State private var showFind = false
@@ -55,7 +55,7 @@ struct WritingToolbar:View {
     }
     private var matches:Int { guard !query.isEmpty,let text = session.view?.string else { return 0 };return (try? NSRegularExpression(pattern:NSRegularExpression.escapedPattern(for:query),options:.caseInsensitive).numberOfMatches(in:text,range:NSRange(location:0,length:text.utf16.count))) ?? 0 }
 }
-struct WritingCleanupView:View {
+struct WritingCleanupView: View {
     @ObservedObject var session:WritingSession
     @Environment(\.dismiss) private var dismiss
     @State private var raw = ""

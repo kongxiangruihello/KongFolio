@@ -49,7 +49,7 @@ struct ReadingEssayDetail: View {
         }
     }
 }
-struct ReadingEssayBlockView:View {
+struct ReadingEssayBlockView: View {
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var journal:ReadingJournal
     let essayID:UUID
