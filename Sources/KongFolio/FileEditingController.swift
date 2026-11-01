@@ -47,7 +47,7 @@ extension MarkdownNote {
     }
     func locatePreview(focus:Bool = false) {
         guard let sourceView = textView,let previewView,let document = previewView.document,!sourceView.hasMarkedText() else { return }
-        let ns = sourceView.string as NSString,r = ns.paragraphRange(for:MarkdownNote.clamp(sourceView.selectedRange(),to:ns.length))
+        let ns = sourceView.string as NSString,r = EditorNavigation.scope(sourceView.string,selection:sourceView.selectedRange(),explicit:focus)
         var query = ns.substring(with:r).trimmingCharacters(in:.whitespacesAndNewlines)
         if format == .markdown { query = query.replacingOccurrences(of:#"^[#>\s*-]+"#,with:"",options:.regularExpression).replacingOccurrences(of:"**",with:"") }
         if format == .html { query = TextTableEntities.decode(query.replacingOccurrences(of:#"<[^>]+>"#,with:"",options:.regularExpression)) }

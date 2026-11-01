@@ -133,3 +133,11 @@ struct EditorMergePlan {
         for part in parts.reversed() { value.replaceCharacters(in:part.range,with:part.conflict ? (choices[part.id] == true ? part.local : part.external) : part.automatic) };return value as String
     }
 }
+
+/// Explicit jumps honor the selected phrase; automatic following uses the whole paragraph.
+enum EditorNavigation {
+    static func scope(_ source:String,selection:NSRange,explicit:Bool)->NSRange {
+        let ns = source as NSString,selected = MarkdownNote.clamp(selection,to:ns.length)
+        return explicit && selected.length > 0 ? selected : ns.paragraphRange(for:selected)
+    }
+}

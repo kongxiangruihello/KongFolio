@@ -69,4 +69,10 @@ final class Release047Tests: XCTestCase {
         let n = MarkdownNote(text:"甲",storage:try folder()),v = ComposingTextView();v.string = n.text;n.textView = v;n.followPreview = true;n.followSourceSelection();XCTAssertNotNil(n.previewFollowTask);n.releaseEditorResources();XCTAssertNil(n.previewFollowTask);XCTAssertNil(n.textView)
     }
 
+    func testExplicitPreviewJumpHonorsSelectedPhrase() {
+        let source = "第一段中文😀正文\n下一段",selected = NSRange(location:0,length:5)
+        XCTAssertEqual(EditorNavigation.scope(source,selection:selected,explicit:true),selected)
+        XCTAssertEqual((source as NSString).substring(with:EditorNavigation.scope(source,selection:selected,explicit:false)),"第一段中文😀正文\n")
+    }
+
 }
