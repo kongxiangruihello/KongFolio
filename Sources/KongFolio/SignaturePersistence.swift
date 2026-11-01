@@ -80,3 +80,12 @@ extension Workspace {
         pushUndo(.snapshot(before)); changed(); status = "已替换签名，可撤销"
     }
 }
+
+extension Workspace {
+    /// Explicit Save commits the stamp currently shown; timed autosave continues to wait for placement.
+    func commitPendingSignatureForSave() -> Bool {
+        guard placingSignature != nil else { return true }
+        guard !busy,!drawingInProgress else { return false }
+        confirmSignaturePlacement();return placingSignature == nil
+    }
+}

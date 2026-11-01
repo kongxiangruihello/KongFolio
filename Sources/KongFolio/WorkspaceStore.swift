@@ -33,13 +33,18 @@ import UniformTypeIdentifiers
     @Published private(set) var selectedID: UUID?
     static let readingModeKey = "KongFolio.focusedReadingMode"
     @Published var readingMode = true { didSet { readingDefaults.set(readingMode,forKey:Self.readingModeKey) } }
-    @Published var showReadingDesk = true
+    @Published var showReadingDesk = false
     @Published var readingDeskSection = ReadingDeskSection.excerpts
+    @Published var showQuickReadingNote = false
+    @Published var readingEssayBlockID:UUID?
     @Published var readingRecordID:UUID?
     @Published var readingRecordSelection = Set<UUID>()
     @Published var readingExportEssay = false
     @Published var readingDeskWindowRequest:UUID?
     lazy var journal = ReadingJournal(storage:storage)
+    lazy var readingExportBatch = ReadingExportBatch()
+    lazy var readingPackage = ReadingPackageController()
+    var readingLibraryExportSelection:Set<ReadingLibraryID> = []
     @Published var showResearch = false
     var startupSafetyEnabled = !AppEnvironment.isTestRun
     @Published var showStartupReview = false
@@ -243,6 +248,7 @@ import UniformTypeIdentifiers
         if selectedID != id { activeWorkspace?.saveReadingRecord() }
         selectedID = id
         focusedID = id
+        tab.workspace?.refreshSignatureLibrary()
         forwarding = tab.changes.sink { [weak self] _ in self?.objectWillChange.send() }
         recordActivity("切换标签页")
         tab.workspace?.lastActive = Date()
@@ -399,6 +405,7 @@ import UniformTypeIdentifiers
     }
     /// Finish original-file writes before the existing session/termination checks run.
     func finishPendingSaves() async -> Bool {
+        await readingExportBatch.stopAndWait();await readingPackage.stopAndWait();WritingPositions.shared.flush()
         guard ResearchDraftRegistry.shared.flush(storage:storage) else { present(FolioError(message:"研究整理草稿未能保存，请处理后再关闭")); return false }
         await importLegacyReadingRecords()
         do { await journal.waitForMaintenance(); try await journal.flush(); try await library.flushReflections() } catch { present(error); return false }

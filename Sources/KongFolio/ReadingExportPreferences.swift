@@ -6,7 +6,12 @@ struct ReadingExportOptions: Codable, Equatable {
     var includeQuote = true
     var includeNote = true
     var includeSources = true
-    var valid:Bool { !fontName.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && fontName.count < 128 && fontSize.isFinite && (8...36).contains(fontSize) && (includeQuote || includeNote || includeSources) }
+    var lineHeight:Double? = nil
+    var margin:Double? = nil
+    var footnotes:Bool? = nil
+    var sourceLinks:[String:String]? = nil
+    var layout:TextLayoutOptions { var value = TextLayoutOptions();value.fontName = fontName;value.fontSize = fontSize;value.lineHeight = lineHeight ?? 1.4;value.margin = margin ?? 70.87;return value }
+    var valid:Bool { !fontName.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && fontName.count < 128 && fontSize.isFinite && (8...36).contains(fontSize) && layout.valid && (includeQuote || includeNote || includeSources) }
     func heading(_ record:ReadingRecord) -> String {
         if !record.title.isEmpty { return record.title }
         let text = includeQuote && record.kind != .note ? record.quote : (includeNote ? record.note : "")
@@ -23,4 +28,18 @@ struct ReadingExportPreferences: Codable, Equatable {
     }
     func save(defaults:UserDefaults = .standard) { guard options.valid, let data = try? JSONEncoder().encode(self) else { return }; defaults.set(data,forKey:Self.key) }
     var directoryURL:URL? { guard let path = directoryPath, path.hasPrefix("/") else { return nil }; var directory:ObjCBool = false; guard FileManager.default.fileExists(atPath:path,isDirectory:&directory),directory.boolValue else { return nil }; return URL(fileURLWithPath:path,isDirectory:true) }
+}
+
+struct ReadingExportProfile:Codable,Identifiable {
+    var id = UUID()
+    var name:String
+    var options:ReadingExportOptions
+    static var presets:[Self] {
+        var excerpts = ReadingExportOptions();excerpts.includeNote = false;excerpts.lineHeight = 1.3;excerpts.margin = 56;excerpts.footnotes = true
+        var notes = ReadingExportOptions();notes.lineHeight = 1.5
+        var essay = ReadingExportOptions();essay.lineHeight = 1.6;essay.margin = 80;essay.footnotes = true
+        return [Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000101")!,name:"摘录汇编",options:excerpts),Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000102")!,name:"读书笔记",options:notes),Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000103")!,name:"研究札记",options:essay)]
+    }
+    static func load(defaults:UserDefaults = .standard) -> [Self] { guard let data = defaults.data(forKey:"KongFolio.readingExportProfiles"),let profiles = try? JSONDecoder().decode([Self].self,from:data) else { return [] };return profiles.filter{$0.options.valid} }
+    static func save(_ profiles:[Self],defaults:UserDefaults = .standard) throws { guard profiles.count<=100,profiles.allSatisfy({$0.options.valid && !$0.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty}) else { throw FolioError(message:"模板名称或设置无效，最多保存 100 份模板") };defaults.set(try JSONEncoder().encode(profiles),forKey:"KongFolio.readingExportProfiles") }
 }

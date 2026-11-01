@@ -55,6 +55,7 @@ enum DocumentSavePipeline {
 extension Workspace {
     /// A running disk write is never cancelled by a new keystroke. The next save captures the newer revision.
     @discardableResult func saveInBackground(automatic: Bool = true, includePrivateData: Bool = false) async -> Bool {
+        if !automatic,!commitPendingSignatureForSave() { return false }
         guard !Task.isCancelled else { return false }
         while captureInProgress {
             if Task.isCancelled { return false }

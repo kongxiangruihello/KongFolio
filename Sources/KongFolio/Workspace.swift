@@ -432,7 +432,7 @@ import UniformTypeIdentifiers
         guard !started else { return }
         started = true
         recentFiles = (try? JSONDecoder().decode([String].self, from: Data(contentsOf: storage.appendingPathComponent("Recent.json")))) ?? []
-        signatures = (try? JSONDecoder().decode([SignatureTemplate].self, from: Data(contentsOf: storage.appendingPathComponent("Signatures.json")))) ?? []
+        refreshSignatureLibrary()
         loadSignaturePositions()
         let candidate = [recoveryURL, legacyRecoveryURL].first { FileManager.default.fileExists(atPath: $0.path) }
         if restoreRecovery, let candidate, count == 0 {
@@ -584,6 +584,7 @@ import UniformTypeIdentifiers
     }
 
     @discardableResult func saveProject(asNew: Bool = false, background: Bool = true, automatic: Bool = false) -> Bool {
+        if !automatic,!commitPendingSignatureForSave() { return false }
         guard count > 0 else { return false }
         let url: URL
         if let existing = projectURL, !asNew {

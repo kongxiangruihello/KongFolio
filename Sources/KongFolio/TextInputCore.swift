@@ -2,13 +2,40 @@ import AppKit
 
 /// Native text storage owns the composition, selection and undo stack; model echoes never replace it.
 class ComposingTextView: NSTextView {
+    weak var writingSession:WritingSession?
+    override func performKeyEquivalent(with event:NSEvent) -> Bool {
+        guard window?.firstResponder === self,!hasMarkedText(),let session = writingSession else { return super.performKeyEquivalent(with:event) }
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock,.numericPad,.function])
+        let key = event.charactersIgnoringModifiers?.lowercased()
+        if modifiers == .command {
+            if key == "b" { session.wrap("**","**",placeholder:"粗体");return true }
+            if key == "i" { session.wrap("*","*",placeholder:"斜体");return true }
+            if key == "f" { session.findRequest = UUID();return true }
+            if key == "g" { session.find(session.lastQuery);return true }
+        }
+        if modifiers == [.command,.shift],key == "g" { session.find(session.lastQuery,backward:true);return true }
+        return super.performKeyEquivalent(with:event)
+    }
+    var focused:(()->Void)?
+    override func becomeFirstResponder() -> Bool { let result = super.becomeFirstResponder();if result { focused?();WritingRegistry.attach(self,key:positionKey) };return result }
+    var positionKey = ""
+    var supportsMarkdownLists = false
     private let editingHistory = UndoManager()
+    override func insertNewline(_ sender:Any?) {
+        if supportsMarkdownLists,!hasMarkedText(),let edit = WritingEdit.newline(string,selection:selectedRange()) { WritingEdit.apply(edit,to:self) } else { super.insertNewline(sender) }
+    }
+    override func insertTab(_ sender:Any?) {
+        if supportsMarkdownLists,!hasMarkedText(),let edit = WritingEdit.indent(string,selection:selectedRange(),outdent:false) { WritingEdit.apply(edit,to:self) } else { super.insertTab(sender) }
+    }
+    override func insertBacktab(_ sender:Any?) {
+        if supportsMarkdownLists,!hasMarkedText(),let edit = WritingEdit.indent(string,selection:selectedRange(),outdent:true) { WritingEdit.apply(edit,to:self) } else { super.insertBacktab(sender) }
+    }
     override var undoManager:UndoManager? { editingHistory }
-    func finishEditingSession() { committed = nil; delegate = nil; editingHistory.removeAllActions() }
+    func finishEditingSession() { WritingPositions.shared.capture(self,key:positionKey);WritingPositions.shared.flush(); committed = nil; focused = nil; delegate = nil; editingHistory.removeAllActions() }
     var committed: ((NSTextView) -> Void)?
     override func insertText(_ text: Any, replacementRange: NSRange) { super.insertText(text, replacementRange:replacementRange); if !hasMarkedText() { committed?(self) } }
     override func unmarkText() { super.unmarkText(); committed?(self) }
-    override func resignFirstResponder() -> Bool { let result = super.resignFirstResponder(); if result && !hasMarkedText() { committed?(self) }; return result }
+    override func resignFirstResponder() -> Bool { let result = super.resignFirstResponder(); if result && !hasMarkedText() { committed?(self); WritingPositions.shared.capture(self,key:positionKey) }; return result }
 }
 
 @MainActor enum TextInputSync {
@@ -37,6 +64,7 @@ class ComposingTextView: NSTextView {
     init(read: @escaping () -> String, write: @escaping (String) -> Void) { self.read = read; self.write = write; accepted = read() }
     func synchronize(_ view: NSTextView) { let value = read(); guard !view.hasMarkedText(), value != accepted else { return }; accepted = value; TextInputSync.replaceExternal(view,with:value) }
     func publish(_ view: NSTextView) { guard !view.hasMarkedText(), read() != view.string else { return }; accepted = view.string; write(view.string); accepted = read() }
+    func textViewDidChangeSelection(_ notification:Notification) { if let view = notification.object as? ComposingTextView { WritingPositions.shared.capture(view,key:view.positionKey) } }
     func textDidChange(_ notification: Notification) { if let view = notification.object as? NSTextView { publish(view) } }
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField, (field.currentEditor() as? NSTextView)?.hasMarkedText() != true else { return }

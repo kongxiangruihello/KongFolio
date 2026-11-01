@@ -32,11 +32,12 @@ struct ReadingToolbar: View {
     }
     private var actions:some View {
         HStack(spacing:10) {
-            Button { store.openReadingDesk(.search,window:true) } label:{Label("资料库",systemImage:"books.vertical.fill")}.help("统一新增、编辑、查找和删除摘录、笔记与札记")
+            Button { store.openReadingDesk(.search,window:true) } label:{Label("资料库",systemImage:"books.vertical.fill")}.buttonStyle(.borderless).help("统一新增、编辑、查找和删除摘录、笔记与札记")
             Menu {
                 Button("摘录选中文字") { workspace.excerptSelection() }
                 Button("框选图片摘录") { workspace.tool = .region; workspace.showAnnotationBar = true }
             } label:{Label("摘录",systemImage:"text.quote")}.menuStyle(.borderlessButton).fixedSize().disabled(workspace.count == 0).help("保存所选文字，或框选扫描页、插图和表格")
+            Button { store.showQuickReadingNote = true } label:{Label("速记",systemImage:"pencil.and.scribble")}.keyboardShortcut("n",modifiers:[.command,.option]).help("随手记一句（⌥⌘N）").popover(isPresented:$store.showQuickReadingNote) { QuickReadingNote(store:store) }
             Button { store.newReadingNote() } label:{Label("笔记",systemImage:"square.and.pencil")}.help("为当前页写笔记，自动保存")
             Button { store.openReadingDesk(.essays,window:true) } label:{Label("札记",systemImage:"doc.text")}.help("继续写札记，从多本书插入摘录和出处")
             Button { store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) } label:{Label("导出",systemImage:"square.and.arrow.up")}.help("导出所选记录、整本书笔记或札记")

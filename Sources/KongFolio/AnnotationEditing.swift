@@ -70,12 +70,7 @@ extension Workspace {
         for stroke in strokes { if let copy = stroke.copy() as? PDFAnnotation { blank.addAnnotation(copy) } }
         guard let data = doc.dataRepresentation() else { return }
         let template = SignatureTemplate(name: "签名 \(signatures.count + 1)", pdf: data)
-        report {
-            let updated = signatures + [template]
-            try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
-            try JSONEncoder().encode(updated).write(to: storage.appendingPathComponent("Signatures.json"), options: .atomic)
-            signatures = updated; status = "签名已保存在本机"
-        }
+        if updateSignatureLibrary({ $0.append(template) }) { status = "签名已保存在本机" }
     }
     func insertSignature(_ template: SignatureTemplate) {
         guard let page, let source = PDFDocument(data: template.pdf), let original = source.page(at: 0) else { return }
@@ -95,12 +90,8 @@ extension Workspace {
         }
         recordAnnotationsAdded(added); status = "签名已插入页面中央，可用编辑标注工具移动"
     }
-    func removeSignature(_ id: UUID) {
-        report {
-            let updated = signatures.filter { $0.id != id }
-            try JSONEncoder().encode(updated).write(to: storage.appendingPathComponent("Signatures.json"), options: .atomic); signatures = updated
-        }
-    }
+    func removeSignature(_ id:UUID) { _ = updateSignatureLibrary { $0.removeAll{$0.id == id} } }
+
 }
 enum AnnotationGeometry {
     static func scale(_ annotation: PDFAnnotation, by factor: CGFloat) {

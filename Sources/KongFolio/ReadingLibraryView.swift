@@ -16,7 +16,8 @@ struct ReadingLibraryView: View {
     @State private var selection:Set<ReadingLibraryID> = []
     @State private var editing:ReadingLibraryID?
     @AppStorage("readingRecordsPageSize") private var size = 10
-    private var items:[ReadingLibraryItem] { ReadingLibraryItem.results(journal.state,query:query,kind:kind,tag:tag,removed:removed).filter { topic.isEmpty || $0.tags.contains("专题："+topic) } }
+    @State private var items:[ReadingLibraryItem] = []
+    private var request:ReadingSearchRequest { ReadingSearchRequest(revision:journal.revisionID,query:query,kind:kind,tag:tag,topic:topic,removed:removed) }
     private var pagination:ReadingPagination { ReadingPagination(total:items.count,page:page,size:size) }
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
@@ -29,6 +30,7 @@ struct ReadingLibraryView: View {
                 }.disabled(journal.unreadable)
                 Button("批量整理") { showOrganization = true }.disabled(selection.isEmpty || removed || journal.unreadable)
                 Button("引用关系") { showReferences = true }.disabled(editing == nil)
+                Button("导出所选…") { store.readingLibraryExportSelection = selection;store.readingRecordSelection = Set(selection.compactMap { if case .record(let id) = $0 { return id };return nil });store.readingExportEssay = false;section = .exports }.disabled(selection.isEmpty || removed)
                 Button("备份恢复") { showBackups = true }
                 Button(removed ? "恢复所选" : "删除所选") { journal.setRemoved(selection,removed:!removed); selection = []; editing = nil }.disabled(selection.isEmpty || journal.unreadable)
             }
@@ -51,6 +53,12 @@ struct ReadingLibraryView: View {
                     ReadingEssayDetail(store:store,journal:journal,id:id,onExport:{section = .exports}).id(id).disabled(journal.unreadable || removed)
                 }
             } else { Text("选择一条记录编辑；可统一新增、查找、导出或删除。删除后可以恢复。").font(.caption).foregroundStyle(.secondary) }
+        }
+        .task(id:request) {
+            let request = request
+            do { try await Task.sleep(nanoseconds:300_000_000) } catch { return }
+            let result = await ReadingSearchWorker.shared.library(journal.state,request:request)
+            if !Task.isCancelled { items = result }
         }
         .onChange(of:selection) { _,ids in if ids.count == 1,let id = ids.first { editing = id; if case .record(let r) = id { store.readingRecordID = r } } }
         .onChange(of:query) { _,_ in resetPage() }.onChange(of:kind) { _,_ in resetPage() }.onChange(of:tag) { _,_ in resetPage() }.onChange(of:removed) { _,_ in resetPage() }
