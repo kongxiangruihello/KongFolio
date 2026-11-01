@@ -47,6 +47,7 @@ final class Release045Tests: XCTestCase {
     }
     @MainActor func testFindReplaceAllIsOneUndoAndCompositionIsUntouched() throws {
         let view = ComposingTextView();view.isRichText = false;view.allowsUndo = true;view.string = "中文 History history 中文";let session = WritingSession();session.view = view
+        let window = NSWindow(contentRect:NSRect(x:0,y:0,width:400,height:300),styleMask:[],backing:.buffered,defer:false);window.identifier = NSUserInterfaceItemIdentifier("reading-desk");window.contentView = view;XCTAssertTrue(window.makeFirstResponder(view));XCTAssertTrue(WorkspaceStore.textUndoResponder(in:window) === view)
         session.find("history");XCTAssertEqual(view.selectedRange(),NSRange(location:3,length:7))
         session.replace("history",with:"史学",all:true);XCTAssertEqual(view.string,"中文 史学 史学 中文");view.undoManager?.undo();XCTAssertEqual(view.string,"中文 History history 中文");view.undoManager?.redo();XCTAssertEqual(view.string,"中文 史学 史学 中文")
         view.setSelectedRange(NSRange(location:0,length:0));view.setMarkedText("zhong",selectedRange:NSRange(location:5,length:0),replacementRange:NSRange(location:NSNotFound,length:0));let marked = view.string;session.replace("中文",with:"不应替换",all:true);XCTAssertEqual(view.string,marked);XCTAssertTrue(view.hasMarkedText());view.unmarkText()

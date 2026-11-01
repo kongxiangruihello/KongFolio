@@ -4,9 +4,12 @@ import AppKit
 class ComposingTextView: NSTextView {
     weak var writingSession:WritingSession?
     override func performKeyEquivalent(with event:NSEvent) -> Bool {
-        guard window?.firstResponder === self,!hasMarkedText(),let session = writingSession else { return super.performKeyEquivalent(with:event) }
+        guard window?.firstResponder === self,!hasMarkedText() else { return super.performKeyEquivalent(with:event) }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock,.numericPad,.function])
         let key = event.charactersIgnoringModifiers?.lowercased()
+        if modifiers == .command,key == "z" { if undoManager?.canUndo == true { undoManager?.undo();committed?(self) };return true }
+        if modifiers == [.command,.shift],key == "z" { if undoManager?.canRedo == true { undoManager?.redo();committed?(self) };return true }
+        guard let session = writingSession else { return super.performKeyEquivalent(with:event) }
         if modifiers == .command {
             if key == "b" { session.wrap("**","**",placeholder:"粗体");return true }
             if key == "i" { session.wrap("*","*",placeholder:"斜体");return true }

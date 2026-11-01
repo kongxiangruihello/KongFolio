@@ -141,7 +141,8 @@ import UniformTypeIdentifiers
         if let workspace = activeWorkspace { return workspace.count > 0 && !workspace.busy }
         return activeNote != nil
     }
-    var researchTextResponder: NSTextView? { NSApp?.keyWindow?.identifier?.rawValue == "research-workbench" ? NSApp?.keyWindow?.firstResponder as? NSTextView : nil }
+    static func textUndoResponder(in window:NSWindow?) -> NSTextView? { guard let view = window?.firstResponder as? NSTextView,view.isEditable,!view.hasMarkedText() else { return nil };return view }
+    var researchTextResponder:NSTextView? { Self.textUndoResponder(in:NSApp?.keyWindow) }
     var canUndo: Bool { if let text = researchTextResponder { return text.undoManager?.canUndo ?? false }; return commandWorkspace.map { $0.canUndo && !$0.busy } ?? (activeNote != nil) }
     var canRedo: Bool { if let text = researchTextResponder { return text.undoManager?.canRedo ?? false }; return commandWorkspace.map { $0.canRedo && !$0.busy } ?? (activeNote != nil) }
 
