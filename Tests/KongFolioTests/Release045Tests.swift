@@ -3,7 +3,7 @@ import AppKit
 import PDFKit
 @testable import KongFolio
 
-final class Release045Tests:XCTestCase {
+final class Release045Tests: XCTestCase {
     func root() throws -> URL { try Release027Tests().folder() }
     func record(_ text:String = "第一段\n\n第二段") -> ReadingRecord { ReadingRecord(kind:.note,note:text,citations:[ReadingCitation(source:SourceRef(path:"/原书.pdf",fileName:"原书.pdf",page:8,pageLabel:"五"),title:"史料",author:"作者",edition:"初版")]) }
     func applied(_ edit:TextEdit?,to text:String) throws -> String { let edit = try XCTUnwrap(edit);return (text as NSString).replacingCharacters(in:edit.range,with:edit.replacement) }
