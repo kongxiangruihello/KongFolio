@@ -39,7 +39,10 @@ struct FunctionToolbar: View {
         .popover(isPresented:$store.showQuickReadingNote) { QuickReadingNote(store:store) }
     }
     @ViewBuilder private func control(_ action:FileToolbarAction,menu:Bool)->some View {
-        if action == .excerpt {
+        if action == .signature {
+            if let workspace { SignatureToolbarMenu(workspace:workspace,showTitle:menu) }
+            else { Button {} label:{label(action,menu:menu)}.disabled(true).help("打开 PDF 后导入或放置图片签名") }
+        } else if action == .excerpt {
             Menu { Button("摘录选中文字") { workspace?.excerptSelection() };Button("框选图片摘录") { workspace?.tool = .region;workspace?.showAnnotationBar = true } } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.title).disabled((workspace?.count ?? 0) == 0)
         } else if action == .export {
             Menu { Button("阅读记录与札记…") { store.readingExportEssay = false;store.openReadingDesk(.exports,window:true) };Button("当前文件导出 PDF…") { store.exportActive() };if let note { Button("当前文件导出 Word…") { note.exportWord() } } } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.title)
@@ -66,7 +69,7 @@ struct FunctionToolbar: View {
         case .books:store.showReadingHistory = true
         case .jobs:store.showBackgroundJobs = true
         case .sidebar:let key = LayoutKeys.sidebar;UserDefaults.standard.set(!(UserDefaults.standard.object(forKey:key) as? Bool ?? true),forKey:key)
-        case .excerpt,.export:break
+        case .excerpt,.export,.signature:break
         }
     }
 }

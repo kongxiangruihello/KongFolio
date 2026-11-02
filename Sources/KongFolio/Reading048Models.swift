@@ -3,11 +3,16 @@ import AppKit
 
 struct ReaderToolbarProfile:Codable,Equatable {
     static let key = "KongFolio.readerToolbar048"
-    static let defaultActions:[FileToolbarAction] = [.newPDF,.newMarkdown,.newText,.newHTML,.open,.annotate,.tools,.excerpt,.note,.quickNote,.essay,.library,.save,.export,.books,.sidebar,.jobs]
+    static let defaultActions:[FileToolbarAction] = [.newPDF,.newMarkdown,.newText,.newHTML,.open,.annotate,.tools,.signature,.excerpt,.note,.quickNote,.essay,.library,.save,.export,.books,.sidebar,.jobs]
     var order:[String] = Self.defaultActions.map(\.rawValue)
     var pinned:Set<String> = ["newPDF","newMarkdown","newText","newHTML"]
     var actions:[FileToolbarAction] {
-        var seen = Set<String>();return (order+FileToolbarAction.allCases.map(\.rawValue)).compactMap { raw in guard seen.insert(raw).inserted else { return nil };return FileToolbarAction(rawValue:raw) }
+        var upgraded = order
+        if !upgraded.contains(FileToolbarAction.signature.rawValue) {
+            let neighbor = upgraded.firstIndex(of:FileToolbarAction.tools.rawValue) ?? upgraded.firstIndex(of:FileToolbarAction.annotate.rawValue)
+            upgraded.insert(FileToolbarAction.signature.rawValue,at:neighbor.map{$0+1} ?? upgraded.count)
+        }
+        var seen = Set<String>();return (upgraded+Self.defaultActions.map(\.rawValue)).compactMap { raw in guard seen.insert(raw).inserted else { return nil };return FileToolbarAction(rawValue:raw) }
     }
     func visible(width:Double)->[FileToolbarAction] { Array((actions.filter{pinned.contains($0.rawValue)}+actions.filter{!pinned.contains($0.rawValue)}).prefix(SingleRowToolbarPolicy.visibleCount(width:width))) }
     func hidden(width:Double)->[FileToolbarAction] { let selected = Set(visible(width:width));return actions.filter{!selected.contains($0)} }
