@@ -4,7 +4,12 @@ import CoreText
 enum RichTextWord {
     static func attribute(_ value: String) -> String { WordExport.escape(value).replacingOccurrences(of: "\"", with: "&quot;").replacingOccurrences(of: "'", with: "&apos;") }
     static func write(_ document: RichTextDocument, to destination: URL, academic: AcademicMarkup? = nil,readingFootnotes:[String:String] = [:]) throws {
-        let noteParts = academic ?? (readingFootnotes.isEmpty ? nil : AcademicMarkup(text:"",footnotes:readingFootnotes,endnotes:[:],warnings:[]))
+        var readingKeys:[String] = []
+        func collect(_ text:NSAttributedString) { text.enumerateAttribute(NSAttributedString.Key("KongFolioFootnote"),in:NSRange(location:0,length:text.length)) { value,_,_ in if let key = value as? String,readingFootnotes[key] != nil,!readingKeys.contains(key) { readingKeys.append(key) } } }
+        for block in document.blocks { switch block { case .paragraph(let text,_):collect(text);case .table(let rows):for row in rows { for cell in row { collect(cell) } };case .image:break } }
+        readingKeys += readingFootnotes.keys.sorted().filter{!readingKeys.contains($0)}
+        var noteParts = academic ?? (readingFootnotes.isEmpty ? nil : AcademicMarkup(text:"",footnotes:readingFootnotes,endnotes:[:],warnings:[]))
+        if academic == nil { noteParts?.footnoteOrder = readingKeys }
         var body = "", relationships = "", media: [(String, Data)] = [], linkNumber = 0
         var hasContent = false, hasChapter = false, pageJustMarked = false
         func paragraph(_ content: NSAttributedString, heading: Int = 0) -> String {
@@ -23,7 +28,7 @@ enum RichTextWord {
             if academic != nil, content.string.hasPrefix(":::caption ") { return WordExport.textParagraph(String(content.string.dropFirst(11)), style: "Caption", size: 20, centered: true) }
             var runs = ""
             content.enumerateAttributes(in: NSRange(location: 0, length: content.length)) { attributes, range, _ in
-                if let key = attributes[NSAttributedString.Key("KongFolioFootnote")] as? String,let index = readingFootnotes.keys.sorted().firstIndex(of:key) {
+                if let key = attributes[NSAttributedString.Key("KongFolioFootnote")] as? String,let index = readingKeys.firstIndex(of:key) {
                     runs += "<w:r><w:rPr><w:vertAlign w:val=\"superscript\"/></w:rPr><w:footnoteReference w:id=\"\(index+1)\"/></w:r>";return
                 }
                 var size = document.options.fontSize, bold = false, italic = false

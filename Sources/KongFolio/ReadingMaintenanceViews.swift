@@ -14,6 +14,11 @@ struct ReadingOrganizationSheet: View {
             TextField("专题名称（可留空）",text:$topic)
             Toggle("从所选记录移除这些标签／专题",isOn:$remove)
             Text("其他标签、正文与引用保持不变。专题保存为“专题：名称”，也可直接搜索。").font(.caption).foregroundStyle(.secondary)
+            DisclosureGroup("预览影响范围（最多显示前 100 条）") {
+                ScrollView { ForEach(Array(ReadingLibraryItem.results(journal.state).filter{ids.contains($0.id)}.prefix(100))) { item in
+                    VStack(alignment:.leading) { Text(item.title).lineLimit(1);Text("现有标签："+item.tags.joined(separator:"、")).font(.caption);Text((remove ? "移除：" : "增加：")+tags+(topic.isEmpty ? "" : "，专题："+topic)).font(.caption).foregroundStyle(.blue) }
+                } }.frame(maxHeight:200)
+            }
             HStack { Button("取消") { dismiss() }; Spacer(); Button(remove ? "移除" : "应用") { journal.organize(ids,tags:tags,topic:topic,remove:remove); dismiss() }.disabled(tags.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && topic.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty) }
         }.padding(20).frame(minWidth:420,idealWidth:520)
     }

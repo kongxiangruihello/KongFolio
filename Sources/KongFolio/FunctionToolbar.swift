@@ -4,22 +4,21 @@ import SwiftUI
 struct FunctionToolbar: View {
     @ObservedObject var store:WorkspaceStore
     @State private var showLayout = false
+    @State private var showToolbarSettings = false
+    @State private var profile = ReaderToolbarProfile.load()
     private var workspace:Workspace? { store.commandWorkspace }
     private var note:MarkdownNote? { store.activeNote }
     var body:some View {
         GeometryReader { proxy in
             HStack(spacing:4) {
-                VStack(alignment:.leading,spacing:2) {
-                    Text("KongFolio").font(.caption.weight(.semibold))
-                    Text(store.activeTab?.switcherTitle ?? "新标签页").font(.caption).lineLimit(1).truncationMode(.middle)
-                }.frame(width:SingleRowToolbarPolicy.titleWidth(proxy.size.width),alignment:.leading).help(store.activeTab?.switcherTitle ?? "新标签页")
-                ForEach(SingleRowToolbarPolicy.visible(width:proxy.size.width)) { action in control(action,menu:false).frame(minWidth:32,maxWidth:.infinity) }
+                ForEach(profile.visible(width:proxy.size.width)) { action in control(action,menu:false).frame(minWidth:32,maxWidth:.infinity) }
                 Button { if let note { note.toggleReadOnly() } else { workspace?.toggleReadingLock() } } label:{ Image(systemName:(note?.readOnly ?? workspace?.readingLocked ?? false) ? "lock" : "pencil") .frame(width:28,height:28) }.help((note?.readOnly ?? workspace?.readingLocked ?? false) ? "当前为阅读模式，点击切换编辑" : "当前为编辑模式，点击保护正文").disabled(note == nil && workspace == nil)
                 Menu {
-                    ForEach(SingleRowToolbarPolicy.hidden(width:proxy.size.width)) { action in control(action,menu:true) }
+                    ForEach(profile.hidden(width:proxy.size.width)) { action in control(action,menu:true) }
                     Divider()
+                    Button("排列与固定常用工具…") { showToolbarSettings = true }
                     if let note {
-                        Menu("文件编辑") { ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool } } }
+                        Menu("文件编辑") { ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool }.disabled(note.format == .markdown && note.cleanEditing) } }
                         Button("创建独立编辑副本…") { note.createEditingCopy() }
                         Button("另存文件…") { note.save(asNew:true) }
                         Button("插入图片…") { note.chooseImage() }.disabled(note.readOnly || note.format == .plain)
@@ -35,6 +34,7 @@ struct FunctionToolbar: View {
                 } label:{Image(systemName:"ellipsis.circle").frame(width:28,height:28)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help("更多功能：窗口放大后自动展开常用按钮")
             }.buttonStyle(.borderless).font(.system(size:16)).padding(.horizontal,12).frame(height:44).clipped()
         }.frame(height:44)
+        .sheet(isPresented:$showToolbarSettings) { ReaderToolbarSettings(profile:$profile) }
         .sheet(isPresented:$showLayout) { if let note { TextLayoutSheet(note:note) } }
         .popover(isPresented:$store.showQuickReadingNote) { QuickReadingNote(store:store) }
     }

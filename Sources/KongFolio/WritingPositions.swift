@@ -30,6 +30,7 @@ import AppKit
     final class Entry { weak var view:NSTextView?;init(_ view:NSTextView) { self.view = view } }
     private static var entries:[String:Entry] = [:]
     static func attach(_ view:NSTextView,key:String) { guard !key.isEmpty else { return };entries = entries.filter{$0.value.view != nil};entries[key] = Entry(view) }
+    static func jumpIfCurrent(_ hit:ReadingTextHit) { guard let view = entries[hit.identity]?.view,view.string == hit.source,!view.hasMarkedText() else { return };jump(hit.identity,range:hit.range) }
     static func selection(_ key:String) -> NSRange? { entries[key]?.view?.selectedRange() }
     static func jump(_ key:String,range:NSRange) { guard let view = entries[key]?.view,!view.hasMarkedText() else { return };let r = MarkdownNote.clamp(range,to:view.string.utf16.count);view.setSelectedRange(r);view.scrollRangeToVisible(r);view.window?.makeFirstResponder(view) }
 }

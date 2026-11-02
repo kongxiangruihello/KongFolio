@@ -37,7 +37,11 @@ struct ReadingExportPane: View {
     private var pagination:ReadingPagination { ReadingPagination(total:candidates.count,page:page,size:10) }
     private var previewCurrent:Bool { controller.previewDigest == snapshot.digest && controller.previewFormat == format }
     var body:some View {
+        GeometryReader { proxy in
+        let settingsHeight = min(420,max(130,proxy.size.height*0.55))
         VStack(alignment:.leading,spacing:10) {
+            ScrollView {
+            VStack(alignment:.leading,spacing:10) {
             settings
             DisclosureGroup("导出清单 · 已选 \(snapshot.orderedItems.count)/\(candidates.count) 项") { selectionList }
             HStack { Button("检查图片、原文与出处…") { showReview = true }.disabled(empty || controller.busy);Button("新增与修改内容导出…") { showIncremental = true } }
@@ -48,10 +52,14 @@ struct ReadingExportPane: View {
                 Button("批量／资料包…") { showBatch = true }.disabled(empty || !preferences.options.valid)
                 if controller.busy { ProgressView().controlSize(.small);Button("取消") { controller.cancel() } }
             }
-            if let file = controller.previewURL { AcademicFilePreview(url:file).frame(minHeight:180,maxHeight:.infinity) }
+            ReadingExportStructureView(options:$preferences.options)
+            }
+            }.frame(height:settingsHeight)
+            if let file = controller.previewURL { AcademicFilePreview(url:file).frame(height:max(80,proxy.size.height-settingsHeight-70)).clipped() }
             else { Text("可预览实际生成的 Word、PDF 或 Markdown。Word 请先核对实际预览；PDF 和 Markdown 可直接导出。").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity) }
             if controller.previewURL != nil && !previewCurrent { Text("内容、顺序或格式已变化，请刷新预览。Word 导出前需要当前预览。").font(.caption).foregroundStyle(.orange) }
-            Text(controller.message).font(.caption).textSelection(.enabled)
+            Text(controller.message).font(.caption).lineLimit(2).textSelection(.enabled)
+        }.frame(width:proxy.size.width,height:proxy.size.height,alignment:.topLeading)
         }.onAppear { scope = store.readingExportEssay ? .essay : ((!store.readingLibraryExportSelection.isEmpty || store.readingRecordID != nil || !store.readingRecordSelection.isEmpty) ? .selected : .book) }
         .onDisappear { controller.close() }.onChange(of:preferences) { _,value in value.save() }
         .onChange(of:scope) { _,_ in page = 0;excluded = [];order = [] }.onChange(of:candidates.count) { _,_ in page = pagination.index }

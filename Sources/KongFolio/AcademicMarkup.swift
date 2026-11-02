@@ -5,6 +5,16 @@ struct AcademicMarkup {
     var footnotes: [String: String]
     var endnotes: [String: String]
     var warnings: [String]
+    var footnoteOrder:[String]? = nil
+    var endnoteOrder:[String]? = nil
+    func orderedKeys(end:Bool = false)->[String] {
+        let values = end ? endnotes : footnotes
+        if let explicit = end ? endnoteOrder : footnoteOrder { return explicit.filter{values[$0] != nil}+values.keys.sorted().filter{!explicit.contains($0)} }
+        let regex = try! NSRegularExpression(pattern:end ? #"\[~([A-Za-z0-9_-]+)\]"# : #"\[\^([A-Za-z0-9_-]+)\]"#),ns = text as NSString
+        var seen = Set<String>(),result:[String] = []
+        for hit in regex.matches(in:text,range:NSRange(location:0,length:ns.length)) { let key = ns.substring(with:hit.range(at:1));if values[key] != nil,seen.insert(key).inserted { result.append(key) } }
+        return result+values.keys.sorted().filter{!seen.contains($0)}
+    }
     static func parse(_ source: String) throws -> Self {
         var text: [String] = [], footnotes: [String: String] = [:], endnotes: [String: String] = [:]
         let definition = try NSRegularExpression(pattern: #"^\[([\^~])([A-Za-z0-9_-]+)\]:[ \t]*(.*)$"#)
@@ -31,7 +41,7 @@ struct AcademicMarkup {
         var result = "", position = 0
         for hit in regex.matches(in: value, range: NSRange(location: 0, length: ns.length)) {
             result += "<w:r><w:t xml:space=\"preserve\">" + WordExport.escape(ns.substring(with: NSRange(location: position,length:hit.range.location-position))) + "</w:t></w:r>"
-            let type = ns.substring(with: hit.range(at: 1)), key = ns.substring(with: hit.range(at: 2)), keys = (type == "^" ? footnotes : endnotes).keys.sorted()
+            let type = ns.substring(with: hit.range(at: 1)), key = ns.substring(with: hit.range(at: 2)), keys = orderedKeys(end:type != "^")
             if let index = keys.firstIndex(of: key) { result += "<w:r><w:rPr><w:vertAlign w:val=\"superscript\"/></w:rPr><w:\(type == "^" ? "footnoteReference" : "endnoteReference") w:id=\"\(index+1)\"/></w:r>" }
             position = NSMaxRange(hit.range)
         }
@@ -40,7 +50,7 @@ struct AcademicMarkup {
     }
     func notesXML(end: Bool) -> String {
         let name = end ? "endnote" : "footnote", values = end ? endnotes : footnotes
-        let notes = values.keys.sorted().enumerated().map { index,key in
+        let notes = orderedKeys(end:end).enumerated().map { index,key in
             "<w:\(name) w:id=\"\(index+1)\"><w:p><w:pPr><w:pStyle w:val=\"\(end ? "EndnoteText" : "FootnoteText")\"/></w:pPr><w:r><w:rPr><w:vertAlign w:val=\"superscript\"/></w:rPr><w:\(name)Ref/></w:r><w:r><w:t xml:space=\"preserve\"> " + WordExport.escape(values[key]!) + "</w:t></w:r></w:p></w:\(name)>"
         }.joined()
         return WordExport.header + "<w:\(name)s xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:\(name) w:type=\"separator\" w:id=\"-1\"><w:p><w:r><w:separator/></w:r></w:p></w:\(name)><w:\(name) w:type=\"continuationSeparator\" w:id=\"0\"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:\(name)>" + notes + "</w:\(name)s>"

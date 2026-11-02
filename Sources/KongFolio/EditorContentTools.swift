@@ -72,10 +72,11 @@ struct EditorFootnote: Identifiable {
 enum EditorFootnotes {
     static func list(_ text:String) -> [EditorFootnote] {
         let ns = text as NSString,definition = try! NSRegularExpression(pattern:#"(?m)^\[\^([A-Za-z0-9_-]+)\]:[ \t]*([^\n]*)"#)
-        return definition.matches(in:text,range:NSRange(location:0,length:ns.length)).map { hit in
+        let notes = definition.matches(in:text,range:NSRange(location:0,length:ns.length)).map { hit in
             let id = ns.substring(with:hit.range(at:1)),regex = try! NSRegularExpression(pattern:NSRegularExpression.escapedPattern(for:"[^"+id+"]")+"(?!:)")
             return EditorFootnote(id:id,body:ns.substring(with:hit.range(at:2)),definition:hit.range,references:regex.matches(in:text,range:NSRange(location:0,length:ns.length)).map(\.range))
         }
+        return notes.sorted { ($0.references.first?.location ?? Int.max,$0.id) < ($1.references.first?.location ?? Int.max,$1.id) }
     }
     static func insertion(_ source:String,selection:NSRange,body:String) throws -> TextEdit {
         guard !body.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { throw FolioError(message:"请填写注释正文") }
@@ -86,7 +87,7 @@ enum EditorFootnotes {
     }
     static func rendered(_ source:String) throws -> String {
         let academic = try AcademicMarkup.parse(source);var body = academic.text
-        let order = academic.footnotes.keys.sorted()
+        let order = academic.orderedKeys()
         for (i,id) in order.enumerated() { body = body.replacingOccurrences(of:"[^\(id)]",with:"[\(i+1)]") }
         if !order.isEmpty { body += "\n\n## 注释\n"+order.enumerated().map{"[\($0.offset+1)] "+(academic.footnotes[$0.element] ?? "")}.joined(separator:"\n\n") }
         return body
