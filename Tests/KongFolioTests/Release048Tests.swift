@@ -10,9 +10,9 @@ final class Release048Tests: XCTestCase {
     func testToolbarUnknownAndDuplicatePreferencesAreRepaired() { var p = ReaderToolbarProfile();p.order = ["bad","open","open"];XCTAssertEqual(p.actions.count,FileToolbarAction.allCases.count);XCTAssertEqual(p.actions.first,.open) }
     func testToolbarPinsAndOrderSurvivePreferencesReload() { let d = UserDefaults(suiteName:UUID().uuidString)!;var p = ReaderToolbarProfile();p.pinned = ["library"];p.move(.library,by:-1);p.save(d);let q = ReaderToolbarProfile.load(d);XCTAssertEqual(p,q);XCTAssertEqual(q.visible(width:320).first,.library) }
     @MainActor func testCleanEditingRoundTripKeepsImagesAndCorrections() {
-        let c = EditorCorrection(original:"□",replacement:"文",kind:"补字",reason:"据原本"),source = "正文😀\n\n![图](file:///tmp/image.png)\n\n"+c.marker+"\n末尾",s = CleanWritingSession();s.load(source)
+        let c = EditorCorrection(original:"□",replacement:"文",kind:"补字",reason:"据原本"),marker = c.marker,source = "正文😀\n\n![图](file:///tmp/image.png)\n\n"+marker+"\n末尾",s = CleanWritingSession();s.load(source)
         XCTAssertEqual(s.blocks.map{$0.source+$0.suffix}.joined(),source);let text = s.blocks.first{$0.kind == .text}!;let edited = s.edit(text.id,text:"改后的正文😀")
-        XCTAssertTrue(edited.contains("file:///tmp/image.png"));XCTAssertTrue(edited.contains(c.marker));XCTAssertEqual(s.blocks.first?.id,text.id)
+        XCTAssertTrue(edited.contains("file:///tmp/image.png"));XCTAssertTrue(edited.contains(marker));XCTAssertEqual(s.blocks.first?.id,text.id)
     }
     @MainActor func testCleanSessionKeepsParagraphIdentityAfterImageRebase() { let s = CleanWritingSession();s.load("正文\n\n![图](old.png)\n\n结尾");let id = s.blocks.first!.id;s.page = 2;s.load("正文\n\n![图](new.png)\n\n结尾");XCTAssertEqual(s.blocks.first!.id,id);XCTAssertEqual(s.page,2) }
     @MainActor func testCleanMetadataCannotBeEditedAsText() { let s = CleanWritingSession();s.load("![图](x.png)");let before = s.source;XCTAssertEqual(s.edit(s.blocks[0].id,text:"意外覆盖"),before) }
