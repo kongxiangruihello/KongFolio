@@ -26,9 +26,20 @@ struct ReadingLibrarySession:Codable,Equatable {
 }
 extension ReadingLibraryItem {
     var sourceSummary:String {
-        let citations:[ReadingCitation]
-        switch self { case .record(let r):citations = r.citations;case .essay(let e):citations = e.blocks.compactMap(\.record).flatMap(\.citations) }
-        return citations.first?.display ?? ""
+        switch self { case .record(let r):return r.citations.first?.display ?? "";case .essay(let e):return e.blocks.lazy.compactMap{$0.record?.citations.first?.display}.first ?? "" }
+    }
+    func matchingContext(_ query:String)->String? {
+        guard !query.isEmpty,query.utf16.count<=500 else { return nil }
+        func context(_ text:String)->String? {
+            let ns=text as NSString,r=ns.range(of:query,options:[.caseInsensitive,.diacriticInsensitive,.widthInsensitive])
+            guard r.location != NSNotFound else { return nil }
+            let start=max(0,r.location-18),end=min(ns.length,NSMaxRange(r)+35)
+            return ns.substring(with:NSRange(location:start,length:end-start)).replacingOccurrences(of:"\n",with:" ↵ ")
+        }
+        switch self {
+        case .record(let r):return context(r.quote) ?? context(r.note)
+        case .essay(let e):for block in e.blocks { if let hit=context(block.text) ?? context(block.record?.quote ?? "") ?? context(block.record?.note ?? "") { return hit } };return nil
+        }
     }
 }
 enum ReadingQuoteTools {

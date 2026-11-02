@@ -66,7 +66,7 @@ struct ReadingLibraryView: View {
                 Toggle("最近删除",isOn:$removed)
             }
             List(selection:$selection) { ForEach(Array(items.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { item in
-                VStack(alignment:.leading,spacing:4) { HStack { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading); Text(item.title).lineLimit(2).help(item.title) };if !item.sourceSummary.isEmpty { Text(item.sourceSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(item.sourceSummary) };if let context = ReadingTextSearch.fields(item,query:query).first?.context { Text(context).font(.caption).lineLimit(2) } }.tag(item.id)
+                VStack(alignment:.leading,spacing:4) { HStack { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading); Text(item.title).lineLimit(2).help(item.title) };if !item.sourceSummary.isEmpty { Text(item.sourceSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(item.sourceSummary) };if let context = item.matchingContext(query) { Text(context).font(.caption).lineLimit(2) } }.tag(item.id)
             } }.frame(minHeight:100,maxHeight:editing == nil ? .infinity : 190).accessibilityLabel("全部阅读资料")
             ReadingPageControls(pagination:pagination,page:$page,size:$size)
             if selection.count > 1 { Text("已选 \(selection.count) 条；删除后可在“最近删除”恢复。").font(.caption) }

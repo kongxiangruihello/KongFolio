@@ -626,7 +626,7 @@ import UniformTypeIdentifiers
                             return (failure, saved)
                         }.value
                         projectURL = url
-                        fileBaseline = result.1; saveConflict = false
+                        fileBaseline = result.1; saveConflict = false; error = nil; lastVerifiedDocumentSave = Date()
                         dirty = false
                         try persistWordDraft(); try persistTableDrafts()
                         remember([url])
@@ -644,7 +644,7 @@ import UniformTypeIdentifiers
             do { try DocumentHistory.record(archive, source: url, storage: storage, label: automatic ? "自动保存项目" : "保存项目", automatic: automatic) }
             catch { backupError = backupError ?? error }
             projectURL = url
-            fileBaseline = saved; saveConflict = false
+            fileBaseline = saved; saveConflict = false; error = nil; lastVerifiedDocumentSave = Date()
             dirty = false
             try persistWordDraft(); try persistTableDrafts()
             remember([url])
