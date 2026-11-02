@@ -10,6 +10,7 @@ final class Release049Tests: XCTestCase {
         s.openEach(files);s.stopRemainingBatch()
         XCTAssertFalse(s.canStopOpenBatch);XCTAssertEqual(s.openBatchDocuments.count,20);XCTAssertTrue(s.openBatchDocuments.allSatisfy{!$0.needsLoad && !$0.isImporting})
         let w = s.openBatchDocuments[5];w.document = SignaturePositionTests().document(pages:1);s.stopRemainingBatch();XCTAssertEqual(w.count,1);XCTAssertTrue(s.openBatchSummary.contains("已载入 1"));XCTAssertNotNil(w.sourceURL)
+        s.openEach(files);XCTAssertEqual(s.openBatchDocuments.count,20);XCTAssertTrue(s.openBatchIDs.contains(w.id));s.stopRemainingBatch()
     }
     @MainActor func testCloseClearsBackgroundHandlesAndBreaksSplitCycle() throws {
         let root = try root(),a = Workspace(storage:root),b = Workspace(storage:root);a.document = SignaturePositionTests().document(pages:1);a.splitPartner = b;b.splitPartner = a
