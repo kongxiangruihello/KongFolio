@@ -83,6 +83,8 @@ import UniformTypeIdentifiers
     var rulerPath: String?
     var rulerTask: Task<Void,Never>?
     var restoringRuler = false
+    @Published var lastVerifiedDocumentSave:Date?
+    @Published var showSaveDetails = false
     @Published var savePhase = ""
     @Published var saveProgress = 0.0
     @Published var pendingImports: [URL] = []
@@ -718,15 +720,20 @@ import UniformTypeIdentifiers
 
     /// Empties the workspace. With `keepingSource` the file it came from stays known, so the tab can load it again.
     func clearDocument(keepingSource: Bool) {
-        autoTask?.cancel()
+        autoTask?.cancel(); autoTask = nil
         saveReadingRecord(); progressTask?.cancel(); readingSaveTask?.cancel(); readingBookmarkTask?.cancel(); readingBookmarkTask = nil
         try? persistWordDraft()
         try? persistTableDrafts()
         tableDrafts = []; pendingTableDraftID = nil
         wordOptions.editedBlocks = nil; wordOptions.blockBaselines = nil; wordOptions.editedSourceDigest = nil; wordOptions.editedText = nil; wordOptions.editedFromRevision = nil; wordDraftDigest = nil
-        saveConflict = false; fileBaseline = nil
+        saveConflict = false; fileBaseline = nil; lastVerifiedDocumentSave = nil; error = nil
         directSaveTask?.cancel()
-        searchTask?.cancel(); estimateTask?.cancel()
+        searchTask?.cancel(); searchTask = nil; estimateTask?.cancel(); estimateTask = nil
+        snapshotInFlight?.task.cancel(); snapshotInFlight = nil
+        progressTask = nil; readingSaveTask = nil; directSaveTask = nil; rulerTask?.cancel(); rulerTask = nil
+        splitPartner = nil; activeEdition = nil; synchronizedSelection = nil
+        outlineCandidates = []; outlineCandidatesChosen = []; ocrDoubtful = []; compressScan = nil; searchCursor = nil
+        pendingWordPreviewPage = nil; if !keepingSource { pendingReadingLayout = nil }; journalSourceIdentity = nil; progressLoadedFor = nil
         // Native views can outlive the SwiftUI tab. Detach before replacing the model document.
         if let view = pdfView as? ReadingResourceReleasing { view.releaseReadingResources() }
         else { pdfView?.clearSelection(); pdfView?.document = nil }

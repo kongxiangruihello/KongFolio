@@ -40,6 +40,7 @@ struct ReadingExportPreferences: Codable, Equatable {
 struct ReadingExportProfile:Codable,Identifiable {
     var id = UUID()
     var name:String
+    var format:ReadingRecordExport.Format? = nil
     var options:ReadingExportOptions
     static var presets:[Self] {
         var excerpts = ReadingExportOptions();excerpts.includeNote = false;excerpts.lineHeight = 1.3;excerpts.margin = 56;excerpts.footnotes = true

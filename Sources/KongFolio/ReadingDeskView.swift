@@ -89,6 +89,7 @@ struct ReadingRecordDetail: View {
     let record:ReadingRecord
     @State private var contextSource:ReadingContextRequest?
     @State private var editQuote = false
+    @State private var showQuoteCorrection = false
     @State private var showLinkPicker = false
     @StateObject private var imageOCR = ReadingImageOCRController()
     private var current:ReadingRecord { journal.record(record.id) ?? record }
@@ -99,7 +100,7 @@ struct ReadingRecordDetail: View {
                 HStack { Button(store.pinnedReadingID == record.id ? "取消固定这条笔记" : "固定这条记录，翻页时继续写") { store.pinnedReadingID = store.pinnedReadingID == record.id ? nil : record.id };if store.pinnedReadingID == record.id { Text("已固定："+current.displayTitle).font(.caption).lineLimit(1) } }
                 StableTextField("记录标题（可留空）",text:binding(\.title))
                 if current.kind != .note {
-                    HStack { Text("摘录原文").font(.caption); Spacer(); Button(editQuote ? "完成文字校正" : "校正摘录文字") { editQuote.toggle() } }
+                    HStack { Text("摘录原文").font(.caption); Spacer(); Button("原文与校订对照…") { showQuoteCorrection = true }; Button(editQuote ? "完成文字校正" : "校正摘录文字") { editQuote.toggle() } }
                     if editQuote { ReadingWritingEditor(text:binding(\.quote),label:"摘录校订文字",identity:"quote:"+record.id.uuidString).id("quote:"+record.id.uuidString).frame(height:100).border(.quaternary) }
                     else if !current.quote.isEmpty { Text(current.quote).textSelection(.enabled) }
                 }
@@ -139,7 +140,7 @@ struct ReadingRecordDetail: View {
             DispatchQueue.main.async { proxy.scrollTo(hit.identity,anchor:.center) }
             DispatchQueue.main.asyncAfter(deadline:.now()+0.25) { if store.writingSearchRequest == token { WritingRegistry.jumpIfCurrent(hit) } }
         }
-        }.sheet(item:$contextSource) { request in ReadingContextView(store:store,source:request.source) }.onAppear { if journal.draftRecord?.id == record.id && record.kind != .note { editQuote = true } }.onDisappear { imageOCR.cancel() }.sheet(isPresented:$showLinkPicker) {
+        }.sheet(isPresented:$showQuoteCorrection) { ReadingQuoteCorrectionView(journal:journal,record:current) }.sheet(item:$contextSource) { request in ReadingContextView(store:store,source:request.source) }.onAppear { if journal.draftRecord?.id == record.id && record.kind != .note { editQuote = true } }.onDisappear { imageOCR.cancel() }.sheet(isPresented:$showLinkPicker) {
             ReadingRecordPicker(journal:journal) { other in
                 journal.editRecord(record.id) { value in
                     guard !value.linkedRecords.contains(other.id) else { return }

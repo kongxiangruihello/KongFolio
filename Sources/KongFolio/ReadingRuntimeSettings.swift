@@ -30,6 +30,7 @@ struct ReadingOpenQueue: View {
     var body:some View {
         DisclosureGroup("文献读取状态 · \(documents.count) 份") {
             VStack(spacing:8) {
+                HStack { Text(store.openBatchSummary);Spacer();Button("停止本批剩余读取") { store.stopRemainingBatch() }.disabled(!store.canStopOpenBatch) }
                 Text("未切换的文献按需读取；一份文件等待下载或失败时，可继续阅读其他文献。").font(.caption).foregroundStyle(.secondary)
                 ForEach(Array(documents.dropFirst(pagination.range.lowerBound).prefix(pagination.size)),id:\.id) { ReadingOpenQueueRow(store:store,workspace:$0) }
                 if documents.count>10 { HStack { Text(pagination.label);Button("上一页") { page = max(0,page-1) }.disabled(pagination.index == 0);Button("下一页") { page += 1 }.disabled(pagination.index>=pagination.last) }.font(.caption) }

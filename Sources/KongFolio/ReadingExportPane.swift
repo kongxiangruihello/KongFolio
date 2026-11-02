@@ -58,7 +58,7 @@ struct ReadingExportPane: View {
             if let file = controller.previewURL { AcademicFilePreview(url:file).frame(height:max(80,proxy.size.height-settingsHeight-70)).clipped() }
             else { Text("可预览实际生成的 Word、PDF 或 Markdown。Word 请先核对实际预览；PDF 和 Markdown 可直接导出。").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity) }
             if controller.previewURL != nil && !previewCurrent { Text("内容、顺序或格式已变化，请刷新预览。Word 导出前需要当前预览。").font(.caption).foregroundStyle(.orange) }
-            Text(controller.message).font(.caption).lineLimit(2).textSelection(.enabled)
+            HStack { Text(controller.message).font(.caption).lineLimit(2).textSelection(.enabled);if let file = controller.lastExportURL { Button("打开刚导出的文件") { NSWorkspace.shared.open(file) }.font(.caption) } }
         }.frame(width:proxy.size.width,height:proxy.size.height,alignment:.topLeading)
         }.onAppear { scope = store.readingExportEssay ? .essay : ((!store.readingLibraryExportSelection.isEmpty || store.readingRecordID != nil || !store.readingRecordSelection.isEmpty) ? .selected : .book) }
         .onDisappear { controller.close() }.onChange(of:preferences) { _,value in value.save() }
@@ -72,8 +72,9 @@ struct ReadingExportPane: View {
         VStack(alignment:.leading,spacing:8) {
             HStack {
                 Picker("导出范围",selection:$scope) { ForEach(Scope.allCases,id:\.self) { Text($0.rawValue).tag($0) } }
-                Menu("套用模板") { ForEach(ReadingExportProfile.presets+profiles) { profile in Button(profile.name) { preferences.options = profile.options } } }
-                Button("保存模板…") { if let name = TextPrompt.ask("保存导出模板",detail:"保存当前字体、字号、行距、页边距和内容选项",button:"保存"),!name.isEmpty { do { profiles.append(ReadingExportProfile(name:name,options:preferences.options));try ReadingExportProfile.save(profiles) } catch { controller.message = error.localizedDescription } } }
+                Menu("套用模板") { ForEach(ReadingExportProfile.presets+profiles) { profile in Button(profile.name) { preferences.options = profile.options;if let format = profile.format { preferences.format = format } } } }
+                Menu("管理模板") { ForEach(profiles) { profile in Button("删除："+profile.name) { do { let updated = profiles.filter{$0.id != profile.id};try ReadingExportProfile.save(updated);profiles = updated } catch { controller.message = error.localizedDescription } } } }.disabled(profiles.isEmpty)
+                Button("保存模板…") { if let name = TextPrompt.ask("保存导出模板",detail:"保存格式、字体、版式、内容顺序与出处选项",button:"保存"),!name.isEmpty { do { var updated = profiles;updated.append(ReadingExportProfile(name:name,format:preferences.format,options:preferences.options));try ReadingExportProfile.save(updated);profiles = updated } catch { controller.message = error.localizedDescription } } }
             }
             Picker("导出格式",selection:$preferences.format) { ForEach(ReadingRecordExport.Format.allCases,id:\.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
             HStack {

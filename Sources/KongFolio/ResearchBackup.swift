@@ -12,7 +12,7 @@ struct ResearchBackup: Codable {
     var originals: [String: Data]
     var companions: [Asset]
     var progress: [String: Data]
-    static let allowedFolders: Set<String> = ["ReadingJournal", "ReadingRulers", "ReadingDocuments", "SignatureEdits", "AcademicDrafts", "NoteAssets", "Boards", "WordDrafts", "TableDrafts", "Research", "Library", "History", "TextHistory", "Notes", "Conflicts"]
+    static let allowedFolders: Set<String> = ["Personal", "ReadingJournal", "ReadingRulers", "ReadingDocuments", "SignatureEdits", "AcademicDrafts", "NoteAssets", "Boards", "WordDrafts", "TableDrafts", "Research", "Library", "History", "TextHistory", "Notes", "Conflicts"]
     func validate() throws {
         guard version == 1, originals.count <= 10000, companions.count <= 100000 else { throw FolioError(message: "备份版本或数量无效") }
         guard Set(originals.keys) == Set(originalDigests.keys), Set(companions.map(\.path)).count == companions.count else { throw FolioError(message: "备份目录重复或原书索引不完整") }
@@ -21,9 +21,10 @@ struct ResearchBackup: Codable {
             let parts = item.path.split(separator: "/", omittingEmptySubsequences: false)
             guard !item.path.hasPrefix("/"), parts.count >= 2, parts.allSatisfy({ !$0.contains("\0") && !$0.isEmpty && $0 != "." && $0 != ".." }), Self.allowedFolders.contains(String(parts[0])), OCRPageCache.digest(item.bytes) == item.digest else { throw FolioError(message: "备份路径或内容校验失败") }
         }
+        try PersonalReadingBackup.validate(companions.filter{$0.path.hasPrefix("Personal/")})
         guard catalog.version == 1, research.version == 1 else { throw FolioError(message: "资料格式不受支持") }
     }
-    static func capture(storage: URL, catalog: BookLibrary.Catalog, research: ResearchStore.State, progress: [String: Data], includeOriginals: Bool) throws -> Self {
+    static func capture(storage: URL, catalog: BookLibrary.Catalog, research: ResearchStore.State, progress: [String: Data], includeOriginals: Bool, settings:Data? = nil) throws -> Self {
         var originals: [String: Data] = [:], companions: [Asset] = []
         if includeOriginals {
             let journalFile = storage.appendingPathComponent("ReadingJournal/catalog.json")
@@ -51,7 +52,7 @@ struct ResearchBackup: Codable {
                 }
             }
         }
-        for folder in allowedFolders where folder != "Library" && folder != "Research" {
+        for folder in allowedFolders where folder != "Library" && folder != "Research" && folder != "Personal" {
             let base = storage.appendingPathComponent(folder).resolvingSymlinksInPath().standardizedFileURL
             if let enumerator = FileManager.default.enumerator(at: base, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) {
                 for case let url as URL in enumerator {
@@ -65,6 +66,11 @@ struct ResearchBackup: Codable {
                 }
             }
         }
+        for name in PersonalReadingBackup.files {
+            let file = storage.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath:file.path) { try ReadingBackupStorage.checked(file);let bytes = try Data(contentsOf:file);companions.append(Asset(path:"Personal/"+name,bytes:bytes,digest:OCRPageCache.digest(bytes))) }
+        }
+        if let settings { companions.append(Asset(path:"Personal/Settings.plist",bytes:settings,digest:OCRPageCache.digest(settings))) }
         var aliases: [String: String] = [:]
         func collect(_ value: Any) {
             if let path = value as? String, path.hasPrefix("/") { let canonical = ReadingProgress.canonicalPath(path); if originals[canonical] != nil { aliases[path] = canonical } }

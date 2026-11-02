@@ -4,6 +4,7 @@ import Darwin
 import AppKit
 
 /// Exercises production close/save paths without XCTest, window activation, or user storage.
+@MainActor final class WeakReadingWorkspace { weak var value:Workspace?;init(_ value:Workspace) { self.value = value } }
 @main struct ReadingBatchRunner {
     @MainActor static func waitFor(_ test:()->Bool,_ label:String) async throws {
         let deadline = ProcessInfo.processInfo.systemUptime+25
@@ -34,6 +35,7 @@ import AppKit
         let store = WorkspaceStore(storage:root.appendingPathComponent("storage"),readingDefaults:UserDefaults(suiteName:"KongFolio.NormalBatch."+UUID().uuidString)!)
         store.readingMode = true;store.bootstrap();store.maxLoadedTabs = 3
         let rounds = max(3,min(20,Int(ProcessInfo.processInfo.environment["KONGFOLIO_STRESS_ROUNDS"] ?? "10") ?? 10))
+        var closedReferences:[WeakReadingWorkspace] = [],liveAfterRounds:[Int] = []
         var ticks = 0,gap = 0.0,previous = ProcessInfo.processInfo.systemUptime,longest = 0.0,memory:[Double] = []
         let pulse = Task { @MainActor in while !Task.isCancelled { let now = ProcessInfo.processInfo.systemUptime;gap = max(gap,now-previous);previous = now;ticks += 1;try? await Task.sleep(nanoseconds:20_000_000) } };defer { pulse.cancel() }
         for round in 1...rounds {
@@ -44,11 +46,15 @@ import AppKit
                 store.select(id);let w = store.activeWorkspace!
                 try await waitFor({!w.busy && w.count>0},"打开文献")
                 w.selectPage(max(0,w.count-1));w.bookmarkName = "第\(round)轮验证书签";w.addBookmark()
+                closedReferences.append(WeakReadingWorkspace(w))
                 store.close(id)
                 try await waitFor({w.count == 0 && !w.saving && !w.busy},"关闭并保存")
                 longest = max(longest,ProcessInfo.processInfo.systemUptime-start)
             }
             guard store.tabs.count == 1,store.activeWorkspace?.count == 0 else { throw FolioError(message:"本轮未清空阅读文档") }
+            try await Task.sleep(nanoseconds:250_000_000)
+            let live = closedReferences.filter{$0.value != nil}.count;liveAfterRounds.append(live)
+            guard live<=2 else { throw FolioError(message:"关闭后的文献仍被持有：\(live) 份") }
             memory.append(memoryMB());print("NORMAL_READING round=\(round) opened=20 closed=20 memoryMB=\(memory.last!) longestStepSeconds=\(longest)")
         }
         let check = Workspace(storage:store.storage,slot:"verify",readingDefaults:store.readingDefaults);check.bootstrap(restoreRecovery:false);check.load([files[0]])
@@ -57,7 +63,7 @@ import AppKit
         guard try source.map({OCRPageCache.digest(try Data(contentsOf:$0))}) == checksums else { throw FolioError(message:"输入文献发生变化") }
         let growth = (memory.last ?? 0)-(memory.dropFirst(2).min() ?? memory.first ?? 0)
         guard gap < 5,growth < 256 else { throw FolioError(message:"响应或内存趋势超出阅读验证预算") }
-        let report:[String:Any] = ["testMode":false,"rounds":rounds,"opened":rounds*20,"closed":rounds*20,"bookmarksRestored":true,"sourceFixturesUnchanged":true,"mainActorHeartbeats":ticks,"maxHeartbeatGapSeconds":gap,"longestStepSeconds":longest,"residentMB":memory,"postWarmupGrowthMB":growth,"heartbeatBudgetSeconds":5,"memoryGrowthBudgetMB":256]
+        let report:[String:Any] = ["closedWorkspaceReferencesStillLive":liveAfterRounds,"testMode":false,"rounds":rounds,"opened":rounds*20,"closed":rounds*20,"bookmarksRestored":true,"sourceFixturesUnchanged":true,"mainActorHeartbeats":ticks,"maxHeartbeatGapSeconds":gap,"longestStepSeconds":longest,"residentMB":memory,"postWarmupGrowthMB":growth,"heartbeatBudgetSeconds":5,"memoryGrowthBudgetMB":256]
         let data = try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]);if let path = ProcessInfo.processInfo.environment["KONGFOLIO_READING_BATCH_REPORT"] { try data.write(to:URL(fileURLWithPath:path),options:.atomic) }
         print(String(data:data,encoding:.utf8)!);print("PASS: normal-mode repeated batch reading and close/save")
         _ = await check.finishPendingSave();_ = check.closeDocument()

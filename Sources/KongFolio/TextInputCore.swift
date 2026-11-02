@@ -34,7 +34,7 @@ class ComposingTextView: NSTextView {
         if supportsMarkdownLists,!hasMarkedText(),let edit = WritingEdit.indent(string,selection:selectedRange(),outdent:true) { WritingEdit.apply(edit,to:self) } else { super.insertBacktab(sender) }
     }
     override var undoManager:UndoManager? { editingHistory }
-    func finishEditingSession() { WritingPositions.shared.capture(self,key:positionKey);WritingPositions.shared.flush(); committed = nil; focused = nil; delegate = nil; editingHistory.removeAllActions() }
+    func finishEditingSession() { if !hasMarkedText() { committed?(self) }; WritingPositions.shared.capture(self,key:positionKey);WritingPositions.shared.flush(); committed = nil; focused = nil; delegate = nil; editingHistory.removeAllActions() }
     var committed: ((NSTextView) -> Void)?
     override func insertText(_ text: Any, replacementRange: NSRange) { super.insertText(text, replacementRange:replacementRange); if !hasMarkedText() { committed?(self) } }
     override func unmarkText() { super.unmarkText(); committed?(self) }
@@ -64,6 +64,12 @@ class ComposingTextView: NSTextView {
     var read: () -> String
     var write: (String) -> Void
     private(set) var accepted: String
+    private var scrollObserver:NSObjectProtocol?
+    func observeScroll(_ scroll:NSScrollView,view:ComposingTextView) {
+        scroll.contentView.postsBoundsChangedNotifications = true
+        scrollObserver = NotificationCenter.default.addObserver(forName:NSView.boundsDidChangeNotification,object:scroll.contentView,queue:.main) { [weak view] _ in MainActor.assumeIsolated { if let view { WritingPositions.shared.capture(view,key:view.positionKey) } } }
+    }
+    deinit { if let scrollObserver { NotificationCenter.default.removeObserver(scrollObserver) } }
     init(read: @escaping () -> String, write: @escaping (String) -> Void) { self.read = read; self.write = write; accepted = read() }
     func synchronize(_ view: NSTextView) { let value = read(); guard !view.hasMarkedText(), value != accepted else { return }; accepted = value; TextInputSync.replaceExternal(view,with:value) }
     func publish(_ view: NSTextView) { guard !view.hasMarkedText(), read() != view.string else { return }; accepted = view.string; write(view.string); accepted = read() }
