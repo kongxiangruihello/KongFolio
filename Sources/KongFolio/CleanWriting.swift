@@ -7,6 +7,7 @@ struct CleanWritingBlock:Identifiable {
 }
 @MainActor final class CleanWritingSession:ObservableObject {
     @Published var blocks:[CleanWritingBlock] = []
+    @Published var page = 0
     private(set) var source = ""
     func load(_ text:String) {
         guard text != source || blocks.isEmpty else { return };source = text

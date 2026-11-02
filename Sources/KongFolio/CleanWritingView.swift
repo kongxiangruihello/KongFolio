@@ -4,12 +4,11 @@ struct CleanWritingView: View {
     @ObservedObject var note:MarkdownNote
     @ObservedObject var session:CleanWritingSession
     @MainActor init(note:MarkdownNote) { self.note = note;self.session = note.cleanSession }
-    @State private var page = 0
     var body:some View {
         VStack(alignment:.leading,spacing:8) {
             Text("清爽编辑：图片与校勘资料保留在原文件中。段落支持中文输入和撤销；结构工具与全篇查找请切换“源码”。").font(.caption).foregroundStyle(.secondary)
             ScrollView { LazyVStack(alignment:.leading,spacing:10) {
-                ForEach(Array(session.blocks.dropFirst(page*20).prefix(20))) { block in
+                ForEach(Array(session.blocks.dropFirst(session.page*20).prefix(20))) { block in
                     switch block.kind {
                     case .text:
                         StableTextEditor(text:Binding(get:{session.blocks.first{$0.id == block.id}?.source ?? block.source},set:{ value in note.text = session.edit(block.id,text:value) }),label:"正文段落",identity:"clean:"+note.id.uuidString+":"+block.id.uuidString,markdown:true).frame(minHeight:60,maxHeight:180).disabled(note.readOnly)
@@ -19,8 +18,8 @@ struct CleanWritingView: View {
                     }
                 }
             } }
-            HStack { Text("\(session.blocks.count) 段");Spacer();Button("上一页") { page-=1 }.disabled(page == 0);Text("\(page+1)");Button("下一页") { page+=1 }.disabled((page+1)*20>=session.blocks.count) }.font(.caption)
-        }.padding(10).onAppear { session.load(note.text) }.onChange(of:note.text) { _,value in session.load(value);page = min(page,max(0,(session.blocks.count-1)/20)) }
+            HStack { Text("\(session.blocks.count) 段");Spacer();Button("上一页") { session.page-=1 }.disabled(session.page == 0);Text("\(session.page+1)");Button("下一页") { session.page+=1 }.disabled((session.page+1)*20>=session.blocks.count) }.font(.caption)
+        }.padding(10).onAppear { session.load(note.text) }.onChange(of:note.text) { _,value in session.load(value);session.page = min(session.page,max(0,(session.blocks.count-1)/20)) }
     }
 }
 struct CleanWritingImage: View {

@@ -14,7 +14,7 @@ final class Release048Tests: XCTestCase {
         XCTAssertEqual(s.blocks.map{$0.source+$0.suffix}.joined(),source);let text = s.blocks.first{$0.kind == .text}!;let edited = s.edit(text.id,text:"改后的正文😀")
         XCTAssertTrue(edited.contains("file:///tmp/image.png"));XCTAssertTrue(edited.contains(c.marker));XCTAssertEqual(s.blocks.first?.id,text.id)
     }
-    @MainActor func testCleanSessionKeepsParagraphIdentityAfterImageRebase() { let s = CleanWritingSession();s.load("正文\n\n![图](old.png)\n\n结尾");let id = s.blocks.first!.id;s.load("正文\n\n![图](new.png)\n\n结尾");XCTAssertEqual(s.blocks.first!.id,id) }
+    @MainActor func testCleanSessionKeepsParagraphIdentityAfterImageRebase() { let s = CleanWritingSession();s.load("正文\n\n![图](old.png)\n\n结尾");let id = s.blocks.first!.id;s.page = 2;s.load("正文\n\n![图](new.png)\n\n结尾");XCTAssertEqual(s.blocks.first!.id,id);XCTAssertEqual(s.page,2) }
     @MainActor func testCleanMetadataCannotBeEditedAsText() { let s = CleanWritingSession();s.load("![图](x.png)");let before = s.source;XCTAssertEqual(s.edit(s.blocks[0].id,text:"意外覆盖"),before) }
     @MainActor func testCitationSyncKeepsPersonalEssayTextAndSupportsUndo() throws {
         let j = ReadingJournal(storage:try folder());var r = ReadingRecord(kind:.excerpt,quote:"旧摘录");j.add(r);let e = j.newEssay(title:"札记");let block = j.insert(r,in:e);j.editEssay(e) { $0.blocks[$0.blocks.firstIndex{$0.id==block}!].text = "我的论述" };j.editRecord(r.id) { $0.quote = "校订后摘录" }
