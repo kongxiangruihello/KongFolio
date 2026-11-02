@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct ReadingRuntimeSettings: View {
     @ObservedObject var store:WorkspaceStore
@@ -25,9 +26,11 @@ struct ReadingRuntimeSettings: View {
 struct ReadingOpenQueue: View {
     @ObservedObject var store:WorkspaceStore
     @State private var page = 0
+    @State private var batchRevision = 0
     private var documents:[Workspace] { store.tabs.compactMap(\.workspace).filter{$0.sourceURL != nil || $0.projectURL != nil} }
     private var pagination:ReadingPagination { ReadingPagination(total:documents.count,page:page,size:10) }
     var body:some View {
+        let _ = batchRevision
         DisclosureGroup("文献读取状态 · \(documents.count) 份") {
             VStack(spacing:8) {
                 HStack { Text(store.openBatchSummary);Spacer();Button("停止本批剩余读取") { store.stopRemainingBatch() }.disabled(!store.canStopOpenBatch) }
@@ -36,6 +39,7 @@ struct ReadingOpenQueue: View {
                 if documents.count>10 { HStack { Text(pagination.label);Button("上一页") { page = max(0,page-1) }.disabled(pagination.index == 0);Button("下一页") { page += 1 }.disabled(pagination.index>=pagination.last) }.font(.caption) }
             }.padding(.vertical,6)
         }.onChange(of:documents.count) { _,_ in page = pagination.index }
+        .onReceive(Publishers.MergeMany(documents.map{$0.objectWillChange.eraseToAnyPublisher()}).receive(on:RunLoop.main)) { _ in batchRevision &+= 1 }
     }
 }
 struct ReadingOpenQueueRow: View {
