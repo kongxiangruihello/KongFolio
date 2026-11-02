@@ -23,6 +23,7 @@ import UniformTypeIdentifiers
     var searchTask: Task<[SearchHit], Error>?
 
     // MARK: Export and OCR
+    @Published var showSignatureImport = false
     @Published var showExport = false
     @Published var exportOptions = ExportOptions()
     @Published var exportEstimate: ExportEstimate?

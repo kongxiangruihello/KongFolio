@@ -7,7 +7,6 @@ struct ContentView: View {
     var readingMode = false
     var showsPrimaryToolbar = true
     @StateObject private var comparisonSync = ComparisonSync()
-    @State private var showSignatureImport = false
     @State private var showToolbarSettings = false
     @State private var pageDropTarget: Int?
     @AppStorage(ToolbarPreferences.key) private var toolbarSaved = ""
@@ -31,7 +30,7 @@ struct ContentView: View {
             Button("好") { workspace.error = nil }
         } message: { Text(workspace.error ?? "") }
         .sheet(isPresented: $showToolbarSettings) { ToolbarSettingsView(saved: $toolbarSaved) }
-        .sheet(isPresented: $showSignatureImport) { SignatureImportSheet(workspace: workspace) }
+        .sheet(isPresented: $workspace.showSignatureImport) { SignatureImportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showVersionHistory) { VersionHistoryView(workspace: workspace) }
         .sheet(isPresented: $workspace.showExport) { ExportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showCompress) { CompressSheet(workspace: workspace) }
@@ -244,7 +243,7 @@ struct ContentView: View {
                 case .newText: workspace.store?.newNote(format: .plain)
                 case .newHTML: workspace.store?.newNote(format: .html)
                 case .ocr: workspace.ocr(selectedOnly: false)
-                case .signature: showSignatureImport = true
+                case .signature: workspace.showSignatureImport = true
                 case .print: workspace.store?.printActive()
                 default: break
                 }
@@ -275,7 +274,7 @@ struct ContentView: View {
 
     @ViewBuilder private var openItems: some View {
         Button("打开文档或项目…（可多选，各占一个标签页）") { workspace.open() }
-        Button("导入图片签名…") { showSignatureImport = true }
+        Button("导入图片签名…") { workspace.showSignatureImport = true }
         Button("合并多个文件为一个文档…") { workspace.open(merge: true) }
         if !workspace.recentFiles.isEmpty {
             Divider()
@@ -595,7 +594,7 @@ struct ContentView: View {
                 }
             }
             DisclosureGroup("本地签名库") {
-                Button("导入图片签名…") { showSignatureImport = true }
+                Button("导入图片签名…") { workspace.showSignatureImport = true }
                 Button("保存本页手写签名") { workspace.saveSignature() }
                 ForEach(workspace.signatures) { template in
                     HStack {
