@@ -1,7 +1,7 @@
 import XCTest
 @testable import KongFolio
 
-final class ReadingLibraryContextTests:XCTestCase {
+final class ReadingLibraryContextTests: XCTestCase {
     func record(_ text:String) -> ReadingRecord { ReadingRecord(kind:.note,note:text) }
     func testContextTargetsDoNotFallBackToUnrelatedSelection() {
         let a=record("原先选中的笔记"),b=record("实际右键的笔记"),state=ReadingJournalState(records:[a,b])
