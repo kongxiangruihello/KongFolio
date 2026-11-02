@@ -161,6 +161,7 @@ extension Workspace {
     }
     /// Shows the signature on the page; it is only written into the PDF by `confirmSignaturePlacement`.
     func beginPlacing(_ template: SignatureTemplate) {
+        guard !readingLocked else { status = "请先切换到编辑模式";return }
         guard let data = template.image, let image = Self.decodePNG(data) else { insertSignature(template); return }
         guard let view = pdfView as? SignaturePlacing else { return }
         tool = .select
@@ -252,6 +253,7 @@ extension Workspace {
 
     /// Lifts a placed signature off the page and shows it as a stamp that can be moved and resized.
     func beginMovingSignature(_ item: PlacedSignature, in layer: SignatureLayer) {
+        guard !readingLocked else { status = "请先切换到编辑模式";return }
         guard placingSignature == nil, let view = pdfView as? SignaturePlacing, let image = Self.decodePNG(item.png) else { return }
         do {
             moveSnapshot = try snapshot()
@@ -273,6 +275,7 @@ extension Workspace {
 
     /// Takes a placed signature off the page for good (undoable).
     func removePlacedSignature(_ item: PlacedSignature, in layer: SignatureLayer) {
+        guard !readingLocked else { status = "请先切换到编辑模式";return }
         do {
             checkpoint()
             try rebake(layer, items: layer.items.filter { $0.id != item.id })

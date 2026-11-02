@@ -140,6 +140,7 @@ extension Workspace {
     }
 
     func undo() {
+        guard !readingLocked else { return }
         guard let entry = history.last else { return }
         switch entry {
         case .snapshot(let archive):
@@ -155,6 +156,7 @@ extension Workspace {
     }
 
     func redo() {
+        guard !readingLocked else { return }
         guard let entry = future.last else { return }
         switch entry {
         case .snapshot(let archive):

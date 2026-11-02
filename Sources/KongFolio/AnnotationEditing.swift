@@ -4,6 +4,7 @@ import PDFKit
 extension Workspace {
     /// Switches the drawing tool; each tool keeps its own colour and width, starting from sensible ones.
     func selectTool(_ next: AnnotationTool, highlighter: Bool = false) {
+        guard !readingLocked || next == .select || next == .region else { status = "请先切换到编辑模式";return }
         rememberDrawingStyle()
         restoringDrawingStyle = true
         tool = next
@@ -40,6 +41,7 @@ extension Workspace {
     }
     // Annotation edits record only the touched annotation for undo; the PDF is not re-serialized.
     func updateAnnotation() {
+        guard !readingLocked else { return }
         guard let annotation = selectedAnnotation else { return }
         let edit = beginAnnotationEdit([annotation])
         annotation.contents = note
@@ -49,6 +51,7 @@ extension Workspace {
         selectedAnnotation = annotation
     }
     func deleteAnnotation() {
+        guard !readingLocked else { return }
         guard let annotation = selectedAnnotation, let page = annotation.page else { return }
         let edit = beginAnnotationEdit([annotation])
         page.removeAnnotation(annotation)
@@ -56,6 +59,7 @@ extension Workspace {
         commitAnnotationEdit(edit)
     }
     func resizeAnnotation(_ factor: CGFloat) {
+        guard !readingLocked else { return }
         guard let annotation = selectedAnnotation else { return }
         let edit = beginAnnotationEdit([annotation])
         AnnotationGeometry.scale(annotation, by: factor)
@@ -73,6 +77,7 @@ extension Workspace {
         if updateSignatureLibrary({ $0.append(template) }) { status = "签名已保存在本机" }
     }
     func insertSignature(_ template: SignatureTemplate) {
+        guard !readingLocked else { return }
         guard let page, let source = PDFDocument(data: template.pdf), let original = source.page(at: 0) else { return }
         let strokes = original.annotations.filter { $0.type == "Ink" }
         guard !strokes.isEmpty else { return }

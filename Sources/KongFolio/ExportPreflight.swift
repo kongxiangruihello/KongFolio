@@ -117,10 +117,10 @@ extension Workspace {
 extension MarkdownNote {
     func reviewExport(_ kind: ExportReviewKind, proceed: @escaping () -> Void) throws {
         guard let store else { throw FolioError(message:"导出检查不可用") }
-        let content=text,kindOfText=format,base=fileURL?.deletingLastPathComponent() ?? recoveryBaseURL,options=layoutOptions,signature=try exportReviewSignature()
+        let content=textForExport,kindOfText=format,base=fileURL?.deletingLastPathComponent() ?? recoveryBaseURL,options=layoutOptions,signature=try exportReviewSignature()
         store.presentExportReview(ExportReviewRequest(title:"导出检查 · " + kind.rawValue,summary:"\(characterCount) 字 · \(TextAssets.references(content,format:kindOfText).count) 张图片引用",inspect:{ ExportPreflight.text(content,format:kindOfText,baseURL:base,options:options) },isCurrent:{ [weak self] in (try? self?.exportReviewSignature()) == signature },proceed:proceed,locate:{ [weak self, weak store] issue in guard let self else { return };store?.select(self.id);if let range=issue.range { self.revealSearch(range) } }))
     }
-    func exportReviewSignature() throws -> String { OCRPageCache.digest(Data((text+format.rawValue+(fileURL?.absoluteString ?? recoveryBaseURL?.absoluteString ?? "")).utf8)) + (try ExportPreflight.fingerprint(layoutOptions)) }
+    func exportReviewSignature() throws -> String { OCRPageCache.digest(Data((text+String(includeCorrections)+format.rawValue+(fileURL?.absoluteString ?? recoveryBaseURL?.absoluteString ?? "")).utf8)) + (try ExportPreflight.fingerprint(layoutOptions)) }
 }
 
 extension ExportPreflight {

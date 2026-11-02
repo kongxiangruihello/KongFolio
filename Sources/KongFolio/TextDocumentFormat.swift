@@ -16,6 +16,7 @@ extension MarkdownNote {
     func renderDocument() throws -> PDFDocument {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return PDFDocument() }
         let base = fileURL?.deletingLastPathComponent() ?? recoveryBaseURL
-        return try RichTextDocument(try SourceLink.rebasedText(text, baseURL: base), format: format, baseURL: base, options: layoutOptions).pdf()
+        let rendered = format == .markdown && !EditorFootnotes.list(textForExport).isEmpty ? try EditorFootnotes.rendered(textForExport) : textForExport
+        return try RichTextDocument(try SourceLink.rebasedText(rendered, baseURL: base), format: format, baseURL: base, options: layoutOptions).pdf()
     }
 }

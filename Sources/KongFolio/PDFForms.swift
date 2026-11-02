@@ -72,6 +72,7 @@ enum PDFForms {
 
 extension Workspace {
     func applyFormValues(_ values: [String: String], from sourceRevision: UUID) throws {
+        guard !readingLocked else { throw FolioError(message:"请先切换到编辑模式") }
         guard !busy, revision == sourceRevision else { throw FolioError(message: "文档已变化，请关闭并重新打开表单面板") }
         let fields = PDFForms.fields(document)
         try PDFForms.validate(fields, values: values)

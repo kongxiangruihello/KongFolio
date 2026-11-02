@@ -10,5 +10,6 @@ for file in "$ROOT"/Sources/KongFolio/*.swift; do
   SOURCES+=("$file")
 done
 for file in "$ROOT"/Sources/KongFolioUpdateKit/*.swift; do SOURCES+=("$file"); done
-swiftc -swift-version 5 -parse-as-library "${SOURCES[@]}" "$ROOT/Tests/Manual/AutosaveRunner.swift" -o "$ROOT/.build/autosave/KongFolioAutosaveRunner"
+# Parse the shared model sources once; keep debug checks and parallelize IR generation.
+swiftc -swift-version 5 -whole-module-optimization -Onone -num-threads 4 -parse-as-library "${SOURCES[@]}" "$ROOT/Tests/Manual/AutosaveRunner.swift" -o "$ROOT/.build/autosave/KongFolioAutosaveRunner"
 "$ROOT/.build/autosave/KongFolioAutosaveRunner"

@@ -50,7 +50,8 @@ for file in "$ROOT"/Sources/KongFolio/*.swift; do
   SOURCES+=("$file")
 done
 for file in "$ROOT"/Sources/KongFolioUpdateKit/*.swift; do SOURCES+=("$file"); done
-swiftc -swift-version 5 -parse-as-library "${SOURCES[@]}" "$ROOT/.build/smoke/Runner.swift" -o "$ROOT/.build/smoke/KongFolioTests"
+# Parse the shared model sources once; keep debug checks and parallelize IR generation.
+swiftc -swift-version 5 -whole-module-optimization -Onone -num-threads 4 -parse-as-library "${SOURCES[@]}" "$ROOT/.build/smoke/Runner.swift" -o "$ROOT/.build/smoke/KongFolioTests"
 "$ROOT/.build/smoke/KongFolioTests"
 # Keep the existing CI entry point while checking timed autosave in a separate non-XCTest process.
 export KONGFOLIO_AUTOSAVE_REPORT="${KONGFOLIO_AUTOSAVE_REPORT:-$ROOT/.build/autosave/report.json}"

@@ -6,7 +6,8 @@ enum TextPreviewRenderer {
         let worker = Task.detached(priority: .utility) { () throws -> Data? in
             try Task.checkCancellation()
             if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return nil }
-            let document = try RichTextDocument(try SourceLink.rebasedText(text, baseURL: base), format: format, baseURL: base, options: options)
+            let rendered = format == .markdown && !EditorFootnotes.list(text).isEmpty ? try EditorFootnotes.rendered(EditorCorrections.export(text,include:true)) : EditorCorrections.export(text,include:true,html:format == .html)
+            let document = try RichTextDocument(try SourceLink.rebasedText(rendered, baseURL: base), format: format, baseURL: base, options: options)
             try Task.checkCancellation()
             let pdf = try document.pdf()
             try Task.checkCancellation()

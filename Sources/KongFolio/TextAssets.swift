@@ -11,13 +11,17 @@ enum TextAssets {
         case .html: pattern = #"(?is)<img\b[^>]*\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>"#
         }
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-        return regex.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length)).compactMap { match in
+        var result:[TextImageReference] = regex.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length)).compactMap { match in
             guard let group = (1..<match.numberOfRanges).first(where: { match.range(at: $0).location != NSNotFound }) else { return nil }
             var range = match.range(at: group)
             var value = (text as NSString).substring(with: range)
             if format == .markdown, value.hasPrefix("<"), value.hasSuffix(">") { range.location += 1; range.length -= 2; value = String(value.dropFirst().dropLast()) }
             return TextImageReference(range: range, reference: format == .html ? HTMLRichParser.decode(value) : value)
         }
+        let originals = try! NSRegularExpression(pattern:#"<!--kongfolio-original-image:([^>]+)-->"#)
+        let ns = text as NSString
+        result += originals.matches(in:text,range:NSRange(location:0,length:ns.length)).map { TextImageReference(range:$0.range(at:1),reference:ns.substring(with:$0.range(at:1))) }
+        return result.sorted { $0.range.location < $1.range.location }
     }
     static func saving(_ text: String, format: TextDocumentFormat, oldBase: URL?, destination: URL) throws -> String {
         let references = references(text, format: format)
@@ -46,6 +50,7 @@ enum TextAssets {
 
 extension MarkdownNote {
     func insertSource(_ source: String) {
+        guard !readOnly else { status = "阅读模式下不能修改正文";return }
         guard let view = textView else { text += (text.isEmpty ? "" : "\n") + source; return }
         let range = Self.clamp(view.selectedRange(), to: (view.string as NSString).length)
         apply(TextEdit(range: range, replacement: source, selection: NSRange(location: range.location + (source as NSString).length, length: 0)))
@@ -64,6 +69,7 @@ extension MarkdownNote {
         catch { self.error = error.localizedDescription }
     }
     func insertImageData(_ data: Data) throws {
+        guard !readOnly else { throw FolioError(message:"请先切换到编辑模式") }
         guard format != .plain else { throw FolioError(message: "图片需要使用 Markdown 或 HTML 文件") }
         let folder = storage.appendingPathComponent("NoteAssets", isDirectory: true).appendingPathComponent(id.uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

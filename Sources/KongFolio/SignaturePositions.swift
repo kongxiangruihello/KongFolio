@@ -103,6 +103,7 @@ extension Workspace {
     /// Shows `template` at a remembered place, ready to be confirmed or nudged. Works while another place is being
     /// shown too: the stamp simply moves.
     func placeSignature(_ template: SignatureTemplate, at position: SignaturePosition) {
+        guard !readingLocked else { return }
         guard let data = template.image,
               let image = CGImageSourceCreateWithData(data as CFData, nil).flatMap({ CGImageSourceCreateImageAtIndex($0, 0, nil) }) else {
             beginPlacing(template)

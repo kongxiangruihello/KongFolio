@@ -1,0 +1,87 @@
+import XCTest
+import AppKit
+import PDFKit
+@testable import KongFolio
+
+final class Release047Tests: XCTestCase {
+    func folder() throws -> URL { try Release027Tests().folder() }
+    func apply(_ edit:TextEdit,_ source:String)->String { let value = NSMutableString(string:source);value.replaceCharacters(in:edit.range,with:edit.replacement);return value as String }
+    func testToolbarOneRowBudgetAcrossWidths() {
+        for width in stride(from:320.0,through:2000.0,by:10) { let n = SingleRowToolbarPolicy.visibleCount(width:width);XCTAssertTrue(Double(n)*36+SingleRowToolbarPolicy.titleWidth(width)+102<=width);XCTAssertEqual(SingleRowToolbarPolicy.visible(width:width)+SingleRowToolbarPolicy.hidden(width:width),FileToolbarAction.allCases) }
+    }
+    func testToolbarExpandsMonotonicallyAndNeverLosesAnAction() {
+        var last = 0
+        for width in stride(from:320.0,through:1800.0,by:1) { let n = SingleRowToolbarPolicy.visibleCount(width:width);XCTAssertTrue(n>=last);last = n };XCTAssertTrue(SingleRowToolbarPolicy.hidden(width:1400).isEmpty)
+    }
+    func testToolbarRejectsNonfiniteWidths() { XCTAssertEqual(SingleRowToolbarPolicy.visibleCount(width:.infinity),0);XCTAssertEqual(SingleRowToolbarPolicy.visibleCount(width:-100),0) }
+    func testParagraphMovePreservesUnicodeAndImages() throws {
+        let s = "甲😀\n\n![图](a.png)\n\n乙\n",blocks = EditorBlocks.blocks(s,sections:false),edit = try XCTUnwrap(EditorBlocks.edit(s,blocks:blocks,index:1,action:"up"));XCTAssertEqual(apply(edit,s),"![图](a.png)\n\n甲😀\n\n乙\n")
+    }
+    func testChapterIncludesSubheadingsAndIgnoresFencedHeadings() {
+        let s = "# 甲\n正文\n## 子章\n![图](a.png)\n```\n# 代码\n```\n# 乙\n末尾",blocks = EditorBlocks.blocks(s,sections:true);XCTAssertEqual(blocks.count,2);XCTAssertTrue((s as NSString).substring(with:blocks[0].range).contains("## 子章"))
+    }
+    func testCopyAndDeleteWholeChapter() throws {
+        let s = "# 甲\n甲文\n# 乙\n乙文\n",b = EditorBlocks.blocks(s,sections:true);XCTAssertEqual(apply(try XCTUnwrap(EditorBlocks.edit(s,blocks:b,index:0,action:"delete")),s),"# 乙\n乙文\n");XCTAssertEqual(EditorBlocks.blocks(apply(try XCTUnwrap(EditorBlocks.edit(s,blocks:b,index:0,action:"copy")),s),sections:true).count,3)
+    }
+    func testMoveFinalParagraphAddsSafeBoundary() throws { let s = "甲\n\n乙",b = EditorBlocks.blocks(s,sections:false);XCTAssertEqual(apply(try XCTUnwrap(EditorBlocks.edit(s,blocks:b,index:1,action:"up")),s),"乙\n\n甲\n\n") }
+    func testScopedReplaceOnlyCheckedMatchAndLiteralDollar() throws {
+        let s = "甲 foo 😀 foo 乙 foo",scope = (s as NSString).range(of:"foo 😀 foo"),p = try EditorReplacePlan(source:s,query:"foo",scope:scope);XCTAssertEqual(p.matches.count,2);XCTAssertEqual(apply(try XCTUnwrap(p.edit(selected:[p.matches[1].id],replacement:"$1\\x")),s),"甲 foo 😀 $1\\x 乙 foo")
+    }
+    func testReplaceCaseInsensitiveAndEmptyScope() throws { let p = try EditorReplacePlan(source:"Aa aa AA",query:"aa");XCTAssertEqual(p.matches.count,3);XCTAssertNil(try EditorReplacePlan(source:"aaa",query:"a",scope:NSRange(location:1,length:0)).edit(selected:[1],replacement:"x")) }
+    func testDiffInsertionRestoresOnlyOneHunk() throws { let old = "甲\n乙\n丙\n",new = "新\n甲\n乙改\n丙\n",h = EditorDiff.hunks(old:old,new:new);XCTAssertEqual(h.count,2);XCTAssertEqual(apply(EditorDiff.restore(h[1]),new),"新\n甲\n乙\n丙\n") }
+    func testDiffDeletionEmojiAndRepeatedLines() { for pair in [("甲\n😀\n乙","甲\n乙"),("a\nx\na\n","a\na\n"),("","😀\n"),("甲","")] { let h = EditorDiff.hunks(old:pair.0,new:pair.1);var value = pair.1;for part in h.reversed() { value = apply(EditorDiff.restore(part),value) };XCTAssertEqual(value,pair.0) } }
+    func testDiffLongUnrelatedTextUsesBoundedFallback() { let a = String(repeating:"甲\n",count:4000),b = String(repeating:"乙\n",count:4000),h = EditorDiff.hunks(old:a,new:b);XCTAssertEqual(h.count,1);XCTAssertEqual(apply(EditorDiff.restore(h[0]),b),a) }
+    func testMergeIndependentAdjacentEditsAutomatically() throws { let p = EditorMergePlan(base:"a\nb\nc\n",local:"A\nb\nc\n",external:"a\nB\nc\n");XCTAssertFalse(p.parts.contains(where:\.conflict));XCTAssertEqual(try p.result(choices:[:]),"A\nB\nc\n") }
+    func testMergeConflictRequiresExplicitChoice() throws { let p = EditorMergePlan(base:"甲\n乙\n",local:"甲改\n乙\n",external:"外改\n乙\n");XCTAssertTrue(p.parts[0].conflict);XCTAssertThrowsError(try p.result(choices:[:]));XCTAssertEqual(try p.result(choices:[0:true]),"甲改\n乙\n");XCTAssertEqual(try p.result(choices:[0:false]),"外改\n乙\n") }
+    func testMergeConcurrentInsertAtSameOffsetIsConflict() throws { let p = EditorMergePlan(base:"尾\n",local:"甲\n尾\n",external:"乙\n尾\n");XCTAssertTrue(p.parts[0].conflict);XCTAssertEqual(try p.result(choices:[0:false]),"乙\n尾\n") }
+    func testMergeIdenticalChangesDoNotDuplicate() throws { let p = EditorMergePlan(base:"a\n",local:"a\nx\n",external:"a\nx\n");XCTAssertFalse(p.parts[0].conflict);XCTAssertEqual(try p.result(choices:[:]),"a\nx\n") }
+    func testMergeDeletionVersusEditRequiresChoice() { let p = EditorMergePlan(base:"a\nb\nc\n",local:"a\nc\n",external:"a\nB\nc\n");XCTAssertTrue(p.parts[0].conflict) }
+    func testMarkdownTableCaptureAndEscapedCells() throws { let s = "前\n\n| A | B |\n| --- | --- |\n| 甲 | 乙 |\n\n后",p = try EditorTable.capture(s,selection:(s as NSString).range(of:"甲"),format:.markdown);XCTAssertEqual(p.rows,[["A","B"],["甲","乙"]]);var t = p;t.rows[1][0] = "甲|😀";let result = apply(t.edit(format:.markdown),s);XCTAssertTrue(result.contains("甲\\|😀"));XCTAssertTrue(result.hasPrefix("前\n\n"));XCTAssertTrue(result.hasSuffix("\n后")) }
+    func testTableTSVPasteNormalizesUnequalColumns() throws { var t = try EditorTable.capture("",selection:NSRange(location:0,length:0),format:.markdown);try t.pasteTSV("甲\t乙\r\n丙\n");XCTAssertEqual(t.rows,[["甲","乙"],["丙",""]]) }
+    func testHTMLTableCaptureEscapesAndRejectsMergedCells() throws { let s = "<p>前</p><table><tr><th>A&amp;B</th></tr><tr><td>甲</td></tr></table>",p = try EditorTable.capture(s,selection:NSRange(location:20,length:0),format:.html);XCTAssertEqual(p.rows[0][0],"A&B");XCTAssertTrue(p.edit(format:.html).replacement.contains("A&amp;B"));XCTAssertThrowsError(try EditorTable.capture("<table><tr><td colspan=\"2\">a</td></tr></table>",selection:NSRange(location:10,length:0),format:.html)) }
+    func testTablePasteRejectsExcessiveColumns() throws { var t = try EditorTable.capture("",selection:NSRange(location:0,length:0),format:.markdown);XCTAssertThrowsError(try t.pasteTSV(Array(repeating:"x",count:31).joined(separator:"\t"))) }
+    func testFootnoteInsertionRetainsBodyAndAllocatesUniqueID() throws { let s = "正文😀",e = try EditorFootnotes.insertion(s,selection:NSRange(location:0,length:s.utf16.count),body:"解释文字"),a = apply(e,s),b = apply(try EditorFootnotes.insertion(a,selection:NSRange(location:0,length:0),body:"第二条"),a);XCTAssertEqual(Set(EditorFootnotes.list(b).map(\.id)).count,2);XCTAssertTrue(b.contains(s));XCTAssertTrue(try EditorFootnotes.rendered(b).contains("## 注释")) }
+    func testFootnoteBodyReferenceAndDefinitionRanges() { let s = "甲[^note000001]\n\n[^note000001]: 解释",n = EditorFootnotes.list(s);XCTAssertEqual(n.count,1);XCTAssertEqual(n[0].references.count,1);XCTAssertEqual((s as NSString).substring(with:n[0].references[0]),"[^note000001]") }
+    func testFootnoteRejectsBlankAndMissingDefinition() { XCTAssertThrowsError(try EditorFootnotes.insertion("甲",selection:NSRange(location:0,length:0),body:" \n"));XCTAssertThrowsError(try EditorFootnotes.rendered("甲[^missing]")) }
+    func testCorrectionRoundTripAndExportChoice() throws { let c = EditorCorrection(original:"□",replacement:"国",kind:"阙文补字",reason:"据甲本补"),s = "原文□\n"+c.marker;XCTAssertEqual(EditorCorrections.list(s).first?.reason,c.reason);XCTAssertFalse(EditorCorrections.export(s,include:false).contains("校勘记"));XCTAssertTrue(EditorCorrections.export(s,include:true).contains("据甲本补"));XCTAssertFalse(EditorCorrections.export(s,include:true).contains("base64")) }
+    func testSpecialCharactersUseUTF16OffsetsWithoutChangingSource() { let s = "😀 \t\n\u{200B}\u{202E}�",a = EditorCharacters.inspect(s,all:true);XCTAssertEqual(a.first?.range.location,2);XCTAssertTrue(a.contains{$0.unicode == "U+200B"});XCTAssertTrue(a.contains{$0.name.contains("方向")});XCTAssertEqual(s.utf16.count,8) }
+    func testCharacterInspectorCapsLongDocuments() { XCTAssertEqual(EditorCharacters.inspect(String(repeating:" ",count:2000),all:true).count,1000) }
+    func testManualBig5AndUTF16Encoding() throws { let s = "文獻札記",big = try XCTUnwrap(s.data(using:TextImport.big5)),utf = try XCTUnwrap(s.data(using:.utf16));XCTAssertEqual(try EditorEncoding.big5.decode(big),s);XCTAssertEqual(try EditorEncoding.utf16.decode(utf),s);XCTAssertThrowsError(try EditorEncoding.utf8.decode(Data([0xFF,0xFF,0xFF]))) }
+    @MainActor func testReadingLockStopsTextCommandsAndBackupLosesNoWork() throws { let n = MarkdownNote(text:"未存的正文",dirty:true,storage:try folder()),v = ComposingTextView();v.string = n.text;n.textView = v;n.toggleReadOnly();n.insertSource("误输入");n.apply(TextEdit(range:NSRange(location:0,length:0),replacement:"错",selection:NSRange(location:0,length:0)));XCTAssertEqual(n.text,"未存的正文");XCTAssertFalse(v.isEditable);try n.writeBackup();let restored = MarkdownNote.restoreBackups(storage:n.storage);XCTAssertEqual(restored.first?.text,n.text) }
+    @MainActor func testReadModeCannotInterruptMarkedChineseComposition() throws { let n = MarkdownNote(text:"甲",storage:try folder()),v = ComposingTextView();n.textView = v;v.string = n.text;v.setMarkedText("zhong",selectedRange:NSRange(location:5,length:0),replacementRange:NSRange(location:1,length:0));n.toggleReadOnly();XCTAssertFalse(n.readOnly);v.unmarkText() }
+    @MainActor func testStaleEditorSnapshotCannotOverwriteNewInput() throws { let n = MarkdownNote(text:"新输入",storage:try folder()),v = ComposingTextView();n.textView = v;v.string = n.text;XCTAssertFalse(n.commitEditorEdit(TextEdit(range:NSRange(location:0,length:0),replacement:"旧",selection:NSRange(location:0,length:0)),expected:"旧稿"));XCTAssertEqual(v.string,"新输入") }
+    @MainActor func testTextCopyLeavesOriginalModelAndDiskUnchanged() throws { let d = try folder(),original = d.appendingPathComponent("原文.md"),copy = d.appendingPathComponent("副本.md");try "原文".write(to:original,atomically:true,encoding:.utf8);let n = try MarkdownNote.open(original,storage:d);n.text = "当前未存文字";try n.writeEditingCopy(to:copy);XCTAssertEqual(try String(contentsOf:original,encoding:.utf8),"原文");XCTAssertEqual(n.fileURL,original);XCTAssertTrue(n.dirty);XCTAssertEqual(try String(contentsOf:copy,encoding:.utf8),"当前未存文字") }
+    @MainActor func testCopyRefusesExistingOriginalAndSymlink() throws { let d = try folder(),original = d.appendingPathComponent("原.md"),link = d.appendingPathComponent("链接.md");try "原文".write(to:original,atomically:true,encoding:.utf8);try FileManager.default.createSymbolicLink(at:link,withDestinationURL:original);let n = try MarkdownNote.open(original,storage:d);XCTAssertThrowsError(try n.writeEditingCopy(to:original));XCTAssertThrowsError(try n.writeEditingCopy(to:link));XCTAssertEqual(try String(contentsOf:original,encoding:.utf8),"原文") }
+    @MainActor func testBaselineTextPersistsAcrossBackupAndSave() throws { let d = try folder(),u = d.appendingPathComponent("文.md");try "基准".write(to:u,atomically:true,encoding:.utf8);let n = try MarkdownNote.open(u,storage:d);n.text = "未保存";try n.writeBackup();let r = try XCTUnwrap(MarkdownNote.restoreBackups(storage:d).first);XCTAssertEqual(r.baselineText,"基准");try r.write(to:u);XCTAssertEqual(r.baselineText,"未保存") }
+    @MainActor func testPDFReadModeBlocksPageAndAnnotationMutations() throws { let w = Workspace(storage:try folder());w.document = SignaturePositionTests().document(pages:2);w.alignMeta();w.toggleReadingLock();w.duplicatePages();w.remove();w.rotate();w.selectTool(.pen);XCTAssertEqual(w.count,2);XCTAssertEqual(w.tool,.select);XCTAssertTrue(w.mark(style:.highlight,color:.yellow).isEmpty);w.toggleReadingLock();w.selectTool(.pen);XCTAssertEqual(w.tool,.pen) }
+    func image() throws -> Data { let c = try XCTUnwrap(CGContext(data:nil,width:100,height:60,bitsPerComponent:8,bytesPerRow:0,space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue));c.setFillColor(CGColor(red:1,green:0,blue:0,alpha:1));c.fill(CGRect(x:0,y:0,width:100,height:60));return try XCTUnwrap(SignatureImage.pngData(try XCTUnwrap(c.makeImage()))) }
+    func testImageCropAndResizeProduceExpectedDimensions() throws { let data = try image(),t = EditorImageTransform(x:0.1,y:0,width:0.5,height:1,outputWidth:200),result = try XCTUnwrap(SignatureImage.loadData(t.png(data)));XCTAssertEqual(result.width,200);XCTAssertEqual(result.height,240);XCTAssertEqual(SignatureImage.loadData(data)?.width,100) }
+    func testInvalidImageCropIsRejected() throws { XCTAssertThrowsError(try EditorImageTransform(x:0.9,y:0,width:0.5,height:1,outputWidth:100).png(image()));XCTAssertThrowsError(try EditorImageTransform(outputWidth:50000).png(image())) }
+    func testOriginalImageMetadataSurvivesSaveAsAndDoesNotRender() throws { let d = try folder(),u = d.appendingPathComponent("原.png");try image().write(to:u);let s = "正文\n<!--kongfolio-original-image:"+u.absoluteString+"-->",dest = d.appendingPathComponent("副本.md"),saved = try TextAssets.saving(s,format:.markdown,oldBase:d,destination:dest);XCTAssertFalse(saved.contains(u.absoluteString));let ref = try XCTUnwrap(TextAssets.references(saved,format:.markdown).first);XCTAssertNotNil(try TextMedia.read(ref.reference,baseURL:d));let doc = try RichTextDocument(saved,format:.markdown,baseURL:d);XCTAssertFalse(try doc.pdf().string?.contains("original-image") ?? true) }
+    @MainActor func testWordFootnotesUseRealOOXMLParts() throws { let d = try folder(),u = d.appendingPathComponent("脚注.docx");try TextFileExport.writeWord("正文[^note000001]\n\n[^note000001]: 自己的解释",format:.markdown,to:u);let p = Process();p.executableURL = URL(fileURLWithPath:"/usr/bin/unzip");p.arguments = ["-p",u.path,"word/footnotes.xml"];let pipe = Pipe();p.standardOutput = pipe;try p.run();let bytes = pipe.fileHandleForReading.readDataToEndOfFile();p.waitUntilExit();let xml = String(decoding:bytes,as:UTF8.self);XCTAssertEqual(p.terminationStatus,0);XCTAssertTrue(xml.contains("自己的解释"));XCTAssertTrue(xml.contains("footnote")) }
+    @MainActor func testAutomaticFollowDebouncesAndKeepsSourceSelection() async throws {
+        let n = MarkdownNote(text:"甲段\n乙段",storage:try folder()),v = ComposingTextView();v.string = n.text;n.textView = v;n.followPreview = true
+        v.setSelectedRange(NSRange(location:0,length:0));n.followSourceSelection();v.setSelectedRange(NSRange(location:3,length:0));n.followSourceSelection()
+        try await Task.sleep(nanoseconds:450_000_000)
+        XCTAssertEqual(v.selectedRange(),NSRange(location:3,length:0));XCTAssertEqual(n.lastFollowedParagraph?.location,3)
+    }
+    @MainActor func testReleasingEditorCancelsPendingPreviewFollow() throws {
+        let n = MarkdownNote(text:"甲",storage:try folder()),v = ComposingTextView();v.string = n.text;n.textView = v;n.followPreview = true;n.followSourceSelection();XCTAssertNotNil(n.previewFollowTask);n.releaseEditorResources();XCTAssertNil(n.previewFollowTask);XCTAssertNil(n.textView)
+    }
+
+    func testExplicitPreviewJumpHonorsSelectedPhrase() {
+        let source = "第一段中文😀正文\n下一段",selected = NSRange(location:0,length:5)
+        XCTAssertEqual(EditorNavigation.scope(source,selection:selected,explicit:true),selected)
+        XCTAssertEqual((source as NSString).substring(with:EditorNavigation.scope(source,selection:selected,explicit:false)),"第一段中文😀正文\n")
+    }
+
+    @MainActor func testFileChooserDoesNotReuseUnloadedOrFailedSourceTab() throws {
+        let store = WorkspaceStore(storage:try folder()),unloaded = store.addWorkspace();unloaded.sourceURL = URL(fileURLWithPath:"/tmp/deferred.pdf");unloaded.needsLoad = true;store.newNote();XCTAssertNil(store.emptyFileChooserWorkspace)
+        unloaded.needsLoad = false;XCTAssertNil(store.emptyFileChooserWorkspace)
+    }
+    @MainActor func testFileChooserOnlyReusesAnIdleBlankTab() throws {
+        let store = WorkspaceStore(storage:try folder()),blank = store.addWorkspace();store.newNote();XCTAssertTrue(store.emptyFileChooserWorkspace === blank)
+        blank.busy = true;XCTAssertNil(store.emptyFileChooserWorkspace);blank.busy = false;blank.isImporting = true;XCTAssertNil(store.emptyFileChooserWorkspace);blank.isImporting = false;blank.projectURL = URL(fileURLWithPath:"/tmp/deferred.kongfolio");XCTAssertNil(store.emptyFileChooserWorkspace)
+    }
+
+}

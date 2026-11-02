@@ -61,6 +61,7 @@ extension Workspace {
         }
     }
     func replacePlacedSignature(_ item: PlacedSignature, in layer: SignatureLayer) {
+        guard !readingLocked else { return }
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
@@ -71,6 +72,7 @@ extension Workspace {
         } catch { self.error = error.localizedDescription }
     }
     func replacePlacedSignature(_ item: PlacedSignature, in layer: SignatureLayer, png: Data) throws {
+        guard !readingLocked else { throw FolioError(message:"请先切换到编辑模式") }
         guard signatureLayer(for: layer.page) === layer, SignatureImage.loadData(png) != nil else { throw FolioError(message: "页面或签名图片已失效") }
         let before = try snapshot()
         var items = layer.items

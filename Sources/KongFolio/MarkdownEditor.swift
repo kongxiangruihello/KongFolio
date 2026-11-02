@@ -12,8 +12,13 @@ struct MarkdownEditorView: View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
                 if showsPrimaryToolbar { toolbar }
-                WritingToolbar(session:note.writingSession)
-                if note.saveConflict { SaveConflictBanner(copy: { note.save(asNew: true) }, reload: note.reloadAfterConflict) }
+                HStack {
+                    Button(note.readOnly ? "阅读模式 · 切换编辑" : "编辑模式 · 切换阅读") { note.toggleReadOnly() }.help("阅读模式保护正文，仍可选择和复制文字")
+                    Menu("文件编辑") { ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool } };Button("创建独立编辑副本…") { note.createEditingCopy() } }
+                    if note.format != .plain { Toggle("预览",isOn:$note.showPreview).toggleStyle(.checkbox);Toggle("跟随段落",isOn:$note.followPreview).toggleStyle(.checkbox) }
+                }.font(.caption).padding(.horizontal,10).padding(.vertical,4)
+                if !note.readOnly { WritingToolbar(session:note.writingSession) }
+                if note.saveConflict { SaveConflictBanner(copy: { note.save(asNew: true) }, reload: note.reloadAfterConflict,compare:{ note.editingTool = .merge }) }
                 Divider()
                 TextEditorPreviewSplit(note:note)
                 Divider()
@@ -27,8 +32,9 @@ struct MarkdownEditorView: View {
             }
             .frame(width: proxy.size.width)
         }
+        .sheet(item:$note.editingTool) { tool in FileEditingSheet(note:note,tool:tool) }
         .sheet(isPresented: $showLayout) { TextLayoutSheet(note: note) }
-        .sheet(isPresented: $note.showVersionHistory) { TextVersionHistoryView(note: note) }
+        .sheet(isPresented: $note.showVersionHistory) { FileEditingSheet(note:note,tool:.history) }
         .alert("无法完成操作", isPresented: Binding(get: { note.error != nil }, set: { if !$0 { note.error = nil } })) {
             Button("好") { note.error = nil }
         } message: { Text(note.error ?? "") }
@@ -101,6 +107,7 @@ struct MarkdownTextView: NSViewRepresentable {
         view.registerForDraggedTypes([.fileURL, .png, .tiff])
         view.delegate = context.coordinator
         view.committed = { [weak coordinator = context.coordinator] in coordinator?.commit($0) }
+        view.isEditable = !note.readOnly
         view.isRichText = false
         view.allowsUndo = true
         view.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
@@ -117,6 +124,7 @@ struct MarkdownTextView: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let view = scroll.documentView as? NoteTextView else { return }
         note.textView = view
+        view.isEditable = !note.readOnly
         let nextKey = note.fileURL.map{"text-file:"+ReadingProgress.canonicalPath($0.path)} ?? "markdown:"+note.id.uuidString
         if nextKey != view.positionKey { WritingPositions.shared.capture(view,key:view.positionKey);view.positionKey = nextKey;WritingRegistry.attach(view,key:nextKey);WritingPositions.shared.capture(view,key:nextKey) }
         view.minSize = NSSize(width: 0, height: max(1, scroll.contentSize.height))
@@ -139,7 +147,7 @@ struct MarkdownTextView: NSViewRepresentable {
         let input: StableInputCoordinator
         init(note: MarkdownNote) { self.note = note; input = StableInputCoordinator(read:{note.text},write:{note.text = $0}) }
 
-        func textViewDidChangeSelection(_ notification:Notification) { if let view = notification.object as? ComposingTextView { WritingPositions.shared.capture(view,key:view.positionKey) } }
+        func textViewDidChangeSelection(_ notification:Notification) { if let view = notification.object as? ComposingTextView { WritingPositions.shared.capture(view,key:view.positionKey);note.followSourceSelection() } }
         func textDidChange(_ notification: Notification) {
             guard let view = notification.object as? NSTextView else { return }; commit(view)
         }
@@ -152,8 +160,11 @@ struct MarkdownTextView: NSViewRepresentable {
 struct MarkdownPreview: NSViewRepresentable {
     @ObservedObject var note: MarkdownNote
 
+    func makeCoordinator()->Coordinator { Coordinator(note:note) }
     func makeNSView(context: Context) -> PDFView {
         let view = ManagedPDFView()
+        note.previewView = view
+        context.coordinator.observe(view)
         view.autoScales = true
         view.displayMode = .singlePageContinuous
         view.displayDirection = .vertical
@@ -161,15 +172,26 @@ struct MarkdownPreview: NSViewRepresentable {
         return view
     }
 
-    static func dismantleNSView(_ view: PDFView, coordinator: ()) {
+    static func dismantleNSView(_ view: PDFView, coordinator: Coordinator) {
+        coordinator.stop();if coordinator.note.previewView === view { coordinator.note.previewView = nil }
         view.clearSelection(); view.delegate = nil; view.document = nil
     }
 
     func updateNSView(_ view: PDFView, context: Context) {
+        note.previewView = view
         guard view.document !== note.preview else { return }
         // Keep the reading position while the text is retyped.
         let pageIndex = view.currentPage.flatMap { view.document?.index(for: $0) }
         view.document = note.preview
+        note.lastFollowedDocument = nil;note.followSourceSelection()
         if let pageIndex, let page = note.preview?.page(at: min(pageIndex, max(0, (note.preview?.pageCount ?? 1) - 1))) { view.go(to: page) }
     }
+    @MainActor final class Coordinator {
+        let note:MarkdownNote;var observer:NSObjectProtocol?
+        init(note:MarkdownNote) { self.note = note }
+        func observe(_ view:PDFView) { observer = NotificationCenter.default.addObserver(forName:.PDFViewSelectionChanged,object:view,queue:.main) { [weak self] _ in MainActor.assumeIsolated { guard let self,self.note.followPreview else { return };self.note.locateSource(focus:false) } } }
+        func stop() { if let observer { NotificationCenter.default.removeObserver(observer) };observer = nil }
+        deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
+    }
+
 }

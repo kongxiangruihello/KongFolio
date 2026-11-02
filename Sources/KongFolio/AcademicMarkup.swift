@@ -7,7 +7,7 @@ struct AcademicMarkup {
     var warnings: [String]
     static func parse(_ source: String) throws -> Self {
         var text: [String] = [], footnotes: [String: String] = [:], endnotes: [String: String] = [:]
-        let definition = try NSRegularExpression(pattern: #"^\[([\^~])([A-Za-z0-9_-]+)\]:\s*(.*)$"#)
+        let definition = try NSRegularExpression(pattern: #"^\[([\^~])([A-Za-z0-9_-]+)\]:[ \t]*(.*)$"#)
         for line in source.components(separatedBy: "\n") {
             let value = line as NSString
             if let hit = definition.firstMatch(in: line, range: NSRange(location: 0, length: value.length)) {
