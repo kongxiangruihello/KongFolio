@@ -350,6 +350,7 @@ import UniformTypeIdentifiers
             }
             if let existing = tabs.compactMap(\.workspace).first(where: { $0.displayPath == url.path || $0.sourceURL?.standardizedFileURL == url.standardizedFileURL || $0.projectURL?.standardizedFileURL == url.standardizedFileURL }) {
                 batch.insert(existing.id)
+                if existing.count == 0,!existing.busy { existing.error = nil;existing.needsLoad = true }
                 if first == nil { first = existing.id }; continue
             }
             let target: Workspace

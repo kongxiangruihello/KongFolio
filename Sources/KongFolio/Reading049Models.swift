@@ -3,7 +3,7 @@ import AppKit
 import PDFKit
 
 extension WorkspaceStore {
-    var openBatchDocuments:[Workspace] { tabs.compactMap(\.workspace).filter{openBatchIDs.contains($0.id)} }
+    var openBatchDocuments:[Workspace] { tabs.compactMap(\.workspace).filter{openBatchIDs.contains($0.id) && ($0.sourceURL != nil || $0.projectURL != nil)} }
     var canStopOpenBatch:Bool { openBatchDocuments.contains{$0.isImporting || ($0.needsLoad && $0.count == 0)} }
     var openBatchSummary:String {
         let values = openBatchDocuments, loaded = values.filter{$0.count>0}.count
