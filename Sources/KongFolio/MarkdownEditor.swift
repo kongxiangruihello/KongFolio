@@ -13,14 +13,15 @@ struct MarkdownEditorView: View {
             VStack(spacing: 0) {
                 if showsPrimaryToolbar { toolbar }
                 HStack {
+                    if note.format == .markdown { Toggle("源码",isOn:Binding(get:{!note.cleanEditing},set:{ value in if note.textView?.hasMarkedText() != true && (NSApp?.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() != true { note.cleanEditing = !value } })).toggleStyle(.checkbox) }
                     Button(note.readOnly ? "阅读模式 · 切换编辑" : "编辑模式 · 切换阅读") { note.toggleReadOnly() }.help("阅读模式保护正文，仍可选择和复制文字")
-                    Menu("文件编辑") { ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool } };Button("创建独立编辑副本…") { note.createEditingCopy() } }
+                    Menu("文件编辑") { ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool }.disabled(note.format == .markdown && note.cleanEditing) };Button("创建独立编辑副本…") { note.createEditingCopy() } }
                     if note.format != .plain { Toggle("预览",isOn:$note.showPreview).toggleStyle(.checkbox);Toggle("跟随段落",isOn:$note.followPreview).toggleStyle(.checkbox) }
                 }.font(.caption).padding(.horizontal,10).padding(.vertical,4)
-                if !note.readOnly { WritingToolbar(session:note.writingSession) }
+                if !note.readOnly && !(note.format == .markdown && note.cleanEditing) { WritingToolbar(session:note.writingSession) }
                 if note.saveConflict { SaveConflictBanner(copy: { note.save(asNew: true) }, reload: note.reloadAfterConflict,compare:{ note.editingTool = .merge }) }
                 Divider()
-                TextEditorPreviewSplit(note:note)
+                if note.format == .markdown && note.cleanEditing { CleanWritingView(note:note) } else { TextEditorPreviewSplit(note:note) }
                 Divider()
                 HStack {
                     Text(note.status.isEmpty ? (note.fileURL?.path ?? "尚未保存到文件") : note.status).lineLimit(1).truncationMode(.middle)

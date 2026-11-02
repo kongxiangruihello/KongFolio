@@ -10,5 +10,5 @@ for file in "$ROOT"/Sources/KongFolio/*.swift; do
   SOURCES+=("$file")
 done
 for file in "$ROOT"/Sources/KongFolioUpdateKit/*.swift; do SOURCES+=("$file"); done
-swiftc -swift-version 5 -parse-as-library "${SOURCES[@]}" "$ROOT/Tests/Manual/ReadingBatchRunner.swift" -o "$ROOT/.build/reading-batch/KongFolioReadingBatchRunner"
+swiftc -swift-version 5 -whole-module-optimization -Onone -num-threads 4 -parse-as-library "${SOURCES[@]}" "$ROOT/Tests/Manual/ReadingBatchRunner.swift" -o "$ROOT/.build/reading-batch/KongFolioReadingBatchRunner"
 "$ROOT/.build/reading-batch/KongFolioReadingBatchRunner"

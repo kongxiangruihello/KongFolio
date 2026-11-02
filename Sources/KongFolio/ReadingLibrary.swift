@@ -17,6 +17,8 @@ enum ReadingLibraryItem: Identifiable {
 }
 extension ReadingJournal {
     func setRemoved(_ ids:Set<ReadingLibraryID>,removed:Bool) {
+        let beforeBulk = state
+        defer { finishBulk(beforeBulk,"批量删除或恢复") }
         guard !unreadable, !ids.isEmpty else { return }
         let date:Date? = removed ? Date() : nil
         change { state in

@@ -163,6 +163,7 @@ actor ReadingJournalWriter {
     func discardNoteDraft() { draftRecord = nil }
     func discardEssayDraft() { draftEssay = nil }
     func assetURL(_ name:String) -> URL { folder.appendingPathComponent("Assets").appendingPathComponent(name) }
+    @Published var bulkCheckpoint:ReadingBulkCheckpoint?
     var saveStatus:String { error ?? (saving ? "正在保存记录…" : (dirty ? "等待保存…" : (draftRecord != nil || draftEssay != nil ? "空白草稿：输入内容后自动保存，不计入记录" : "记录已自动保存"))) }
     func change(_ operation:(inout ReadingJournalState)->Void) {
         guard !unreadable else { return }

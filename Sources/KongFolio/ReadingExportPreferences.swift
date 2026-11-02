@@ -10,6 +10,13 @@ struct ReadingExportOptions: Codable, Equatable {
     var margin:Double? = nil
     var footnotes:Bool? = nil
     var sourceLinks:[String:String]? = nil
+    var blockOrder:[String]? = nil
+    var quoteHeading:String? = nil
+    var noteHeading:String? = nil
+    var sourcesHeading:String? = nil
+    var imageHeading:String? = nil
+    var showRecordTitles:Bool? = nil
+    var structuralOrder:[String] { let allowed = ["quote","note","sources"];var seen = Set<String>();return ((blockOrder ?? allowed)+allowed).filter{allowed.contains($0) && seen.insert($0).inserted} }
     var layout:TextLayoutOptions { var value = TextLayoutOptions();value.fontName = fontName;value.fontSize = fontSize;value.lineHeight = lineHeight ?? 1.4;value.margin = margin ?? 70.87;return value }
     var valid:Bool { !fontName.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && fontName.count < 128 && fontSize.isFinite && (8...36).contains(fontSize) && layout.valid && (includeQuote || includeNote || includeSources) }
     func heading(_ record:ReadingRecord) -> String {

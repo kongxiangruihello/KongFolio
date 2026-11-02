@@ -37,6 +37,7 @@ struct TextEdit: Equatable {
     var fileBaseline: FileBaseline?
     var baselineText: String?
     @Published var readOnly = false
+    @Published var cleanEditing = true
     @Published var editingTool: FileEditingTool?
     @Published var followPreview = false
     @Published var includeCorrections = true { didSet { refreshPreview() } }
@@ -54,6 +55,7 @@ struct TextEdit: Equatable {
     var lastActive = Date()
     weak var textView: NSTextView?
     let writingSession = WritingSession()
+    let cleanSession = CleanWritingSession()
     var characterCount:Int { text.reduce(0){$0+($1.isWhitespace ? 0 : 1)} }
     var pendingSearchRange: NSRange?
     private var previewTask: Task<Void, Never>?
@@ -113,6 +115,7 @@ struct TextEdit: Equatable {
     }
 
     @discardableResult func save(asNew: Bool = false) -> Bool {
+        guard textView?.hasMarkedText() != true,(NSApp?.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() != true else { status = "请先完成中文候选词，再保存";return false }
         var target = fileURL
         if asNew || target == nil {
             let panel = NSSavePanel()

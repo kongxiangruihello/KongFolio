@@ -8,7 +8,7 @@ enum FileEditingTool:String,CaseIterable,Identifiable {
 }
 extension MarkdownNote {
     func toggleReadOnly() {
-        guard textView?.hasMarkedText() != true else { status = "请先完成正在输入的文字，再切换模式";return }
+        guard textView?.hasMarkedText() != true,(NSApp?.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() != true else { status = "请先完成正在输入的文字，再切换模式";return }
         readOnly.toggle();textView?.isEditable = !readOnly;status = readOnly ? "阅读模式：正文已保护" : "编辑模式"
     }
     @discardableResult func commitEditorEdit(_ edit:TextEdit,expected:String) -> Bool {
@@ -16,7 +16,7 @@ extension MarkdownNote {
         apply(edit);return true
     }
     func createEditingCopy(text override:String? = nil,baseURL overrideBase:URL? = nil,format overrideFormat:TextDocumentFormat? = nil) {
-        guard textView?.hasMarkedText() != true else { status = "请先完成正在输入的文字";return }
+        guard textView?.hasMarkedText() != true,(NSApp?.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() != true else { status = "请先完成正在输入的文字";return }
         let copyFormat = overrideFormat ?? format
         let panel = NSSavePanel();panel.allowedContentTypes = [UTType(filenameExtension:copyFormat.fileExtension) ?? .plainText];panel.nameFieldStringValue = title+"-编辑副本."+copyFormat.fileExtension
         guard panel.runModal() == .OK,let url = panel.url else { return }

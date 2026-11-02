@@ -7,12 +7,14 @@ struct ReadingEssayDetail: View {
     @ObservedObject var journal:ReadingJournal
     let id:UUID
     var onExport:(()->Void)? = nil
+    @State private var showUpdates = false
     @State private var headings:[ReadingEssayHeading] = []
     private var current:ReadingEssay? { journal.essay(id) }
     var body:some View {
         if let essay = current {
             VStack(alignment:.leading,spacing:10) {
                 if journal.draftEssay?.id == essay.id { HStack { Text("空白札记草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary);Spacer();Button("关闭空白草稿") { journal.discardEssayDraft() } } }
+                Button("核对引用更新（\(journal.citationUpdates(id).count)）") { showUpdates = true }.disabled(journal.citationUpdates(id).isEmpty)
                 StableTextField("札记标题",text:Binding(get:{current?.title ?? ""},set:{text in journal.editEssay(id) { $0.title = text } }))
                 ReadingTagField(journal:journal,label:"札记标签，以逗号分隔",text:Binding(get:{current?.tags.joined(separator:", ") ?? ""},set:{text in journal.editEssay(id) { $0.tags = ReadingRecordDetail.tags(text) } }))
                 ScrollViewReader { proxy in
@@ -30,9 +32,13 @@ struct ReadingEssayDetail: View {
                         ScrollView { LazyVStack(alignment:.leading,spacing:14) { ForEach(essay.blocks) { block in
                             ReadingEssayBlockView(store:store,journal:journal,essayID:id,block:block).id(block.id)
                         } } }
+                    }.onChange(of:store.writingSearchRequest) { _,token in
+                        guard let hit = store.writingSearchHit,hit.identity.hasPrefix("essay:"+id.uuidString+":"),let raw = hit.identity.split(separator:":").last,let block = UUID(uuidString:String(raw)) else { return }
+                        store.readingEssayBlockID = block;proxy.scrollTo(block,anchor:.center)
+                        DispatchQueue.main.asyncAfter(deadline:.now()+0.25) { if store.writingSearchRequest == token { WritingRegistry.jumpIfCurrent(hit) } }
                     }
                 }
-            }.task(id:essay.modified) {
+            }.sheet(isPresented:$showUpdates) { ReadingCitationUpdatesView(journal:journal,essay:id) }.task(id:essay.modified) {
                 do { try await Task.sleep(nanoseconds:400_000_000) } catch { return }
                 var values:[ReadingEssayHeading] = []
                 for block in essay.blocks { let result = await WritingAnalysisWorker.shared.analyze(block.text);values += result.headings.map{ReadingEssayHeading(block:block.id,title:$0.title,level:$0.level,range:$0.range)} }

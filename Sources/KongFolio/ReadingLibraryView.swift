@@ -12,6 +12,7 @@ struct ReadingLibraryView: View {
     @State private var pendingFilterPage:Int?
     @State private var pendingNavigation:ReadingLibraryID?
     @State private var filterMessage = ""
+    @State private var confirmBulk = false
     @State private var showTags = false
     @State private var showRelink = false
     @State private var kind = "全部"
@@ -41,7 +42,7 @@ struct ReadingLibraryView: View {
                 Button("引用关系") { showReferences = true }.disabled(editing == nil)
                 Button("导出所选…") { store.readingLibraryExportSelection = selection;store.readingRecordSelection = Set(selection.compactMap { if case .record(let id) = $0 { return id };return nil });store.readingExportEssay = false;section = .exports }.disabled(selection.isEmpty || removed)
                 Button("备份恢复") { showBackups = true }
-                Button(removed ? "恢复所选" : "删除所选") { journal.setRemoved(selection,removed:!removed); selection = []; editing = nil }.disabled(selection.isEmpty || journal.unreadable)
+                Button(removed ? "恢复所选" : "删除所选") { confirmBulk = true }.disabled(selection.isEmpty || journal.unreadable)
             }
             HStack {
                 Menu("常用筛选") {
@@ -55,6 +56,7 @@ struct ReadingLibraryView: View {
                 Toggle("近七天",isOn:$recent);Toggle("未加标签",isOn:$untagged)
                 Menu("资料整理") { Button("统一整理标签…") { showTags = true };Button("批量重新关联原文…") { showRelink = true } }
             }
+            if let checkpoint = journal.bulkCheckpoint { Button("撤销："+checkpoint.label) { do { try journal.undoBulk() } catch { filterMessage = error.localizedDescription } }.disabled(!journal.canUndoBulk) }
             if !filterMessage.isEmpty { Text(filterMessage).font(.caption).foregroundStyle(.orange) }
             HStack {
                 Picker("类型",selection:$kind) { ForEach(["全部","摘录","图片摘录","笔记","札记"],id:\.self) { Text($0) } }.fixedSize()
@@ -70,8 +72,9 @@ struct ReadingLibraryView: View {
             if let editing {
                 switch editing {
                 case .record(let id):
-                    if let record = journal.record(id) { ReadingRecordDetail(store:store,journal:journal,record:record).id(id).disabled(journal.unreadable || removed) }
+                    if let record = journal.record(id) { ReadingSearchMatches(store:store,item:.record(record),query:query);ReadingRecordDetail(store:store,journal:journal,record:record).id(id).disabled(journal.unreadable || removed) }
                 case .essay(let id):
+                    if let essay = journal.essay(id) { ReadingSearchMatches(store:store,item:.essay(essay),query:query) }
                     ReadingEssayDetail(store:store,journal:journal,id:id,onExport:{section = .exports}).id(id).disabled(journal.unreadable || removed)
                 }
             } else { Text("选择一条记录编辑；可统一新增、查找、导出或删除。删除后可以恢复。").font(.caption).foregroundStyle(.secondary) }
@@ -90,6 +93,7 @@ struct ReadingLibraryView: View {
         .onChange(of:query) { _,_ in resetPage() }.onChange(of:kind) { _,_ in resetPage() }.onChange(of:tag) { _,_ in resetPage() }.onChange(of:removed) { _,_ in resetPage() }
         .onChange(of:topic) { _,_ in resetPage() }
         .onChange(of:size) { _,_ in page = 0 }.onChange(of:items.count) { _,_ in page = pagination.index }
+        .sheet(isPresented:$confirmBulk) { ReadingBulkConfirmation(journal:journal,ids:selection,removed:removed) { selection = [];editing = nil } }
         .sheet(isPresented:$showOrganization) { ReadingOrganizationSheet(journal:journal,ids:selection) }
         .sheet(isPresented:$showReferences) { if let editing { ReadingReferencesView(journal:journal,id:editing,open:{ target in showReferences = false;store.openReadingItem(target) }) } }
         .sheet(isPresented:$showTags) { ReadingTagManager(journal:journal) }

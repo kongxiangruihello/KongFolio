@@ -39,6 +39,9 @@ import UniformTypeIdentifiers
     @Published var readingEssayBlockID:UUID?
     @Published var readingLibraryNavigation:ReadingLibraryID?
     @Published var readingLibraryNavigationRequest = UUID()
+    @Published var writingSearchHit:ReadingTextHit?
+    @Published var writingSearchRequest = UUID()
+    @Published var pinnedReadingID:UUID?
     @Published var readingRecordID:UUID?
     @Published var readingRecordSelection = Set<UUID>()
     @Published var readingExportEssay = false

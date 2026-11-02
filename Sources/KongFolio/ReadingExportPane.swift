@@ -48,6 +48,7 @@ struct ReadingExportPane: View {
                 Button("批量／资料包…") { showBatch = true }.disabled(empty || !preferences.options.valid)
                 if controller.busy { ProgressView().controlSize(.small);Button("取消") { controller.cancel() } }
             }
+            ReadingExportStructureView(options:$preferences.options)
             if let file = controller.previewURL { AcademicFilePreview(url:file).frame(minHeight:180,maxHeight:.infinity) }
             else { Text("可预览实际生成的 Word、PDF 或 Markdown。Word 请先核对实际预览；PDF 和 Markdown 可直接导出。").foregroundStyle(.secondary).frame(maxWidth:.infinity,maxHeight:.infinity) }
             if controller.previewURL != nil && !previewCurrent { Text("内容、顺序或格式已变化，请刷新预览。Word 导出前需要当前预览。").font(.caption).foregroundStyle(.orange) }

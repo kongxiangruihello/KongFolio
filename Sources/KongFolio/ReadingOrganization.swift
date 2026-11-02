@@ -10,6 +10,8 @@ struct ReadingReference: Identifiable {
 extension ReadingJournal {
     static func normalizedTags(_ text:String) -> [String] { var seen = Set<String>(); return text.replacingOccurrences(of:"，",with:",").split(separator:",").map{$0.trimmingCharacters(in:.whitespacesAndNewlines)}.filter{!$0.isEmpty && seen.insert($0).inserted} }
     func organize(_ ids:Set<ReadingLibraryID>,tags:String,topic:String,remove:Bool = false) {
+        let beforeBulk = state
+        defer { finishBulk(beforeBulk,"批量整理") }
         guard !unreadable, !ids.isEmpty else { return }
         var additions = Self.normalizedTags(tags); let name = topic.trimmingCharacters(in:.whitespacesAndNewlines)
         if !name.isEmpty { additions.append("专题："+name) }; var seen = Set<String>(); additions = additions.filter{seen.insert($0).inserted}; guard !additions.isEmpty else { return }

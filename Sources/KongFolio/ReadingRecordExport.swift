@@ -24,10 +24,16 @@ enum ReadingRecordExport {
         }
         func writingParagraph(_ text:String) throws { guard !text.isEmpty else { return };let rich = try RichTextDocument(text,format:.markdown,options:options);blocks += rich.blocks }
         func record(_ record:ReadingRecord, heading:Bool) throws {
-            if heading { paragraph(preferences.heading(record),heading:2) }
-            if preferences.includeQuote && !record.quote.isEmpty { paragraph("原文：\n"+record.quote) }
-            if preferences.includeQuote, let name = record.imageAsset { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(name),options:.mappedIfSafe),alt:"图片摘录")) }
-            if preferences.includeNote && !record.note.isEmpty { if record.kind != .note { paragraph("我的笔记：") };try writingParagraph(record.note) }
+            if heading,preferences.showRecordTitles != false { paragraph(preferences.heading(record),heading:2) }
+            for part in preferences.structuralOrder {
+                switch part {
+                case "quote":
+            if preferences.includeQuote && !record.quote.isEmpty { paragraph((preferences.quoteHeading ?? "原文")+"：\n"+record.quote) }
+            if preferences.includeQuote, let name = record.imageAsset { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(name),options:.mappedIfSafe),alt:preferences.imageHeading ?? "图片摘录")) }
+                case "note":
+            if preferences.includeNote && !record.note.isEmpty { if record.kind != .note { paragraph((preferences.noteHeading ?? "我的笔记")+"：") };try writingParagraph(record.note) }
+                case "sources":
+                    if let label = preferences.sourcesHeading,!label.isEmpty,preferences.includeSources { paragraph(label) }
             for citation in preferences.includeSources ? record.citations : [] {
                 if preferences.footnotes == true, wordFootnotes {
                     let key = ReadingExportOrdering.citationKey(citation)
@@ -40,6 +46,9 @@ enum ReadingRecordExport {
                     let start = value.length; value.append(suffix); value.addAttribute(.link,value:link,range:NSRange(location:start,length:suffix.length))
                 }
                 blocks.append(.paragraph(value,heading:0))
+            }
+                default:break
+                }
             }
             if !record.tags.isEmpty { paragraph("标签："+record.tags.joined(separator:"、")) }
         }

@@ -67,7 +67,7 @@ struct ReadingDeskView: View {
                 .overlay { if hits.isEmpty { Text("这里保存你的摘录、笔记和札记").font(.caption).foregroundStyle(.secondary) } }
             ReadingPageControls(pagination: pagination, page: $page, size: $pageSize)
             if let draft = journal.draftRecord, draft.id == store.readingRecordID { Text("空白笔记草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary) }
-            if let record = journal.record(store.readingRecordID) { ReadingRecordDetail(store:store,journal:journal,record:record).id(record.id).disabled(journal.unreadable) }
+            if let record = journal.record(store.pinnedReadingID ?? store.readingRecordID) { ReadingRecordDetail(store:store,journal:journal,record:record).id(record.id).disabled(journal.unreadable) }
         }
     }
     private func row(_ record:ReadingRecord) -> some View {
@@ -87,17 +87,20 @@ struct ReadingRecordDetail: View {
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var journal:ReadingJournal
     let record:ReadingRecord
+    @State private var contextSource:ReadingContextRequest?
     @State private var editQuote = false
     @State private var showLinkPicker = false
     @StateObject private var imageOCR = ReadingImageOCRController()
     private var current:ReadingRecord { journal.record(record.id) ?? record }
     var body:some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment:.leading,spacing:10) {
+                HStack { Button(store.pinnedReadingID == record.id ? "取消固定这条笔记" : "固定这条记录，翻页时继续写") { store.pinnedReadingID = store.pinnedReadingID == record.id ? nil : record.id };if store.pinnedReadingID == record.id { Text("已固定："+current.displayTitle).font(.caption).lineLimit(1) } }
                 StableTextField("记录标题（可留空）",text:binding(\.title))
                 if current.kind != .note {
                     HStack { Text("摘录原文").font(.caption); Spacer(); Button(editQuote ? "完成文字校正" : "校正摘录文字") { editQuote.toggle() } }
-                    if editQuote { ReadingWritingEditor(text:binding(\.quote),label:"摘录校订文字",identity:"quote:"+record.id.uuidString).frame(height:100).border(.quaternary) }
+                    if editQuote { ReadingWritingEditor(text:binding(\.quote),label:"摘录校订文字",identity:"quote:"+record.id.uuidString).id("quote:"+record.id.uuidString).frame(height:100).border(.quaternary) }
                     else if !current.quote.isEmpty { Text(current.quote).textSelection(.enabled) }
                 }
                 if current.kind == .note && !current.quote.isEmpty { Text("关联原文").font(.caption); Text(current.quote).textSelection(.enabled) }
@@ -107,13 +110,14 @@ struct ReadingRecordDetail: View {
                 Text("原文引用与我的笔记分别保存；校订只修改摘录副本。").font(.caption).foregroundStyle(.secondary)
                 if current.kind == .note { Button("关联更多摘录…") { showLinkPicker = true } }
                 Text(current.kind == .note ? "我的笔记" : "我的理解与评论").font(.caption)
-                ReadingWritingEditor(text:binding(\.note),label:"阅读笔记正文",identity:"note:"+record.id.uuidString).frame(minHeight:120).border(.quaternary)
+                ReadingWritingEditor(text:binding(\.note),label:"阅读笔记正文",identity:"note:"+record.id.uuidString).id("note:"+record.id.uuidString).frame(minHeight:120).border(.quaternary)
                 ReadingTagField(journal:journal,label:"标签，以逗号分隔",text:Binding(get:{current.tags.joined(separator:", ")},set:{ text in journal.editRecord(record.id) { $0.tags = Self.tags(text) } }))
                 ForEach(Array(current.citations.prefix(20).enumerated()),id:\.offset) { index,citation in
                     VStack(alignment:.leading) {
                         ReadingCitationEditor(journal:journal,record:record.id,index:index)
                         Text(current.wholeBook ? "《"+citation.title+"》 · 整本书" : citation.display).font(.caption).textSelection(.enabled)
                         HStack {
+                            Button("快看原页") { contextSource = ReadingContextRequest(source:citation.source) }
                             Button("返回原文") { _ = store.reveal(citation.source,beside:false) }.disabled(citation.source.path.isEmpty)
                             Button("重新关联…") { relink(citation) }
                         }
@@ -129,7 +133,13 @@ struct ReadingRecordDetail: View {
                 else if current.removed != nil { Button("恢复记录") { journal.editRecord(record.id) { $0.removed = nil } } }
                 else { Button("移到最近移除") { journal.editRecord(record.id) { $0.removed = Date() }; store.readingRecordID = nil; store.readingRecordSelection.remove(record.id) } }
             }
-        }.onAppear { if journal.draftRecord?.id == record.id && record.kind != .note { editQuote = true } }.onDisappear { imageOCR.cancel() }.sheet(isPresented:$showLinkPicker) {
+        }.onChange(of:store.writingSearchRequest) { _,token in
+            guard let hit = store.writingSearchHit,hit.identity.hasSuffix(record.id.uuidString) else { return }
+            if hit.identity.hasPrefix("quote:") { editQuote = true }
+            DispatchQueue.main.async { proxy.scrollTo(hit.identity,anchor:.center) }
+            DispatchQueue.main.asyncAfter(deadline:.now()+0.25) { if store.writingSearchRequest == token { WritingRegistry.jumpIfCurrent(hit) } }
+        }
+        }.sheet(item:$contextSource) { request in ReadingContextView(store:store,source:request.source) }.onAppear { if journal.draftRecord?.id == record.id && record.kind != .note { editQuote = true } }.onDisappear { imageOCR.cancel() }.sheet(isPresented:$showLinkPicker) {
             ReadingRecordPicker(journal:journal) { other in
                 journal.editRecord(record.id) { value in
                     guard !value.linkedRecords.contains(other.id) else { return }
