@@ -84,7 +84,7 @@ extension Workspace {
                         dirty = true; error = "PDF 已保存，阅读资料仍在恢复副本中：" + failure.localizedDescription
                         return false
                     }
-                    saveConflict = false
+                    saveConflict = false; error = nil; lastVerifiedDocumentSave = Date()
                     if revision == version { dirty = false }
                     status = result.historyError.map { "文件已保存，版本记录失败：" + $0.localizedDescription } ?? "已保存：" + target.lastPathComponent
                     let privateUnchanged = privateDataGeneration == privateVersion

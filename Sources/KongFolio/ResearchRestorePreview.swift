@@ -21,7 +21,7 @@ struct ResearchRestorePreview: View {
                     LazyVStack(alignment:.leading) { ForEach(visible) { row in bookRow(row) } }
                 }.frame(height:260)
                 pagination
-                Toggle("同时恢复公共笔记、图片资源和工作区",isOn:$controller.backupIncludeShared)
+                Toggle("同时恢复公共笔记、图片、工作区、签名及常用设置（设置仅补充缺项）",isOn:$controller.backupIncludeShared)
                 Text("所选书籍的书签、校对、阅读尺和草稿随书恢复；共享笔记可单独选择。所有文件先恢复到新目录，已有资料继续保留。").font(.caption)
                 HStack {
                     Button("选择目录并恢复所选资料…") { controller.restoreSelectedBackup(store) }.disabled(controller.busy || loading || (controller.backupSelection.isEmpty && !controller.backupIncludeShared))

@@ -4,6 +4,7 @@ struct ReadingLibraryView: View {
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var journal:ReadingJournal
     @Binding var section:ReadingDeskSection
+    @State private var restoredSession = false
     @State private var query = ""
     @State private var recent = false
     @State private var untagged = false
@@ -65,7 +66,7 @@ struct ReadingLibraryView: View {
                 Toggle("最近删除",isOn:$removed)
             }
             List(selection:$selection) { ForEach(Array(items.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { item in
-                HStack { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading); Text(item.title).lineLimit(2).help(item.title) }.tag(item.id)
+                VStack(alignment:.leading,spacing:4) { HStack { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading); Text(item.title).lineLimit(2).help(item.title) };if !item.sourceSummary.isEmpty { Text(item.sourceSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(item.sourceSummary) };if let context = item.matchingContext(query) { Text(context).font(.caption).lineLimit(2) } }.tag(item.id)
             } }.frame(minHeight:100,maxHeight:editing == nil ? .infinity : 190).accessibilityLabel("全部阅读资料")
             ReadingPageControls(pagination:pagination,page:$page,size:$size)
             if selection.count > 1 { Text("已选 \(selection.count) 条；删除后可在“最近删除”恢复。").font(.caption) }
@@ -85,8 +86,9 @@ struct ReadingLibraryView: View {
             let result = await ReadingSearchWorker.shared.library(journal.state,request:request)
             if !Task.isCancelled { items = result;if let desired = pendingFilterPage { page = ReadingPagination(total:result.count,page:desired,size:size).index;pendingFilterPage = nil };if let target = pendingNavigation,let i = result.firstIndex(where:{$0.id == target}) { page = i/size;editing = target;selection = [target];pendingNavigation = nil } }
         }
-        .onAppear { do { filters = try SavedReadingFilter.load(journal.folder) } catch { filterMessage = error.localizedDescription };if let target = store.readingLibraryNavigation { navigate(target) } }
+        .onAppear { if !restoredSession { restoredSession = true;if store.readingLibraryNavigation == nil { let s = ReadingLibrarySession.load(store.readingDefaults);query = s.query;kind = s.kind;tag = s.tag;topic = s.topic;recent = s.recent;untagged = s.untagged;removed = s.removed;pendingFilterPage = s.page;size = s.size } };do { filters = try SavedReadingFilter.load(journal.folder) } catch { filterMessage = error.localizedDescription };if let target = store.readingLibraryNavigation { navigate(target) } }
         .onChange(of:store.readingLibraryNavigationRequest) { _,_ in if let target = store.readingLibraryNavigation { navigate(target) } }
+        .onDisappear { rememberPage() }
         .onChange(of:page) { _,_ in rememberPage() }
         .onChange(of:recent) { _,_ in resetPage() }.onChange(of:untagged) { _,_ in resetPage() }
         .onChange(of:selection) { _,ids in if ids.count == 1,let id = ids.first { editing = id; if case .record(let r) = id { store.readingRecordID = r } } }
@@ -116,6 +118,7 @@ struct ReadingLibraryView: View {
         do { var values = try SavedReadingFilter.load(journal.folder);values.removeAll{$0.id == id};try SavedReadingFilter.save(values,folder:journal.folder);filters = values;selectedFilter = nil } catch { filterMessage = error.localizedDescription }
     }
     private func rememberPage() {
+        ReadingLibrarySession(query:query,kind:kind,tag:tag,topic:topic,recent:recent,untagged:untagged,removed:removed,page:page,size:size).save(store.readingDefaults)
         guard pendingFilterPage == nil,let id = selectedFilter,let current = filters.first(where:{$0.id == id}),current.query == query,current.kind == kind,current.tag == tag,current.topic == topic,current.recent == recent,current.untagged == untagged,current.removed == removed else { return }
         do { var values = try SavedReadingFilter.load(journal.folder);guard let i = values.firstIndex(where:{$0.id == id}) else { return };values[i].page = page;values[i].size = size;try SavedReadingFilter.save(values,folder:journal.folder);filters = values } catch { filterMessage = error.localizedDescription }
     }

@@ -10,7 +10,7 @@ struct ReadingOutputIssue:Identifiable {
 actor ReadingOutputReview {
     static let shared = ReadingOutputReview()
     func inspect(_ snapshot:ReadingExportSnapshot,assets:URL) throws -> [ReadingOutputIssue] {
-        var result:[ReadingOutputIssue] = [],pages:[String:Int] = [:]
+        var result:[ReadingOutputIssue] = [],pages:[String:Int] = [:],digests:[String:String] = [:]
         for item in snapshot.orderedItems {
             try Task.checkCancellation()
             let target:ReadingLibraryID
@@ -32,6 +32,10 @@ actor ReadingOutputReview {
                     // Never cause an iCloud download in an advisory check.
                     let file = URL(fileURLWithPath:path),resource = try? file.resourceValues(forKeys:[.isUbiquitousItemKey,.ubiquitousItemDownloadingStatusKey])
                     if resource?.isUbiquitousItem == true,resource?.ubiquitousItemDownloadingStatus == .notDownloaded { append("《"+citation.title+"》尚未下载，页码暂未检查");continue }
+                    if let expected = citation.source.fingerprint {
+                        if digests[path] == nil { digests[path] = try FileBaseline.capture(file).digest }
+                        if digests[path] != expected { append("《"+citation.title+"》原文内容已变化，请核对版本与定位") }
+                    }
                     if pages[path] == nil { pages[path] = autoreleasepool { PDFDocument(url:file)?.pageCount ?? 0 } }
                     if pages[path] == 0 { append("《"+citation.title+"》原文暂不可读取") }
                     else if citation.source.page >= pages[path]! { append("《"+citation.title+"》来源页码超出文献范围") }

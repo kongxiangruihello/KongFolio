@@ -100,9 +100,9 @@ import UniformTypeIdentifiers
             if store.board.hasContent { try store.board.writeBackup() }
             let library = store.library.catalog, research = store.research.state, root = store.storage
             let progress = try Dictionary(uniqueKeysWithValues: ReadingProgress.history(defaults: store.readingDefaults).map { ($0.path, try JSONEncoder().encode($0.progress)) })
-            let expected = try FileBaseline.capture(destination)
+            let expected = try FileBaseline.capture(destination),settings = try PersonalReadingBackup.settings(store.readingDefaults)
             try await self.background {
-                let backup = try ResearchBackup.capture(storage: root, catalog: library, research: research, progress: progress, includeOriginals: includeOriginals)
+                let backup = try ResearchBackup.capture(storage: root, catalog: library, research: research, progress: progress, includeOriginals: includeOriginals, settings:settings)
                 try backup.write(destination, expected: expected)
             }
             return "备份完成：" + destination.lastPathComponent
@@ -153,6 +153,7 @@ import UniformTypeIdentifiers
             }
             let progress = try PropertyListDecoder().decode([String: Data].self, from: Data(contentsOf: result.root.appendingPathComponent("ReadingProgress.plist")))
             for (path,bytes) in progress { try JSONDecoder().decode(ReadingProgress.self, from: bytes).save(path: path, defaults: store.readingDefaults) }
+            if shared { try PersonalReadingBackup.merge(from:support.appendingPathComponent("Personal"),storage:store.storage,defaults:store.readingDefaults);for workspace in store.tabs.compactMap(\.workspace) { workspace.refreshSignatureLibrary();workspace.loadSignaturePositions() } }
             self.backupPreview = nil
             return "已恢复并载入书架（\(copied) 份伴随资料）；缺失原件 \(result.missing.count) 份。独立恢复目录：" + result.root.path + (result.missing.isEmpty ? "" : "\n缺失：\n" + result.missing.joined(separator:"\n"))
         }

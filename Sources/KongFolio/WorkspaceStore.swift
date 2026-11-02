@@ -83,6 +83,7 @@ import UniformTypeIdentifiers
     @Published var showFolderSearch = false
     @Published var showDocumentComparison = false
     var showOCRTasksAfterSearch = false
+    @Published var openBatchIDs:Set<UUID> = []
     private var forwarding: AnyCancellable?
 
     init(storage: URL? = nil, readingDefaults: UserDefaults? = nil) {
@@ -336,6 +337,7 @@ import UniformTypeIdentifiers
     /// to the front, the others are read when selected, so opening dozens of files is instant and uses no extra memory.
     func openEach(_ urls: [URL]) {
         var first: UUID?
+        var batch = Set<UUID>()
         for url in urls {
             if ReadingShortcut.handles(url) {
                 do { try openReadingShortcut(url); if first == nil { first = selectedID } } catch { present(error) }
@@ -347,6 +349,8 @@ import UniformTypeIdentifiers
                 continue
             }
             if let existing = tabs.compactMap(\.workspace).first(where: { $0.displayPath == url.path || $0.sourceURL?.standardizedFileURL == url.standardizedFileURL || $0.projectURL?.standardizedFileURL == url.standardizedFileURL }) {
+                batch.insert(existing.id)
+                if existing.count == 0,!existing.busy { existing.error = nil;existing.needsLoad = true }
                 if first == nil { first = existing.id }; continue
             }
             let target: Workspace
@@ -354,8 +358,10 @@ import UniformTypeIdentifiers
             else { target = addWorkspace() }
             target.needsLoad = true
             target.sourceURL = url
+            batch.insert(target.id)
             if first == nil { first = target.id }
         }
+        openBatchIDs = batch
         if let first { select(first) }
     }
 

@@ -125,6 +125,7 @@ struct ContentView: View {
                 }
             }
             if width >= 760 { Text(workspace.savePhase.isEmpty ? workspace.recoveryStatus : workspace.savePhase + " \(Int(workspace.saveProgress*100))%").foregroundStyle(.secondary).lineLimit(1) }
+            if workspace.count > 0 { Button { workspace.showSaveDetails = true } label:{ Image(systemName:workspace.saveConflict || workspace.error != nil ? "exclamationmark.circle" : (workspace.saving || workspace.dirty ? "clock" : "checkmark.circle")) }.buttonStyle(.plain).help("保存状态与重试").sheet(isPresented:$workspace.showSaveDetails) { DocumentSaveDetails(workspace:workspace) } }
             if workspace.canRetry { Button("重试任务") { workspace.retryJob() } }
             if width >= 640 { Text("KongFolio \(AppInfo.version)").foregroundStyle(.tertiary).lineLimit(1) }
         }

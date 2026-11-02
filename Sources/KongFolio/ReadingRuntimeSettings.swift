@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct ReadingRuntimeSettings: View {
     @ObservedObject var store:WorkspaceStore
@@ -25,16 +26,20 @@ struct ReadingRuntimeSettings: View {
 struct ReadingOpenQueue: View {
     @ObservedObject var store:WorkspaceStore
     @State private var page = 0
+    @State private var batchRevision = 0
     private var documents:[Workspace] { store.tabs.compactMap(\.workspace).filter{$0.sourceURL != nil || $0.projectURL != nil} }
     private var pagination:ReadingPagination { ReadingPagination(total:documents.count,page:page,size:10) }
     var body:some View {
+        let _ = batchRevision
         DisclosureGroup("文献读取状态 · \(documents.count) 份") {
             VStack(spacing:8) {
+                HStack { Text(store.openBatchSummary);Spacer();Button("停止本批剩余读取") { store.stopRemainingBatch() }.disabled(!store.canStopOpenBatch) }
                 Text("未切换的文献按需读取；一份文件等待下载或失败时，可继续阅读其他文献。").font(.caption).foregroundStyle(.secondary)
                 ForEach(Array(documents.dropFirst(pagination.range.lowerBound).prefix(pagination.size)),id:\.id) { ReadingOpenQueueRow(store:store,workspace:$0) }
                 if documents.count>10 { HStack { Text(pagination.label);Button("上一页") { page = max(0,page-1) }.disabled(pagination.index == 0);Button("下一页") { page += 1 }.disabled(pagination.index>=pagination.last) }.font(.caption) }
             }.padding(.vertical,6)
         }.onChange(of:documents.count) { _,_ in page = pagination.index }
+        .onReceive(Publishers.MergeMany(documents.map{$0.objectWillChange.eraseToAnyPublisher()}).receive(on:RunLoop.main)) { _ in batchRevision &+= 1 }
     }
 }
 struct ReadingOpenQueueRow: View {
