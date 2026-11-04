@@ -56,12 +56,15 @@ struct ReadingLibraryView: View {
         .sheet(isPresented:$showBackups) { ReadingBackupView(journal:journal) }
     }
 
-    private var observedContent:some View {
+    private var layout:some View {
         ReadingBrowserLayout(hasEditor:editing != nil,compact:compact,onBack:{ editing = nil;selection = [] }) {
             browser
         } editor: {
             editor
         }
+    }
+    private var observedContent:some View {
+        layout
         .task(id:request) {
             let request = request
             do { try await Task.sleep(nanoseconds:300_000_000) } catch { return }
