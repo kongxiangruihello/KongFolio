@@ -25,9 +25,10 @@ struct StableTextField: NSViewRepresentable {
     @Environment(\.isEnabled) private var enabled
     let placeholder: String
     @Binding var text: String
-    init(_ placeholder:String,text:Binding<String>) { self.placeholder = placeholder; _text = text }
+    var fontSize:CGFloat? = nil
+    init(_ placeholder:String,text:Binding<String>,fontSize:CGFloat? = nil) { self.placeholder = placeholder; _text = text;self.fontSize = fontSize }
     func makeCoordinator() -> StableInputCoordinator { StableInputCoordinator(read:{text},write:{text = $0}) }
-    func makeNSView(context:Context) -> NSTextField { let view = NSTextField(string:text); view.isEnabled = enabled; view.placeholderString = placeholder; view.setAccessibilityLabel(placeholder); view.delegate = context.coordinator; return view }
+    func makeNSView(context:Context) -> NSTextField { let view = NSTextField(string:text);if let fontSize { view.font = .systemFont(ofSize:fontSize,weight:fontSize > 14 ? .semibold : .regular) }; view.isEnabled = enabled; view.placeholderString = placeholder; view.setAccessibilityLabel(placeholder); view.delegate = context.coordinator; return view }
     func updateNSView(_ view:NSTextField,context:Context) {
         view.isEnabled = enabled
         let changed = context.coordinator.accepted != text; context.coordinator.read = { text }; context.coordinator.write = { text = $0 }

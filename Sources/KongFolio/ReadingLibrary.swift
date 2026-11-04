@@ -27,3 +27,27 @@ extension ReadingJournal {
         }
     }
 }
+
+extension ReadingLibraryItem {
+    func isFromBook(_ path:String)->Bool {
+        switch self {
+        case .record(let r):return r.citations.contains{$0.source.path == path}
+        case .essay(let e):return e.blocks.contains{$0.record?.citations.contains{$0.source.path == path} == true}
+        }
+    }
+}
+
+@MainActor extension ReadingJournal {
+    func beginLibraryRecord(_ kind:ReadingRecord.Kind,source:ReadingCitation? = nil)->ReadingRecord {
+        let record = ReadingRecord(kind:kind,citations:source.map{[$0]} ?? [],wholeBook:source != nil)
+        beginNote(record)
+        return record
+    }
+    func beginLibraryEssay(source:ReadingCitation? = nil)->UUID {
+        let id = newEssay()
+        if let source { editEssay(id) { value in
+            if !value.blocks.isEmpty { value.blocks[0].record = ReadingRecord(kind:.note,citations:[source],wholeBook:true) }
+        } }
+        return id
+    }
+}
