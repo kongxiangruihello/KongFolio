@@ -5,6 +5,7 @@ struct ReadingLibraryView: View {
     @ObservedObject var journal:ReadingJournal
     @Binding var section:ReadingDeskSection
     var compact = false
+    var bookSource:ReadingCitation? = nil
     @State private var restoredSession = false
     @State private var query = ""
     @State private var recent = false
@@ -32,64 +33,10 @@ struct ReadingLibraryView: View {
     @State private var editing:ReadingLibraryID?
     @AppStorage("readingRecordsPageSize") private var size = 10
     @State private var items:[ReadingLibraryItem] = []
-    private var request:ReadingSearchRequest { ReadingSearchRequest(revision:journal.revisionID,query:query,kind:kind,tag:tag,topic:topic,removed:removed,recent:recent,untagged:untagged) }
+    private var request:ReadingSearchRequest { ReadingSearchRequest(revision:journal.revisionID,query:query,kind:kind,tag:tag,topic:topic,removed:removed,recent:recent,untagged:untagged,bookPath:bookSource?.source.path) }
     private var pagination:ReadingPagination { ReadingPagination(total:items.count,page:page,size:size) }
     var body:some View {
-        VStack(alignment:.leading,spacing:10) {
-            if compact {
-                searchField
-                HStack { newMenu;Menu("资料操作") { libraryActions };Spacer() }
-                DisclosureGroup("筛选与整理") {
-                    VStack(alignment:.leading,spacing:8) {
-                        HStack { savedFilters;organizationMenu }
-                        HStack { Toggle("近七天",isOn:$recent);Toggle("未加标签",isOn:$untagged) }
-                        typePicker
-                        TextField("按标签筛选",text:$tag).textFieldStyle(.roundedBorder)
-                        topicPicker
-                        Toggle("最近删除",isOn:$removed)
-                    }.padding(.top,6)
-                }
-            } else {
-                HStack { searchField;newMenu;libraryActions }
-                HStack { savedFilters;Toggle("近七天",isOn:$recent);Toggle("未加标签",isOn:$untagged);organizationMenu }
-                HStack { typePicker;TextField("按标签筛选",text:$tag);topicPicker;Toggle("最近删除",isOn:$removed) }
-            }
-            if let checkpoint = journal.bulkCheckpoint { Button("撤销："+checkpoint.label) { do { try journal.undoBulk() } catch { filterMessage = error.localizedDescription } }.disabled(!journal.canUndoBulk) }
-            if !filterMessage.isEmpty { Text(filterMessage).font(.caption).foregroundStyle(.orange) }
-            List(selection:$selection) { ForEach(Array(items.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { item in
-                VStack(alignment:.leading,spacing:4) { HStack { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading); Text(item.title).lineLimit(2).help(item.title) };if !item.sourceSummary.isEmpty { Text(item.sourceSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(item.sourceSummary) };if let context = item.matchingContext(query) { Text(context).font(.caption).lineLimit(2) } }.tag(item.id)
-            } }
-            .contextMenu(forSelectionType:ReadingLibraryID.self) { ids in
-                ReadingLibraryContextMenu(context:ReadingLibraryContext.resolve(ids,state:journal.state,removed:removed),readOnly:journal.unreadable) { action in performContext(action,ids:ids) }
-            } primaryAction:{ ids in performContext(.edit,ids:ids) }
-            .frame(minHeight:100,maxHeight:editing == nil ? .infinity : 190).accessibilityLabel("全部阅读资料")
-            ReadingPageControls(pagination:pagination,page:$page,size:$size)
-            if selection.count > 1 { Text("已选 \(selection.count) 条；删除后可在“最近删除”恢复。").font(.caption) }
-            if let editing {
-                switch editing {
-                case .record(let id):
-                    if let record = journal.record(id) { ReadingSearchMatches(store:store,item:.record(record),query:query);ReadingRecordDetail(store:store,journal:journal,record:record).id(id).disabled(journal.unreadable || removed) }
-                case .essay(let id):
-                    if let essay = journal.essay(id) { ReadingSearchMatches(store:store,item:.essay(essay),query:query) }
-                    ReadingEssayDetail(store:store,journal:journal,id:id,onExport:{section = .exports}).id(id).disabled(journal.unreadable || removed)
-                }
-            } else { Text("选择一条记录编辑；可统一新增、查找、导出或删除。删除后可以恢复。").font(.caption).foregroundStyle(.secondary) }
-        }
-        .task(id:request) {
-            let request = request
-            do { try await Task.sleep(nanoseconds:300_000_000) } catch { return }
-            let result = await ReadingSearchWorker.shared.library(journal.state,request:request)
-            if !Task.isCancelled { items = result;if let desired = pendingFilterPage { page = ReadingPagination(total:result.count,page:desired,size:size).index;pendingFilterPage = nil };if let target = pendingNavigation,let i = result.firstIndex(where:{$0.id == target}) { page = i/size;editing = target;selection = [target];pendingNavigation = nil } }
-        }
-        .onAppear { if !restoredSession { restoredSession = true;if store.readingLibraryNavigation == nil { let s = ReadingLibrarySession.load(store.readingDefaults);query = s.query;kind = s.kind;tag = s.tag;topic = s.topic;recent = s.recent;untagged = s.untagged;removed = s.removed;pendingFilterPage = s.page;size = s.size } };do { filters = try SavedReadingFilter.load(journal.folder) } catch { filterMessage = error.localizedDescription };if let target = store.readingLibraryNavigation { navigate(target) } }
-        .onChange(of:store.readingLibraryNavigationRequest) { _,_ in if let target = store.readingLibraryNavigation { navigate(target) } }
-        .onDisappear { rememberPage();copyGeneration = UUID();contextFocus = UUID() }
-        .onChange(of:page) { _,_ in rememberPage() }
-        .onChange(of:recent) { _,_ in resetPage() }.onChange(of:untagged) { _,_ in resetPage() }
-        .onChange(of:selection) { _,ids in if ids.count == 1,let id = ids.first { editing = id; if case .record(let r) = id { store.readingRecordID = r } } }
-        .onChange(of:query) { _,_ in resetPage() }.onChange(of:kind) { _,_ in resetPage() }.onChange(of:tag) { _,_ in resetPage() }.onChange(of:removed) { _,_ in resetPage() }
-        .onChange(of:topic) { _,_ in resetPage() }
-        .onChange(of:size) { _,_ in page = 0 }.onChange(of:items.count) { _,_ in page = pagination.index }
+        observedContent
         .sheet(isPresented:$confirmBulk) { ReadingBulkConfirmation(journal:journal,ids:selection,removed:removed) { selection = [];editing = nil } }
         .sheet(item:$contextRequest) { request in
             switch request.kind {
@@ -109,12 +56,85 @@ struct ReadingLibraryView: View {
         .sheet(isPresented:$showBackups) { ReadingBackupView(journal:journal) }
     }
 
+    private var layout:some View {
+        ReadingBrowserLayout(hasEditor:editing != nil,compact:compact,onBack:{ editing = nil;selection = [] }) {
+            browser
+        } editor: {
+            editor
+        }
+    }
+    private var observedContent:some View {
+        layout
+        .task(id:request) {
+            let request = request
+            do { try await Task.sleep(nanoseconds:300_000_000) } catch { return }
+            let result = await ReadingSearchWorker.shared.library(journal.state,request:request)
+            if !Task.isCancelled { items = result;if let desired = pendingFilterPage { page = ReadingPagination(total:result.count,page:desired,size:size).index;pendingFilterPage = nil };if let target = pendingNavigation,let i = result.firstIndex(where:{$0.id == target}) { page = i/size;editing = target;selection = [target];pendingNavigation = nil } }
+        }
+        .onAppear { if !restoredSession { restoredSession = true;if bookSource == nil && store.readingLibraryNavigation == nil { let s = ReadingLibrarySession.load(store.readingDefaults);query = s.query;kind = s.kind;tag = s.tag;topic = s.topic;recent = s.recent;untagged = s.untagged;removed = s.removed;pendingFilterPage = s.page;size = s.size } };do { filters = try SavedReadingFilter.load(journal.folder) } catch { filterMessage = error.localizedDescription };if bookSource == nil,let target = store.readingLibraryNavigation { navigate(target) } }
+        .onChange(of:store.readingLibraryNavigationRequest) { _,_ in if bookSource == nil,let target = store.readingLibraryNavigation { navigate(target) } }
+        .onDisappear { rememberPage();copyGeneration = UUID();contextFocus = UUID() }
+        .onChange(of:page) { _,_ in rememberPage() }
+        .onChange(of:journal.draftRecord?.id) { _,_ in validateEditing() }
+        .onChange(of:journal.draftEssay?.id) { _,_ in validateEditing() }
+        .onChange(of:journal.revisionID) { _,_ in validateEditing() }
+        .onChange(of:recent) { _,_ in resetPage() }.onChange(of:untagged) { _,_ in resetPage() }
+        .onChange(of:selection) { _,ids in if ids.count == 1,let id = ids.first { editing = id; if case .record(let r) = id { store.readingRecordID = r } } }
+        .onChange(of:query) { _,_ in resetPage() }.onChange(of:kind) { _,_ in resetPage() }.onChange(of:tag) { _,_ in resetPage() }.onChange(of:removed) { _,_ in resetPage() }
+        .onChange(of:topic) { _,_ in resetPage() }
+        .onChange(of:size) { _,_ in page = 0 }.onChange(of:items.count) { _,_ in page = pagination.index }
+    }
+
+    private var browser:some View {
+        VStack(alignment:.leading,spacing:10) {
+            searchField
+            HStack { newMenu;Spacer();Menu { libraryActions;Divider();organizationMenu } label:{Label("操作",systemImage:"ellipsis.circle")} }
+            DisclosureGroup("筛选与整理") {
+                VStack(alignment:.leading,spacing:8) {
+                    HStack { savedFilters;Spacer() }
+                    HStack { Toggle("近七天",isOn:$recent);Toggle("未加标签",isOn:$untagged) }
+                    typePicker
+                    TextField("按标签筛选",text:$tag).textFieldStyle(.roundedBorder)
+                    topicPicker
+                    Toggle("最近删除",isOn:$removed)
+                }.padding(.top,6)
+            }.font(.system(size:13))
+            if let checkpoint = journal.bulkCheckpoint { Button("撤销："+checkpoint.label) { do { try journal.undoBulk() } catch { filterMessage = error.localizedDescription } }.disabled(!journal.canUndoBulk) }
+            if !filterMessage.isEmpty { Text(filterMessage).font(.caption).foregroundStyle(.orange) }
+            itemList
+            ReadingPageControls(pagination:pagination,page:$page,size:$size)
+            if selection.count > 1 { Text("已选 \(selection.count) 条；删除后可在“最近删除”恢复。").font(.caption) }
+        }
+    }
+    private var pageItems:[ReadingLibraryItem] { Array(items.dropFirst(pagination.range.lowerBound).prefix(pagination.size)) }
+    private var itemList:some View {
+        List(selection:$selection) { ForEach(pageItems) { item in libraryRow(item).tag(item.id) } }
+            .contextMenu(forSelectionType:ReadingLibraryID.self) { ids in
+                ReadingLibraryContextMenu(context:ReadingLibraryContext.resolve(ids,state:journal.state,removed:removed),readOnly:journal.unreadable) { action in performContext(action,ids:ids) }
+            } primaryAction:{ ids in performContext(.edit,ids:ids) }
+            .frame(minHeight:120,maxHeight:.infinity).accessibilityLabel("全部阅读资料")
+    }
+    private func libraryRow(_ item:ReadingLibraryItem)->some View {
+                VStack(alignment:.leading,spacing:4) { HStack { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading); Text(item.title).lineLimit(2).help(item.title) };if !item.sourceSummary.isEmpty { Text(item.sourceSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(item.sourceSummary) };if let context = item.matchingContext(query) { Text(context).font(.caption).lineLimit(2) } }
+    }
+    @ViewBuilder private var editor:some View {
+            if let editing {
+                switch editing {
+                case .record(let id):
+                    if let record = journal.record(id) { ReadingSearchMatches(store:store,item:.record(record),query:query);LibraryRecordDetail(store:store,journal:journal,record:record).id(id).disabled(journal.unreadable || removed) }
+                case .essay(let id):
+                    if let essay = journal.essay(id) { ReadingSearchMatches(store:store,item:.essay(essay),query:query) }
+                    LibraryEssayDetail(store:store,journal:journal,id:id,onExport:{section = .exports}).id(id).disabled(journal.unreadable || removed)
+                }
+            } else { Text("选择一条记录编辑；可统一新增、查找、导出或删除。删除后可以恢复。").font(.caption).foregroundStyle(.secondary) }
+    }
+
     private var searchField:some View { TextField("搜索全部摘录、笔记、札记和出处",text:$query).textFieldStyle(.roundedBorder) }
     private var newMenu:some View {
                 Menu("新增") {
                     Button("摘录") { newRecord(.excerpt) }
                     Button("笔记") { newRecord(.note) }
-                    Button("札记") { resetForNew(); let id = journal.newEssay(); editing = .essay(id); selection = [] }
+                    Button("札记") { resetForNew(); let id = newEssay(); editing = .essay(id); selection = [] }
                 }.disabled(journal.unreadable)
     }
     @ViewBuilder private var libraryActions:some View {
@@ -142,7 +162,7 @@ struct ReadingLibraryView: View {
         switch action {
         case .newExcerpt:guard !journal.unreadable else { return };newRecord(.excerpt);return
         case .newNote:guard !journal.unreadable else { return };newRecord(.note);return
-        case .newEssay:guard !journal.unreadable else { return };resetForNew();let id = journal.newEssay();editing = .essay(id);selection = [];return
+        case .newEssay:guard !journal.unreadable else { return };resetForNew();let id = newEssay();editing = .essay(id);selection = [];return
         default:break
         }
         let scope = ReadingLibraryContext.resolve(ids,state:journal.state,removed:removed)
@@ -188,6 +208,7 @@ struct ReadingLibraryView: View {
         do { var values = try SavedReadingFilter.load(journal.folder);values.removeAll{$0.id == id};try SavedReadingFilter.save(values,folder:journal.folder);filters = values;selectedFilter = nil } catch { filterMessage = error.localizedDescription }
     }
     private func rememberPage() {
+        guard bookSource == nil else { return }
         ReadingLibrarySession(query:query,kind:kind,tag:tag,topic:topic,recent:recent,untagged:untagged,removed:removed,page:page,size:size).save(store.readingDefaults)
         guard pendingFilterPage == nil,let id = selectedFilter,let current = filters.first(where:{$0.id == id}),current.query == query,current.kind == kind,current.tag == tag,current.topic == topic,current.recent == recent,current.untagged == untagged,current.removed == removed else { return }
         do { var values = try SavedReadingFilter.load(journal.folder);guard let i = values.firstIndex(where:{$0.id == id}) else { return };values[i].page = page;values[i].size = size;try SavedReadingFilter.save(values,folder:journal.folder);filters = values } catch { filterMessage = error.localizedDescription }
@@ -204,5 +225,15 @@ struct ReadingLibraryView: View {
     private var editingDraft:Bool { switch editing { case .record(let id): return journal.draftRecord?.id == id; case .essay(let id): return journal.draftEssay?.id == id; case nil: return false } }
     private func resetPage() { if pendingFilterPage == nil { page = 0 }; selection = []; if !editingDraft { editing = nil } }
     private func resetForNew() { selectedFilter = nil;pendingFilterPage = nil;recent = false;untagged = false;query = ""; tag = ""; topic = ""; kind = "全部"; removed = false; page = 0 }
-    private func newRecord(_ kind:ReadingRecord.Kind) { resetForNew(); let record = ReadingRecord(kind:kind); journal.beginNote(record); store.readingRecordID = record.id; selection = []; editing = .record(record.id) }
+    private func validateEditing() {
+        guard let editing else { return }
+        let valid:Bool
+        switch editing {
+        case .record(let id):valid = journal.record(id).map{($0.removed != nil) == removed} ?? false
+        case .essay(let id):valid = journal.essay(id).map{($0.removed != nil) == removed} ?? false
+        }
+        if !valid { self.editing = nil;selection.remove(editing) }
+    }
+    private func newEssay()->UUID { journal.beginLibraryEssay(source:bookSource) }
+    private func newRecord(_ kind:ReadingRecord.Kind) { resetForNew(); let record = journal.beginLibraryRecord(kind,source:bookSource); store.readingRecordID = record.id; selection = []; editing = .record(record.id) }
 }

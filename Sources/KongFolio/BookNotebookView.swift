@@ -12,7 +12,15 @@ struct BookNotebookView: View {
     @State private var savedReflection = ""
     @State private var query = ""
     @State private var message = ""
-    @State private var working = true
+    @State private var working = false
+    @State private var initialized = false
+    @State private var mode = 0
+    @State private var recordSection = ReadingDeskSection.search
+    @State private var annotationPage = 0
+    @State private var annotationSize = 10
+    private var source:ReadingCitation { ReadingCitation(source:SourceRef(path:ReadingProgress.canonicalPath(book.path),fileName:URL(fileURLWithPath:book.path).lastPathComponent,page:0),title:book.title) }
+    private var notes:[AnnotationNote] { sections.flatMap(\.notes) }
+    private var pagination:ReadingPagination { ReadingPagination(total:notes.count,page:annotationPage,size:annotationSize) }
     private var sections: [NotesSection] {
         (snapshot?.sections ?? []).compactMap { section in
             var section = section
@@ -21,40 +29,50 @@ struct BookNotebookView: View {
         }
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            PanelRow { Text(book.title + " · 阅读笔记").font(.headline); Spacer(); Button("关闭") { if saveReflection() { dismiss() } }.keyboardShortcut(.cancelAction); Button("导出笔记…") { export() }.disabled(snapshot == nil || working); Button("生成可编辑笔记") { create() }.disabled(snapshot == nil || working) }
-            Text("我的心得（自动保存在书架中）").font(.caption)
-            TextEditor(text: $reflection).frame(minHeight: 70, maxHeight: 120).border(.quaternary)
-                .onChange(of: reflection) { _, _ in scheduleReflection() }
-                .onChange(of: library.error) { _, error in if let error { message = error } }
-            TextField("搜索高亮、批注、摘录", text: $query).textFieldStyle(.roundedBorder)
-            if working { ProgressView("正在汇总书籍笔记…") }
-            List {
-                ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
-                    Section(section.title) {
-                        ForEach(section.notes) { note in
-                            VStack(alignment: .leading, spacing: 5) {
-                                PanelRow {
-                                    Text(WordExport.headText(note)).font(.caption).foregroundStyle(.secondary)
-                                    Spacer(); Button("返回原文") { reveal(note) }
-                                }
-                                if !note.quote.isEmpty { Text(note.quote).textSelection(.enabled) }
-                                if !note.note.isEmpty { Text("批注：" + note.note).textSelection(.enabled) }
-                                if note.quote.isEmpty && note.note.isEmpty { Text("图形或手写标注，请返回原文查看").font(.caption).foregroundStyle(.secondary) }
-                            }.padding(.vertical, 3)
-                        }
-                    }
-                }
+        VStack(alignment:.leading,spacing:14) {
+            HStack {
+                VStack(alignment:.leading,spacing:3) { Text(book.title).font(.system(size:20,weight:.semibold)).lineLimit(1).help(book.title);Text("这本书的阅读记录").font(.system(size:13)).foregroundStyle(.secondary) }
+                Spacer()
+                Button("关闭") { NSApp.keyWindow?.makeFirstResponder(nil);if saveReflection() { dismiss() } }.keyboardShortcut(.cancelAction)
             }
-            if !working && sections.isEmpty { Text(query.isEmpty ? "尚无标注或摘录，可先记录心得，再到原书中高亮、手写或添加批注。" : "没有匹配的笔记。").font(.caption).foregroundStyle(.secondary) }
-            if !message.isEmpty { Text(message).font(.caption).textSelection(.enabled) }
-        }.padding(20).adaptiveSheet(width: 820, height: 680, minimumWidth: 360)
+            Picker("阅读记录内容",selection:$mode) { Text("摘录、笔记与札记").tag(0);Text("整本书心得").tag(1);Text("PDF 批注").tag(2) }.pickerStyle(.segmented)
+            if mode == 0 {
+                if recordSection == .exports {
+                    Button("返回这本书的记录") { recordSection = .search }
+                    ReadingExportPane(store:store,journal:store.journal)
+                } else { ReadingLibraryView(store:store,journal:store.journal,section:$recordSection,bookSource:source) }
+                ReadingSaveRecoveryFooter(journal:store.journal)
+            } else if mode == 1 {
+                Text("整本书的想法和阅读心得").font(.headline)
+                LibraryWritingEditor(text:$reflection,label:"书架心得正文",identity:"shelf-reflection:"+book.id.uuidString)
+                    .onChange(of:reflection) { _,_ in scheduleReflection() }
+                Text("心得自动保存在个人书架，关闭时再次核对保存。").font(.system(size:13)).foregroundStyle(.secondary)
+            } else {
+                HStack { TextField("搜索 PDF 批注、高亮与图片摘录",text:$query).textFieldStyle(.roundedBorder);Menu("导出与编辑") { Button("导出笔记…") { export() };Button("生成可编辑笔记") { create() } }.disabled(snapshot == nil || working) }
+                if working { ProgressView("正在汇总 PDF 批注…") }
+                List(Array(notes.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { note in
+                    VStack(alignment:.leading,spacing:8) {
+                        HStack { Text(WordExport.headText(note)).font(.system(size:13)).foregroundStyle(.secondary);Spacer();Button("返回原文") { reveal(note) } }
+                        if !note.quote.isEmpty { Text(note.quote).font(.system(size:17)).textSelection(.enabled) }
+                        if !note.note.isEmpty { Text("批注："+note.note).font(.system(size:17)).textSelection(.enabled) }
+                        if note.quote.isEmpty && note.note.isEmpty { Text("图形或手写标注，请返回原文查看").foregroundStyle(.secondary) }
+                    }.padding(.vertical,8)
+                }
+                ReadingPageControls(pagination:pagination,page:$annotationPage,size:$annotationSize)
+                if !working && notes.isEmpty { Text("没有匹配的 PDF 批注，可在原书中高亮、手写或添加批注。").foregroundStyle(.secondary) }
+            }
+            if !message.isEmpty { Text(message).font(.system(size:13)).foregroundStyle(.orange).textSelection(.enabled) }
+        }.padding(20).adaptiveSheet(width:1100,height:760,minimumWidth:360)
         .interactiveDismissDisabled(reflection != savedReflection)
-        .task { await load() }
+        .onAppear { if !initialized { initialized = true;reflection = library.books.first{$0.id == book.id}?.reflection ?? book.reflection;savedReflection = reflection } }
+        .onChange(of:library.error) { _,error in if let error { message = error } }
+        .task(id:mode) { if mode == 2 && snapshot == nil { await load() } }
+        .onChange(of:query) { _,_ in annotationPage = 0 }.onChange(of:annotationSize) { _,_ in annotationPage = 0 }
         .onDisappear { _ = saveReflection() }
     }
     private func load() async {
-        reflection = library.books.first { $0.id == book.id }?.reflection ?? book.reflection; savedReflection = reflection
+        working = true
+        defer { working = false }
         do {
             let workspace = store.tabs.compactMap(\.workspace).first { $0.matches(path: book.path) && $0.count > 0 }
             guard workspace?.busy != true else { throw FolioError(message: "书籍正在处理，请稍后重新打开笔记") }
@@ -62,7 +80,6 @@ struct BookNotebookView: View {
             snapshot = try await BookNotebook.load(book: book, currentPDF: current, cards: store.board.cards, outline: workspace?.outlineEntries)
             try Task.checkCancellation()
         } catch is CancellationError {} catch { message = error.localizedDescription }
-        working = false
     }
     private func scheduleReflection() {
         do { try library.scheduleReflection(book.id, text: reflection) }

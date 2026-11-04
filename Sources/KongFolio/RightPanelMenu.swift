@@ -21,9 +21,9 @@ struct RightPanelMenu: View {
             Section("需要更大空间") {
                 Button("在独立窗口管理阅读资料…") { store.openReadingDesk(.search,window:true) }
             }
-        } label: { Label("右侧面板",systemImage:"sidebar.right").font(.system(size:13)) }
+        } label: { Image(systemName:"sidebar.right").frame(width:28,height:28) }
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-        .help("在当前窗口右侧显示阅读资料或 PDF 属性；当前选中的内容带有勾号")
+        .help("右侧面板：显示阅读资料或 PDF 属性，当前内容带有勾号")
         .accessibilityLabel("右侧面板")
     }
 }

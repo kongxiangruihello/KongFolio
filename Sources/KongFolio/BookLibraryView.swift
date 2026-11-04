@@ -78,7 +78,7 @@ struct BookLibraryView: View {
                     if !book.category.isEmpty { Text(book.category).font(.caption) }
                     Button { perform { var b = book; b.favorite.toggle(); try library.update(b) } } label: { Image(systemName:book.favorite ? "star.fill" : "star") }.help("收藏或取消收藏")
                     Button("编辑") { editing = book }
-                    Button("笔记") { if store.readingMode { perform { try store.openLibraryBook(book); store.showReadingHistory = false; store.openReadingDesk(.notes,window:true) } } else { notebook = book } }.disabled(TextImport.handles(URL(fileURLWithPath:book.path)))
+                    Button("笔记与心得") { notebook = book }.disabled(TextImport.handles(URL(fileURLWithPath:book.path)))
                 }
             }
             Spacer(minLength:0)
@@ -125,11 +125,11 @@ struct ShelfBookEditor: View {
         VStack(alignment:.leading,spacing:12) {
             Text("编辑书架记录").font(.headline)
             TextField("书名",text:$title); TextField("分类",text:$category); Toggle("收藏",isOn:$favorite)
-            Text("整本书的心得").font(.caption); TextEditor(text:$reflection).frame(minHeight:150)
+            Text("整本书的心得").font(.caption); LibraryWritingEditor(text:$reflection,label:"整本书的心得",identity:"shelf-reflection:"+book.id.uuidString).frame(height:330)
             Text(book.path).font(.caption).textSelection(.enabled)
             Text(message).foregroundStyle(.red)
             HStack { Button("取消") { dismiss() }; Spacer(); Button("保存") { save() }.keyboardShortcut(.defaultAction) }
-        }.padding(20).adaptiveSheet(width:560,height:380,minimumWidth:360)
+        }.padding(20).adaptiveSheet(width:700,height:580,minimumWidth:360)
         .onAppear { title = book.title; category = book.category; reflection = book.reflection; favorite = book.favorite }
     }
     private func save() {

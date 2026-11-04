@@ -46,7 +46,7 @@ PY
 SOURCES=()
 for file in "$ROOT"/Sources/KongFolio/*.swift; do
   # SwiftUI views and the app entry point are compiled by `swift build`; the runner only needs the model and services.
-  if grep -qE '^(@main|struct [A-Za-z]+: View|struct [A-Za-z]+: NSViewRepresentable)' "$file"; then continue; fi
+  if grep -qE '^(@main|struct [A-Za-z]+(<[^>]+>)?:[[:space:]]*(View|NSViewRepresentable))' "$file"; then continue; fi
   SOURCES+=("$file")
 done
 for file in "$ROOT"/Sources/KongFolioUpdateKit/*.swift; do SOURCES+=("$file"); done

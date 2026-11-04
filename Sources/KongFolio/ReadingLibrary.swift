@@ -27,3 +27,42 @@ extension ReadingJournal {
         }
     }
 }
+
+extension ReadingLibraryItem {
+    func isFromBook(_ path:String)->Bool {
+        let target = ReadingBookIdentity.key(path)
+        switch self {
+        case .record(let r):return r.citations.contains{ReadingBookIdentity.key($0.source.path) == target}
+        case .essay(let e):return e.blocks.contains{$0.record?.citations.contains{ReadingBookIdentity.key($0.source.path) == target} == true}
+        }
+    }
+}
+
+/// Foundation can spell the same macOS temporary file as /tmp or /private/tmp.
+/// Match built-in aliases without probing every source file during a search.
+enum ReadingBookIdentity {
+    static func key(_ path:String)->String {
+        guard !path.isEmpty else { return "" }
+        let value = URL(fileURLWithPath:path).standardizedFileURL.path.precomposedStringWithCanonicalMapping
+        for root in ["tmp","var","etc"] {
+            let prefix = "/private/"+root
+            if value == prefix || value.hasPrefix(prefix+"/") { return String(value.dropFirst("/private".count)) }
+        }
+        return value
+    }
+}
+
+@MainActor extension ReadingJournal {
+    func beginLibraryRecord(_ kind:ReadingRecord.Kind,source:ReadingCitation? = nil)->ReadingRecord {
+        let record = ReadingRecord(kind:kind,citations:source.map{[$0]} ?? [],wholeBook:source != nil)
+        beginNote(record)
+        return record
+    }
+    func beginLibraryEssay(source:ReadingCitation? = nil)->UUID {
+        let id = newEssay()
+        if let source { editEssay(id) { value in
+            if !value.blocks.isEmpty { value.blocks[0].record = ReadingRecord(kind:.note,citations:[source],wholeBook:true) }
+        } }
+        return id
+    }
+}
