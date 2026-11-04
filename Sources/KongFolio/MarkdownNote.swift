@@ -22,12 +22,14 @@ struct TextEdit: Equatable {
         var fileBaseline: FileBaseline? = nil
         var resourceBasePath: String? = nil
         var baselineText: String? = nil
+        var draftName: String? = nil
     }
 
     let id: UUID
     weak var store: WorkspaceStore?
     let storage: URL
     @Published var text: String { didSet { if text != oldValue { textChanged() } } }
+    @Published private(set) var draftName:String?
     @Published var fileURL: URL?
     @Published var format: TextDocumentFormat = .markdown
     @Published var layoutOptions = TextLayoutOptions.load() { didSet { layoutOptions.save(); refreshPreview() } }
@@ -77,7 +79,17 @@ struct TextEdit: Equatable {
         if !text.isEmpty { refreshPreview() }
     }
 
-    var title: String { fileURL?.deletingPathExtension().lastPathComponent ?? "未命名笔记" }
+    var title: String { fileURL?.deletingPathExtension().lastPathComponent ?? draftName ?? "未命名笔记" }
+
+    func renameDraft(to value:String) throws {
+        guard fileURL == nil else { throw FolioError(message:"已保存的文件请使用“另存文件”设置新文件名。") }
+        let next = try DraftNoteName.normalized(value,extension:format.fileExtension)
+        guard next != title else { return }
+        let previous = draftName,wasDirty = dirty
+        draftName = next;dirty = true
+        do { try writeBackup() } catch { draftName = previous;dirty = wasDirty;throw error }
+        status = "名称已修改；保存时沿用“"+next+"”"
+    }
 
     /// Characters without whitespace, which is how Chinese text is usually counted.
 
@@ -184,7 +196,7 @@ struct TextEdit: Equatable {
 
     func writeBackup() throws {
         try FileManager.default.createDirectory(at: backupURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL?.path, format: format, layoutOptions: layoutOptions, fileBaseline: fileBaseline, resourceBasePath: recoveryBaseURL?.path, baselineText: baselineText)).write(to: backupURL, options: .atomic)
+        try JSONEncoder().encode(Backup(id: id, text: text, path: fileURL?.path, format: format, layoutOptions: layoutOptions, fileBaseline: fileBaseline, resourceBasePath: recoveryBaseURL?.path, baselineText: baselineText, draftName:draftName)).write(to: backupURL, options: .atomic)
     }
 
     func removeBackup() {
@@ -209,6 +221,7 @@ struct TextEdit: Equatable {
             guard let backup = try? JSONDecoder().decode(Backup.self, from: Data(contentsOf: file)) else { return nil }
             let note = MarkdownNote(id: backup.id, text: backup.text, fileURL: backup.path.map { URL(fileURLWithPath: $0) }, dirty: true, storage: storage, format: backup.format)
             if let options = backup.layoutOptions, options.valid { note.layoutOptions = options }
+            note.draftName = backup.draftName.flatMap { try? DraftNoteName.normalized($0,extension:note.format.fileExtension) }
             note.fileBaseline = backup.fileBaseline
             note.baselineText = backup.baselineText
             note.recoveryBaseURL = backup.resourceBasePath.map { URL(fileURLWithPath: $0) }

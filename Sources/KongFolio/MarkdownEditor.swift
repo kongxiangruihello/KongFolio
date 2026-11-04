@@ -39,15 +39,15 @@ struct MarkdownEditorView: View {
     }
 
     private func editorHeader(width:CGFloat)->some View {
-        HStack(spacing:12) {
+        HStack(spacing:width < 500 ? 8 : 12) {
             VStack(alignment:.leading,spacing:3) {
-                Text(note.title).font(.system(size:17,weight:.semibold)).lineLimit(1).truncationMode(.middle).help(note.fileURL?.path ?? note.title)
+                DraftNoteTitle(note:note)
                 if width >= 650 { Text(note.format.rawValue + (note.readOnly ? " · 阅读模式" : " · 编辑模式")).font(.system(size:12)).foregroundStyle(.secondary) }
             }.frame(minWidth:40,maxWidth:.infinity,alignment:.leading)
             if note.format == .markdown {
                 Picker("编辑方式",selection:Binding(get:{!note.cleanEditing},set:{ value in
                     guard note.textView?.hasMarkedText() != true,(NSApp?.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() != true else { return };note.cleanEditing = !value
-                })) { Text("段落").tag(false);Text("源码").tag(true) }.pickerStyle(.segmented).frame(width:130).help("段落编辑显示图片；源码编辑提供全文格式和查找工具")
+                })) { Text("段落").tag(false);Text("源码").tag(true) }.pickerStyle(.segmented).labelsHidden().accessibilityLabel("编辑方式").frame(width:140).fixedSize(horizontal:true,vertical:false).help("段落编辑显示图片；源码编辑提供全文格式和查找工具")
             }
             Button { showDisplay = true } label:{ if width >= 720 { Label("显示设置",systemImage:"textformat.size") } else { Image(systemName:"textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
             Menu {
@@ -60,8 +60,8 @@ struct MarkdownEditorView: View {
                 Divider()
                 ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool }.disabled(note.format == .markdown && note.cleanEditing) }
                 Button("创建独立编辑副本…") { note.createEditingCopy() }
-            } label:{ Label("编辑选项",systemImage:"ellipsis") }.menuStyle(.borderlessButton).fixedSize()
-        }.controlSize(.regular).font(.system(size:13)).padding(.horizontal,20).padding(.vertical,12).background(.bar)
+            } label:{ if width >= 600 { Label("编辑选项",systemImage:"ellipsis") } else { Image(systemName:"ellipsis.circle") } }.menuStyle(.borderlessButton).fixedSize().help("编辑选项").accessibilityLabel("编辑选项")
+        }.controlSize(.regular).font(.system(size:13)).padding(.horizontal,width < 500 ? 10 : 20).padding(.vertical,12).background(.bar)
     }
 
     private var toolbar: some View {
