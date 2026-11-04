@@ -20,6 +20,17 @@ final class LibraryEditingTests: XCTestCase {
     func citation(_ path:String)->ReadingCitation {
         ReadingCitation(source:SourceRef(path:path,fileName:"测试原书.pdf",page:3),title:"测试原书")
     }
+    func testSystemPathAliasesMatchOldRecordsWithoutMergingDifferentBooks() async {
+        let a = ReadingRecord(kind:.note,note:"已有笔记",citations:[citation("/private/tmp/书架/甲.pdf")])
+        let b = ReadingRecord(kind:.note,note:"另一本书",citations:[citation("/tmp/书架/乙.pdf")])
+        let essay = ReadingEssay(title:"旧札记",blocks:[ReadingEssay.Block(text:"思考",record:a)])
+        let state = ReadingJournalState(records:[a,b],essays:[essay])
+        let result = await ReadingSearchWorker.shared.library(state,request:ReadingSearchRequest(revision:1,bookPath:"/tmp/书架/甲.pdf"))
+        XCTAssertEqual(Set(result.map(\.id)),[.record(a.id),.essay(essay.id)])
+        XCTAssertEqual(ReadingBookIdentity.key("/private/var/folders/甲.pdf"),ReadingBookIdentity.key("/var/folders/甲.pdf"))
+        XCTAssertFalse(ReadingBookIdentity.key("/private/tmpname/甲.pdf") == ReadingBookIdentity.key("/tmpname/甲.pdf"))
+        XCTAssertFalse(ReadingBookIdentity.key("/tmp/甲A.pdf") == ReadingBookIdentity.key("/tmp/甲a.pdf"))
+    }
     func testBookScopeIncludesLinkedEssaysButExcludesOtherBooks() async {
         let source = citation("/生成资料/甲.pdf")
         let a = ReadingRecord(kind:.note,note:"甲书笔记",citations:[source])

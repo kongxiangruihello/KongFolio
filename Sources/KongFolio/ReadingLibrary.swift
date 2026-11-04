@@ -30,10 +30,25 @@ extension ReadingJournal {
 
 extension ReadingLibraryItem {
     func isFromBook(_ path:String)->Bool {
+        let target = ReadingBookIdentity.key(path)
         switch self {
-        case .record(let r):return r.citations.contains{$0.source.path == path}
-        case .essay(let e):return e.blocks.contains{$0.record?.citations.contains{$0.source.path == path} == true}
+        case .record(let r):return r.citations.contains{ReadingBookIdentity.key($0.source.path) == target}
+        case .essay(let e):return e.blocks.contains{$0.record?.citations.contains{ReadingBookIdentity.key($0.source.path) == target} == true}
         }
+    }
+}
+
+/// Foundation can spell the same macOS temporary file as /tmp or /private/tmp.
+/// Match built-in aliases without probing every source file during a search.
+enum ReadingBookIdentity {
+    static func key(_ path:String)->String {
+        guard !path.isEmpty else { return "" }
+        let value = URL(fileURLWithPath:path).standardizedFileURL.path.precomposedStringWithCanonicalMapping
+        for root in ["tmp","var","etc"] {
+            let prefix = "/private/"+root
+            if value == prefix || value.hasPrefix(prefix+"/") { return String(value.dropFirst("/private".count)) }
+        }
+        return value
     }
 }
 
