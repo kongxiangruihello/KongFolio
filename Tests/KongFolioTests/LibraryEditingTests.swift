@@ -1,7 +1,7 @@
 import XCTest
 @testable import KongFolio
 
-final class LibraryEditingTests:XCTestCase {
+final class LibraryEditingTests: XCTestCase {
     func testLibraryDisplayDoesNotChangeMainEditorPreferences() throws {
         let suite = "KongFolio.libraryEditingTests."+UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName:suite))
