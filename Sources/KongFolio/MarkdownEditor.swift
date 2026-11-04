@@ -7,18 +7,14 @@ struct MarkdownEditorView: View {
     var store: WorkspaceStore? = nil
     var showsPrimaryToolbar = true
     @State private var showLayout = false
+    @State private var showDisplay = false
 
     var body: some View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
                 if showsPrimaryToolbar { toolbar }
-                HStack {
-                    if note.format == .markdown { Toggle("源码",isOn:Binding(get:{!note.cleanEditing},set:{ value in if note.textView?.hasMarkedText() != true && (NSApp?.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() != true { note.cleanEditing = !value } })).toggleStyle(.checkbox) }
-                    Button(note.readOnly ? "阅读模式 · 切换编辑" : "编辑模式 · 切换阅读") { note.toggleReadOnly() }.help("阅读模式保护正文，仍可选择和复制文字")
-                    Menu("文件编辑") { ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool }.disabled(note.format == .markdown && note.cleanEditing) };Button("创建独立编辑副本…") { note.createEditingCopy() } }
-                    if note.format != .plain { Toggle("预览",isOn:$note.showPreview).toggleStyle(.checkbox);Toggle("跟随段落",isOn:$note.followPreview).toggleStyle(.checkbox) }
-                }.font(.caption).padding(.horizontal,10).padding(.vertical,4)
-                if !note.readOnly && !(note.format == .markdown && note.cleanEditing) { WritingToolbar(session:note.writingSession) }
+                editorHeader(width:proxy.size.width)
+                if !note.readOnly && !(note.format == .markdown && note.cleanEditing) { WritingToolbar(session:note.writingSession,prominent:true).padding(.horizontal,16).padding(.vertical,7).background(.bar) }
                 if note.saveConflict { SaveConflictBanner(copy: { note.save(asNew: true) }, reload: note.reloadAfterConflict,compare:{ note.editingTool = .merge }) }
                 Divider()
                 if note.format == .markdown && note.cleanEditing { CleanWritingView(note:note) } else { TextEditorPreviewSplit(note:note) }
@@ -28,17 +24,44 @@ struct MarkdownEditorView: View {
                     Spacer(minLength: 0)
                     WritingCharacterCount(session:note.writingSession).lineLimit(1).fixedSize()
                 }
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.system(size:12)).foregroundStyle(.secondary)
                 .padding(.horizontal, 16).padding(.vertical, 8)
             }
             .frame(width: proxy.size.width)
         }
         .sheet(item:$note.editingTool) { tool in FileEditingSheet(note:note,tool:tool) }
+        .sheet(isPresented:$showDisplay) { EditorDisplaySheet(note:note) }
         .sheet(isPresented: $showLayout) { TextLayoutSheet(note: note) }
         .sheet(isPresented: $note.showVersionHistory) { FileEditingSheet(note:note,tool:.history) }
         .alert("无法完成操作", isPresented: Binding(get: { note.error != nil }, set: { if !$0 { note.error = nil } })) {
             Button("好") { note.error = nil }
         } message: { Text(note.error ?? "") }
+    }
+
+    private func editorHeader(width:CGFloat)->some View {
+        HStack(spacing:12) {
+            VStack(alignment:.leading,spacing:3) {
+                Text(note.title).font(.system(size:17,weight:.semibold)).lineLimit(1).truncationMode(.middle).help(note.fileURL?.path ?? note.title)
+                if width >= 650 { Text(note.format.rawValue + (note.readOnly ? " · 阅读模式" : " · 编辑模式")).font(.system(size:12)).foregroundStyle(.secondary) }
+            }.frame(minWidth:40,maxWidth:.infinity,alignment:.leading)
+            if note.format == .markdown {
+                Picker("编辑方式",selection:Binding(get:{!note.cleanEditing},set:{ value in
+                    guard note.textView?.hasMarkedText() != true,(NSApp?.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() != true else { return };note.cleanEditing = !value
+                })) { Text("段落").tag(false);Text("源码").tag(true) }.pickerStyle(.segmented).frame(width:130).help("段落编辑显示图片；源码编辑提供全文格式和查找工具")
+            }
+            Button { showDisplay = true } label:{ if width >= 720 { Label("显示设置",systemImage:"textformat.size") } else { Image(systemName:"textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
+            Menu {
+                Button(note.readOnly ? "切换为编辑模式" : "切换为阅读模式") { note.toggleReadOnly() }
+                if note.format != .plain {
+                    Toggle("显示右侧导出预览",isOn:$note.showPreview)
+                    Toggle("预览跟随正文段落",isOn:$note.followPreview)
+                    Button("导出版式与预览设置…") { showLayout = true }
+                }
+                Divider()
+                ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool }.disabled(note.format == .markdown && note.cleanEditing) }
+                Button("创建独立编辑副本…") { note.createEditingCopy() }
+            } label:{ Label("编辑选项",systemImage:"ellipsis") }.menuStyle(.borderlessButton).fixedSize()
+        }.controlSize(.regular).font(.system(size:13)).padding(.horizontal,20).padding(.vertical,12).background(.bar)
     }
 
     private var toolbar: some View {
@@ -111,11 +134,12 @@ struct MarkdownTextView: NSViewRepresentable {
         view.isEditable = !note.readOnly
         view.isRichText = false
         view.allowsUndo = true
-        view.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+        view.displayOptions = note.editorDisplay
+        view.setAccessibilityLabel("文件正文编辑区")
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticDashSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
-        view.textContainerInset = NSSize(width: 14, height: 12)
+        view.displayOptions = note.editorDisplay
         view.string = note.text
         note.textView = view
         WritingPositions.shared.restore(view,key:view.positionKey)
@@ -125,6 +149,7 @@ struct MarkdownTextView: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let view = scroll.documentView as? NoteTextView else { return }
         note.textView = view
+        view.displayOptions = note.editorDisplay
         view.isEditable = !note.readOnly
         let nextKey = note.fileURL.map{"text-file:"+ReadingProgress.canonicalPath($0.path)} ?? "markdown:"+note.id.uuidString
         if nextKey != view.positionKey { WritingPositions.shared.capture(view,key:view.positionKey);view.positionKey = nextKey;WritingRegistry.attach(view,key:nextKey);WritingPositions.shared.capture(view,key:nextKey) }

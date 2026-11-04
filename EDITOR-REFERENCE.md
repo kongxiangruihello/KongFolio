@@ -8,3 +8,10 @@
 - [Apple NSTextInputClient](https://developer.apple.com/documentation/appkit/nstextinputclient)：marked text 为组词状态，提交后才同步正文。
 
 本版使用系统 NSTextView/NSTextField、明确的提交回调和模型回传去重，并测试组词过程、UTF-16 选区、首行连续编辑及资料库删除恢复。
+
+## 0.50 界面参考
+
+- [MarkText 官方仓库](https://github.com/marktext/marktext)：参考清晰的写作区域和显示模式分组。
+- [Zettlr 官方编辑显示说明](https://docs.zettlr.com/en/editor/appearance.html)：参考编辑区字体和显示模式可配置、编辑显示与导出排版分别设置的设计。
+
+本版保留原生 NSTextView 输入组件，不复制上述项目代码；字号、行宽、间距仅作用于屏幕，正文模型与导出版式独立保存。右侧面板入口明确面板位置，其他命令标注窗口类型。

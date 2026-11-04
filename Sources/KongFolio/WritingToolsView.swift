@@ -19,6 +19,7 @@ struct ReadingWritingEditor: View {
 }
 struct WritingToolbar: View {
     @ObservedObject var session:WritingSession
+    var prominent = false
     @Environment(\.isEnabled) private var enabled
     @State private var showFind = false
     @State private var showCleanup = false
@@ -36,12 +37,21 @@ struct WritingToolbar: View {
                     Menu { ForEach(1...3,id:\.self) { level in Button("\(level) 级标题") { session.prefix(String(repeating:"#",count:level)+" ") } } } label:{Image(systemName:"textformat.size")}.help("设置标题")
                     Button { session.prefix("> ") } label:{Image(systemName:"text.quote")}.help("引用段落")
                     Button { session.wrap("[","](https://)",placeholder:"链接文字") } label:{Image(systemName:"link")}.help("插入链接")
-                    Button("清除格式") { session.clearFormatting() }
+                    if prominent {
+                        Button { session.prefix("- ") } label:{Image(systemName:"list.bullet")}.help("无序列表")
+                        Button { session.prefix("1. ") } label:{Image(systemName:"list.number")}.help("有序列表")
+                    }
+                    if !prominent { Button("清除格式") { session.clearFormatting() } }
                     Button("查找替换") { showFind.toggle() }
-                    Button("逐项替换…") { showReplacePreview = true }
-                    Button("整理粘贴…") { showCleanup = true }
+                    if prominent {
+                        Menu("更多编辑") {
+                            Button("清除格式") { session.clearFormatting() }
+                            Button("逐项替换…") { showReplacePreview = true }
+                            Button("整理粘贴…") { showCleanup = true }
+                        }
+                    } else { Button("逐项替换…") { showReplacePreview = true };Button("整理粘贴…") { showCleanup = true } }
                     Menu("文章大纲") { if session.analysis.headings.isEmpty { Text("使用标题后在这里跳转") };ForEach(session.analysis.headings) { h in Button(String(repeating:"　",count:max(0,h.level-1))+h.title) { session.go(h.range) } } }
-                }.buttonStyle(.borderless).font(.caption)
+                }.buttonStyle(.borderless).font(.system(size:prominent ? 15 : 12)).controlSize(prominent ? .regular : .small).padding(.vertical,prominent ? 5 : 0)
             }
             if showFind {
                 VStack(spacing:4) {

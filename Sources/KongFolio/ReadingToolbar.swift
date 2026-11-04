@@ -16,12 +16,12 @@ struct ReadingToolbar: View {
                 Button { workspace.open() } label:{Image(systemName:"folder")}.help("打开 PDF 文献")
                 Button { workspace.showAnnotationBar.toggle() } label:{Image(systemName:"pencil.tip.crop.circle")}.disabled(workspace.count == 0).help("标注工具")
                 Button { workspace.showTools = true } label:{Image(systemName:"square.grid.2x2")}.help("快捷工具：OCR、页面整理与转换")
+                RightPanelMenu(store:store)
                 Menu {
                     Button("个人书架（手动维护）") { store.showReadingHistory = true }
                     Button("阅读资料库：管理摘录、笔记与札记") { store.openReadingDesk(.search,window:true) }
-                    Button("阅读组、备份与史料辅助工具") { store.showResearch = true }
+                    Button("阅读组、备份与史料辅助工具（独立窗口）") { store.showResearch = true }
                     Button("完整 PDF 工具界面") { store.readingMode = false }
-                    Button(store.showReadingDesk ? "收起阅读记录侧栏" : "显示阅读记录侧栏") { store.showReadingDesk.toggle() }
                     Button("打印…") { store.printActive() }.disabled(workspace.count == 0)
                     Divider()
                     Button("检查更新…") { AppUpdateWindow.shared.show() }

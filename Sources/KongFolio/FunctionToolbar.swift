@@ -13,25 +13,32 @@ struct FunctionToolbar: View {
             HStack(spacing:4) {
                 ForEach(profile.visible(width:proxy.size.width)) { action in control(action,menu:false).frame(minWidth:32,maxWidth:.infinity) }
                 Button { if let note { note.toggleReadOnly() } else { workspace?.toggleReadingLock() } } label:{ Image(systemName:(note?.readOnly ?? workspace?.readingLocked ?? false) ? "lock" : "pencil") .frame(width:28,height:28) }.help((note?.readOnly ?? workspace?.readingLocked ?? false) ? "当前为阅读模式，点击切换编辑" : "当前为编辑模式，点击保护正文").disabled(note == nil && workspace == nil)
+                RightPanelMenu(store:store)
                 Menu {
-                    ForEach(profile.hidden(width:proxy.size.width)) { action in control(action,menu:true) }
-                    Divider()
-                    Button("排列与固定常用工具…") { showToolbarSettings = true }
-                    if let note {
-                        Menu("文件编辑") { ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool }.disabled(note.format == .markdown && note.cleanEditing) } }
-                        Button("创建独立编辑副本…") { note.createEditingCopy() }
-                        Button("另存文件…") { note.save(asNew:true) }
-                        Button("插入图片…") { note.chooseImage() }.disabled(note.readOnly || note.format == .plain)
-                        Button("排版与预览设置…") { showLayout = true }
-                    } else if let workspace { Button("创建独立 PDF 编辑副本…") { workspace.createEditingCopy() } }
-                    Button("启动恢复与阅读内存…") { store.showReadingSettings = true }
-                    Button("跨文件全文搜索…") { store.showFolderSearch = true }
-                    Button("打印…") { store.printActive() }
-                    Button("阅读资料侧栏") { store.showReadingDesk.toggle() }
-                    Button(store.readingMode ? "完整 PDF 工具界面" : "专注阅读界面") { store.readingMode.toggle() }
-                    Button("阅读与史料辅助工具") { store.showResearch = true }
-                    Divider();Button("检查更新…") { AppUpdateWindow.shared.show() }
-                } label:{Image(systemName:"ellipsis.circle").frame(width:28,height:28)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help("更多功能：窗口放大后自动展开常用按钮")
+                    if !profile.hidden(width:proxy.size.width).isEmpty {
+                        Section("工具栏收起的功能") { ForEach(profile.hidden(width:proxy.size.width)) { action in control(action,menu:true) } }
+                    }
+                    Section("独立窗口与对话框") {
+                        Button("跨文件全文搜索（对话框）…") { store.showFolderSearch = true }
+                        Button("阅读与史料辅助工具（独立窗口）…") { store.showResearch = true }
+                    }
+                    Section("当前文件操作") {
+                        if let note {
+                            Menu("文件编辑（对话框）") { ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool }.disabled(note.format == .markdown && note.cleanEditing) } }
+                            Button("创建独立编辑副本…") { note.createEditingCopy() }
+                            Button("另存文件…") { note.save(asNew:true) }
+                            Button("插入图片…") { note.chooseImage() }.disabled(note.readOnly || note.format == .plain)
+                            Button("导出版式与预览设置…") { showLayout = true }
+                        } else if let workspace { Button("创建独立 PDF 编辑副本…") { workspace.createEditingCopy() } }
+                        Button("打印…") { store.printActive() }
+                    }
+                    Section("界面与应用设置") {
+                        Button("排列与固定常用工具…") { showToolbarSettings = true }
+                        Button("启动恢复与阅读内存…") { store.showReadingSettings = true }
+                        if workspace != nil { Button(store.readingMode ? "切换到完整 PDF 工具界面" : "切换到专注阅读界面") { store.readingMode.toggle() } }
+                        Button("检查更新…") { AppUpdateWindow.shared.show() }
+                    }
+                } label:{Image(systemName:"ellipsis.circle").frame(width:28,height:28)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help("更多：收起的功能、独立窗口、文件操作和应用设置；右侧内容请用“右侧面板”")
             }.buttonStyle(.borderless).font(.system(size:16)).padding(.horizontal,12).frame(height:44).clipped()
         }.frame(height:44)
         .sheet(isPresented:$showToolbarSettings) { ReaderToolbarSettings(profile:$profile) }
@@ -43,12 +50,12 @@ struct FunctionToolbar: View {
             if let workspace { SignatureToolbarMenu(workspace:workspace,showTitle:menu) }
             else { Button {} label:{label(action,menu:menu)}.disabled(true).help("打开 PDF 后导入或放置图片签名") }
         } else if action == .excerpt {
-            Menu { Button("摘录选中文字") { workspace?.excerptSelection() };Button("框选图片摘录") { workspace?.tool = .region;workspace?.showAnnotationBar = true } } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.title).disabled((workspace?.count ?? 0) == 0)
+            Menu { Button("摘录选中文字") { workspace?.excerptSelection() };Button("框选图片摘录") { workspace?.tool = .region;workspace?.showAnnotationBar = true } } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle).disabled((workspace?.count ?? 0) == 0)
         } else if action == .export {
-            Menu { Button("阅读记录与札记…") { store.readingExportEssay = false;store.openReadingDesk(.exports,window:true) };Button("当前文件导出 PDF…") { store.exportActive() };if let note { Button("当前文件导出 Word…") { note.exportWord() } } } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.title)
-        } else { Button { perform(action) } label:{label(action,menu:menu)}.help(action.title).accessibilityLabel(action.title).disabled(unavailable(action)) }
+            Menu { Button("阅读记录与札记…") { store.readingExportEssay = false;store.openReadingDesk(.exports,window:true) };Button("当前文件导出 PDF…") { store.exportActive() };if let note { Button("当前文件导出 Word…") { note.exportWord() } } } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle)
+        } else { Button { perform(action) } label:{label(action,menu:menu)}.help(action.menuTitle).accessibilityLabel(action.title).disabled(unavailable(action)) }
     }
-    @ViewBuilder private func label(_ action:FileToolbarAction,menu:Bool)->some View { if menu { Label(action.title,systemImage:action.symbol) } else { Image(systemName:action.symbol).frame(width:28,height:28) } }
+    @ViewBuilder private func label(_ action:FileToolbarAction,menu:Bool)->some View { if menu { Label(action.menuTitle,systemImage:action.symbol) } else { Image(systemName:action.symbol).frame(width:28,height:28) } }
     private func unavailable(_ action:FileToolbarAction)->Bool {
         switch action { case .save:return !store.canSave;case .annotate:return (workspace?.count ?? 0) == 0 || workspace?.readingLocked == true;case .tools:return workspace == nil || workspace?.readingLocked == true;default:return false }
     }

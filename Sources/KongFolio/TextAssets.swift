@@ -85,7 +85,7 @@ extension MarkdownNote {
     }
 }
 
-final class NoteTextView: ComposingTextView {
+final class NoteTextView: DisplayTextView {
     weak var note: MarkdownNote?
     override func paste(_ sender: Any?) {
         if NSPasteboard.general.availableType(from: [.png, .tiff]) != nil, note?.pasteImage() == true { return }
