@@ -13,13 +13,23 @@ struct RootView: View {
             if let tab = store.activeTab {
                 switch tab {
                 case .document(let workspace): ContentView(workspace: workspace,readingMode:store.readingMode,showsPrimaryToolbar:false).id(workspace.id)
-                case .note(let note): MarkdownEditorView(note: note, store: store,showsPrimaryToolbar:false).id(note.id)
+                case .note(let note):
+                    GeometryReader { geometry in
+                        VStack(spacing:0) {
+                            if store.showReadingDesk && geometry.size.width < 850 { NarrowReadingPanelNotice(store:store) }
+                            HSplitView {
+                                MarkdownEditorView(note:note,store:store,showsPrimaryToolbar:false).id(note.id).frame(minWidth:240,maxWidth:.infinity)
+                                if store.showReadingDesk && geometry.size.width >= 850 { ReadingSidePanel(store:store).frame(minWidth:280,idealWidth:340,maxWidth:400) }
+                            }
+                        }
+                    }
                 }
             } else {
                 Color.clear
             }
         }
         .task { await store.importLegacyReadingRecords() }
+        .onChange(of:store.readingMode) { _,reading in if !reading { store.showReadingDesk = false } }
         .onChange(of:store.readingDeskWindowRequest) { _,request in if request != nil { ReadingDeskWindowManager.shared.show(store) } }
         .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in store.checkOpenSourceChanges() }
         .onChange(of: store.showResearch) { _,show in

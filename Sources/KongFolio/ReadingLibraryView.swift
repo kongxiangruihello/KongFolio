@@ -4,6 +4,7 @@ struct ReadingLibraryView: View {
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var journal:ReadingJournal
     @Binding var section:ReadingDeskSection
+    var compact = false
     @State private var restoredSession = false
     @State private var query = ""
     @State private var recent = false
@@ -35,39 +36,26 @@ struct ReadingLibraryView: View {
     private var pagination:ReadingPagination { ReadingPagination(total:items.count,page:page,size:size) }
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
-            HStack {
-                TextField("搜索全部摘录、笔记、札记和出处",text:$query).textFieldStyle(.roundedBorder)
-                Menu("新增") {
-                    Button("摘录") { newRecord(.excerpt) }
-                    Button("笔记") { newRecord(.note) }
-                    Button("札记") { resetForNew(); let id = journal.newEssay(); editing = .essay(id); selection = [] }
-                }.disabled(journal.unreadable)
-                Button("批量整理") { showOrganization = true }.disabled(selection.isEmpty || removed || journal.unreadable)
-                Button("引用关系") { showReferences = true }.disabled(editing == nil)
-                Button("导出所选…") { store.readingLibraryExportSelection = selection;store.readingRecordSelection = Set(selection.compactMap { if case .record(let id) = $0 { return id };return nil });store.readingExportEssay = false;section = .exports }.disabled(selection.isEmpty || removed)
-                Button("备份恢复") { showBackups = true }
-                Button(removed ? "恢复所选" : "删除所选") { confirmBulk = true }.disabled(selection.isEmpty || journal.unreadable)
-            }
-            HStack {
-                Menu("常用筛选") {
-                    Button("近七天笔记") { applyFilter(SavedReadingFilter(name:"近七天笔记",kind:"笔记",recent:true)) }
-                    Button("尚未整理的记录") { applyFilter(SavedReadingFilter(name:"尚未整理",untagged:true)) }
-                    Divider()
-                    ForEach(filters) { value in Button(value.name) { applyFilter(value) } }
-                    Divider();Button("保存当前筛选…") { saveFilter() }
-                    if let selectedFilter { Button("删除当前常用筛选") { removeFilter(selectedFilter) } }
+            if compact {
+                searchField
+                HStack { newMenu;Menu("资料操作") { libraryActions };Spacer() }
+                DisclosureGroup("筛选与整理") {
+                    VStack(alignment:.leading,spacing:8) {
+                        HStack { savedFilters;organizationMenu }
+                        HStack { Toggle("近七天",isOn:$recent);Toggle("未加标签",isOn:$untagged) }
+                        typePicker
+                        TextField("按标签筛选",text:$tag).textFieldStyle(.roundedBorder)
+                        topicPicker
+                        Toggle("最近删除",isOn:$removed)
+                    }.padding(.top,6)
                 }
-                Toggle("近七天",isOn:$recent);Toggle("未加标签",isOn:$untagged)
-                Menu("资料整理") { Button("统一整理标签…") { showTags = true };Button("批量重新关联原文…") { showRelink = true } }
+            } else {
+                HStack { searchField;newMenu;libraryActions }
+                HStack { savedFilters;Toggle("近七天",isOn:$recent);Toggle("未加标签",isOn:$untagged);organizationMenu }
+                HStack { typePicker;TextField("按标签筛选",text:$tag);topicPicker;Toggle("最近删除",isOn:$removed) }
             }
             if let checkpoint = journal.bulkCheckpoint { Button("撤销："+checkpoint.label) { do { try journal.undoBulk() } catch { filterMessage = error.localizedDescription } }.disabled(!journal.canUndoBulk) }
             if !filterMessage.isEmpty { Text(filterMessage).font(.caption).foregroundStyle(.orange) }
-            HStack {
-                Picker("类型",selection:$kind) { ForEach(["全部","摘录","图片摘录","笔记","札记"],id:\.self) { Text($0) } }.fixedSize()
-                TextField("按标签筛选",text:$tag)
-                Picker("专题",selection:$topic) { Text("全部").tag(""); ForEach(journal.topics,id:\.self) { Text($0).tag($0) } }.fixedSize()
-                Toggle("最近删除",isOn:$removed)
-            }
             List(selection:$selection) { ForEach(Array(items.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { item in
                 VStack(alignment:.leading,spacing:4) { HStack { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading); Text(item.title).lineLimit(2).help(item.title) };if !item.sourceSummary.isEmpty { Text(item.sourceSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(item.sourceSummary) };if let context = item.matchingContext(query) { Text(context).font(.caption).lineLimit(2) } }.tag(item.id)
             } }
@@ -120,6 +108,35 @@ struct ReadingLibraryView: View {
         .sheet(isPresented:$showRelink) { ReadingBatchRelinkView(store:store,journal:journal) }
         .sheet(isPresented:$showBackups) { ReadingBackupView(journal:journal) }
     }
+
+    private var searchField:some View { TextField("搜索全部摘录、笔记、札记和出处",text:$query).textFieldStyle(.roundedBorder) }
+    private var newMenu:some View {
+                Menu("新增") {
+                    Button("摘录") { newRecord(.excerpt) }
+                    Button("笔记") { newRecord(.note) }
+                    Button("札记") { resetForNew(); let id = journal.newEssay(); editing = .essay(id); selection = [] }
+                }.disabled(journal.unreadable)
+    }
+    @ViewBuilder private var libraryActions:some View {
+                Button("批量整理") { showOrganization = true }.disabled(selection.isEmpty || removed || journal.unreadable)
+                Button("引用关系") { showReferences = true }.disabled(editing == nil)
+                Button("导出所选…") { store.readingLibraryExportSelection = selection;store.readingRecordSelection = Set(selection.compactMap { if case .record(let id) = $0 { return id };return nil });store.readingExportEssay = false;section = .exports }.disabled(selection.isEmpty || removed)
+                Button("备份恢复") { showBackups = true }
+                Button(removed ? "恢复所选" : "删除所选") { confirmBulk = true }.disabled(selection.isEmpty || journal.unreadable)
+    }
+    private var savedFilters:some View {
+                Menu("常用筛选") {
+                    Button("近七天笔记") { applyFilter(SavedReadingFilter(name:"近七天笔记",kind:"笔记",recent:true)) }
+                    Button("尚未整理的记录") { applyFilter(SavedReadingFilter(name:"尚未整理",untagged:true)) }
+                    Divider()
+                    ForEach(filters) { value in Button(value.name) { applyFilter(value) } }
+                    Divider();Button("保存当前筛选…") { saveFilter() }
+                    if let selectedFilter { Button("删除当前常用筛选") { removeFilter(selectedFilter) } }
+                }
+    }
+    private var organizationMenu:some View { Menu("资料整理") { Button("统一整理标签…") { showTags = true };Button("批量重新关联原文…") { showRelink = true } } }
+    private var typePicker:some View { Picker("类型",selection:$kind) { ForEach(["全部","摘录","图片摘录","笔记","札记"],id:\.self) { Text($0) } }.fixedSize() }
+    private var topicPicker:some View { Picker("专题",selection:$topic) { Text("全部").tag("");ForEach(journal.topics,id:\.self) { Text($0).tag($0) } }.fixedSize() }
 
     private func performContext(_ action:ReadingLibraryContextAction,ids:Set<ReadingLibraryID>) {
         switch action {

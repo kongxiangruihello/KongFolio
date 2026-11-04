@@ -18,7 +18,7 @@ struct TextEditorPreviewSplit: View {
                         .help("拖动调整编辑区与预览区的宽度")
                     VStack(spacing:0) {
                         if !note.previewMessage.isEmpty { Text(note.previewMessage).font(.caption).foregroundStyle(.orange).padding(8) }
-                        HStack { Button("定位预览") { note.locatePreview(focus:true) };Button("返回正文") { note.locateSource(focus:true) };Spacer() }.font(.caption).padding(6)
+                        HStack { Label("导出预览",systemImage:"doc.text.magnifyingglass");Spacer();Button("定位预览") { note.locatePreview(focus:true) };Button("返回正文") { note.locateSource(focus:true) } }.font(.system(size:12)).padding(10).background(.bar)
                         MarkdownPreview(note:note)
                     }.frame(maxWidth:.infinity,maxHeight:.infinity)
                 }

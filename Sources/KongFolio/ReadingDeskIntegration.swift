@@ -28,9 +28,11 @@ extension Workspace {
     }
 }
 extension WorkspaceStore {
+    func showReadingPanel(_ section:ReadingDeskSection) { readingMode = true;readingDeskSection = section;showReadingDesk = true }
     func openReadingDesk(_ section:ReadingDeskSection,window:Bool = false) {
-        readingDeskSection = section; showReadingDesk = true
-        if window || section == .essays || section == .exports || (NSApp?.keyWindow?.frame.width ?? 1000) < 850 { readingDeskWindowRequest = UUID() }
+        readingDeskSection = section
+        if window || section == .essays || section == .exports || (NSApp?.keyWindow?.frame.width ?? 1000) < 850 || (activeWorkspace != nil && !readingMode) { readingDeskWindowRequest = UUID() }
+        else { showReadingPanel(section) }
     }
     func newReadingNote(bookWide:Bool = false,linked:ReadingRecord? = nil) {
         guard !journal.unreadable else { present(FolioError(message:journal.error ?? "阅读记录未能读取")); return }

@@ -8,7 +8,24 @@ enum FileToolbarAction:String,CaseIterable,Identifiable {
 }
 enum SingleRowToolbarPolicy {
     static func titleWidth(_ width:Double)->Double { 0 }
-    static func visibleCount(width:Double)->Int { guard width.isFinite else { return 0 };return max(0,min(FileToolbarAction.allCases.count,Int((max(0,width)-titleWidth(width)-24-78)/36))) }
+    static func visibleCount(width:Double)->Int { guard width.isFinite else { return 0 };return max(0,min(FileToolbarAction.allCases.count,Int((max(0,width)-titleWidth(width)-24-174)/36))) }
     static func visible(width:Double)->[FileToolbarAction] { Array(FileToolbarAction.allCases.prefix(visibleCount(width:width))) }
     static func hidden(width:Double)->[FileToolbarAction] { Array(FileToolbarAction.allCases.dropFirst(visibleCount(width:width))) }
+}
+
+extension FileToolbarAction {
+    var menuTitle:String {
+        switch self {
+        case .library:return "资料库（独立窗口）"
+        case .essay:return "札记（独立窗口）"
+        case .note:return "当前页笔记（右侧面板／窄窗口独立打开）"
+        case .annotate:return "标注工具（文档上方）"
+        case .tools:return "快捷工具（对话框）"
+        case .quickNote:return "速记（浮动面板）"
+        case .books:return "个人书架与阅读记录（对话框）"
+        case .jobs:return "后台任务（对话框）"
+        case .sidebar:return "页面导航（左侧）"
+        default:return title
+        }
+    }
 }

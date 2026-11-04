@@ -31,6 +31,7 @@ struct TextEdit: Equatable {
     @Published var fileURL: URL?
     @Published var format: TextDocumentFormat = .markdown
     @Published var layoutOptions = TextLayoutOptions.load() { didSet { layoutOptions.save(); refreshPreview() } }
+    @Published var editorDisplay = EditorDisplayOptions.load() { didSet { editorDisplay.save() } }
     @Published var previewMessage = ""
     var restoringHistory = false
     var recoveryBaseURL: URL?

@@ -96,7 +96,7 @@ enum ReadingExportAudit {
 /// Portable personal data; only these files/keys are accepted, and restore never replaces an existing setting.
 enum PersonalReadingBackup {
     static let files = ["Signatures.json","SignaturePositions.json"]
-    static let keys = [ReaderToolbarProfile.key,ReadingExportPreferences.key,"KongFolio.readingExportProfiles",ReadingLibrarySession.key,"KongFolio.focusedReadingMode","KongFolio.maximumLoadedTabs","KongFolio.memoryBudgetMB","KongFolio.idleTabSeconds",ReadingLaunchPolicy.key,"readingRecordsPageSize"]
+    static let keys = [EditorDisplayOptions.key,ReaderToolbarProfile.key,ReadingExportPreferences.key,"KongFolio.readingExportProfiles",ReadingLibrarySession.key,"KongFolio.focusedReadingMode","KongFolio.maximumLoadedTabs","KongFolio.memoryBudgetMB","KongFolio.idleTabSeconds",ReadingLaunchPolicy.key,"readingRecordsPageSize"]
     static func settings(_ defaults:UserDefaults) throws -> Data { try PropertyListSerialization.data(fromPropertyList:Dictionary(uniqueKeysWithValues:keys.compactMap{key in defaults.object(forKey:key).map{(key,$0)}}),format:.binary,options:0) }
     static func validate(_ assets:[ResearchBackup.Asset]) throws {
         for asset in assets {

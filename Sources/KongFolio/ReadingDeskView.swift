@@ -25,7 +25,7 @@ struct ReadingDeskView: View {
             }
             Picker("记录类型",selection:$section) { ForEach(ReadingDeskSection.allCases,id:\.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.menu)
             if section == .exports { ReadingExportPane(store:store,journal:journal) }
-            else if section == .search { ReadingLibraryView(store:store,journal:journal,section:$section) }
+            else if section == .search { ReadingLibraryView(store:store,journal:journal,section:$section,compact:compact) }
             else if section == .essays { ReadingEssayPane(store:store,journal:journal) }
             else { records }
             Divider()
