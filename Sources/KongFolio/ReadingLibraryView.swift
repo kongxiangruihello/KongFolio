@@ -14,6 +14,9 @@ struct ReadingLibraryView: View {
     @State private var pendingNavigation:ReadingLibraryID?
     @State private var filterMessage = ""
     @State private var confirmBulk = false
+    @State private var contextRequest:ReadingLibraryContextRequest?
+    @State private var contextFocus = UUID()
+    @State private var copyGeneration = UUID()
     @State private var showTags = false
     @State private var showRelink = false
     @State private var kind = "全部"
@@ -67,7 +70,11 @@ struct ReadingLibraryView: View {
             }
             List(selection:$selection) { ForEach(Array(items.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { item in
                 VStack(alignment:.leading,spacing:4) { HStack { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading); Text(item.title).lineLimit(2).help(item.title) };if !item.sourceSummary.isEmpty { Text(item.sourceSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(item.sourceSummary) };if let context = item.matchingContext(query) { Text(context).font(.caption).lineLimit(2) } }.tag(item.id)
-            } }.frame(minHeight:100,maxHeight:editing == nil ? .infinity : 190).accessibilityLabel("全部阅读资料")
+            } }
+            .contextMenu(forSelectionType:ReadingLibraryID.self) { ids in
+                ReadingLibraryContextMenu(context:ReadingLibraryContext.resolve(ids,state:journal.state,removed:removed),readOnly:journal.unreadable) { action in performContext(action,ids:ids) }
+            } primaryAction:{ ids in performContext(.edit,ids:ids) }
+            .frame(minHeight:100,maxHeight:editing == nil ? .infinity : 190).accessibilityLabel("全部阅读资料")
             ReadingPageControls(pagination:pagination,page:$page,size:$size)
             if selection.count > 1 { Text("已选 \(selection.count) 条；删除后可在“最近删除”恢复。").font(.caption) }
             if let editing {
@@ -88,7 +95,7 @@ struct ReadingLibraryView: View {
         }
         .onAppear { if !restoredSession { restoredSession = true;if store.readingLibraryNavigation == nil { let s = ReadingLibrarySession.load(store.readingDefaults);query = s.query;kind = s.kind;tag = s.tag;topic = s.topic;recent = s.recent;untagged = s.untagged;removed = s.removed;pendingFilterPage = s.page;size = s.size } };do { filters = try SavedReadingFilter.load(journal.folder) } catch { filterMessage = error.localizedDescription };if let target = store.readingLibraryNavigation { navigate(target) } }
         .onChange(of:store.readingLibraryNavigationRequest) { _,_ in if let target = store.readingLibraryNavigation { navigate(target) } }
-        .onDisappear { rememberPage() }
+        .onDisappear { rememberPage();copyGeneration = UUID();contextFocus = UUID() }
         .onChange(of:page) { _,_ in rememberPage() }
         .onChange(of:recent) { _,_ in resetPage() }.onChange(of:untagged) { _,_ in resetPage() }
         .onChange(of:selection) { _,ids in if ids.count == 1,let id = ids.first { editing = id; if case .record(let r) = id { store.readingRecordID = r } } }
@@ -96,11 +103,57 @@ struct ReadingLibraryView: View {
         .onChange(of:topic) { _,_ in resetPage() }
         .onChange(of:size) { _,_ in page = 0 }.onChange(of:items.count) { _,_ in page = pagination.index }
         .sheet(isPresented:$confirmBulk) { ReadingBulkConfirmation(journal:journal,ids:selection,removed:removed) { selection = [];editing = nil } }
+        .sheet(item:$contextRequest) { request in
+            switch request.kind {
+            case .organize:ReadingOrganizationSheet(journal:journal,ids:request.ids)
+            case .references:if let id = request.ids.first { ReadingReferencesView(journal:journal,id:id,open:{ target in contextRequest = nil;store.openReadingItem(target) }) }
+            case .remove:ReadingBulkConfirmation(journal:journal,ids:request.ids,removed:request.removed) {
+                selection.subtract(request.ids)
+                if let id = editing,request.ids.contains(id) { editing = nil }
+                for id in request.ids { if case .record(let uuid) = id { store.readingRecordSelection.remove(uuid);if store.readingRecordID == uuid { store.readingRecordID = nil };if store.pinnedReadingID == uuid { store.pinnedReadingID = nil } } }
+            }
+            }
+        }
         .sheet(isPresented:$showOrganization) { ReadingOrganizationSheet(journal:journal,ids:selection) }
         .sheet(isPresented:$showReferences) { if let editing { ReadingReferencesView(journal:journal,id:editing,open:{ target in showReferences = false;store.openReadingItem(target) }) } }
         .sheet(isPresented:$showTags) { ReadingTagManager(journal:journal) }
         .sheet(isPresented:$showRelink) { ReadingBatchRelinkView(store:store,journal:journal) }
         .sheet(isPresented:$showBackups) { ReadingBackupView(journal:journal) }
+    }
+
+    private func performContext(_ action:ReadingLibraryContextAction,ids:Set<ReadingLibraryID>) {
+        switch action {
+        case .newExcerpt:guard !journal.unreadable else { return };newRecord(.excerpt);return
+        case .newNote:guard !journal.unreadable else { return };newRecord(.note);return
+        case .newEssay:guard !journal.unreadable else { return };resetForNew();let id = journal.newEssay();editing = .essay(id);selection = [];return
+        default:break
+        }
+        let scope = ReadingLibraryContext.resolve(ids,state:journal.state,removed:removed)
+        guard !scope.items.isEmpty else { filterMessage = "资料已变化，请重新打开右键菜单";return }
+        switch action {
+        case .edit:
+            guard let item = scope.single else { return }
+            selection = scope.ids;editing = item.id
+            if case .record(let id) = item.id { store.readingRecordID = id }
+            guard !scope.removed,!journal.unreadable else { return }
+            let key:String
+            switch item { case .record(let record):key = "note:"+record.id.uuidString;case .essay(let essay):guard let block = essay.blocks.first else { return };key = "essay:"+essay.id.uuidString+":"+block.id.uuidString }
+            let token = UUID();contextFocus = token
+            DispatchQueue.main.asyncAfter(deadline:.now()+0.15) { if contextFocus == token,editing == item.id { WritingRegistry.jump(key,range:WritingRegistry.selection(key) ?? NSRange(location:0,length:0)) } }
+        case .copy:
+            let token = UUID();copyGeneration = token;filterMessage = "正在准备复制 \(scope.items.count) 条资料…"
+            Task { let text = await Task.detached(priority:.userInitiated) { scope.clipboardText() }.value;guard copyGeneration == token else { return };NSPasteboard.general.clearContents();if NSPasteboard.general.setString(text,forType:.string) { filterMessage = "已复制 \(scope.items.count) 条正文与出处" } else { filterMessage = "复制未完成，请重试" } }
+        case .export:
+            guard !scope.removed else { return };store.readingLibraryExportSelection = scope.ids;store.readingRecordSelection = Set(scope.records.map(\.id));store.readingExportEssay = false;section = .exports
+        case .organize:
+            guard !scope.removed,!journal.unreadable else { return };contextRequest = ReadingLibraryContextRequest(kind:.organize,ids:scope.ids,removed:scope.removed)
+        case .references:guard scope.single != nil else { return };contextRequest = ReadingLibraryContextRequest(kind:.references,ids:scope.ids,removed:scope.removed)
+        case .remove:guard !journal.unreadable else { return };contextRequest = ReadingLibraryContextRequest(kind:.remove,ids:scope.ids,removed:scope.removed)
+        case .source(let source):guard scope.single != nil,scope.sources().contains(where:{$0.source == source}) else { filterMessage = "资料来源已变化，请重新打开菜单";return };_ = store.reveal(source,beside:false)
+        case .append:
+            guard scope.canAppend,!journal.unreadable else { return };let id = journal.currentEssayID ?? journal.newEssay();for record in scope.records { store.insertReadingRecord(record,in:id) };store.openReadingDesk(.essays,window:true)
+        case .newExcerpt,.newNote,.newEssay:break
+        }
     }
 
     private func applyFilter(_ value:SavedReadingFilter) {
