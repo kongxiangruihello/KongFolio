@@ -25,7 +25,7 @@ struct ReadingCitationUpdatesView: View {
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
             Text("核对引用更新").font(.headline)
-            Text("逐条采用最新摘录；你写在札记段落中的论述保留。更新后可在资料库撤销这次操作。").font(.caption)
+            Text("逐条采用最新摘录；你写在笔记段落中的论述保留。更新后可在资料库撤销这次操作。").font(.caption)
             ScrollView { LazyVStack(alignment:.leading,spacing:14) { ForEach(journal.citationUpdates(essay)) { change in VStack(alignment:.leading,spacing:6) {
                 Text(change.current.displayTitle).bold();Text("插入时："+change.previous.quote+"\n"+change.previous.note).foregroundStyle(.secondary)
                 Text("最新："+change.current.quote+"\n"+change.current.note).textSelection(.enabled)

@@ -68,14 +68,21 @@ final class Reading052Tests: XCTestCase {
     func testWordAndPDFExportsRetainCommentSourceAndTime() throws {
         let root=try folder();defer{try? FileManager.default.removeItem(at:root)}
         let (_,page,a)=makeDocument();ReadingPDFCapture.stampAdded(a,now:Date(timeIntervalSince1970:1700000000))
-        let record=try XCTUnwrap(ReadingPDFCapture.record(a,page:page,index:0,source:citation("/原书.pdf"))),snapshot=ReadingExportSnapshot(title:"来源与时间验证",records:[record])
+        var record=try XCTUnwrap(ReadingPDFCapture.record(a,page:page,index:0,source:citation("/原书.pdf")))
+        record.title="独立记录标题";record.note="个人补充文字"
+        let snapshot=ReadingExportSnapshot(title:"来源与时间验证",records:[record])
         for format in [ReadingRecordExport.Format.pdf,.word] {
             let file=root.appendingPathComponent("验证."+format.ext)
             try ReadingRecordExport.write(snapshot,format:format,assets:root,to:file,expected:FileBaseline.capture(file))
             let text:String
             if format == .pdf { text=PDFDocument(url:file)?.string ?? "" }
             else { text=String(decoding:try XCTUnwrap(ReadingExportAudit.storedZIP(Data(contentsOf:file))["word/document.xml"]),as:UTF8.self) }
-            for phrase in ["PDF 评论正文","原作者","原书.pdf","原创建时间","原修改时间","收录时间"] { XCTAssertTrue(text.contains(phrase),phrase) }
+            // PDFKit can insert layout whitespace between Latin and Chinese glyphs across OS versions.
+            // Verify every content character, independent of those extraction-only spaces and line breaks.
+            let extracted=text.filter{!$0.isWhitespace}
+            for phrase in ["PDF 评论正文","个人补充文字","原作者","原书.pdf","原创建时间","原修改时间","收录时间"] {
+                XCTAssertTrue(extracted.contains(phrase.filter{!$0.isWhitespace}),format.rawValue+": "+phrase+"; extracted: "+text)
+            }
         }
     }
     @MainActor func testLiveAddEditDeleteAndUndoAreCapturedWithoutLosingSource() throws {

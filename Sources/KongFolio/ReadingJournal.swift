@@ -39,7 +39,8 @@ struct ReadingRecord: Codable, Identifiable, Equatable {
         if let book, !citations.contains(where: { $0.source.path == book }) { return false }
         if !tag.isEmpty && !tags.contains(tag) { return false }
         if let after, modified < after { return false }
-        let haystack = (pdfOrigin?.contents ?? "") + "\n" + title + "\n" + quote + "\n" + note + "\n" + tags.joined(separator:" ") + "\n" + citations.map { $0.title + $0.author + $0.source.pageDescription }.joined(separator:"\n")
+        let sourceText = citations.map { [$0.title,$0.author,$0.source.pageDescription].joined(separator:" ") }.joined(separator:"\n")
+        let haystack = [pdfOrigin?.contents ?? "",title,quote,note,tags.joined(separator:" "),sourceText].joined(separator:"\n")
         return query.isEmpty || AnnotationFilter.folded(haystack).contains(AnnotationFilter.folded(query))
     }
 }

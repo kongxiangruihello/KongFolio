@@ -37,7 +37,7 @@ extension ReadingJournal {
         guard !unreadable,let current = state.records.first(where:{$0.id == update.current.id}),current == update.current,let block = essay(update.essay)?.blocks.first(where:{$0.id == update.block}),block.record == update.previous else { throw FolioError(message:"引用又有变化，请重新比较") }
         let before = state
         editEssay(update.essay) { e in if let i = e.blocks.firstIndex(where:{$0.id == update.block}) { e.blocks[i].record = current } }
-        bulkCheckpoint = ReadingBulkCheckpoint(before:before,after:state,label:"更新札记引用")
+        bulkCheckpoint = ReadingBulkCheckpoint(before:before,after:state,label:"更新笔记引用")
     }
     func finishBulk(_ before:ReadingJournalState,_ label:String) { if state != before { bulkCheckpoint = ReadingBulkCheckpoint(before:before,after:state,label:label) } }
     var canUndoBulk:Bool { !unreadable && bulkCheckpoint?.after == state }

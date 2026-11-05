@@ -39,7 +39,7 @@ struct ReadingToolbar: View {
             } label:{Label("摘录",systemImage:"text.quote")}.menuStyle(.borderlessButton).fixedSize().disabled(workspace.count == 0).help("保存所选文字，或框选扫描页、插图和表格")
             Button { store.newReadingNote() } label:{Label("笔记",systemImage:"note.text.badge.plus")}.help("新建与当前 PDF 关联的笔记")
             Button { workspace.selectTool(.note);workspace.showAnnotationBar = true } label:{Label("PDF 评论",systemImage:"text.bubble")}.disabled(workspace.readingLocked || workspace.count == 0)
-            Button { store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) } label:{Label("导出",systemImage:"square.and.arrow.up")}.help("导出所选记录、整本书笔记或札记")
+            Button { store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) } label:{Label("导出",systemImage:"square.and.arrow.up")}.help("导出所选记录、整本书笔记或笔记")
         }
     }
 }

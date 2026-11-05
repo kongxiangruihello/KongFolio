@@ -39,11 +39,11 @@ struct ReadingReferencesView: View {
                     if links.outgoing.isEmpty { Text("暂无关联引用").foregroundStyle(.secondary) }
                     ForEach(links.outgoing) { entry in reference(entry) }
                     Divider(); Text("被引用 · \(links.incoming.count) 条").font(.headline)
-                    if links.incoming.isEmpty { Text("暂无其他笔记或札记引用").foregroundStyle(.secondary) }
+                    if links.incoming.isEmpty { Text("暂无其他笔记引用").foregroundStyle(.secondary) }
                     ForEach(links.incoming) { entry in reference(entry) }
                 }
             }
-            Text("札记中的引用保留插入时的内容；原条目后来修改或删除，不会重写已有札记。").font(.caption).foregroundStyle(.secondary)
+            Text("笔记中的引用保留插入时的内容；原条目后来修改或删除，不会重写已有笔记。").font(.caption).foregroundStyle(.secondary)
         }.padding(20).adaptiveSheet(width:660,height:580,minimumWidth:420)
     }
     private func reference(_ entry:ReadingReference) -> some View {
@@ -89,7 +89,7 @@ struct ReadingBackupView: View {
                 ForEach(backups) { value in Text(value.date.formatted(date:.numeric,time:.standard)+" · "+value.kind.rawValue).tag(Optional(value.id)) }
             }
             if let backup {
-                Text("备份含 \(backup.state.records.count) 条记录、\(backup.state.essays.count) 篇札记。选择后先核对下方内容，再恢复。").font(.caption)
+                Text("备份含 \(backup.state.records.count) 条记录、\(backup.state.essays.count) 篇笔记。选择后先核对下方内容，再恢复。").font(.caption)
                 TextField("在备份中搜索标题、正文或出处",text:$query).textFieldStyle(.roundedBorder)
                 List(selection:$records) { ForEach(Array(entries.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { entry in
                     VStack(alignment:.leading) { Text(entry.kind+" · "+entry.title).lineLimit(2); Text(status(entry,backup:backup)).font(.caption).foregroundStyle(.secondary) }.tag(entry.id)
