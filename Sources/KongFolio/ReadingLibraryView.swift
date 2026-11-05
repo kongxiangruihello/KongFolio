@@ -37,6 +37,9 @@ struct ReadingLibraryView: View {
     @State private var showTools053=false
     @State private var searching053=false
     @State private var searchToken053=UUID()
+    @State private var searchSubmission=UUID()
+    @FocusState private var librarySearchFocused:Bool
+    private struct SearchActivation:Equatable { var request:ReadingSearchRequest;var submission:UUID }
     private var request:ReadingSearchRequest { ReadingSearchRequest(revision:journal.revisionID,query:query,kind:kind,tag:tag,topic:topic,removed:removed,recent:recent,untagged:untagged,bookPath:bookSource?.source.path,options053:options053,indexFolder:journal.folder.path) }
     private var pagination:ReadingPagination { ReadingPagination(total:items.count,page:page,size:size) }
     var body:some View {
@@ -72,7 +75,7 @@ struct ReadingLibraryView: View {
     }
     private var observedContent:some View {
         layout
-        .task(id:request) {
+        .task(id:SearchActivation(request:request,submission:searchSubmission)) {
             let token=UUID();searchToken053=token;searching053=true
             defer { if searchToken053==token { searching053=false } }
             let request = request
@@ -108,7 +111,7 @@ struct ReadingLibraryView: View {
                     TextField("按标签筛选",text:$tag).textFieldStyle(.roundedBorder)
                     topicPicker
                     Toggle("最近删除",isOn:$removed)
-                    ReadingSearchControls053(options:$options053)
+                    ReadingSearchControls053(options:$options053,showScope:false)
                 }.padding(.top,6)
                 }.frame(maxHeight:280)
             }.font(.system(size:13))
@@ -129,6 +132,15 @@ struct ReadingLibraryView: View {
             .contextMenu(forSelectionType:ReadingLibraryID.self) { ids in
                 ReadingLibraryContextMenu(context:ReadingLibraryContext.resolve(ids,state:journal.state,removed:removed),readOnly:journal.unreadable) { action in performContext(action,ids:ids) }
             } primaryAction:{ ids in performContext(.edit,ids:ids) }
+            .overlay {
+                if !searching053,!query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,items.isEmpty {
+                    VStack(spacing:8) {
+                        Image(systemName:"magnifyingglass").font(.title2).foregroundStyle(.secondary)
+                        Text("未找到匹配的阅读资料").font(.headline)
+                        Text("试试其他关键词，或展开“筛选与整理”检查条件。").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    }.padding().allowsHitTesting(false)
+                }
+            }
             .frame(minHeight:120,maxHeight:.infinity).accessibilityLabel("全部阅读资料")
     }
     private func libraryRow(_ item:ReadingLibraryItem)->some View {
@@ -157,7 +169,28 @@ struct ReadingLibraryView: View {
             } else { Text("选择一条记录编辑；可统一新增、查找、导出或删除。删除后可以恢复。").font(.caption).foregroundStyle(.secondary) }
     }
 
-    private var searchField:some View { TextField("搜索摘录、标注、评论、笔记与出处",text:$query).textFieldStyle(.roundedBorder) }
+    private var searchField:some View {
+        VStack(alignment:.leading,spacing:8) {
+            Label("搜索阅读资料",systemImage:"magnifyingglass").font(.headline)
+            HStack(spacing:6) {
+                TextField("摘录、标注、评论、笔记或出处关键词",text:$query)
+                    .textFieldStyle(.roundedBorder).focused($librarySearchFocused)
+                    .accessibilityLabel("阅读资料关键词").onSubmit(submitLibrarySearch)
+                if !query.isEmpty {
+                    Button { query="";librarySearchFocused=true } label:{Image(systemName:"xmark.circle.fill")}
+                        .buttonStyle(.borderless).help("清空阅读资料搜索").accessibilityLabel("清空阅读资料搜索")
+                }
+                Button("搜索",action:submitLibrarySearch).buttonStyle(.borderedProminent)
+                    .accessibilityLabel("搜索阅读资料").help("查找资料库记录；输入时也会自动更新结果")
+            }
+            Picker("搜索内容",selection:$options053.scope) {
+                ForEach(ReadingLibraryOptions053.Scope.allCases,id:\.self) { Text($0.rawValue).tag($0) }
+            }.pickerStyle(.menu)
+        }
+    }
+    private func submitLibrarySearch() {
+        pendingFilterPage=nil;page=0;librarySearchFocused=true;searchSubmission=UUID()
+    }
     private var newMenu:some View {
                 Menu("新增") {
                     Button("摘录") { newRecord(.excerpt) }

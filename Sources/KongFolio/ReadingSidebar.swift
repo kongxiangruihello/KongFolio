@@ -118,11 +118,12 @@ struct ReadingSidebar: View {
     private var searchResults: some View {
         Group {
             HStack {
-                TextField("搜索文档（简繁通查）", text: $workspace.search).focused($searchFocused053).onSubmit { workspace.find() }
+                TextField("搜索当前 PDF 正文（简繁通查）", text: $workspace.search).focused($searchFocused053).onSubmit { workspace.find() }.accessibilityLabel("PDF 正文关键词")
                 Button { workspace.find() } label: { Image(systemName: "magnifyingglass") }
             }
             .padding(.horizontal, 10)
             .onAppear { searchFocused053=true }
+            .onChange(of:workspace.pdfSearchFocusRequest) { _,_ in searchFocused053=true }
             HStack { Button("上一处") { workspace.stepSearch(-1) };Button("下一处") { workspace.stepSearch(1) };if workspace.searchTask != nil { Button("停止") { workspace.cancelSearch053() } } }.font(.caption).padding(.horizontal,10)
             Text(workspace.searchMessage).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
             ScrollView {

@@ -2,9 +2,10 @@ import SwiftUI
 
 struct ReadingSearchControls053:View {
     @Binding var options:ReadingLibraryOptions053
+    var showScope=true
     var body:some View {
         VStack(alignment:.leading,spacing:8) {
-            Picker("搜索范围",selection:$options.scope) { ForEach(ReadingLibraryOptions053.Scope.allCases,id:\.self) { Text($0.rawValue).tag($0) } }
+            if showScope { Picker("搜索范围",selection:$options.scope) { ForEach(ReadingLibraryOptions053.Scope.allCases,id:\.self) { Text($0.rawValue).tag($0) } } }
             Toggle("精确字形与空格",isOn:$options.exact)
             Text("空格表示同时包含；用“或”连接任选词；-词语表示排除；用英文双引号查找词组。").font(.caption).foregroundStyle(.secondary)
             TextField("作者",text:$options.author)

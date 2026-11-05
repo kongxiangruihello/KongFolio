@@ -99,7 +99,7 @@ struct ContentView: View {
                 if workspace.requestedSidebar053 || LayoutMetrics.showsSidebar(preferred: showSidebar, width: width) {
                     VStack(spacing:0) {
                         if workspace.requestedSidebar053 {
-                            HStack { Text(workspace.pageEditing053 ? "PDF 页面编辑" : "文档搜索").font(.headline);Spacer();Button { workspace.requestedSidebar053=false;workspace.pageEditing053=false } label:{Image(systemName:"xmark")}.help("关闭侧栏") }.padding(10)
+                            HStack { Text(workspace.pageEditing053 ? "PDF 页面编辑" : "PDF 正文搜索").font(.headline);Spacer();Button { workspace.requestedSidebar053=false;workspace.pageEditing053=false } label:{Image(systemName:"xmark")}.help("关闭侧栏") }.padding(10)
                             Divider()
                         }
                         if workspace.pageEditing053 { PDFPageEditor053(workspace:workspace) } else { sidebar }
