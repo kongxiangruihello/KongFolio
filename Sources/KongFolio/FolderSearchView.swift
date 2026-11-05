@@ -101,7 +101,7 @@ struct FolderSearchView: View {
                 Text(result.category).font(.caption).foregroundStyle(.blue)
                 Text((result.textLine.map { "第 \($0) 行" } ?? "第 \(result.hit.page + 1) 页") + (result.hit.label.map { " · 印刷页码 \($0)" } ?? "")).font(.caption).foregroundStyle(.secondary)
             }
-            Text(result.hit.snippet).lineLimit(3)
+            Text(SearchResultHighlight.text(result.hit.snippet,query:result.query)).lineLimit(3)
             Text(result.relativePath).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(result.url.path)
         }.padding(.vertical, 4).tag(result.id).onTapGesture(count: 2) { open(result) }
         .contextMenu {

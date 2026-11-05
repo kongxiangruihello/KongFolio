@@ -5,7 +5,9 @@ struct FunctionToolbar: View {
     @ObservedObject var store:WorkspaceStore
     @State private var showLayout = false
     @State private var showToolbarSettings = false
-    @State private var profile = ReaderToolbarProfile.load()
+    @AppStorage(ReaderToolbarProfile.key) private var profileData=Data()
+    @State private var toolbarWidth:CGFloat=800
+    private var profile:ReaderToolbarProfile { ReaderToolbarProfile.decode(profileData) }
     private var workspace:Workspace? { store.commandWorkspace }
     private var note:MarkdownNote? { store.activeNote }
     var body:some View {
@@ -40,8 +42,10 @@ struct FunctionToolbar: View {
                     }
                 } label:{Image(systemName:"ellipsis.circle").frame(width:28,height:28)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help("更多：收起的功能、独立窗口、文件操作和应用设置；右侧内容请用“右侧面板”")
             }.buttonStyle(.borderless).font(.system(size:16)).padding(.horizontal,12).frame(height:44).clipped()
+                .onAppear { toolbarWidth=proxy.size.width }
+                .onChange(of:proxy.size.width) { _,width in toolbarWidth=width }
         }.frame(height:44)
-        .sheet(isPresented:$showToolbarSettings) { ReaderToolbarSettings(profile:$profile) }
+        .sheet(isPresented:$showToolbarSettings) { ReaderToolbarSettings(profile:Binding(get:{profile},set:{profileData=(try? JSONEncoder().encode($0)) ?? Data()}),width:toolbarWidth) }
         .sheet(isPresented:$showLayout) { if let note { TextLayoutSheet(note:note) } }
         .popover(isPresented:$store.showQuickReadingNote) { QuickReadingNote(store:store) }
     }

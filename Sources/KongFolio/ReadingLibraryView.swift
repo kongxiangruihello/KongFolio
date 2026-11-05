@@ -148,14 +148,14 @@ struct ReadingLibraryView: View {
         VStack(alignment:.leading,spacing:4) {
             HStack(alignment:.top) {
                 if options053.showKind { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading) }
-                Text(item.title).lineLimit(2).help(item.title).frame(maxWidth:options053.table ? options053.titleWidth:.infinity,alignment:.leading)
+                Text(SearchResultHighlight.text(item.title,query:query)).lineLimit(2).help(item.title).frame(maxWidth:options053.table ? options053.titleWidth:.infinity,alignment:.leading)
                 if options053.table,options053.showSource { Text(item.sourceSummary).font(.caption).lineLimit(2).frame(width:options053.sourceWidth,alignment:.leading).help(item.sourceSummary) }
             }
             if !options053.table,options053.showSource,!item.sourceSummary.isEmpty { Text(item.sourceSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(item.sourceSummary) }
             if options053.groupChapters { Text(item.chapter053).font(.caption).foregroundStyle(.secondary) }
             if options053.showCreated { Text("收录 "+item.created.formatted(date:.abbreviated,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
             if options053.showModified { Text("修改 "+item.modified053.formatted(date:.abbreviated,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
-            if let context=item.matchingContext(query) { Text(context).font(.caption).lineLimit(2) }
+            if let context=item.matchingContext(query) { Text(SearchResultHighlight.text(context,query:query)).font(.caption).lineLimit(2) }
         }.onDrag { NSItemProvider(object:ReadingDrag053.text(item,assets:journal.folder.appendingPathComponent("Assets")) as NSString) }
     }
     @ViewBuilder private var editor:some View {

@@ -37,6 +37,13 @@ struct BookLibraryView: View {
                 Picker("分类",selection:$category) { ForEach(categories,id:\.self) { Text($0).tag($0) } }.frame(maxWidth:220)
             }
             PanelRow {
+                Button("添加当前 PDF") {
+                    guard let url=store.currentPDFForShelf else { return }
+                    store.commandWorkspace?.saveReadingRecord()
+                    query="";favoritesOnly=false;category="全部分类";page=0
+                    addition.add([url],to:library)
+                }.disabled(addition.busy || store.currentPDFForShelf == nil)
+                    .help(store.currentPDFForShelf == nil ? "打开已保存的 PDF 后，可直接添加到个人书架" : "添加正在阅读的 PDF，保留原文件位置和阅读进度，不重复添加")
                 Button("添加书籍…",action:add).disabled(addition.busy)
                 Button("刷新进度") { refreshToken = UUID() }.disabled(refreshing)
                 Button("从旧版或已移出记录中添加…") { pending = true }.disabled((library.catalog.pendingBooks ?? []).isEmpty)
@@ -62,6 +69,7 @@ struct BookLibraryView: View {
             if refreshing { HStack { ProgressView().controlSize(.small); Text("正在后台读取进度…").font(.caption) } }
         }.task(id:refreshToken) { await refresh() }
         .onChange(of:query) { _,_ in page = 0 }.onChange(of:category) { _,_ in page = 0 }.onChange(of:favoritesOnly) { _,_ in page = 0 }
+        .onChange(of:addition.busy) { _,busy in if !busy { refreshToken=UUID() } }
         .sheet(item:$notebook) { BookNotebookView(store:store,library:library,book:$0) }
         .sheet(item:$editing) { ShelfBookEditor(library:library,book:$0) }
         .sheet(isPresented:$pending) { PendingLibraryBooksView(library:library) }
