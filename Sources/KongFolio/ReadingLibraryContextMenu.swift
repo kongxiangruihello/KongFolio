@@ -24,7 +24,7 @@ struct ReadingLibraryContextMenu: View {
             Button(context.items.count == 1 ? "复制正文与出处" : "复制 \(context.items.count) 条正文与出处") { perform(.copy) }
             Button("导出"+countLabel+"…") { perform(.export) }.disabled(context.removed)
             Button("整理标签与专题…") { perform(.organize) }.disabled(context.removed || readOnly)
-            if context.canAppend { Button("加入札记…") { perform(.append) }.disabled(readOnly) }
+            if context.canAppend { Button("加入笔记…") { perform(.append) }.disabled(readOnly) }
             Divider()
             Menu("新增资料") { newItems }
             Divider()
@@ -35,6 +35,5 @@ struct ReadingLibraryContextMenu: View {
     @ViewBuilder private var newItems:some View {
         Button("新建摘录") { perform(.newExcerpt) }.disabled(readOnly)
         Button("新建笔记") { perform(.newNote) }.disabled(readOnly)
-        Button("新建札记") { perform(.newEssay) }.disabled(readOnly)
     }
 }

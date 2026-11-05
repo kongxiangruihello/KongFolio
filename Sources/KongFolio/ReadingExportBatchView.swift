@@ -17,7 +17,7 @@ struct ReadingExportBatchView: View {
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
             HStack { Text("批量导出与研究资料包").font(.headline);Spacer();Button("关闭") { dismiss() } }
-            Text("使用刚才勾选的 \(snapshot.orderedItems.count) 项资料与当前导出设置。批量导出按原书分组，札记单独输出。").font(.caption)
+            Text("使用刚才勾选的 \(snapshot.orderedItems.count) 项资料与当前导出设置。批量导出按原书分组，笔记单独输出。").font(.caption)
             HStack { ForEach(ReadingRecordExport.Format.allCases,id:\.self) { format in Toggle(format.rawValue,isOn:Binding(get:{formats.contains(format)},set:{if $0 { if !formats.contains(format) { formats.append(format) } } else { formats.removeAll{$0 == format} }})) } }
             HStack {
                 Button("选择目录并开始批量导出…",action:startBatch).disabled(formats.isEmpty || batch.busy || package.busy)

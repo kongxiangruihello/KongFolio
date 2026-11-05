@@ -28,6 +28,7 @@ extension Workspace {
     }
 }
 extension WorkspaceStore {
+    func openNoteLibrary() { readingLibraryPreferredKind = "笔记";readingLibraryNavigation = nil;readingLibraryNavigationRequest = UUID();openReadingDesk(.search,window:true) }
     func showReadingPanel(_ section:ReadingDeskSection) { readingMode = true;readingDeskSection = section;showReadingDesk = true }
     func openReadingDesk(_ section:ReadingDeskSection,window:Bool = false) {
         readingDeskSection = section
@@ -38,7 +39,7 @@ extension WorkspaceStore {
         guard !journal.unreadable else { present(FolioError(message:journal.error ?? "阅读记录未能读取")); return }
         let citation = commandWorkspace.flatMap { $0.count > 0 ? $0.readingCitation() : nil }
         let refs = linked?.citations ?? citation.map { [$0] } ?? []
-        let record = ReadingRecord(kind:.note,title:bookWide ? "整本书心得" : "",quote:linked?.quote ?? "",citations:refs,linkedRecords:linked.map { [$0.id] } ?? [],wholeBook:bookWide)
+        let record = ReadingRecord(kind:.note,title:bookWide ? "整本书心得" : "",quote:linked.map{$0.quote.isEmpty ? ($0.pdfOrigin?.contents ?? "") : $0.quote} ?? "",citations:refs,linkedRecords:linked.map { [$0.id] } ?? [],wholeBook:bookWide)
         pinnedReadingID = nil; journal.beginNote(record); readingRecordID = record.id; openReadingDesk(.notes)
     }
     func importLegacyReadingRecords() async {

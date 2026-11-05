@@ -18,7 +18,10 @@ actor ReadingSearchWorker {
         return ReadingLibraryItem.results(state,query:request.query,kind:request.kind,tag:request.tag,removed:request.removed).filter{ (request.bookPath == nil || $0.isFromBook(request.bookPath!)) && (request.topic.isEmpty || $0.tags.contains("专题："+request.topic)) && (!request.recent || recentIDs.contains($0.id)) && (!request.untagged || $0.tags.isEmpty) }
     }
     func records(_ state:ReadingJournalState,query:String,notes:Bool,book:String?,tag:String,removed:Bool,recent:Bool) -> [ReadingDeskHit] {
-        guard !Task.isCancelled else { return [] };return state.records.filter { !Task.isCancelled && $0.hasContent && ($0.removed != nil) == removed && (notes ? $0.kind == .note : $0.kind != .note) && $0.matches(query,book:book,tag:tag,after:recent ? Date().addingTimeInterval(-7*86400) : nil) }.sorted { $0.created == $1.created ? $0.id.uuidString<$1.id.uuidString : $0.created>$1.created }.map(ReadingDeskHit.record)
+        guard !Task.isCancelled else { return [] };let records = state.records.filter { !Task.isCancelled && $0.hasContent && ($0.removed != nil) == removed && (notes ? $0.kind == .note : [.excerpt,.image].contains($0.kind)) && $0.matches(query,book:book,tag:tag,after:recent ? Date().addingTimeInterval(-7*86400) : nil) }.sorted { $0.created == $1.created ? $0.id.uuidString<$1.id.uuidString : $0.created>$1.created }.map(ReadingDeskHit.record)
+        guard notes else { return records }
+        let essays = state.essays.filter { $0.hasContent && ($0.removed != nil) == removed && (!recent || $0.modified >= Date().addingTimeInterval(-7*86400)) && $0.matches(query) && (tag.isEmpty || $0.tags.contains(tag)) && (book == nil || ReadingLibraryItem.essay($0).isFromBook(book!)) }.map(ReadingDeskHit.essay)
+        return (records+essays).sorted{$0.date>$1.date}
     }
     func essays(_ state:ReadingJournalState,query:String) -> [ReadingEssay] { state.essays.filter{!Task.isCancelled && $0.hasContent && $0.removed == nil && $0.matches(query)}.sorted{$0.created == $1.created ? $0.id.uuidString<$1.id.uuidString : $0.created>$1.created} }
 }

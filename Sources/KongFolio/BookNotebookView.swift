@@ -35,7 +35,7 @@ struct BookNotebookView: View {
                 Spacer()
                 Button("关闭") { NSApp.keyWindow?.makeFirstResponder(nil);if saveReflection() { dismiss() } }.keyboardShortcut(.cancelAction)
             }
-            Picker("阅读记录内容",selection:$mode) { Text("摘录、笔记与札记").tag(0);Text("整本书心得").tag(1);Text("PDF 批注").tag(2) }.pickerStyle(.segmented)
+            Picker("阅读记录内容",selection:$mode) { Text("阅读记录").tag(0);Text("整本书心得").tag(1);Text("PDF 批注").tag(2) }.pickerStyle(.segmented)
             if mode == 0 {
                 if recordSection == .exports {
                     Button("返回这本书的记录") { recordSection = .search }

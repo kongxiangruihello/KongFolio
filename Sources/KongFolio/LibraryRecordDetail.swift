@@ -15,6 +15,7 @@ struct LibraryRecordDetail: View {
         ScrollView {
             VStack(alignment:.leading,spacing:10) {
                 StableTextField("记录标题（可留空）",text:binding(\.title),fontSize:20)
+                ReadingRecordMetadataView(record:current)
                 HStack {
                     Text(current.kind.rawValue).font(.system(size:13,weight:.medium)).foregroundStyle(.secondary)
                     Spacer()
@@ -28,23 +29,24 @@ struct LibraryRecordDetail: View {
                         else { Button("移到最近移除",role:.destructive) { journal.editRecord(record.id) { $0.removed = Date() };store.readingRecordID = nil;store.readingRecordSelection.remove(record.id) } }
                     }.fixedSize()
                 }
-                if current.kind != .note {
+                if current.kind != .note && current.pdfOrigin == nil {
                     HStack { Text("摘录原文").font(.caption); Spacer(); Button("原文与校订对照…") { showQuoteCorrection = true }; Button(editQuote ? "完成文字校正" : "校正摘录文字") { editQuote.toggle() } }
                     if editQuote { LibraryWritingEditor(text:binding(\.quote),label:"摘录校订文字",identity:"quote:"+record.id.uuidString).id("quote:"+record.id.uuidString).frame(height:300) }
                     else if !current.quote.isEmpty { Text(current.quote).textSelection(.enabled) }
                 }
+                if current.pdfOrigin != nil && !current.quote.isEmpty { Text(current.quote).font(.system(size:16)).textSelection(.enabled) }
                 if current.kind == .note && !current.quote.isEmpty { DisclosureGroup("关联原文（展开查看）") { Text(current.quote).font(.system(size:16)).textSelection(.enabled) } }
                 if let image = current.imageAsset, imageOCR.text.isEmpty { ReadingRecordImage(url:journal.assetURL(image),pending:journal.pendingImage(image)).frame(maxHeight:220) }
                 if current.kind == .image { imageRecognition.onAppear { imageOCR.restoreSegments(current) } }
                 if let original = current.originalQuote ?? current.originalOCR { DisclosureGroup("校订前文字（保留）") { Text(original).textSelection(.enabled) } }
-                Text(current.kind == .note ? "我的笔记" : "我的理解与评论").font(.caption)
+                Text(current.kind == .note || current.pdfOrigin != nil ? "我的笔记" : "我的理解与评论").font(.caption)
                 LibraryWritingEditor(text:binding(\.note),label:"阅读笔记正文",identity:"note:"+record.id.uuidString).id("note:"+record.id.uuidString).frame(height:380)
                 DisclosureGroup("标签与出处（\(current.citations.count)）") {
                     VStack(alignment:.leading,spacing:12) {
                 ReadingTagField(journal:journal,label:"标签，以逗号分隔",text:Binding(get:{current.tags.joined(separator:", ")},set:{ text in journal.editRecord(record.id) { $0.tags = Self.tags(text) } }))
                 ForEach(Array(current.citations.prefix(20).enumerated()),id:\.offset) { index,citation in
                     VStack(alignment:.leading) {
-                        ReadingCitationEditor(journal:journal,record:record.id,index:index)
+                        ReadingCitationEditor(journal:journal,record:record.id,index:index).disabled(current.pdfOrigin != nil)
                         Text(current.wholeBook ? "《"+citation.title+"》 · 整本书" : citation.display).font(.caption).textSelection(.enabled)
                         HStack {
                             Button("快看原页") { contextSource = ReadingContextRequest(source:citation.source) }
@@ -57,7 +59,7 @@ struct LibraryRecordDetail: View {
                     }.padding(.vertical,8)
                 }.font(.system(size:13))
                 HStack {
-                    Button("加入札记") { let id = journal.currentEssayID ?? journal.newEssay(); store.insertReadingRecord(current,in:id); store.openReadingDesk(.essays,window:true) }
+                    Button("加入笔记") { let id = journal.currentEssayID ?? journal.newEssay(); store.insertReadingRecord(current,in:id); store.openReadingDesk(.essays,window:true) }
                     Button("导出这条记录") { store.readingRecordSelection = [record.id]; store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) }
                 }.disabled(journal.draftRecord?.id == record.id || !current.hasContent)
             }.padding(.horizontal,12).padding(.vertical,8)

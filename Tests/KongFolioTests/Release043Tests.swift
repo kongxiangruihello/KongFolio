@@ -70,7 +70,7 @@ final class Release043Tests: XCTestCase {
         let first = ReadingLibraryItem.results(j.state).map(\.id)
         j.editRecord(quote.id) { $0.note = "新的解释" }
         XCTAssertEqual(ReadingLibraryItem.results(j.state).map(\.id),first)
-        XCTAssertEqual(ReadingLibraryItem.results(j.state,kind:"札记").map(\.id),[.essay(essay)]); XCTAssertEqual(ReadingLibraryItem.results(j.state,kind:"笔记").map(\.id),[.record(note.id)])
+        XCTAssertEqual(ReadingLibraryItem.results(j.state,kind:"札记").map(\.id),[.essay(essay)]); XCTAssertEqual(ReadingLibraryItem.results(j.state,kind:"笔记").map(\.id),[.essay(essay),.record(note.id)])
         XCTAssertEqual(ReadingLibraryItem.results(j.state,query:"教育").count,2)
     }
     @MainActor func testMixedLibraryDeleteAndRestoreKeepTextImagesAndFrozenCitations() async throws {

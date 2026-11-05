@@ -41,7 +41,7 @@ extension Workspace {
             try ReadingDocumentStore.write(companion, source: target, storage: storage)
             try SignaturePersistence.write(signatureEditArchives, pdf: target, storage: storage)
             sourceURL = target; dirty = false
-            fileBaseline = saved; saveConflict = false; error = nil; lastVerifiedDocumentSave = Date()
+            fileBaseline = saved; saveConflict = false; error = nil; lastVerifiedDocumentSave = Date();scheduleReadingAnnotationImport()
             try persistWordDraft(); try persistTableDrafts()
             remember([target]); scheduleRecovery()
             status = "已保存：\(target.lastPathComponent)"

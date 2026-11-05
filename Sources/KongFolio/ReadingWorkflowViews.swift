@@ -26,7 +26,7 @@ struct ReadingTagManager: View {
             Text("统一整理标签").font(.headline)
             Picker("原标签",selection:$old) { Text("请选择").tag("");ForEach(journal.allTags,id:\.self) { Text($0).tag($0) } }
             StableTextField("新的标签名称",text:$new)
-            Text(journal.allTags.contains(new) ? "目标标签已存在，应用后会合并，并去掉同一记录内的重复标签。" : "统一修改记录与札记的标签，保留正文和插入札记时的引用副本。").font(.caption)
+            Text(journal.allTags.contains(new) ? "目标标签已存在，应用后会合并，并去掉同一记录内的重复标签。" : "统一修改记录与笔记的标签，保留正文和插入笔记时的引用副本。").font(.caption)
             Text(message).font(.caption).textSelection(.enabled)
             HStack { Button("关闭") { dismiss() }.disabled(busy);Spacer();Button("备份并应用") { apply() }.disabled(old.isEmpty || new.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || old == new || busy || journal.unreadable) }
         }.padding(22).adaptiveSheet(width:540,height:300)

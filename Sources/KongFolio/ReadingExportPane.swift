@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ReadingExportPane: View {
-    enum Scope:String,CaseIterable { case selected = "所选资料",book = "当前书的全部记录",essay = "当前札记",library = "全部阅读资料" }
+    enum Scope:String,CaseIterable { case selected = "所选资料",book = "当前书的全部记录",essay = "当前笔记",library = "全部阅读资料" }
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var journal:ReadingJournal
     @StateObject private var controller = ReadingExportController()
@@ -30,7 +30,7 @@ struct ReadingExportPane: View {
         let items = candidates.filter{!excluded.contains($0.id)}
         let records = items.compactMap { if case .record(let r) = $0 { return r };return nil }
         let essays = items.compactMap { if case .essay(let e) = $0 { return e };return nil }
-        let title = scope == .essay ? (essays.first?.title ?? "札记") : (scope == .book ? (store.commandWorkspace?.title ?? "文献")+" · 阅读笔记" : "阅读资料")
+        let title = scope == .essay ? (essays.first?.title ?? "笔记") : (scope == .book ? (store.commandWorkspace?.title ?? "文献")+" · 阅读笔记" : "阅读资料")
         return ReadingExportSnapshot(title:title,records:records,essays:essays.isEmpty ? nil : essays,order:items.map(\.id),options:preferences.options)
     }
     private var empty:Bool { snapshot.orderedItems.isEmpty }

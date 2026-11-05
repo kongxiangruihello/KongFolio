@@ -7,7 +7,7 @@ struct RightPanelMenu: View {
     var body:some View {
         Menu {
             Section("在主界面右侧显示") {
-                ForEach([ReadingDeskSection.search,.excerpts,.notes,.essays],id:\.self) { section in
+                ForEach([ReadingDeskSection.search,.excerpts,.notes],id:\.self) { section in
                     Button { store.showReadingPanel(section) } label: {
                         Label(section == .search ? "阅读资料库（全部资料）" : section.rawValue,systemImage:store.showReadingDesk && store.readingDeskSection == section ? "checkmark" : "sidebar.right")
                     }

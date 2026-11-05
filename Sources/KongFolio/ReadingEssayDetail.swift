@@ -13,15 +13,16 @@ struct ReadingEssayDetail: View {
     var body:some View {
         if let essay = current {
             VStack(alignment:.leading,spacing:10) {
-                if journal.draftEssay?.id == essay.id { HStack { Text("空白札记草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary);Spacer();Button("关闭空白草稿") { journal.discardEssayDraft() } } }
+                if journal.draftEssay?.id == essay.id { HStack { Text("空白笔记草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary);Spacer();Button("关闭空白草稿") { journal.discardEssayDraft() } } }
+                Text(ReadingRecordMetadata.essayLines(essay).joined(separator:" · ")).font(.caption).foregroundStyle(.secondary)
                 Button("核对引用更新（\(journal.citationUpdates(id).count)）") { showUpdates = true }.disabled(journal.citationUpdates(id).isEmpty)
-                StableTextField("札记标题",text:Binding(get:{current?.title ?? ""},set:{text in journal.editEssay(id) { $0.title = text } }))
-                ReadingTagField(journal:journal,label:"札记标签，以逗号分隔",text:Binding(get:{current?.tags.joined(separator:", ") ?? ""},set:{text in journal.editEssay(id) { $0.tags = ReadingRecordDetail.tags(text) } }))
+                StableTextField("笔记标题",text:Binding(get:{current?.title ?? ""},set:{text in journal.editEssay(id) { $0.title = text } }))
+                ReadingTagField(journal:journal,label:"笔记标签，以逗号分隔",text:Binding(get:{current?.tags.joined(separator:", ") ?? ""},set:{text in journal.editEssay(id) { $0.tags = ReadingRecordDetail.tags(text) } }))
                 ScrollViewReader { proxy in
                     VStack(alignment:.leading,spacing:8) {
                         controls(essay)
                         HStack {
-                            Menu("札记大纲") { ForEach(headings) { h in Button(String(repeating:"　",count:max(0,h.level-1))+h.title) {
+                            Menu("笔记大纲") { ForEach(headings) { h in Button(String(repeating:"　",count:max(0,h.level-1))+h.title) {
                                 store.readingEssayBlockID = h.block;proxy.scrollTo(h.block,anchor:.top)
                                 DispatchQueue.main.async { WritingRegistry.jump("essay:"+id.uuidString+":"+h.block.uuidString,range:h.range) }
                             } } }
@@ -51,7 +52,7 @@ struct ReadingEssayDetail: View {
         HStack {
             Button("添加段落") { let block = ReadingEssay.Block();journal.editEssay(id) { $0.blocks.append(block) };store.readingEssayBlockID = block.id }
             if let record = journal.record(store.readingRecordID),journal.draftRecord?.id != record.id,record.hasContent { Button("插入当前摘录") { store.insertReadingRecord(record,in:id) } }
-            Button("导出札记") { journal.selectEssay(id);store.readingExportEssay = true;if let onExport { onExport() } else { store.openReadingDesk(.exports,window:true) } }.disabled(journal.draftEssay?.id == essay.id || !essay.hasContent)
+            Button("导出笔记") { journal.selectEssay(id);store.readingExportEssay = true;if let onExport { onExport() } else { store.openReadingDesk(.exports,window:true) } }.disabled(journal.draftEssay?.id == essay.id || !essay.hasContent)
         }
     }
 }
@@ -79,7 +80,7 @@ struct ReadingEssayBlockView: View {
                     ForEach(Array(record.citations.enumerated()),id:\.offset) { _,citation in Button(citation.display) { _ = store.reveal(citation.source,beside:false) }.buttonStyle(.link).help(citation.display) }
                 }.padding(8).background(.quaternary,in:RoundedRectangle(cornerRadius:6))
             }
-            ReadingWritingEditor(text:Binding(get:{journal.essay(essayID)?.blocks.first{$0.id == block.id}?.text ?? ""},set:{text in journal.editEssay(essayID) { value in if let i = value.blocks.firstIndex(where:{$0.id == block.id}) { value.blocks[i].text = text } } }),label:"札记论述正文",identity:"essay:"+essayID.uuidString+":"+block.id.uuidString,onFocus:{store.readingEssayBlockID = block.id}).frame(minHeight:150).border(.quaternary)
+            ReadingWritingEditor(text:Binding(get:{journal.essay(essayID)?.blocks.first{$0.id == block.id}?.text ?? ""},set:{text in journal.editEssay(essayID) { value in if let i = value.blocks.firstIndex(where:{$0.id == block.id}) { value.blocks[i].text = text } } }),label:"笔记论述正文",identity:"essay:"+essayID.uuidString+":"+block.id.uuidString,onFocus:{store.readingEssayBlockID = block.id}).frame(minHeight:150).border(.quaternary)
         }.padding(10).background(.quaternary.opacity(0.35),in:RoundedRectangle(cornerRadius:8))
         .onDrop(of:[UTType.plainText],isTargeted:nil) { providers in
             guard let provider = providers.first else { return false }
