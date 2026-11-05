@@ -4,7 +4,7 @@ import PDFKit
 import CoreText
 @testable import KongFolio
 
-@MainActor final class PDFTextSnapshot053Tests:XCTestCase {
+@MainActor final class PDFTextSnapshot053Tests: XCTestCase {
     func fixture(_ folder:URL) throws -> URL {
         let data=NSMutableData(),consumer=try XCTUnwrap(CGDataConsumer(data:data))
         let context=try XCTUnwrap(CGContext(consumer:consumer,mediaBox:nil,nil))
