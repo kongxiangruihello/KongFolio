@@ -78,12 +78,16 @@ final class Reading052Tests: XCTestCase {
             try ReadingRecordExport.write(snapshot,format:format,assets:root,to:file,expected:FileBaseline.capture(file))
             let text:String
             if format == .pdf { text=PDFDocument(url:file)?.string ?? "" }
-            else { text=String(decoding:try XCTUnwrap(ReadingExportAudit.storedZIP(Data(contentsOf:file))["word/document.xml"]),as:UTF8.self) }
-            // PDFKit can insert layout whitespace between Latin and Chinese glyphs across OS versions.
-            // Verify every content character, independent of those extraction-only spaces and line breaks.
-            let extracted=text.filter{!$0.isWhitespace}
+            else {
+                let data=try XCTUnwrap(ReadingExportAudit.storedZIP(Data(contentsOf:file))["word/document.xml"])
+                let document=try XMLDocument(data:data,options:[])
+                text=try document.nodes(forXPath:"//*[local-name()='t']").compactMap(\.stringValue).joined()
+            }
+            // PDFKit can expose equivalent CJK radical code points and layout whitespace across OS versions.
+            // Normalize compatibility glyphs, then verify every content character in the actual exported file.
+            let extracted=text.precomposedStringWithCompatibilityMapping.filter{!$0.isWhitespace}
             for phrase in ["PDF 评论正文","个人补充文字","原作者","原书.pdf","原创建时间","原修改时间","收录时间"] {
-                XCTAssertTrue(extracted.contains(phrase.filter{!$0.isWhitespace}),format.rawValue+": "+phrase+"; extracted: "+text)
+                XCTAssertTrue(extracted.contains(phrase.precomposedStringWithCompatibilityMapping.filter{!$0.isWhitespace}),format.rawValue+": "+phrase+"; extracted: "+text)
             }
         }
     }
