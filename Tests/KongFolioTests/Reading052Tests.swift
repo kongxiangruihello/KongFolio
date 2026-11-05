@@ -24,6 +24,8 @@ final class Reading052Tests: XCTestCase {
         XCTAssertTrue(result.allSatisfy{$0.kind == "笔记"});XCTAssertEqual(reopened, state)
         let hits=await ReadingSearchWorker.shared.records(reopened,query:"旧",notes:true,book:nil,tag:"",removed:false,recent:false)
         XCTAssertEqual(hits.count,2);XCTAssertEqual(reopened.essays[0].blocks[0].record?.citations,note.citations)
+        let aliasNote=ReadingRecord(kind:.note,note:"旧路径笔记",citations:[citation("/private/tmp/KongFolio052-路径.pdf")])
+        XCTAssertTrue(aliasNote.matches("旧路径",book:"/tmp/KongFolio052-路径.pdf"))
     }
     func makeDocument()->(PDFDocument,PDFPage,PDFAnnotation) {
         let doc=PDFDocument(),page=PDFPage();page.setBounds(CGRect(x:0,y:0,width:600,height:800),for:.mediaBox);doc.insert(page,at:0)

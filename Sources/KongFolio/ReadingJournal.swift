@@ -36,7 +36,7 @@ struct ReadingRecord: Codable, Identifiable, Equatable {
         return String(text.split(separator:"\n").first?.prefix(48) ?? Substring(kind.rawValue))
     }
     func matches(_ query:String, book:String? = nil, tag:String = "", after:Date? = nil) -> Bool {
-        if let book, !citations.contains(where: { $0.source.path == book }) { return false }
+        if let book, !citations.contains(where: { ReadingBookIdentity.key($0.source.path) == ReadingBookIdentity.key(book) }) { return false }
         if !tag.isEmpty && !tags.contains(tag) { return false }
         if let after, modified < after { return false }
         let sourceText = citations.map { [$0.title,$0.author,$0.source.pageDescription].joined(separator:" ") }.joined(separator:"\n")
