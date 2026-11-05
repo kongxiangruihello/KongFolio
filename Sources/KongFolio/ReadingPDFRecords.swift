@@ -10,6 +10,7 @@ struct ReadingPDFOrigin:Codable,Equatable {
     var originalCreatedRaw:String? = nil
     var originalModified:Date?
     var missingSince:Date?
+    var color053:String? = nil
 }
 enum ReadingPDFCapture {
     static let createdKey = PDFAnnotationKey(rawValue:"KFReadingCreated")
@@ -48,7 +49,7 @@ enum ReadingPDFCapture {
         let bounds = a.bounds
         let valid = [bounds.minX,bounds.minY,bounds.width,bounds.height].allSatisfy{$0.isFinite} && bounds.width >= 0 && bounds.height >= 0
         let quote = a.value(forAnnotationKey:ReadingServices.quoteKey) as? String ?? (markup && valid ? page.selection(for:bounds)?.string ?? "" : "")
-        let origin = ReadingPDFOrigin(annotationID:id,type:ReadingServices.kindName(for:type),contents:a.contents ?? "",author:a.userName,originalCreated:originalCreated(a),originalCreatedRaw:a.value(forAnnotationKey:PDFAnnotationKey(rawValue:"CreationDate")) as? String,originalModified:a.modificationDate)
+        let origin = ReadingPDFOrigin(annotationID:id,type:ReadingServices.kindName(for:type),contents:a.contents ?? "",author:a.userName,originalCreated:originalCreated(a),originalCreatedRaw:a.value(forAnnotationKey:PDFAnnotationKey(rawValue:"CreationDate")) as? String,originalModified:a.modificationDate,color053:ReadingColorSemantics053.code(a.color))
         var citation = source;citation.source.rects = valid ? [bounds] : [];citation.source.anchor = quote.isEmpty ? nil : String(quote.prefix(80))
         return ReadingRecord(id:ReadingJournal.stablePDFRecordID(ReadingBookIdentity.key(source.source.path)+":"+id),kind:["Text","FreeText"].contains(type) ? .comment : .annotation,quote:quote,citations:[citation],pdfOrigin:origin)
     }
@@ -63,17 +64,23 @@ enum ReadingPDFCapture {
         let records = pages.sorted().flatMap { index -> [ReadingRecord] in
             guard let page = document.page(at:index) else { return [] }
             let source = readingCitation(page:index)
-            return page.annotations.compactMap{ReadingPDFCapture.record($0,page:page,index:index,source:source)}
+            return page.annotations.compactMap { a in
+                guard var record=ReadingPDFCapture.record(a,page:page,index:index,source:source) else { return nil }
+                if let bytes=ReadingVisual053.annotation(a),let name=try? journal.stageAsset053(bytes) { record.extras=ReadingRecordExtras053(colorMeaning:ReadingColorSemantics053.meaning(a.color),visualAsset:name) }
+                return record
+            }
         }
         journal.mergePDFRecords(records,path:path,pages:pages)
     }
     func scheduleReadingAnnotationImport() {
         readingAnnotationTask?.cancel();readingAnnotationTask = nil
         guard let url = sourceURL ?? projectURL,["pdf","kongfolio"].contains(url.pathExtension.lowercased()),let path = readingJournalPath,store != nil,!needsLoad,!dirty else { return }
+        let identity=ReadingDocumentRegistry053.shared(storage).identity(path,digest:fileBaseline?.digest)
+        store?.journal.adoptDocument053(identity,path:path)
         let token = revision,expected = fileBaseline?.digest,title = bibliography.title.isEmpty ? self.title : bibliography.title,author = bibliography.author,edition = bibliography.edition
         readingAnnotationTask = Task { [weak self] in
             do {
-                let records = try await ReadingPDFImportWorker.shared.read(url,path:path,title:title,author:author,edition:edition,expected:expected)
+                let records = try await ReadingPDFImportWorker.shared.read(url,path:path,title:title,author:author,edition:edition,expected:expected,assetFolder:self?.store?.journal.folder)
                 guard !Task.isCancelled,let self,self.revision == token,self.readingJournalPath == path else { return }
                 self.store?.journal.mergePDFRecords(records,path:path,pages:nil)
             } catch {
@@ -85,7 +92,7 @@ enum ReadingPDFCapture {
 }
 actor ReadingPDFImportWorker {
     static let shared = ReadingPDFImportWorker()
-    func read(_ url:URL,path:String,title:String,author:String,edition:String,expected:String?) throws -> [ReadingRecord] {
+    func read(_ url:URL,path:String,title:String,author:String,edition:String,expected:String?,assetFolder:URL? = nil) throws -> [ReadingRecord] {
         try Task.checkCancellation()
         return try autoreleasepool {
             let scoped = url.startAccessingSecurityScopedResource();defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -98,7 +105,11 @@ actor ReadingPDFImportWorker {
                 try Task.checkCancellation()
                 guard let page = doc.page(at:i) else { continue }
                 let citation = ReadingCitation(source:SourceRef(path:path,fileName:url.lastPathComponent,page:i,pageLabel:ReadingServices.pageLabel(page,index:i),fingerprint:expected),title:title,author:author,edition:edition.isEmpty ? nil : edition)
-                result += page.annotations.compactMap{ReadingPDFCapture.record($0,page:page,index:i,source:citation)}
+                result += try page.annotations.compactMap { a in
+                    guard var record=ReadingPDFCapture.record(a,page:page,index:i,source:citation) else { return nil }
+                    if let folder=assetFolder,let bytes=ReadingVisual053.annotation(a) { record.extras=ReadingRecordExtras053(colorMeaning:ReadingColorSemantics053.meaning(a.color),visualAsset:try ReadingVisual053.store(bytes,folder:folder)) }
+                    return record
+                }
             }
             return result
         }
@@ -128,8 +139,9 @@ extension ReadingJournal {
             if let i = indices[identity] {
                 let old = next.records[i]
                 next.records[i].kind = incoming.kind;next.records[i].pdfOrigin = origin;next.records[i].quote = incoming.quote
+                if let visual=incoming.extras?.visualAsset { var extras=old.extras ?? ReadingRecordExtras053();extras.visualAsset=visual;if let meaning=incoming.extras?.colorMeaning { extras.colorMeaning=meaning };next.records[i].extras=extras }
                 var sources = incoming.citations
-                if !sources.isEmpty { sources[0].source.fingerprint = old.citations.first?.source.fingerprint ?? sources[0].source.fingerprint }
+                if !sources.isEmpty { sources[0].source.fingerprint = old.citations.first?.source.fingerprint ?? sources[0].source.fingerprint;sources[0].tracking=old.citations.first?.tracking ?? sources[0].tracking;sources[0].publication=old.citations.first?.publication ?? sources[0].publication }
                 next.records[i].citations = sources
                 if old.pdfOrigin != origin || old.quote != incoming.quote || old.citations != sources { next.records[i].modified = now }
             } else {

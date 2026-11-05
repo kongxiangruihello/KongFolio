@@ -61,11 +61,16 @@ struct FunctionToolbar: View {
     }
     @ViewBuilder private func label(_ action:FileToolbarAction,menu:Bool)->some View { if menu { Label(action.menuTitle,systemImage:action.symbol) } else { Image(systemName:action.symbol).frame(width:28,height:28) } }
     private func unavailable(_ action:FileToolbarAction)->Bool {
-        switch action { case .comment:return (workspace?.count ?? 0) == 0 || workspace?.readingLocked == true;case .save:return !store.canSave;case .annotate:return (workspace?.count ?? 0) == 0 || workspace?.readingLocked == true;case .tools:return workspace == nil || workspace?.readingLocked == true;default:return false }
+        switch action { case .pdfPages:return (workspace?.count ?? 0) == 0;case .comment:return (workspace?.count ?? 0) == 0 || workspace?.readingLocked == true;case .save:return !store.canSave;case .annotate:return (workspace?.count ?? 0) == 0 || workspace?.readingLocked == true;case .tools:return workspace == nil || workspace?.readingLocked == true;default:return false }
     }
     private func perform(_ action:FileToolbarAction) {
         switch action {
         case .newFile:break
+        case .search:
+            if let workspace,workspace.count > 0 { workspace.sidebarTab = .search;workspace.pageEditing053=false;workspace.requestedSidebar053=true }
+            else if let note { if note.format == .markdown { note.cleanEditing=false };note.writingSession.findRequest=UUID() }
+            else { store.openReadingDesk(.search,window:true) }
+        case .pdfPages:workspace?.requestedSidebar053=true;workspace?.pageEditing053=true
         case .comment:workspace?.selectTool(.note);workspace?.showAnnotationBar = true;workspace?.status = "点击 PDF 页面放置评论"
         case .open:store.open()
         case .library:store.openReadingDesk(.search,window:true)

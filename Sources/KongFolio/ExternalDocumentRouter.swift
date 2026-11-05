@@ -20,7 +20,9 @@ import Foundation
             if let previous = recent[key], now.timeIntervalSince(previous) < 0.5 { continue }
             recent[key] = now
             do {
-                if ReadingShortcut.handles(url) { try store.openReadingShortcut(url) }
+                if let item=ReadingRecordLink053.parse(url) {
+                    guard store.journal.libraryItem053(item) != nil else { throw FolioError(message:"这条阅读记录不存在或已移除") };store.openReadingItem(item)
+                } else if ReadingShortcut.handles(url) { try store.openReadingShortcut(url) }
                 else if let source = SourceLink.source(url) {
                     store.reveal(try SourceLink.resolved(source, baseURL: store.activeNote?.fileURL?.deletingLastPathComponent()), beside: false)
                 } else if url.isFileURL {

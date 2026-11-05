@@ -320,17 +320,29 @@ extension Workspace {
     }
 
     func startSearch() {
-        searchTask?.cancel(); searchResults = []; searchMessage = ""; searchCursor = nil
-        guard !search.isEmpty, let data = try? pdfData() else { return }
-        let query = search, version = revision; searchMessage = "正在搜索…"; sidebarTab = .search
-        var records: [Int: [RecognizedLine]] = [:]
-        for index in 0..<count { if let lines = meta(index).ocrRegions, OrderedText.isVertical(lines) { records[index] = lines } }
-        let job = Task.detached { [records] in try ReadingServices.search(data, query: query, records: records) }; searchTask = job
-        Task {
-            do { let hits = try await job.value; guard revision == version, query == search else { return }; searchResults = hits; searchMessage = hits.count == 1000 ? "显示前 1000 处匹配，请缩小搜索范围" : "找到 \(hits.count) 处匹配（忽略换行，简繁通查）" }
-            catch is CancellationError {} catch { self.recordError(error) }
+        searchTask?.cancel();searchTask=nil;searchResults=[];searchMessage="";searchCursor=nil
+        guard !search.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,count>0 else { return }
+        let query=search,version=revision;searchMessage="正在搜索…";sidebarTab = .search
+        var records:[Int:[RecognizedLine]]=[:]
+        for i in 0..<count { if let lines=meta(i).ocrRegions,OrderedText.isVertical(lines) { records[i]=lines } }
+        let job=Task { [weak self,records] () throws->[SearchHit] in
+            guard let self else { throw CancellationError() }
+            let data=try await self.snapshotForBackgroundSave().pdf
+            try Task.checkCancellation()
+            guard self.revision==version,self.search==query else { throw CancellationError() }
+            let worker=Task.detached { try ReadingServices.search(data,query:query,records:records) }
+            return try await withTaskCancellationHandler(operation:{try await worker.value},onCancel:{worker.cancel()})
+        };searchTask=job
+        Task { [weak self] in
+            do {
+                let hits=try await job.value
+                guard !job.isCancelled,let self,self.revision==version,self.search==query else { return }
+                self.searchResults=hits;self.searchTask=nil
+                self.searchMessage=hits.isEmpty ? "没有找到匹配文字。扫描件需先识别文字；请在快捷工具中使用 OCR。" : (hits.count==1000 ? "显示前 1000 处匹配，请缩小范围":"找到 \(hits.count) 处匹配；点击结果跳到原页")
+            } catch { guard !job.isCancelled,let self,self.revision==version,self.search==query else { return };self.searchTask=nil;if !FolioCancellation.matches(error) { self.searchMessage=error.localizedDescription } }
         }
     }
+    func cancelSearch053() { searchTask?.cancel();searchTask=nil;searchMessage="已停止搜索" }
     func goToSearch(_ hit: SearchHit) {
         searchCursor = searchResults.firstIndex { $0.id == hit.id }
         selectPage(hit.page)

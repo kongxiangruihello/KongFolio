@@ -19,6 +19,7 @@ struct ProjectArchive: Codable {
     var signatureEdits: [Int: SignatureEditArchive]? = nil
     var ocrOriginals: [Int: Data]? = nil
     var ocrRegions: [Int: [RecognizedLine]]? = nil
+    var readingPageIDs053:[Int:String]? = nil
     /// The file this document was opened from (not a project), so a restored tab still shows its file name.
     var sourcePath: String? = nil
     var pdf: Data
@@ -36,6 +37,7 @@ struct ProjectArchive: Codable {
             throw FolioError(message: "项目格式不受支持或数据已损坏。")
         }
         let pages = 0..<doc.pageCount
+        guard (readingPageIDs053 ?? [:]).allSatisfy({pages.contains($0.key) && UUID(uuidString:$0.value) != nil}) else { throw FolioError(message:"阅读页标识无效") }
         let indexSets: [[Int]] = [
             [selection], Array(selectedPages), Array(recipes.keys), Array(drafts.keys),
             Array((ocrOriginals ?? [:]).keys), Array((ocrRegions ?? [:]).keys), Array((signatureEdits ?? [:]).keys),

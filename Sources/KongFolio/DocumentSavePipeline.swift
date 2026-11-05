@@ -139,7 +139,7 @@ extension Workspace {
         if let cachedPDF { return makeArchive(pdf: cachedPDF) }
         guard count > 0 else { throw FolioError(message: "没有可保存的文档") }
         if SnapshotSafety.requiresOriginalSerialization(document) {
-            let expected = revision; savePhase = "保留 PDF 交互结构，准备完整快照"
+            let expected = revision; savePhase = "保留 PDF 文字与交互结构，准备完整快照"
             try await Task.sleep(nanoseconds:1_000_000)
             guard revision == expected else { throw SnapshotOutdated() }
             return try snapshot()

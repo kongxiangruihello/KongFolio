@@ -5,11 +5,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$ROOT/.build/smoke"
 export CLANG_MODULE_CACHE_PATH="$ROOT/.build/clang-cache"
+swift build --build-system native --disable-sandbox --package-path "$ROOT" --product KongFolioPDFProbe
+PROBE_BIN="$(swift build --build-system native --disable-sandbox --package-path "$ROOT" --show-bin-path)"
+cp "$PROBE_BIN/KongFolioPDFProbe" "$ROOT/.build/smoke/KongFolioPDFProbe"
+
 python3 - "$ROOT" <<'PY'
 import pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
 files = sorted((root / 'Tests/KongFolioTests').glob('*.swift'))
 tests = '\n'.join(p.read_text() for p in files).replace('import XCTest', '').replace('@testable import KongFolio', '')
+# Compile the normal-mode probe once with the model tests. A separately named process below
+# still exercises production autosave detection, without a second full model compilation.
+tests += '\n' + (root / 'Tests/Manual/AutosaveRunner.swift').read_text().replace('@main struct AutosaveRunner', 'enum NormalAutosaveProbe')
 calls, count = [], 0
 for p in files:
     text = p.read_text()
@@ -36,23 +43,35 @@ func XCTAssertNotNil(_ value: Any?, file: StaticString = #file, line: UInt = #li
 func XCTAssertThrowsError<T>(_ action: @autoclosure () throws -> T, file: StaticString = #file, line: UInt = #line) { do { _ = try action(); fatalError("Expected error at \\(file):\\(line)") } catch {} }
 @main struct SmokeRunner {
     @MainActor static func main() async throws {
+        if CommandLine.arguments.contains("--normal-autosave") {
+            try await NormalAutosaveProbe.main(); return
+        }
 ''' + '\n'.join(calls) + f'''
         print("PASS: {count} integration tests")
     }}
 }}
 '''
 (root / '.build/smoke/Runner.swift').write_text(tests + shim)
+# Match SwiftPM's separate-module test boundary while keeping this runner independent of XCTest.
+runner = root / '.build/smoke/Runner.swift'
+runner.write_text('@testable import KongFolioModel\n' + runner.read_text())
 PY
 SOURCES=()
 for file in "$ROOT"/Sources/KongFolio/*.swift; do
   # SwiftUI views and the app entry point are compiled by `swift build`; the runner only needs the model and services.
-  if grep -qE '^(@main|struct [A-Za-z]+(<[^>]+>)?:[[:space:]]*(View|NSViewRepresentable))' "$file"; then continue; fi
+  if grep -qE '^(@main|struct [A-Za-z_][A-Za-z0-9_]*(<[^>]+>)?:[[:space:]]*(View|NSViewRepresentable))' "$file"; then continue; fi
   SOURCES+=("$file")
 done
 for file in "$ROOT"/Sources/KongFolioUpdateKit/*.swift; do SOURCES+=("$file"); done
-# Parse the shared model sources once; keep debug checks and parallelize IR generation.
-swiftc -swift-version 5 -whole-module-optimization -Onone -num-threads 4 -parse-as-library "${SOURCES[@]}" "$ROOT/.build/smoke/Runner.swift" -o "$ROOT/.build/smoke/KongFolioTests"
+# Compile model code once, then type-check the tests against its serialized module. A single
+# compilation of both large source sets exceeds the older toolchain's CI time limit.
+swiftc -swift-version 5 -whole-module-optimization -Onone -num-threads 4 -parse-as-library -enable-testing -module-name KongFolioModel -emit-library -emit-module -emit-module-path "$ROOT/.build/smoke/KongFolioModel.swiftmodule" -Xlinker -install_name -Xlinker @rpath/libKongFolioModel.dylib "${SOURCES[@]}" -o "$ROOT/.build/smoke/libKongFolioModel.dylib"
+swiftc -swift-version 5 -whole-module-optimization -Onone -num-threads 4 -parse-as-library -I "$ROOT/.build/smoke" -L "$ROOT/.build/smoke" -lKongFolioModel -Xlinker -rpath -Xlinker @executable_path "$ROOT/.build/smoke/Runner.swift" -o "$ROOT/.build/smoke/KongFolioTests"
 "$ROOT/.build/smoke/KongFolioTests"
 # Keep the existing CI entry point while checking timed autosave in a separate non-XCTest process.
 export KONGFOLIO_AUTOSAVE_REPORT="${KONGFOLIO_AUTOSAVE_REPORT:-$ROOT/.build/autosave/report.json}"
-"$ROOT/scripts/test-autosave.sh"
+mkdir -p "$ROOT/.build/autosave"
+cp "$ROOT/.build/smoke/KongFolioTests" "$ROOT/.build/autosave/KongFolioAutosaveRunner"
+cp "$ROOT/.build/smoke/KongFolioPDFProbe" "$ROOT/.build/autosave/KongFolioPDFProbe"
+cp "$ROOT/.build/smoke/libKongFolioModel.dylib" "$ROOT/.build/autosave/libKongFolioModel.dylib"
+"$ROOT/.build/autosave/KongFolioAutosaveRunner" --normal-autosave

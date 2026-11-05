@@ -31,10 +31,7 @@ extension ReadingJournal {
 extension ReadingLibraryItem {
     func isFromBook(_ path:String)->Bool {
         let target = ReadingBookIdentity.key(path)
-        switch self {
-        case .record(let r):return r.citations.contains{ReadingBookIdentity.key($0.source.path) == target}
-        case .essay(let e):return e.blocks.contains{$0.record?.citations.contains{ReadingBookIdentity.key($0.source.path) == target} == true}
-        }
+        return citations053.contains{ReadingBookIdentity.key($0.source.path)==target}
     }
 }
 

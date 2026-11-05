@@ -12,16 +12,19 @@ enum ReadingDocumentStore {
         var regions: [Int: [RecognizedLine]]?
         var word: WordDraftArchive?
         var tables: [TableDraftRecord]?
+        var readingPageIDs053:[Int:String]? = nil
         init(_ archive: ProjectArchive) {
             digest = OCRPageCache.digest(archive.pdf); reading = archive.reading
             signatures = archive.signatureEdits; originals = archive.ocrOriginals; regions = archive.ocrRegions
             word = archive.wordDraft; tables = archive.tableDrafts
+            readingPageIDs053=archive.readingPageIDs053
         }
         func archive(pdf: Data, source: URL) throws -> ProjectArchive {
             var value = ProjectArchive(sourcePath: source.path, pdf: pdf, title: source.deletingPathExtension().lastPathComponent,
                 selection: 0, selectedPages: [0], mode: .document, recipes: [:], drafts: [:], dirty: false, projectPath: nil)
             value.reading = reading; value.signatureEdits = signatures; value.ocrOriginals = originals
             value.ocrRegions = regions; value.wordDraft = word; value.tableDrafts = tables
+            value.readingPageIDs053=readingPageIDs053
             try value.validate()
             let count = PDFDocument(data: pdf)?.pageCount ?? 0
             guard (reading?.bookmarks ?? []).allSatisfy({ (0..<count).contains($0.page) }),

@@ -16,6 +16,10 @@ struct ReadingExportOptions: Codable, Equatable {
     var sourcesHeading:String? = nil
     var imageHeading:String? = nil
     var showRecordTitles:Bool? = nil
+    var nativeWordComments:Bool? = nil
+    var includeRegionImages:Bool? = nil
+    var bibliography053:Bool? = nil
+    var shortenedCitations053:Bool? = nil
     var structuralOrder:[String] { let allowed = ["quote","note","sources"];var seen = Set<String>();return ((blockOrder ?? allowed)+allowed).filter{allowed.contains($0) && seen.insert($0).inserted} }
     var layout:TextLayoutOptions { var value = TextLayoutOptions();value.fontName = fontName;value.fontSize = fontSize;value.lineHeight = lineHeight ?? 1.4;value.margin = margin ?? 70.87;return value }
     var valid:Bool { !fontName.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && fontName.count < 128 && fontSize.isFinite && (8...36).contains(fontSize) && layout.valid && (includeQuote || includeNote || includeSources) }

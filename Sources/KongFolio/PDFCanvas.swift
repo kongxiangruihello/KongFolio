@@ -19,7 +19,7 @@ struct PDFCanvas: NSViewRepresentable {
             context.coordinator.resetPosition()
         }
         workspace.pdfView = view
-        if workspace.readingLocked { view.hideSelectionToolbar() }
+        if workspace.tool != .select { view.hideSelectionToolbar() }
         view.workspace = workspace
         let replaced = view.document !== workspace.document
         let display: PDFDisplayMode
@@ -286,21 +286,25 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     /// Shows the marking buttons next to the selected text once the mouse is released.
     private func showSelectionToolbar() {
         hideSelectionToolbar()
-        guard let workspace, !workspace.readingLocked, workspace.tool == .select, let selected = currentSelection,
+        guard let workspace, workspace.tool == .select, let selected = currentSelection,
               !(selected.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let page = selected.pages.last else { return }
         let area = convert(selected.bounds(for: page), from: page)
-        var buttons: [NSView] = MarkupColor.allCases.map { color in
+        var buttons: [NSView] = (workspace.readingLocked ? []:Array(MarkupColor.allCases.prefix(2))).map { color in
             ActionButton(image: Self.dot(color.nsColor), tip: "高亮（\(color.rawValue)）") { [weak self] in
                 workspace.markupColor = color
                 workspace.mark(style: .highlight, color: color); self?.hideSelectionToolbar()
             }
         }
-        buttons += [
+        if !workspace.readingLocked { buttons += [
             ActionButton(symbol: "underline", tip: "下划线") { [weak self] in workspace.mark(style: .underline, color: workspace.markupColor); self?.hideSelectionToolbar() },
             ActionButton(symbol: "strikethrough", tip: "删除线") { [weak self] in workspace.mark(style: .strikeOut, color: workspace.markupColor); self?.hideSelectionToolbar() },
             ActionButton(symbol: "text.bubble", tip: "高亮并加批注") { [weak self] in workspace.mark(style: .highlight, color: workspace.markupColor, annotate: true); self?.hideSelectionToolbar() },
-            ActionButton(symbol: "square.and.arrow.down.on.square", tip: "摘录到工作区") { [weak self] in workspace.excerptSelection(); self?.hideSelectionToolbar() },
+        ] }
+        buttons += [
+            ActionButton(symbol:"text.quote",tip:"保存为摘录") { [weak self] in workspace.excerptSelection();self?.hideSelectionToolbar() },
+            ActionButton(symbol:"note.text.badge.plus",tip:"针对所选原文写笔记") { [weak self] in workspace.store?.newReadingNote(linked:ReadingRecord(kind:.excerpt,quote:selected.string ?? "",citations:[workspace.readingCitation()]));self?.hideSelectionToolbar() },
+            ActionButton(symbol:"doc.on.doc",tip:"复制原文和出处") { [weak self] in NSPasteboard.general.clearContents();NSPasteboard.general.setString((selected.string ?? "")+"\n\n"+ReadingExportOrdering.citation(workspace.readingCitation()),forType:.string);self?.hideSelectionToolbar() }
         ]
         let stack = NSStackView(views: buttons)
         stack.spacing = 4

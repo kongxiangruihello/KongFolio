@@ -10,6 +10,7 @@ enum RichTextWord {
         readingKeys += readingFootnotes.keys.sorted().filter{!readingKeys.contains($0)}
         var noteParts = academic ?? (readingFootnotes.isEmpty ? nil : AcademicMarkup(text:"",footnotes:readingFootnotes,endnotes:[:],warnings:[]))
         if academic == nil { noteParts?.footnoteOrder = readingKeys }
+        var comments053:[ReadingWordComment053]=[]
         var body = "", relationships = "", media: [(String, Data)] = [], linkNumber = 0
         var hasContent = false, hasChapter = false, pageJustMarked = false
         func paragraph(_ content: NSAttributedString, heading: Int = 0) -> String {
@@ -31,6 +32,8 @@ enum RichTextWord {
                 if let key = attributes[NSAttributedString.Key("KongFolioFootnote")] as? String,let index = readingKeys.firstIndex(of:key) {
                     runs += "<w:r><w:rPr><w:vertAlign w:val=\"superscript\"/></w:rPr><w:footnoteReference w:id=\"\(index+1)\"/></w:r>";return
                 }
+                var commentID053:Int?=nil
+                if let data=attributes[NSAttributedString.Key("KongFolioComment053")] as? Data,let value=try? JSONDecoder().decode(ReadingWordComment053.self,from:data) { commentID053=comments053.count;comments053.append(value) }
                 var size = document.options.fontSize, bold = false, italic = false
                 if let value = attributes[TextImport.fontKey] {
                     let font = value as! CTFont; size = CTFontGetSize(font)
@@ -44,7 +47,8 @@ enum RichTextWord {
                     style += "<w:color w:val=\"\(rgb.prefix(3).map { String(format: "%02X", min(255, max(0, Int($0 * 255)))) }.joined())\"/>"
                 }
                 let value = (content.string as NSString).substring(with: range).components(separatedBy: "\n").map { line in line.components(separatedBy: "\t").map { "<w:t xml:space=\"preserve\">\(WordExport.escape($0))</w:t>" }.joined(separator: "<w:tab/>") }.joined(separator: "<w:br/>")
-                let run = "<w:r><w:rPr>\(style)</w:rPr>\(value)</w:r>"
+                var run = "<w:r><w:rPr>\(style)</w:rPr>\(value)</w:r>"
+                if let id=commentID053 { run="<w:commentRangeStart w:id=\"\(id)\"/>"+run+"<w:commentRangeEnd w:id=\"\(id)\"/><w:r><w:commentReference w:id=\"\(id)\"/></w:r>" }
                 if let link = attributes[.link], let url = (link as? URL) ?? URL(string: String(describing: link)), ["http", "https", "mailto", "file", "kongfolio"].contains(url.scheme?.lowercased() ?? "") {
                     linkNumber += 1; let id = "link\(linkNumber)"
                     relationships += "<Relationship Id=\"\(id)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"\(attribute(url.absoluteString))\" TargetMode=\"External\"/>"
@@ -90,6 +94,10 @@ enum RichTextWord {
                 relationships += "<Relationship Id=\"\(name)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/\(name)\" Target=\"\(name).xml\"/>"
             }
         }
+        if !comments053.isEmpty {
+            extraTypes += "<Override PartName=\"/word/comments.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml\"/>"
+            relationships += "<Relationship Id=\"readingComments\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments\" Target=\"comments.xml\"/>"
+        }
         let margin = Int(document.options.margin * 20)
         let xml = WordExport.header + "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><w:body>" + body + "<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:top=\"\(margin)\" w:right=\"\(margin)\" w:bottom=\"\(margin)\" w:left=\"\(margin)\"/></w:sectPr></w:body></w:document>"
         let temporary = destination.deletingLastPathComponent().appendingPathComponent(".KongFolio-\(UUID().uuidString).docx")
@@ -104,6 +112,10 @@ enum RichTextWord {
             if let academic = noteParts {
                 if !academic.footnotes.isEmpty { try zip.add("word/footnotes.xml", Data(academic.notesXML(end: false).utf8)) }
                 if !academic.endnotes.isEmpty { try zip.add("word/endnotes.xml", Data(academic.notesXML(end: true).utf8)) }
+            }
+            if !comments053.isEmpty {
+                let comments=comments053.enumerated().map { i,c in "<w:comment w:id=\"\(i)\" w:author=\""+attribute(c.author)+"\""+(c.date.map{" w:date=\""+ISO8601DateFormatter().string(from:$0)+"\""} ?? "")+">"+WordExport.textParagraph(c.text)+"</w:comment>" }.joined()
+                try zip.add("word/comments.xml",Data((WordExport.header+"<w:comments xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">"+comments+"</w:comments>").utf8))
             }
             try zip.finish(); try Data(contentsOf: temporary).write(to: destination, options: .atomic)
         } catch { zip.abandon(); throw error }

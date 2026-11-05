@@ -43,8 +43,7 @@ enum ReadingBackupStorage {
         try state.validate(); let fm = FileManager.default, base = root(folder), blobs = base.appendingPathComponent("Assets",isDirectory:true)
         try checked(base); try checked(blobs); try fm.createDirectory(at:blobs,withIntermediateDirectories:true)
         var assets:[String:String] = [:]
-        let records = state.records+state.essays.flatMap{$0.blocks.compactMap(\.record)}
-        for name in Set(records.compactMap(\.imageAsset)) {
+        for name in state.assetNames053 {
             let source = folder.appendingPathComponent("Assets").appendingPathComponent(name); try checked(source)
             let data = try Data(contentsOf:source), hash = OCRPageCache.digest(data), destination = blobs.appendingPathComponent(hash)
             try checked(destination)
@@ -69,7 +68,7 @@ enum ReadingBackupStorage {
         var records = backup.state.records.filter{ids.contains(.record($0.id))}, essays = backup.state.essays.filter{ids.contains(.essay($0.id))}
         guard !records.isEmpty || !essays.isEmpty else { throw FolioError(message:"请选择要恢复的记录") }
         var assets:[String:Data] = [:], names:[String:String] = [:]
-        let imageNames = Set((records+essays.flatMap{$0.blocks.compactMap(\.record)}).compactMap(\.imageAsset))
+        let imageNames = ReadingJournalState(records:records,essays:essays).assetNames053
         for name in imageNames {
             guard let hash = backup.assets[name] else { throw FolioError(message:"备份缺少图片，现有记录保持不变") }
             let file = root(folder).appendingPathComponent("Assets").appendingPathComponent(hash); try checked(file)
@@ -80,9 +79,9 @@ enum ReadingBackupStorage {
             if FileManager.default.fileExists(atPath:live.path), try Data(contentsOf:live) != data { restored = hash+"-restored-"+UUID().uuidString+".png" }
             names[name] = restored; assets[restored] = data
         }
-        func remap(_ r:inout ReadingRecord) { if let name = r.imageAsset { r.imageAsset = names[name] } }
+        func remap(_ r:inout ReadingRecord) { r.remapAssets053(names) }
         for i in records.indices { remap(&records[i]); records[i].removed = nil; records[i].modified = Date() }
-        for i in essays.indices { essays[i].removed = nil; essays[i].modified = Date(); for j in essays[i].blocks.indices { if var r = essays[i].blocks[j].record { remap(&r); essays[i].blocks[j].record = r } } }
+        for i in essays.indices { essays[i].removed = nil; essays[i].modified = Date();essays[i].extras?.remapAssets053(names); for j in essays[i].blocks.indices { if var r = essays[i].blocks[j].record { remap(&r); essays[i].blocks[j].record = r } } }
         return ReadingJournalTransfer(state:ReadingJournalState(records:records,essays:essays),assets:assets)
     }
 }

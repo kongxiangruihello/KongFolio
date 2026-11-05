@@ -26,7 +26,7 @@ struct ReadingLibrarySession:Codable,Equatable {
 }
 extension ReadingLibraryItem {
     var sourceSummary:String {
-        switch self { case .record(let r):return r.citations.first?.display ?? "";case .essay(let e):return e.blocks.lazy.compactMap{$0.record?.citations.first?.display}.first ?? "" }
+        citations053.first?.display ?? ""
     }
     func matchingContext(_ query:String)->String? {
         guard !query.isEmpty,query.utf16.count<=500 else { return nil }
@@ -95,8 +95,8 @@ enum ReadingExportAudit {
 
 /// Portable personal data; only these files/keys are accepted, and restore never replaces an existing setting.
 enum PersonalReadingBackup {
-    static let files = ["Signatures.json","SignaturePositions.json"]
-    static let keys = [EditorDisplayOptions.key,ReaderToolbarProfile.key,ReadingExportPreferences.key,"KongFolio.readingExportProfiles",ReadingLibrarySession.key,"KongFolio.focusedReadingMode","KongFolio.maximumLoadedTabs","KongFolio.memoryBudgetMB","KongFolio.idleTabSeconds",ReadingLaunchPolicy.key,"readingRecordsPageSize"]
+    static let files = ["Signatures.json","SignaturePositions.json","DocumentIdentity053.json"]
+    static let keys = ["Reading.options053",ReadingColorSemantics053.key,EditorDisplayOptions.key,ReaderToolbarProfile.key,ReadingExportPreferences.key,"KongFolio.readingExportProfiles",ReadingLibrarySession.key,"KongFolio.focusedReadingMode","KongFolio.maximumLoadedTabs","KongFolio.memoryBudgetMB","KongFolio.idleTabSeconds",ReadingLaunchPolicy.key,"readingRecordsPageSize"]
     static func settings(_ defaults:UserDefaults) throws -> Data { try PropertyListSerialization.data(fromPropertyList:Dictionary(uniqueKeysWithValues:keys.compactMap{key in defaults.object(forKey:key).map{(key,$0)}}),format:.binary,options:0) }
     static func validate(_ assets:[ResearchBackup.Asset]) throws {
         for asset in assets {
@@ -109,6 +109,9 @@ enum PersonalReadingBackup {
                 guard values.count<=1000,values.allSatisfy({$0.centerX.isFinite && $0.centerY.isFinite && $0.width.isFinite && (0...1).contains($0.centerX) && (0...1).contains($0.centerY) && $0.width>0 && $0.width<=1}) else { throw FolioError(message:"备份签名位置无效") }
             case "Personal/Settings.plist":
                 guard let values = try PropertyListSerialization.propertyList(from:asset.bytes,options:[],format:nil) as? [String:Any],Set(values.keys).isSubset(of:Set(keys)) else { throw FolioError(message:"备份设置包含不支持的内容") }
+            case "Personal/DocumentIdentity053.json":
+                let values=try JSONDecoder().decode([ReadingDocumentIdentity053].self,from:asset.bytes)
+                guard values.count<=100000,Set(values.map(\.id)).count==values.count,values.allSatisfy({$0.paths.count<=10000 && $0.paths.allSatisfy{$0.hasPrefix("/") && !$0.contains("\0")}}) else { throw FolioError(message:"备份的文献标识无效") }
             default:throw FolioError(message:"备份个人资料路径无效")
             }
         }
@@ -116,6 +119,13 @@ enum PersonalReadingBackup {
     @MainActor static func merge(from folder:URL,storage:URL,defaults:UserDefaults) throws {
         guard FileManager.default.fileExists(atPath:folder.path) else { return }
         try FileManager.default.createDirectory(at:storage,withIntermediateDirectories:true)
+        let identitySource=folder.appendingPathComponent("DocumentIdentity053.json"),identityFile=storage.appendingPathComponent("DocumentIdentity053.json")
+        if FileManager.default.fileExists(atPath:identitySource.path) {
+            let incoming=try JSONDecoder().decode([ReadingDocumentIdentity053].self,from:Data(contentsOf:identitySource))
+            var values=FileManager.default.fileExists(atPath:identityFile.path) ? try JSONDecoder().decode([ReadingDocumentIdentity053].self,from:Data(contentsOf:identityFile)):[]
+            for item in incoming where !values.contains(where:{$0.id==item.id || !Set($0.paths).isDisjoint(with:Set(item.paths))}) { values.append(item) }
+            try JSONEncoder().encode(values).write(to:identityFile,options:.atomic)
+        }
         let incoming = try SignatureLibrary.read(storage:folder),current = try SignatureLibrary.read(storage:storage)
         var signatures = current
         for var value in incoming {

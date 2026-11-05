@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ReadingSidebar: View {
     @ObservedObject var workspace: Workspace
+    @FocusState private var searchFocused053:Bool
     @State private var outlineTitle = ""
     @State private var outlineDepth = 0
     @State private var editingOutline: UUID?
@@ -117,10 +118,12 @@ struct ReadingSidebar: View {
     private var searchResults: some View {
         Group {
             HStack {
-                TextField("搜索文档（简繁通查）", text: $workspace.search).onSubmit { workspace.find() }
+                TextField("搜索文档（简繁通查）", text: $workspace.search).focused($searchFocused053).onSubmit { workspace.find() }
                 Button { workspace.find() } label: { Image(systemName: "magnifyingglass") }
             }
             .padding(.horizontal, 10)
+            .onAppear { searchFocused053=true }
+            HStack { Button("上一处") { workspace.stepSearch(-1) };Button("下一处") { workspace.stepSearch(1) };if workspace.searchTask != nil { Button("停止") { workspace.cancelSearch053() } } }.font(.caption).padding(.horizontal,10)
             Text(workspace.searchMessage).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
             ScrollView {
                 LazyVStack(spacing: 8) {

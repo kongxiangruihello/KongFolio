@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 @MainActor final class Workspace: ObservableObject {
     // MARK: Reading
     @Published var sidebarTab = SidebarTab.pages
+    @Published var requestedSidebar053 = false
+    @Published var pageEditing053 = false
     @Published var readingLayout = ReadingLayout.continuous { didSet { if readingLayout != oldValue { scheduleReadingRecord() } } }
     @Published var bookmarks: [PageBookmark] = []
     @Published var bookmarkName = ""
@@ -390,7 +392,7 @@ import UniformTypeIdentifiers
     func makeArchive(pdf: Data) -> ProjectArchive {
         alignMeta()
         let reading = ReadingState(bookmarks: bookmarks, outline: outlineEntries, layout: readingLayout, point: readingPoint, scale: readingScale, bibliography: bibliography)
-        return ProjectArchive(tableDrafts: tableDrafts.isEmpty ? nil : tableDrafts, wordDraft: wordDraftArchive, fileBaseline: fileBaseline, reading: reading, signatureEdits: signatureEditArchives, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: .document, recipes: [:], drafts: [:], dirty: dirty, projectPath: projectURL?.path)
+        return ProjectArchive(tableDrafts: tableDrafts.isEmpty ? nil : tableDrafts, wordDraft: wordDraftArchive, fileBaseline: fileBaseline, reading: reading, signatureEdits: signatureEditArchives, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, readingPageIDs053:readingPageIDs053, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: .document, recipes: [:], drafts: [:], dirty: dirty, projectPath: projectURL?.path)
     }
 
     func restore(_ archive: ProjectArchive, keepProjectURL: Bool = false) throws {
@@ -406,7 +408,7 @@ import UniformTypeIdentifiers
         readingScale = archive.reading?.scale
         bibliography = archive.reading?.bibliography ?? Bibliography()
         pageMeta = (0..<document.pageCount).map { index in
-            PageMeta(ocrOriginal: archive.ocrOriginals?[index], ocrRegions: archive.ocrRegions?[index])
+            PageMeta(ocrOriginal: archive.ocrOriginals?[index], ocrRegions: archive.ocrRegions?[index],readingID053:archive.readingPageIDs053?[index])
         }
         navigationToken = UUID()
         layoutRevision = UUID()
@@ -522,6 +524,7 @@ import UniformTypeIdentifiers
 
     /// Records a full snapshot for undo. Annotation edits use the cheaper entries in UndoHistory.swift.
     func checkpoint() {
+        preparePageIdentities053()
         do { pushUndo(.snapshot(try snapshot())) }
         catch {
             // The chain of undo steps is broken from here on; keeping older steps would skip this edit.
@@ -850,6 +853,7 @@ import UniformTypeIdentifiers
     // MARK: Opening
 
     func open(insert: Bool = false, merge: Bool = false) {
+        if DocumentOpenPanel.coordinator.revealExisting() { return }
         guard !busy, openPanel == nil else { return }
         let panel = NSOpenPanel()
         var types: [UTType] = [ReadingShortcut.fileType,.pdf,.image,.html,.plainText,UTType(exportedAs:"com.kongfolio.project")]
@@ -864,8 +868,7 @@ import UniformTypeIdentifiers
             // Return to AppKit so its sheet can dismiss before installing a batch of native PDF views.
             DispatchQueue.main.async { [weak self] in self?.openSelected(urls,insert:insert,merge:merge) }
         }
-        if let window = pdfView?.window ?? NSApp?.keyWindow { panel.beginSheetModal(for:window,completionHandler:completion) }
-        else { panel.begin(completionHandler:completion) }
+        DocumentOpenPanel.coordinator.present(panel,preferred:pdfView?.window,completion:completion)
     }
 
     /// Several files are opened side by side, one tab each. Only an explicit merge (or inserting pages into the
@@ -978,6 +981,7 @@ import UniformTypeIdentifiers
                 alignMeta()
                 let offset = min(selection + 1, count)
                 let added = loaded.reduce(0) { $0 + $1.pageCount }
+                if let path=readingJournalPath { var order=Array(0..<count);order.insert(contentsOf:Array(repeating:-1,count:added),at:offset);store?.journal.remapSources053(path:path,order:order) }
                 bookmarks = bookmarks.map { var b = $0; if b.page >= offset { b.page += added }; return b }
                 outlineEntries = outlineEntries.map { var e = $0; if e.page >= offset { e.page += added }; return e }
                 var start = offset
@@ -1055,7 +1059,7 @@ import UniformTypeIdentifiers
                         if let saved = companion {
                             bookmarks = saved.reading?.bookmarks ?? []
                             bibliography = saved.reading?.bibliography ?? bibliography
-                            ocrOriginals = saved.ocrOriginals ?? [:]; ocrRegions = saved.ocrRegions ?? [:]
+                            ocrOriginals = saved.ocrOriginals ?? [:]; ocrRegions = saved.ocrRegions ?? [:];readingPageIDs053=saved.readingPageIDs053 ?? [:]
                             if let signatures = saved.signatureEdits { restoreSignatureEdits(signatures) }
                             if let word = saved.wordDraft { restoreWordDraft(word, sourceDigest: OCRPageCache.digest(data[0])) }
                             if let tables = saved.tableDrafts { tableDrafts = tables }
@@ -1109,6 +1113,7 @@ import UniformTypeIdentifiers
 
     /// Rebuilds the document in a new page order. All per-page state follows through one remap.
     func rebuild(order: [Int], selected: Set<Int>) {
+        if let path=readingJournalPath { store?.journal.remapSources053(path:path,order:order) }
         alignMeta()
         let oldSignatures = signatureEditArchives
         let oldMeta = pageMeta, oldBookmarks = bookmarks, oldOutline = outlineEntries

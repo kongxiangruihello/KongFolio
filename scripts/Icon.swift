@@ -1,20 +1,20 @@
 import AppKit
 
-// KongFolio icon in the shared kong-series style: flat blue base (#3B73EF, as in KongFetch),
-// white stacked pages for "folio", and a lowercase "k" on the front page.
+// Rounded square silhouette, with a single high-contrast folio for small Dock sizes.
 let folder = URL(fileURLWithPath: CommandLine.arguments[1])
 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 let blue = NSColor(srgbRed: 59 / 255, green: 115 / 255, blue: 239 / 255, alpha: 1)
 
 func drawIcon() {
-    let backdrop = NSBezierPath(roundedRect: CGRect(x: 62, y: 62, width: 900, height: 900), xRadius: 205, yRadius: 205)
-    blue.setFill()
-    backdrop.fill()
-    let pages: [(CGFloat, CGFloat, CGFloat)] = [(232, 236, 0.35), (268, 266, 0.6), (304, 296, 1)]
-    for (x, y, alpha) in pages {
-        NSColor.white.withAlphaComponent(alpha).setFill()
-        NSBezierPath(roundedRect: CGRect(x: x, y: y, width: 452, height: 560), xRadius: 44, yRadius: 44).fill()
-    }
+    NSGraphicsContext.current?.imageInterpolation = .high
+    let backdrop = NSBezierPath(roundedRect: CGRect(x: 48, y: 48, width: 928, height: 928), xRadius: 208, yRadius: 208)
+    blue.setFill();backdrop.fill()
+    let inset=NSBezierPath(roundedRect:CGRect(x:68,y:68,width:888,height:888),xRadius:190,yRadius:190)
+    NSColor.white.withAlphaComponent(0.18).setStroke();inset.lineWidth=5;inset.stroke()
+    NSColor.white.withAlphaComponent(0.45).setFill()
+    NSBezierPath(roundedRect:CGRect(x:232,y:217,width:452,height:560),xRadius:44,yRadius:44).fill()
+    NSColor.white.setFill()
+    NSBezierPath(roundedRect:CGRect(x:304,y:296,width:452,height:560),xRadius:44,yRadius:44).fill()
     let style = NSMutableParagraphStyle()
     style.alignment = .center
     let font = NSFont.systemFont(ofSize: 430, weight: .heavy)

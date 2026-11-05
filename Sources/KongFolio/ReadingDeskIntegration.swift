@@ -12,7 +12,9 @@ extension Workspace {
     func readingCitation(page index:Int? = nil,rects:[CGRect] = [],anchor:String? = nil) -> ReadingCitation {
         let i = index ?? selection
         let label = store?.research.displayLabel(path:displayPath ?? "",page:i,fallback:ReadingServices.pageLabel(document.page(at:i) ?? PDFPage(),index:i) ?? String(i+1))
-        return ReadingCitation(source:SourceRef(path:readingJournalPath ?? "",fileName:displayName,page:max(0,i),pageLabel:label,fingerprint:fileBaseline?.digest,rects:rects,anchor:anchor),title:bibliography.title.isEmpty ? title : bibliography.title,author:bibliography.author,edition:bibliography.edition.isEmpty ? nil : bibliography.edition)
+        var citation=ReadingCitation(source:SourceRef(path:readingJournalPath ?? "",fileName:displayName,page:max(0,i),pageLabel:label,fingerprint:fileBaseline?.digest,rects:rects,anchor:anchor),title:bibliography.title.isEmpty ? title : bibliography.title,author:bibliography.author,edition:bibliography.edition.isEmpty ? nil : bibliography.edition)
+        if let path=readingJournalPath { let identity=ReadingDocumentRegistry053.shared(storage).identity(path,digest:fileBaseline?.digest);citation.tracking=ReadingSourceIdentity053(documentID:identity.id,capturedPage:max(0,i),pageFingerprint:pageIdentity053(max(0,i)),capturedPageLabel:label) }
+        return citation
     }
     func captureReadingExcerpt(_ selection:PDFSelection) -> Bool {
         guard let store, store.readingMode else { return false }
@@ -39,7 +41,7 @@ extension WorkspaceStore {
         guard !journal.unreadable else { present(FolioError(message:journal.error ?? "阅读记录未能读取")); return }
         let citation = commandWorkspace.flatMap { $0.count > 0 ? $0.readingCitation() : nil }
         let refs = linked?.citations ?? citation.map { [$0] } ?? []
-        let record = ReadingRecord(kind:.note,title:bookWide ? "整本书心得" : "",quote:linked.map{$0.quote.isEmpty ? ($0.pdfOrigin?.contents ?? "") : $0.quote} ?? "",citations:refs,linkedRecords:linked.map { [$0.id] } ?? [],wholeBook:bookWide)
+        let record = ReadingRecord(kind:.note,title:bookWide ? "整本书心得" : "",quote:linked.map{$0.quote.isEmpty ? ($0.pdfOrigin?.contents ?? "") : $0.quote} ?? "",citations:refs,linkedRecords:linked.flatMap { journal.record($0.id) != nil ? [$0.id]:nil } ?? [],wholeBook:bookWide)
         pinnedReadingID = nil; journal.beginNote(record); readingRecordID = record.id; openReadingDesk(.notes)
     }
     func importLegacyReadingRecords() async {

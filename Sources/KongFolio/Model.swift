@@ -131,6 +131,7 @@ enum MarkupColor: String, CaseIterable, Identifiable {
 struct PageMeta {
     var ocrOriginal: Data?
     var ocrRegions: [RecognizedLine]?
+    var readingID053:String? = nil
 }
 
 struct OCRLanguagePreset: Identifiable, Hashable {

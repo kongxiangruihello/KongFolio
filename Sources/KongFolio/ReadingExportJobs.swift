@@ -102,7 +102,7 @@ actor ReadingPackageWorker {
         }
         // Keep images even when the selected output formats embed them, so the package remains editable.
         if options.includeQuote {
-            for name in Set(value.allRecords.compactMap(\.imageAsset)) {
+            for name in value.assetNames053 {
                 try Task.checkCancellation();let folder = root.appendingPathComponent("Images");try fm.createDirectory(at:folder,withIntermediateDirectories:true)
                 try fm.copyItem(at:assets.appendingPathComponent(name),to:folder.appendingPathComponent(name))
             }

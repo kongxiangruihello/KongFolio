@@ -37,6 +37,11 @@ extension Workspace {
         if let annotation {
             if let page = annotation.page { selection = document.index(for: page) }
             note = annotation.contents ?? ""; annotationColor = Color(nsColor: annotation.fontColor ?? annotation.color)
+            if let page=annotation.page,let store {
+                let index=document.index(for:page),identity=ReadingPDFCapture.identity(annotation,on:page,index:index)
+                captureReadingAnnotationPages([index])
+                if let record=store.journal.state.records.first(where:{$0.removed==nil && $0.pdfOrigin?.annotationID==identity && $0.citations.contains(where:{ReadingBookIdentity.key($0.source.path)==ReadingBookIdentity.key(readingJournalPath ?? "") && $0.source.page==index})}) { store.readingRecordID=record.id }
+            }
         }
     }
     // Annotation edits record only the touched annotation for undo; the PDF is not re-serialized.
