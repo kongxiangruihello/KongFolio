@@ -14,6 +14,9 @@ import pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
 files = sorted((root / 'Tests/KongFolioTests').glob('*.swift'))
 tests = '\n'.join(p.read_text() for p in files).replace('import XCTest', '').replace('@testable import KongFolio', '')
+# Compile the normal-mode probe once with the model tests. A separately named process below
+# still exercises production autosave detection, without a second full model compilation.
+tests += '\n' + (root / 'Tests/Manual/AutosaveRunner.swift').read_text().replace('@main struct AutosaveRunner', 'enum NormalAutosaveProbe')
 calls, count = [], 0
 for p in files:
     text = p.read_text()
@@ -40,6 +43,9 @@ func XCTAssertNotNil(_ value: Any?, file: StaticString = #file, line: UInt = #li
 func XCTAssertThrowsError<T>(_ action: @autoclosure () throws -> T, file: StaticString = #file, line: UInt = #line) { do { _ = try action(); fatalError("Expected error at \\(file):\\(line)") } catch {} }
 @main struct SmokeRunner {
     @MainActor static func main() async throws {
+        if CommandLine.arguments.contains("--normal-autosave") {
+            try await NormalAutosaveProbe.main(); return
+        }
 ''' + '\n'.join(calls) + f'''
         print("PASS: {count} integration tests")
     }}
@@ -59,4 +65,7 @@ swiftc -swift-version 5 -whole-module-optimization -Onone -num-threads 4 -parse-
 "$ROOT/.build/smoke/KongFolioTests"
 # Keep the existing CI entry point while checking timed autosave in a separate non-XCTest process.
 export KONGFOLIO_AUTOSAVE_REPORT="${KONGFOLIO_AUTOSAVE_REPORT:-$ROOT/.build/autosave/report.json}"
-"$ROOT/scripts/test-autosave.sh"
+mkdir -p "$ROOT/.build/autosave"
+cp "$ROOT/.build/smoke/KongFolioTests" "$ROOT/.build/autosave/KongFolioAutosaveRunner"
+cp "$ROOT/.build/smoke/KongFolioPDFProbe" "$ROOT/.build/autosave/KongFolioPDFProbe"
+"$ROOT/.build/autosave/KongFolioAutosaveRunner" --normal-autosave
