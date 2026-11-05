@@ -132,6 +132,7 @@ struct ReadingLibraryView: View {
             .contextMenu(forSelectionType:ReadingLibraryID.self) { ids in
                 ReadingLibraryContextMenu(context:ReadingLibraryContext.resolve(ids,state:journal.state,removed:removed),readOnly:journal.unreadable) { action in performContext(action,ids:ids) }
             } primaryAction:{ ids in performContext(.edit,ids:ids) }
+            .accessibilityLabel("全部阅读资料")
             .overlay {
                 if !searching053,!query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,items.isEmpty {
                     VStack(spacing:8) {
@@ -141,7 +142,7 @@ struct ReadingLibraryView: View {
                     }.padding().allowsHitTesting(false)
                 }
             }
-            .frame(minHeight:120,maxHeight:.infinity).accessibilityLabel("全部阅读资料")
+            .frame(minHeight:120,maxHeight:.infinity)
     }
     private func libraryRow(_ item:ReadingLibraryItem)->some View {
         VStack(alignment:.leading,spacing:4) {
