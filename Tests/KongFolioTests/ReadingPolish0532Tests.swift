@@ -3,7 +3,7 @@ import SwiftUI
 import PDFKit
 @testable import KongFolio
 
-@MainActor final class ReadingPolish0532Tests:XCTestCase {
+@MainActor final class ReadingPolish0532Tests: XCTestCase {
     func testHighlightMarksEveryOccurrenceWithoutChangingTextOrEmoji() {
         let text="📖 袁世凯与袁世凯。"
         let ranges=SearchResultHighlight.ranges(text,query:"袁世凯")
