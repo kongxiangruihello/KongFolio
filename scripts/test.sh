@@ -1,10 +1,11 @@
 #!/bin/bash
-# Runs the XCTest suites without full Xcode: test files are compiled together with the
-# non-UI sources and a tiny XCTest shim. Test methods are discovered automatically.
+# Runs every model test using a small XCTest-free shim, then checks production autosave
+# in a separately named process. SwiftPM's existing app objects avoid compiling models twice.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$ROOT/.build/smoke"
 export CLANG_MODULE_CACHE_PATH="$ROOT/.build/clang-cache"
+swift build --build-system native --disable-sandbox --package-path "$ROOT" --product KongFolio
 swift build --build-system native --disable-sandbox --package-path "$ROOT" --product KongFolioPDFProbe
 PROBE_BIN="$(swift build --build-system native --disable-sandbox --package-path "$ROOT" --show-bin-path)"
 cp "$PROBE_BIN/KongFolioPDFProbe" "$ROOT/.build/smoke/KongFolioPDFProbe"
@@ -52,26 +53,19 @@ func XCTAssertThrowsError<T>(_ action: @autoclosure () throws -> T, file: Static
 }}
 '''
 (root / '.build/smoke/Runner.swift').write_text(tests + shim)
-# Match SwiftPM's separate-module test boundary while keeping this runner independent of XCTest.
+# SwiftPM exposes executable modules for tests and names the app entry point KongFolio_main.
+# Linking its objects does not call that entry point or start the app.
 runner = root / '.build/smoke/Runner.swift'
-runner.write_text('@testable import KongFolioModel\n' + runner.read_text())
+runner.write_text('@testable import KongFolio\nimport KongFolioUpdateKit\n' + runner.read_text())
 PY
-SOURCES=()
-for file in "$ROOT"/Sources/KongFolio/*.swift; do
-  # SwiftUI views and the app entry point are compiled by `swift build`; the runner only needs the model and services.
-  if grep -qE '^(@main|struct [A-Za-z_][A-Za-z0-9_]*(<[^>]+>)?:[[:space:]]*(View|NSViewRepresentable))' "$file"; then continue; fi
-  SOURCES+=("$file")
-done
-for file in "$ROOT"/Sources/KongFolioUpdateKit/*.swift; do SOURCES+=("$file"); done
-# Compile model code once, then type-check the tests against its serialized module. A single
-# compilation of both large source sets exceeds the older toolchain's CI time limit.
-swiftc -swift-version 5 -whole-module-optimization -Onone -num-threads 4 -parse-as-library -enable-testing -module-name KongFolioModel -emit-library -emit-module -emit-module-path "$ROOT/.build/smoke/KongFolioModel.swiftmodule" -Xlinker -install_name -Xlinker @rpath/libKongFolioModel.dylib "${SOURCES[@]}" -o "$ROOT/.build/smoke/libKongFolioModel.dylib"
-swiftc -swift-version 5 -whole-module-optimization -Onone -num-threads 4 -parse-as-library -I "$ROOT/.build/smoke" -L "$ROOT/.build/smoke" -lKongFolioModel -Xlinker -rpath -Xlinker @executable_path "$ROOT/.build/smoke/Runner.swift" -o "$ROOT/.build/smoke/KongFolioTests"
+# The builds above establish that these objects and modules belong to the current source.
+# All test methods still execute; neither XCTest nor the app's GUI entry point is invoked.
+OBJECTS=("$PROBE_BIN"/KongFolio.build/*.o "$PROBE_BIN"/KongFolioUpdateKit.build/*.o)
+swiftc -swift-version 5 -whole-module-optimization -Onone -num-threads 4 -parse-as-library -I "$PROBE_BIN/Modules" "$ROOT/.build/smoke/Runner.swift" "${OBJECTS[@]}" -o "$ROOT/.build/smoke/KongFolioTests"
 "$ROOT/.build/smoke/KongFolioTests"
 # Keep the existing CI entry point while checking timed autosave in a separate non-XCTest process.
 export KONGFOLIO_AUTOSAVE_REPORT="${KONGFOLIO_AUTOSAVE_REPORT:-$ROOT/.build/autosave/report.json}"
 mkdir -p "$ROOT/.build/autosave"
 cp "$ROOT/.build/smoke/KongFolioTests" "$ROOT/.build/autosave/KongFolioAutosaveRunner"
 cp "$ROOT/.build/smoke/KongFolioPDFProbe" "$ROOT/.build/autosave/KongFolioPDFProbe"
-cp "$ROOT/.build/smoke/libKongFolioModel.dylib" "$ROOT/.build/autosave/libKongFolioModel.dylib"
 "$ROOT/.build/autosave/KongFolioAutosaveRunner" --normal-autosave

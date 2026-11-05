@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
     @Published var sidebarTab = SidebarTab.pages
     @Published var requestedSidebar053 = false
     @Published var pageEditing053 = false
+    @Published var pdfSearchFocusRequest = UUID()
     @Published var readingLayout = ReadingLayout.continuous { didSet { if readingLayout != oldValue { scheduleReadingRecord() } } }
     @Published var bookmarks: [PageBookmark] = []
     @Published var bookmarkName = ""
