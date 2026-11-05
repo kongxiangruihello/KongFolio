@@ -44,6 +44,7 @@ import UniformTypeIdentifiers
     @Published var writingSearchRequest = UUID()
     @Published var pinnedReadingID:UUID?
     @Published var readingRecordID:UUID?
+    @Published var multiRegionTarget053:UUID?
     @Published var readingRecordSelection = Set<UUID>()
     @Published var readingExportEssay = false
     @Published var readingDeskWindowRequest:UUID?
@@ -371,6 +372,7 @@ import UniformTypeIdentifiers
         tabs.compactMap(\.workspace).first { $0.count == 0 && !$0.needsLoad && !$0.busy && !$0.isImporting && $0.sourceURL == nil && $0.projectURL == nil }
     }
     func open() {
+        if DocumentOpenPanel.coordinator.revealExisting() { return }
         let target: Workspace
         if let current = activeWorkspace { target = current }
         else if let empty = emptyFileChooserWorkspace { target = empty }
@@ -429,7 +431,7 @@ import UniformTypeIdentifiers
         await readingExportBatch.stopAndWait();await readingPackage.stopAndWait();await incrementalExport.stopAndWait();WritingPositions.shared.flush()
         guard ResearchDraftRegistry.shared.flush(storage:storage) else { present(FolioError(message:"研究整理草稿未能保存，请处理后再关闭")); return false }
         await importLegacyReadingRecords()
-        do { await journal.waitForMaintenance(); try await journal.flush(); try await library.flushReflections() } catch { present(error); return false }
+        do { await journal.waitForMaintenance(); try await journal.flush();await ReadingMirrorWriter053.shared.drain(); try await library.flushReflections() } catch { present(error); return false }
         for workspace in tabs.compactMap(\.workspace) { await workspace.unloadWorker?.value }
         for workspace in tabs.compactMap(\.workspace) where workspace.count > 0 && (workspace.dirty || workspace.saving || workspace.hasPrivateReadingData) {
             if !(await workspace.finishPendingSave()) { select(workspace.id); return false }

@@ -8,7 +8,10 @@ struct ReaderToolbarProfile:Codable,Equatable {
     var pinned:Set<String> = ["newFile"]
     var actions:[FileToolbarAction] {
         var seen = Set<FileToolbarAction>()
-        var upgraded = order
+        var previous=Set<String>()
+        var upgraded=order.compactMap{FileToolbarAction(rawValue:$0)?.unified.rawValue}.filter{previous.insert($0).inserted}
+        if !upgraded.contains("search") { upgraded.insert("search",at:upgraded.firstIndex(of:"open").map{$0+1} ?? min(upgraded.count,2)) }
+        if !upgraded.contains("pdfPages") { upgraded.insert("pdfPages",at:upgraded.firstIndex(of:"search").map{$0+1} ?? min(upgraded.count,3)) }
         if !upgraded.contains("signature"),let i=upgraded.firstIndex(where:{FileToolbarAction(rawValue:$0)?.unified == .tools}) { upgraded.insert("signature",at:i+1) }
         return (upgraded+Self.defaultActions.map(\.rawValue)).compactMap { raw in
             guard let action = FileToolbarAction(rawValue:raw)?.unified,seen.insert(action).inserted else { return nil };return action

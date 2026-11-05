@@ -150,7 +150,7 @@ extension Workspace {
             guard let current = snapshotForHistory("撤销") else { return }
             history.removeLast()
             future.append(.snapshot(current))
-            report { try restore(archive, keepProjectURL: true); dirty = true; scheduleRecovery(); scheduleDirectSave() }
+            report { try restore(archive, keepProjectURL: true);reconcilePageIdentities053(); dirty = true; scheduleRecovery(); scheduleDirectSave() }
         case .annotations(let changes):
             history.removeLast()
             applyAnnotationChanges(changes, restoringBefore: true)
@@ -166,7 +166,7 @@ extension Workspace {
             guard let current = snapshotForHistory("重做") else { return }
             future.removeLast()
             history.append(.snapshot(current))
-            report { try restore(archive, keepProjectURL: true); dirty = true; scheduleRecovery(); scheduleDirectSave() }
+            report { try restore(archive, keepProjectURL: true);reconcilePageIdentities053(); dirty = true; scheduleRecovery(); scheduleDirectSave() }
         case .annotations(let changes):
             future.removeLast()
             applyAnnotationChanges(changes, restoringBefore: false)

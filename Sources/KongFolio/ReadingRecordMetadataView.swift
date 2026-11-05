@@ -3,7 +3,7 @@ struct ReadingRecordMetadataView: View {
     let record:ReadingRecord
     var body:some View {
         VStack(alignment:.leading,spacing:5) {
-            if let citation = record.citations.first { Text(record.wholeBook ? "《"+citation.title+"》 · 整本书" : citation.display).lineLimit(2).help(ReadingRecordMetadata.lines(record).joined(separator:"\n")) }
+            if let citation = record.citations053.first { Text(record.wholeBook ? "《"+citation.title+"》 · 整本书" : citation.display).lineLimit(2).help(ReadingRecordMetadata.lines(record).joined(separator:"\n")) }
             else { Text("独立笔记 · 未关联文献") }
             Text((record.pdfOrigin == nil ? "创建 " : "收录 ")+ReadingRecordMetadata.date(record.created)+" · 修改 "+ReadingRecordMetadata.date(record.modified))
             if let origin = record.pdfOrigin {

@@ -5,6 +5,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$ROOT/.build/smoke"
 export CLANG_MODULE_CACHE_PATH="$ROOT/.build/clang-cache"
+swift build --build-system native --disable-sandbox --package-path "$ROOT" --product KongFolioPDFProbe
+PROBE_BIN="$(swift build --build-system native --disable-sandbox --package-path "$ROOT" --show-bin-path)"
+cp "$PROBE_BIN/KongFolioPDFProbe" "$ROOT/.build/smoke/KongFolioPDFProbe"
+
 python3 - "$ROOT" <<'PY'
 import pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
@@ -46,7 +50,7 @@ PY
 SOURCES=()
 for file in "$ROOT"/Sources/KongFolio/*.swift; do
   # SwiftUI views and the app entry point are compiled by `swift build`; the runner only needs the model and services.
-  if grep -qE '^(@main|struct [A-Za-z]+(<[^>]+>)?:[[:space:]]*(View|NSViewRepresentable))' "$file"; then continue; fi
+  if grep -qE '^(@main|struct [A-Za-z_][A-Za-z0-9_]*(<[^>]+>)?:[[:space:]]*(View|NSViewRepresentable))' "$file"; then continue; fi
   SOURCES+=("$file")
 done
 for file in "$ROOT"/Sources/KongFolioUpdateKit/*.swift; do SOURCES+=("$file"); done

@@ -79,9 +79,12 @@ final class Reading052Tests: XCTestCase {
             let text:String
             if format == .pdf { text=PDFDocument(url:file)?.string ?? "" }
             else {
-                let data=try XCTUnwrap(ReadingExportAudit.storedZIP(Data(contentsOf:file))["word/document.xml"])
+                let package=try ReadingExportAudit.storedZIP(Data(contentsOf:file))
+                let data=try XCTUnwrap(package["word/document.xml"])
                 let document=try XMLDocument(data:data,options:[])
-                text=try document.nodes(forXPath:"//*[local-name()='t']").compactMap(\.stringValue).joined()
+                var extracted=try document.nodes(forXPath:"//*[local-name()='t']").compactMap(\.stringValue).joined()
+                if let comments=package["word/comments.xml"] { extracted += try XMLDocument(data:comments,options:[]).nodes(forXPath:"//*[local-name()='t']").compactMap(\.stringValue).joined() }
+                text=extracted
             }
             // PDFKit can expose equivalent CJK radical code points and layout whitespace across OS versions.
             // Normalize compatibility glyphs, then verify every content character in the actual exported file.

@@ -33,7 +33,11 @@ struct ReadingLibraryView: View {
     @State private var editing:ReadingLibraryID?
     @AppStorage("readingRecordsPageSize") private var size = 10
     @State private var items:[ReadingLibraryItem] = []
-    private var request:ReadingSearchRequest { ReadingSearchRequest(revision:journal.revisionID,query:query,kind:kind,tag:tag,topic:topic,removed:removed,recent:recent,untagged:untagged,bookPath:bookSource?.source.path) }
+    @State private var options053=ReadingLibraryOptions053()
+    @State private var showTools053=false
+    @State private var searching053=false
+    @State private var searchToken053=UUID()
+    private var request:ReadingSearchRequest { ReadingSearchRequest(revision:journal.revisionID,query:query,kind:kind,tag:tag,topic:topic,removed:removed,recent:recent,untagged:untagged,bookPath:bookSource?.source.path,options053:options053,indexFolder:journal.folder.path) }
     private var pagination:ReadingPagination { ReadingPagination(total:items.count,page:page,size:size) }
     var body:some View {
         observedContent
@@ -54,6 +58,9 @@ struct ReadingLibraryView: View {
         .sheet(isPresented:$showTags) { ReadingTagManager(journal:journal) }
         .sheet(isPresented:$showRelink) { ReadingBatchRelinkView(store:store,journal:journal) }
         .sheet(isPresented:$showBackups) { ReadingBackupView(journal:journal) }
+        .sheet(isPresented:$showTools053) { ReadingTools053(store:store,journal:journal,ids:selection.isEmpty ? Set(editing.map{[$0]} ?? []):selection) }
+        .onAppear { options053=ReadingLibraryOptions053.load(store.readingDefaults) }
+        .onChange(of:options053) { _,value in page=0;value.save(store.readingDefaults) }
     }
 
     private var layout:some View {
@@ -66,6 +73,8 @@ struct ReadingLibraryView: View {
     private var observedContent:some View {
         layout
         .task(id:request) {
+            let token=UUID();searchToken053=token;searching053=true
+            defer { if searchToken053==token { searching053=false } }
             let request = request
             do { try await Task.sleep(nanoseconds:300_000_000) } catch { return }
             let result = await ReadingSearchWorker.shared.library(journal.state,request:request)
@@ -79,7 +88,7 @@ struct ReadingLibraryView: View {
         .onChange(of:journal.draftEssay?.id) { _,_ in validateEditing() }
         .onChange(of:journal.revisionID) { _,_ in validateEditing() }
         .onChange(of:recent) { _,_ in resetPage() }.onChange(of:untagged) { _,_ in resetPage() }
-        .onChange(of:selection) { _,ids in if ids.count == 1,let id = ids.first { editing = id; if case .record(let r) = id { store.readingRecordID = r } } }
+        .onChange(of:selection) { _,ids in if ids.count == 1,let id = ids.first { editing = id; if case .record(let r) = id { store.readingRecordID = r;store.focusLibraryAnnotation053(r) } } }
         .onChange(of:query) { _,_ in resetPage() }.onChange(of:kind) { _,_ in resetPage() }.onChange(of:tag) { _,_ in resetPage() }.onChange(of:removed) { _,_ in resetPage() }
         .onChange(of:topic) { _,_ in resetPage() }
         .onChange(of:size) { _,_ in page = 0 }.onChange(of:items.count) { _,_ in page = pagination.index }
@@ -88,8 +97,10 @@ struct ReadingLibraryView: View {
     private var browser:some View {
         VStack(alignment:.leading,spacing:10) {
             searchField
+            if searching053 { HStack { ProgressView().controlSize(.small);Text("正在检索阅读资料…").font(.caption).foregroundStyle(.secondary) } }
             HStack { newMenu;Spacer();Menu { libraryActions;Divider();organizationMenu } label:{Label("操作",systemImage:"ellipsis.circle")} }
             DisclosureGroup("筛选与整理") {
+                ScrollView {
                 VStack(alignment:.leading,spacing:8) {
                     HStack { savedFilters;Spacer() }
                     HStack { Toggle("近七天",isOn:$recent);Toggle("未加标签",isOn:$untagged) }
@@ -97,7 +108,9 @@ struct ReadingLibraryView: View {
                     TextField("按标签筛选",text:$tag).textFieldStyle(.roundedBorder)
                     topicPicker
                     Toggle("最近删除",isOn:$removed)
+                    ReadingSearchControls053(options:$options053)
                 }.padding(.top,6)
+                }.frame(maxHeight:280)
             }.font(.system(size:13))
             if let checkpoint = journal.bulkCheckpoint { Button("撤销："+checkpoint.label) { do { try journal.undoBulk() } catch { filterMessage = error.localizedDescription } }.disabled(!journal.canUndoBulk) }
             if !filterMessage.isEmpty { Text(filterMessage).font(.caption).foregroundStyle(.orange) }
@@ -108,14 +121,29 @@ struct ReadingLibraryView: View {
     }
     private var pageItems:[ReadingLibraryItem] { Array(items.dropFirst(pagination.range.lowerBound).prefix(pagination.size)) }
     private var itemList:some View {
-        List(selection:$selection) { ForEach(pageItems) { item in libraryRow(item).tag(item.id) } }
+        List(selection:$selection) {
+            if options053.groupChapters {
+                ForEach(Array(Set(pageItems.map(\.chapter053))).sorted(),id:\.self) { chapter in Section(chapter) { ForEach(pageItems.filter{$0.chapter053==chapter}) { item in libraryRow(item).tag(item.id) } } }
+            } else { ForEach(pageItems) { item in libraryRow(item).tag(item.id) } }
+        }
             .contextMenu(forSelectionType:ReadingLibraryID.self) { ids in
                 ReadingLibraryContextMenu(context:ReadingLibraryContext.resolve(ids,state:journal.state,removed:removed),readOnly:journal.unreadable) { action in performContext(action,ids:ids) }
             } primaryAction:{ ids in performContext(.edit,ids:ids) }
             .frame(minHeight:120,maxHeight:.infinity).accessibilityLabel("全部阅读资料")
     }
     private func libraryRow(_ item:ReadingLibraryItem)->some View {
-                VStack(alignment:.leading,spacing:4) { HStack { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading); Text(item.title).lineLimit(2).help(item.title) };if !item.sourceSummary.isEmpty { Text(item.sourceSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(item.sourceSummary) };Text("收录 "+item.created.formatted(date:.abbreviated,time:.shortened)).font(.caption2).foregroundStyle(.secondary);if let context = item.matchingContext(query) { Text(context).font(.caption).lineLimit(2) } }
+        VStack(alignment:.leading,spacing:4) {
+            HStack(alignment:.top) {
+                if options053.showKind { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading) }
+                Text(item.title).lineLimit(2).help(item.title).frame(maxWidth:options053.table ? options053.titleWidth:.infinity,alignment:.leading)
+                if options053.table,options053.showSource { Text(item.sourceSummary).font(.caption).lineLimit(2).frame(width:options053.sourceWidth,alignment:.leading).help(item.sourceSummary) }
+            }
+            if !options053.table,options053.showSource,!item.sourceSummary.isEmpty { Text(item.sourceSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(item.sourceSummary) }
+            if options053.groupChapters { Text(item.chapter053).font(.caption).foregroundStyle(.secondary) }
+            if options053.showCreated { Text("收录 "+item.created.formatted(date:.abbreviated,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
+            if options053.showModified { Text("修改 "+item.modified053.formatted(date:.abbreviated,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
+            if let context=item.matchingContext(query) { Text(context).font(.caption).lineLimit(2) }
+        }.onDrag { NSItemProvider(object:ReadingDrag053.text(item,assets:journal.folder.appendingPathComponent("Assets")) as NSString) }
     }
     @ViewBuilder private var editor:some View {
             if let editing {
@@ -137,6 +165,7 @@ struct ReadingLibraryView: View {
                 }.disabled(journal.unreadable)
     }
     @ViewBuilder private var libraryActions:some View {
+                Button("阅读整理与输出…") { showTools053=true }
                 Button("批量整理") { showOrganization = true }.disabled(selection.isEmpty || removed || journal.unreadable)
                 Button("引用关系") { showReferences = true }.disabled(editing == nil)
                 Button("导出所选…") { store.readingLibraryExportSelection = selection;store.readingRecordSelection = Set(selection.compactMap { if case .record(let id) = $0 { return id };return nil });store.readingExportEssay = false;section = .exports }.disabled(selection.isEmpty || removed)

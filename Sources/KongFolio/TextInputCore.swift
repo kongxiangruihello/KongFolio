@@ -71,13 +71,29 @@ class ComposingTextView: NSTextView {
     }
     deinit { if let scrollObserver { NotificationCenter.default.removeObserver(scrollObserver) } }
     init(read: @escaping () -> String, write: @escaping (String) -> Void) { self.read = read; self.write = write; accepted = read() }
-    func synchronize(_ view: NSTextView) { let value = read(); guard !view.hasMarkedText(), value != accepted else { return }; accepted = value; TextInputSync.replaceExternal(view,with:value) }
-    func publish(_ view: NSTextView) { guard !view.hasMarkedText(), read() != view.string else { return }; accepted = view.string; write(view.string); accepted = read() }
+    func synchronize(_ view: NSTextView) {
+        let value=read();guard !view.hasMarkedText(),value != accepted else { return }
+        if view.string != accepted {
+            DispatchQueue.main.async { [weak self,weak view] in if let view { self?.publish(view) } };return
+        }
+        accepted=value;TextInputSync.replaceExternal(view,with:value)
+    }
+    func publish(_ view: NSTextView) {
+        guard !view.hasMarkedText() else { return }
+        let external=read()
+        guard external != view.string else { accepted=external;return }
+        let merged=ConcurrentText053.merge(base:accepted,local:view.string,external:external)
+        if merged.text != view.string { TextInputSync.replaceExternal(view,with:merged.text) }
+        if merged.conflict { (view as? ComposingTextView)?.writingSession?.message="另一处也修改了这条笔记，两份内容均已保留，请核对" }
+        accepted=merged.text;write(merged.text);accepted=read()
+    }
     func textViewDidChangeSelection(_ notification:Notification) { if let view = notification.object as? ComposingTextView { WritingPositions.shared.capture(view,key:view.positionKey) } }
     func textDidChange(_ notification: Notification) { if let view = notification.object as? NSTextView { publish(view) } }
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField, (field.currentEditor() as? NSTextView)?.hasMarkedText() != true else { return }
-        guard read() != field.stringValue else { return }; accepted = field.stringValue; write(field.stringValue); accepted = read()
+        let external=read();guard external != field.stringValue else { accepted=external;return }
+        let result=ConcurrentText053.merge(base:accepted,local:field.stringValue,external:external,singleLine:true)
+        if result.text != field.stringValue { field.stringValue=result.text };accepted=result.text;write(result.text);accepted=read()
     }
     func controlTextDidEndEditing(_ notification: Notification) { controlTextDidChange(notification) }
 }

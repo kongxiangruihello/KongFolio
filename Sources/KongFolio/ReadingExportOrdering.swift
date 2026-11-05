@@ -33,12 +33,15 @@ enum ReadingExportOrdering {
     }
     static func citation(_ value:ReadingCitation) -> String {
         let edition = value.edition.flatMap{$0.isEmpty ? nil : $0}
-        return (value.author.isEmpty ? "" : value.author+"：")+"《"+value.title+"》"+(edition.map{"，"+$0} ?? "")+"，PDF 第 \(value.source.page+1) 页"+(value.source.pageLabel.map{"（印刷页码 "+$0+"）"} ?? "")
+        let publication=value.publication?.summary ?? ""
+        return (value.author.isEmpty ? "" : value.author+"：")+"《"+value.title+"》"+(edition.map{"，"+$0} ?? "")+(publication.isEmpty ? "":"，"+publication)+"，PDF 第 \(value.source.page+1) 页"+(value.source.pageLabel.map{"（印刷页码 "+$0+"）"} ?? "")
     }
     static func citationKey(_ value:ReadingCitation) -> String { "s"+String(OCRPageCache.digest(Data((citation(value)+"\n"+value.source.path).utf8)).prefix(20)) }
     static func footnotes(_ snapshot:ReadingExportSnapshot) -> [String:String] {
         guard snapshot.options?.includeSources != false,snapshot.options?.footnotes == true else { return [:] }
-        return Dictionary(snapshot.allRecords.flatMap(\.citations).map{(citationKey($0),citation($0))},uniquingKeysWith:{first,_ in first})
+        var formatter=ReadingCitationFormat053(),result:[String:String]=[:]
+        for c in snapshot.citations053 { let key=citationKey(c);if result[key]==nil { result[key]=formatter.render(c,shorten:snapshot.options?.shortenedCitations053==true) } }
+        return result
     }
     static func warnings(_ snapshot:ReadingExportSnapshot) -> [String] {
         var result:[String] = []
@@ -48,7 +51,9 @@ enum ReadingExportOrdering {
     }
 }
 extension ReadingRecordExport {
-    static func word(_ snapshot:ReadingExportSnapshot,assets:URL,to file:URL) throws {
-        try RichTextWord.write(rich(snapshot,assets:assets,wordFootnotes:true),to:file,readingFootnotes:ReadingExportOrdering.footnotes(snapshot))
+    static func word(_ snapshot:ReadingExportSnapshot,assets:URL,to file:URL,warnings:[String]=[]) throws {
+        var document=try rich(snapshot,assets:assets,wordFootnotes:true)
+        for warning in warnings { document.blocks.append(.paragraph(RichTextDocument.styled("附图提示："+warning,options:document.options,markdown:false),heading:0)) }
+        try RichTextWord.write(document,to:file,readingFootnotes:ReadingExportOrdering.footnotes(snapshot))
     }
 }

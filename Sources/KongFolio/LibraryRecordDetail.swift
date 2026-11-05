@@ -16,10 +16,11 @@ struct LibraryRecordDetail: View {
             VStack(alignment:.leading,spacing:10) {
                 StableTextField("记录标题（可留空）",text:binding(\.title),fontSize:20)
                 ReadingRecordMetadataView(record:current)
+                ReadingRecordExtrasView053(store:store,journal:journal,item:.record(current))
                 HStack {
                     Text(current.kind.rawValue).font(.system(size:13,weight:.medium)).foregroundStyle(.secondary)
                     Spacer()
-                    if let source = current.citations.first?.source { Button("返回原文") { _ = store.reveal(source,beside:false) }.disabled(source.path.isEmpty) }
+                    if let source = current.citations053.first?.source { Button("返回原文") { _ = store.reveal(source,beside:false) }.disabled(source.path.isEmpty) }
                     Menu("记录操作") {
                         Button(store.pinnedReadingID == record.id ? "取消固定" : "固定记录，翻页时继续写") { store.pinnedReadingID = store.pinnedReadingID == record.id ? nil : record.id }
                         if current.kind == .note { Button("关联更多摘录…") { showLinkPicker = true } }
@@ -32,6 +33,7 @@ struct LibraryRecordDetail: View {
                 if current.kind != .note && current.pdfOrigin == nil {
                     HStack { Text("摘录原文").font(.caption); Spacer(); Button("原文与校订对照…") { showQuoteCorrection = true }; Button(editQuote ? "完成文字校正" : "校正摘录文字") { editQuote.toggle() } }
                     if editQuote { LibraryWritingEditor(text:binding(\.quote),label:"摘录校订文字",identity:"quote:"+record.id.uuidString).id("quote:"+record.id.uuidString).frame(height:300) }
+                    else if current.quote.count>400 { DisclosureGroup("展开原文（\(current.quote.count) 字）") { Text(current.quote).textSelection(.enabled) } }
                     else if !current.quote.isEmpty { Text(current.quote).textSelection(.enabled) }
                 }
                 if current.pdfOrigin != nil && !current.quote.isEmpty { Text(current.quote).font(.system(size:16)).textSelection(.enabled) }

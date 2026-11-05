@@ -5,6 +5,8 @@ struct ReadingCitation: Codable, Equatable {
     var title: String
     var author = ""
     var edition:String? = nil
+    var publication:ReadingPublication053? = nil
+    var tracking:ReadingSourceIdentity053? = nil
     var display: String { (author.isEmpty ? "" : author + "：") + "《" + title + "》，" + source.pageDescription }
 }
 struct ReadingRecord: Codable, Identifiable, Equatable {
@@ -26,9 +28,10 @@ struct ReadingRecord: Codable, Identifiable, Equatable {
     var removed: Date?
     var wholeBook = false
     var pdfOrigin:ReadingPDFOrigin? = nil
+    var extras:ReadingRecordExtras053? = nil
     var hasContent: Bool {
         let heading = wholeBook && title == "整本书心得" ? "" : title
-        return pdfOrigin != nil || [heading, quote, note].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || imageAsset != nil || !linkedRecords.isEmpty || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return pdfOrigin != nil || extras?.hasContent == true || [heading, quote, note].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || imageAsset != nil || !linkedRecords.isEmpty || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
     var displayTitle: String {
         if !title.isEmpty { return title }
@@ -58,6 +61,7 @@ struct ReadingEssay: Codable, Identifiable, Equatable {
     var created = Date()
     var modified = Date()
     var removed: Date?
+    var extras:ReadingRecordExtras053? = nil
     var hasContent: Bool {
         (!title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !["未命名札记","未命名笔记"].contains(title)) || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || blocks.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.record?.hasContent == true }
     }
@@ -83,20 +87,22 @@ struct ReadingJournalState: Codable, Equatable {
     var lastNotes: [String:UUID] = [:]
     func validate() throws {
         guard version == 1, Set(records.map(\.id)).count == records.count, Set(essays.map(\.id)).count == essays.count else { throw FolioError(message:"阅读记录格式或编号无效，原文件已保留") }
+        for name in assetNames053 { guard !name.isEmpty,name==URL(fileURLWithPath:name).lastPathComponent,!name.contains(".."),!name.contains("/"),!name.contains("\\") else { throw FolioError(message:"资料图片路径无效") } }
         for record in records + essays.flatMap({$0.blocks.compactMap(\.record)}) {
             if let segments = record.ocrSegments { guard segments.count <= 10000,Set(segments.map(\.id)).count == segments.count,segments.allSatisfy({$0.box.minX.isFinite && $0.box.minY.isFinite && $0.box.width.isFinite && $0.box.height.isFinite}) else { throw FolioError(message:"摘录校订段落无效") } }
-            if let image = record.imageAsset {
+            for image in record.assetNames053 {
                 guard image == URL(fileURLWithPath:image).lastPathComponent, !image.contains(".."), !image.contains("/"), !image.contains("\\") else { throw FolioError(message:"摘录图片路径无效") }
             }
-            guard record.citations.allSatisfy({ $0.source.page >= 0 && $0.source.rects.allSatisfy { $0.minX.isFinite && $0.minY.isFinite && $0.width.isFinite && $0.height.isFinite } }) else { throw FolioError(message:"摘录来源无效") }
+            guard (record.citations+(record.extras?.regions ?? []).map(\.citation)+(record.extras?.quotations ?? []).flatMap(\.citations)).allSatisfy({ $0.source.page >= 0 && $0.source.rects.allSatisfy { $0.minX.isFinite && $0.minY.isFinite && $0.width.isFinite && $0.height.isFinite } }) else { throw FolioError(message:"摘录来源无效") }
         }
     }
 }
 actor ReadingJournalWriter {
     private var latest = -1
+    private var incrementalCache:ReadingDeltaStorage.Loaded?
     private var dailyChecked:Date?
     private(set) var backupError:String?
-    func write(_ state:ReadingJournalState, revision:Int, assets:[String:Data], folder:URL) throws {
+    func write(_ state:ReadingJournalState, revision:Int, assets:[String:Data], folder:URL, incremental:Bool = false) async throws {
         guard revision >= latest else { return }
         try state.validate()
         let fm = FileManager.default, assetFolder = folder.appendingPathComponent("Assets")
@@ -109,22 +115,24 @@ actor ReadingJournalWriter {
             } else { try data.write(to:file,options:.atomic) }
             guard try Data(contentsOf:file) == data else { throw FolioError(message:"摘录图片保存后校验失败") }
         }
-        let file = folder.appendingPathComponent("catalog.json")
-        let bytes = try JSONEncoder().encode(state)
         if dailyChecked.map({ !Calendar.current.isDateInToday($0) }) ?? true {
             do {
-                let previous = (try? Data(contentsOf:file)).flatMap { try? JSONDecoder().decode(ReadingJournalState.self,from:$0) }
+                let previous = try? ReadingDeltaStorage.read(folder).state
                 let daily = previous.flatMap { $0.records.isEmpty && $0.essays.isEmpty ? nil : $0 } ?? state
                 try ReadingBackupStorage.daily(daily,folder:folder); dailyChecked = Date(); backupError = nil
             } catch { backupError = error.localizedDescription }
         }
-        if let old = try? Data(contentsOf:file), (try? JSONDecoder().decode(ReadingJournalState.self,from:old)) != nil {
-            try old.write(to:folder.appendingPathComponent("catalog.previous.json"),options:.atomic)
+        try ReadingDeltaStorage.locked(folder) {
+            try ReadingUpgradeReceipt053.ensure(folder)
+            if incremental { incrementalCache = try ReadingDeltaStorage.append(state,folder:folder,cached:incrementalCache) }
+            else {
+                let previous=try ReadingDeltaStorage.read(folder).state
+                try ReadingRecordHistory.store(changed:state.records,essays:state.essays,previous:previous,folder:folder)
+                try ReadingDeltaStorage.checkpoint(state,folder:folder);incrementalCache=try ReadingDeltaStorage.read(folder)
+            }
         }
-        try bytes.write(to:file,options:.atomic)
-        let saved = try Data(contentsOf:file)
-        guard saved == bytes,try JSONDecoder().decode(ReadingJournalState.self,from:saved) == state else { throw FolioError(message:"保存后的记录校验失败，请保留当前窗口并另存应急副本") }
         latest = revision
+        await ReadingMirrorWriter053.shared.schedule(state,folder:folder)
     }
 }
 @MainActor final class ReadingJournal: ObservableObject {
@@ -152,8 +160,8 @@ actor ReadingJournalWriter {
     init(storage:URL) {
         folder = storage.appendingPathComponent("ReadingJournal",isDirectory:true)
         let file = folder.appendingPathComponent("catalog.json")
-        guard FileManager.default.fileExists(atPath:file.path) else { return }
-        do { let value = try JSONDecoder().decode(ReadingJournalState.self,from:Data(contentsOf:file)); try value.validate(); state = value }
+        guard FileManager.default.fileExists(atPath:file.path) || FileManager.default.fileExists(atPath:folder.appendingPathComponent("head053.json").path) else { return }
+        do { let value = try ReadingDeltaStorage.read(folder).state; try value.validate(); state = value }
         catch { unreadable = true; self.error = "阅读记录未能读取，原记录保留：" + error.localizedDescription }
         if !unreadable { let snapshot = state, destination = folder; Task { [weak self] in
             do { try await self?.writer.ensureDaily(snapshot,folder:destination) } catch { self?.backupError = error.localizedDescription }
@@ -166,6 +174,10 @@ actor ReadingJournalWriter {
     func discardNoteDraft() { draftRecord = nil }
     func discardEssayDraft() { draftEssay = nil }
     func assetURL(_ name:String) -> URL { folder.appendingPathComponent("Assets").appendingPathComponent(name) }
+    func stageAsset053(_ data:Data)throws->String {
+        guard let decoded=SignatureImage.loadData(data),let bytes=SignatureImage.pngData(decoded) else { throw FolioError(message:"资料图片无法读取") }
+        let name=OCRPageCache.digest(bytes)+".png";pendingAssets[name]=bytes;return name
+    }
     @Published var bulkCheckpoint:ReadingBulkCheckpoint?
     var saveStatus:String { error ?? (saving ? "正在保存记录…" : (dirty ? "等待保存…" : (draftRecord != nil || draftEssay != nil ? "空白草稿：输入内容后自动保存，不计入记录" : "记录已自动保存"))) }
     func change(_ operation:(inout ReadingJournalState)->Void) {
@@ -173,7 +185,7 @@ actor ReadingJournalWriter {
         operation(&state); revision += 1; dirty = true
         timer?.cancel(); timer = Task { [weak self] in
             do { try await Task.sleep(nanoseconds:250_000_000) } catch { return }
-            guard let self else { return }; do { try await self.flush() } catch { self.error = "阅读记录尚未保存：" + error.localizedDescription }
+            guard let self else { return }; do { try await self.flush(compatibilityCheckpoint:false) } catch { self.error = "阅读记录尚未保存：" + error.localizedDescription }
         }
     }
     @discardableResult func add(_ record:ReadingRecord,image:Data? = nil) -> UUID {
@@ -243,14 +255,14 @@ actor ReadingJournalWriter {
             if let last = value.lastNotes.removeValue(forKey:old) { value.lastNotes[newPath] = last }
         }
     }
-    func flush() async throws {
+    func flush(compatibilityCheckpoint:Bool = true) async throws {
         timer?.cancel(); timer = nil
         if unreadable { throw FolioError(message:error ?? "阅读记录无法读取") }
         while let worker { try await worker.value; await Task.yield() }
-        guard savedRevision != revision || !pendingAssets.isEmpty else { return }
+        guard savedRevision != revision || !pendingAssets.isEmpty || (compatibilityCheckpoint && FileManager.default.fileExists(atPath:folder.appendingPathComponent("head053.json").path)) else { return }
         saving = true
         let value = state, number = revision, assets = pendingAssets, destination = folder, writer = writer
-        let task = Task { try await writer.write(value,revision:number,assets:assets,folder:destination) }
+        let task = Task { try await writer.write(value,revision:number,assets:assets,folder:destination,incremental:!compatibilityCheckpoint) }
         worker = task
         do {
             try await task.value
@@ -258,7 +270,7 @@ actor ReadingJournalWriter {
             worker = nil; savedRevision = number; for name in assets.keys { pendingAssets[name] = nil }
             dirty = revision != number; error = nil; saving = false;lastVerifiedSave = Date()
         } catch { worker = nil; saving = false; dirty = true; self.error = "阅读记录尚未保存：" + error.localizedDescription; throw error }
-        if dirty { try await flush() }
+        if dirty { try await flush(compatibilityCheckpoint:compatibilityCheckpoint) }
     }
     func waitForMaintenance() async { while restoring { try? await Task.sleep(nanoseconds:20_000_000) } }
     func makeBackup() async throws -> ReadingBackup {
@@ -283,7 +295,7 @@ actor ReadingJournalWriter {
         let fm = FileManager.default, old = folder.appendingPathComponent("catalog.previous.json"), file = folder.appendingPathComponent("catalog.json")
         let bytes = try Data(contentsOf:old), recovered = try JSONDecoder().decode(ReadingJournalState.self,from:bytes); try recovered.validate()
         if fm.fileExists(atPath:file.path) { try fm.copyItem(at:file,to:folder.appendingPathComponent("catalog.damaged-"+UUID().uuidString+".json")) }
-        try bytes.write(to:file,options:.atomic); state = recovered; unreadable = false; error = nil
+        try ReadingDeltaStorage.checkpoint(recovered,folder:folder); state = recovered; unreadable = false; error = nil
     }
     /// Import only the old app's stored records. No PDF is opened or implicitly added to the manual bookshelf.
     func importLegacy(cards:[BoardCard],books:[LibraryBook],topics:[ResearchTopic],annotations:[ResearchAnnotation]) async {
@@ -349,10 +361,10 @@ struct ReadingJournalTransfer {
     var assets:[String:Data]
     static func read(_ folder:URL) throws -> Self? {
         let file = folder.appendingPathComponent("catalog.json")
-        guard FileManager.default.fileExists(atPath:file.path) else { return nil }
-        let state = try JSONDecoder().decode(ReadingJournalState.self,from:Data(contentsOf:file)); try state.validate()
+        guard FileManager.default.fileExists(atPath:file.path) || FileManager.default.fileExists(atPath:folder.appendingPathComponent("head053.json").path) else { return nil }
+        let state = try ReadingDeltaStorage.read(folder).state; try state.validate()
         var assets:[String:Data] = [:]
-        for name in Set((state.records+state.essays.flatMap{$0.blocks.compactMap(\.record)}).compactMap(\.imageAsset)) { try Task.checkCancellation(); assets[name] = try Data(contentsOf:folder.appendingPathComponent("Assets").appendingPathComponent(name),options:.mappedIfSafe) }
+        for name in state.assetNames053 { try Task.checkCancellation(); assets[name] = try Data(contentsOf:folder.appendingPathComponent("Assets").appendingPathComponent(name),options:.mappedIfSafe) }
         return Self(state:state,assets:assets)
     }
 }

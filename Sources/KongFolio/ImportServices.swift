@@ -22,10 +22,9 @@ enum ImportServices {
     /// (seconds for a book of several hundred pages) only to produce the same pages again.
     static func documentData(_ url: URL) throws -> Data {
         if url.pathExtension.lowercased() == "pdf" {
+            let checked=try PDFImportProbe053.inspect(url)
             let data = try Data(contentsOf: url)
-            guard let document = PDFDocument(data: data), !document.isLocked, document.pageCount > 0 else {
-                throw FolioError(message: "无法打开 PDF，文件可能损坏或需要密码。")
-            }
+            guard OCRPageCache.digest(data)==checked.digest else { throw FolioError(message:"PDF 在检查期间发生变化，请重新打开") }
             return data
         }
         return try DocumentServices.load(url).dataRepresentation().unwrap("文档读取失败")

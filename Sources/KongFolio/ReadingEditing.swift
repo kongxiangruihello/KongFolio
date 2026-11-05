@@ -70,9 +70,11 @@ extension Workspace {
 
     /// A blank page the size of the current one, after it (or before it when `before`).
     func insertBlankPage(before: Bool = false) {
+        guard !readingLocked else { status="请先切换到编辑模式";return }
         guard count > 0, let reference = page else { return }
         let index = before ? selection : selection + 1
         checkpoint()
+        if let path=readingJournalPath { var order=Array(0..<count);order.insert(-1,at:index);store?.journal.remapSources053(path:path,order:order) }
         let blank = PDFPage()
         let box = reference.bounds(for: .mediaBox)
         blank.setBounds(CGRect(origin: .zero, size: box.size), for: .mediaBox)

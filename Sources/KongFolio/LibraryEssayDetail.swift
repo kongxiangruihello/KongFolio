@@ -15,6 +15,7 @@ struct LibraryEssayDetail: View {
             VStack(alignment:.leading,spacing:10) {
                 if journal.draftEssay?.id == essay.id { HStack { Text("空白笔记草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary);Spacer();Button("关闭空白草稿") { journal.discardEssayDraft() } } }
                 Text(ReadingRecordMetadata.essayLines(essay).joined(separator:" · ")).font(.caption).foregroundStyle(.secondary)
+                ReadingRecordExtrasView053(store:store,journal:journal,item:.essay(essay))
                 Button("核对引用更新（\(journal.citationUpdates(id).count)）") { showUpdates = true }.disabled(journal.citationUpdates(id).isEmpty)
                 StableTextField("笔记标题",text:Binding(get:{current?.title ?? ""},set:{text in journal.editEssay(id) { $0.title = text } }),fontSize:20)
                 DisclosureGroup("标签") { ReadingTagField(journal:journal,label:"笔记标签，以逗号分隔",text:Binding(get:{current?.tags.joined(separator:", ") ?? ""},set:{text in journal.editEssay(id) { $0.tags = ReadingRecordDetail.tags(text) } })) }
@@ -73,7 +74,7 @@ struct LibraryEssayBlockView: View {
             if let record = block.record {
                 VStack(alignment:.leading,spacing:6) {
                     Text(record.wholeBook && record.quote.isEmpty ? "关联书籍" : "原文引用（插入时的副本）").font(.caption).foregroundStyle(.secondary)
-                    if !record.quote.isEmpty { Text(record.quote).textSelection(.enabled) }
+                    if !record.quote.isEmpty { DisclosureGroup("展开原文（\(record.quote.count) 字）") { Text(record.quote).textSelection(.enabled) } }
                     if let name = record.imageAsset { ReadingRecordImage(url:journal.assetURL(name),pending:journal.pendingImage(name)).frame(maxHeight:240) }
                     if !record.note.isEmpty { Text("原笔记："+record.note).textSelection(.enabled) }
                     ForEach(Array(record.citations.enumerated()),id:\.offset) { _,citation in Button(citation.display) { _ = store.reveal(citation.source,beside:false) }.buttonStyle(.link).help(citation.display) }

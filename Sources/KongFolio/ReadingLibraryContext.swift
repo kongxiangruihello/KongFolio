@@ -16,18 +16,7 @@ struct ReadingLibraryContext {
     func sources(limit:Int = 10) -> [ReadingCitation] {
         guard limit>0 else { return [] }
         var result:[ReadingCitation] = []
-        func add(_ record:ReadingRecord) {
-            for citation in record.citations where !citation.source.path.isEmpty && !result.contains(where:{$0.source == citation.source}) {
-                guard result.count<limit else { return };result.append(citation)
-            }
-        }
-        for item in items {
-            switch item {
-            case .record(let r):add(r)
-            case .essay(let e):for block in e.blocks { if let r = block.record { add(r) };if result.count>=limit { break } }
-            }
-            if result.count>=limit { break }
-        }
+        for item in items { for citation in item.citations053 where !citation.source.path.isEmpty && !result.contains(where:{$0.source==citation.source}) { if result.count>=limit { return result };result.append(citation) } }
         return result
     }
     func clipboardText() -> String {

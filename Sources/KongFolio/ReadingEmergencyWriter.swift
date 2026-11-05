@@ -5,7 +5,7 @@ actor ReadingEmergencyWriter {
     func write(_ state:ReadingJournalState,pending:[String:Data],assets:URL,to file:URL,expected:FileBaseline) throws {
         try state.validate()
         var missing:[String] = [],images:[String:Data] = [:]
-        for name in Set((state.records+state.essays.flatMap{$0.blocks.compactMap(\.record)}).compactMap(\.imageAsset)) {
+        for name in state.assetNames053 {
             if let bytes = pending[name] ?? (try? Data(contentsOf:assets.appendingPathComponent(name))) { images[name] = bytes } else { missing.append(name) }
         }
         let bytes = try JSONEncoder().encode(state)

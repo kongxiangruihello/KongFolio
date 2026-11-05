@@ -28,7 +28,7 @@ struct ResearchBackup: Codable {
         var originals: [String: Data] = [:], companions: [Asset] = []
         if includeOriginals {
             let journalFile = storage.appendingPathComponent("ReadingJournal/catalog.json")
-            let journal = FileManager.default.fileExists(atPath:journalFile.path) ? try JSONDecoder().decode(ReadingJournalState.self,from:Data(contentsOf:journalFile)) : nil
+            let journal = FileManager.default.fileExists(atPath:journalFile.path) ? try ReadingDeltaStorage.read(journalFile.deletingLastPathComponent()).state : nil
             let records = (journal?.records ?? []) + (journal?.essays.flatMap{$0.blocks.compactMap(\.record)} ?? [])
             let paths = Set(catalog.books.map(\.path) + records.flatMap{$0.citations.map(\.source.path)}.filter{!$0.isEmpty})
             for path in paths {
@@ -54,6 +54,10 @@ struct ResearchBackup: Codable {
         }
         for folder in allowedFolders where folder != "Library" && folder != "Research" && folder != "Personal" {
             let base = storage.appendingPathComponent(folder).resolvingSymlinksInPath().standardizedFileURL
+            if folder=="ReadingJournal",FileManager.default.fileExists(atPath:base.appendingPathComponent("catalog.json").path) || FileManager.default.fileExists(atPath:base.appendingPathComponent("head053.json").path) {
+                let bytes=try ReadingBackupStorage.bytes(ReadingDeltaStorage.read(base).state)
+                companions.append(Asset(path:"ReadingJournal/catalog.json",bytes:bytes,digest:OCRPageCache.digest(bytes)))
+            }
             if let enumerator = FileManager.default.enumerator(at: base, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) {
                 for case let url as URL in enumerator {
                     try Task.checkCancellation()
@@ -62,6 +66,12 @@ struct ResearchBackup: Codable {
                     let bytes = try Data(contentsOf: url, options: .mappedIfSafe)
                     let canonical = url.standardizedFileURL.path
                     guard canonical.hasPrefix(base.path + "/") else { throw FolioError(message: "备份枚举路径不属于资料目录") }
+                    if folder=="ReadingJournal" {
+                        let relative=String(canonical.dropFirst(base.path.count+1))
+                        // Portable backups materialize the committed journal. The generation pointer,
+                        // transactions and disposable search index are local implementation details.
+                        guard relative.hasPrefix("Assets/") || relative.hasPrefix("Backups/") || relative.hasPrefix("History053/") || relative=="catalog.previous.json" else { continue }
+                    }
                     companions.append(Asset(path: folder + "/" + canonical.dropFirst(base.path.count + 1), bytes: bytes, digest: OCRPageCache.digest(bytes)))
                 }
             }
@@ -210,7 +220,11 @@ struct ResearchBackup: Codable {
             for asset in companions {
                 let output = support.appendingPathComponent(asset.path)
                 try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try rewritten(asset.bytes).write(to: output, options: .atomic)
+                var bytes=rewritten(asset.bytes)
+                if asset.path.hasPrefix("ReadingJournal/Backups/"),asset.path.hasSuffix(".json"),var backup=try? JSONDecoder().decode(ReadingBackup.self,from:bytes) {
+                    backup.digest=OCRPageCache.digest(try ReadingBackupStorage.bytes(backup.state));bytes=try JSONEncoder().encode(backup)
+                }
+                try bytes.write(to: output, options: .atomic)
             }
             for (old,new) in map where old != new {
                 for folder in ["ReadingRulers", "ReadingDocuments", "SignatureEdits", "AcademicDrafts", "WordDrafts", "TableDrafts", "History", "TextHistory"] {

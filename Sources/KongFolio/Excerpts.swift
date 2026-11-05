@@ -70,6 +70,13 @@ extension Workspace {
         if let store, store.readingMode {
             guard !store.journal.unreadable else { error = store.journal.error; return }
             let index = document.index(for:page)
+            if let id=store.multiRegionTarget053,let target=store.journal.record(id),target.removed==nil,target.kind == .image {
+                do {
+                    let asset=try store.journal.stageAsset053(imageData),citation=readingCitation(page:index == NSNotFound ? selection:index,rects:[pageRect])
+                    store.journal.editRecord(id) { r in var extras=r.extras ?? ReadingRecordExtras053();extras.regions=(extras.regions ?? [])+[ReadingRegion053(asset:asset,citation:citation)];r.extras=extras;if !r.citations.contains(citation) { r.citations.append(citation) } }
+                    store.readingRecordID=id;status="已追加区域，当前共 \((store.journal.record(id)?.extras?.regions?.count ?? 0)+1) 个区域";return
+                } catch { recordError(error);return }
+            }
             let record = ReadingRecord(kind:.image,citations:[readingCitation(page:index == NSNotFound ? selection : index,rects:[pageRect])])
             store.journal.add(record,image:imageData); store.readingRecordID = record.id; store.openReadingDesk(.excerpts); status = "图片摘录已保存到阅读记录"; return
         }
@@ -212,7 +219,9 @@ extension WorkspaceStore {
     /// pane next to the document in front, so the reader keeps their place; otherwise the tab that already shows the file
     /// is brought to the front, or a new tab opens it. Returns false when the file cannot be found.
     @discardableResult func reveal(_ source: SourceRef, beside: Bool? = nil) -> Bool {
+        guard source.invalidPage053 != true else { present(FolioError(message:"这条记录的原页已被删除；摘录仍保留，请在资料库重新核对出处"));return false }
         var source = source
+        source.path=ReadingDocumentRegistry053.shared(storage).resolve(source.path)
         source.path = library.resolve(ReadingShortcut(path: source.path, title: source.fileName, position: source.position)).path
         guard !source.path.isEmpty else {
             present(FolioError(message: "这张卡片的来源文档没有保存为文件，无法跳转。"))

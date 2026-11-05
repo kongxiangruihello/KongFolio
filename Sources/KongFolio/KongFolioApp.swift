@@ -227,7 +227,7 @@ struct WindowAccessor: NSViewRepresentable {
             var approved = saved && self.store?.prepareToClose() != false
             if let (job, completion) = self.pendingUpdate {
                 if approved {
-                    do { try await AppUpdateInstaller.launchHelper(job) } catch { approved = false; completion(error) }
+                    do { if let journal=self.store?.journal { _=try await journal.makeBackup() };try await AppUpdateInstaller.launchHelper(job) } catch { approved = false; completion(error) }
                 } else { completion(UpdateInstallFailure("安装已取消，记录与原程序已保留，可稍后再试")) }
                 self.pendingUpdate = nil
             }

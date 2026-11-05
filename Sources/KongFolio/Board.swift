@@ -18,6 +18,7 @@ struct SourceRef: Codable, Equatable {
     /// Keep the marks on the page instead of letting them fade (0.34): KongSeek's search hits and quotation checks
     /// open with this, so the words stay visible while the page is read.
     var keep: Bool? = nil
+    var invalidPage053:Bool? = nil
 
     var pageDescription: String {
         "第 \(page + 1) 页" + (pageLabel.map { $0 == String(page + 1) ? "" : "（印刷页码 \($0)）" } ?? "")
