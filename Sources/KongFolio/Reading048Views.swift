@@ -43,7 +43,7 @@ struct ReadingSearchMatches: View {
         let hits = ReadingTextSearch.fields(item,query:query)
         if !query.isEmpty,!hits.isEmpty { DisclosureGroup("命中正文 \(hits.count) 处 · 点击定位") {
             ForEach(Array(hits.dropFirst(page*10).prefix(10))) { hit in
-                Button { store.writingSearchHit = hit;store.writingSearchRequest = UUID() } label:{Text(hit.context).font(.caption).lineLimit(2).foregroundStyle(.blue)}.buttonStyle(.plain)
+                Button { store.writingSearchHit = hit;store.writingSearchRequest = UUID() } label:{Text(SearchResultHighlight.text(hit.context,query:query)).font(.caption).lineLimit(2).foregroundStyle(.blue)}.buttonStyle(.plain)
             }
             HStack { Button("上一页") { page-=1 }.disabled(page == 0);Text("\(page+1)");Button("下一页") { page+=1 }.disabled((page+1)*10>=hits.count) }.font(.caption)
         }.onChange(of:query) { _,_ in page = 0 } }

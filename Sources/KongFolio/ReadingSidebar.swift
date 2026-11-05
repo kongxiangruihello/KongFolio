@@ -132,7 +132,7 @@ struct ReadingSidebar: View {
                         Button { workspace.goToSearch(hit) } label: {
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(hit.label.map { "第 \(hit.page + 1) 页 · 印刷页码 \($0)" } ?? "第 \(hit.page + 1) 页").font(.caption.bold()).foregroundStyle(Brand.accent)
-                                Text(hit.snippet).font(.caption).lineLimit(5)
+                                Text(SearchResultHighlight.text(hit.snippet,query:hit.query ?? workspace.search)).font(.caption).lineLimit(5)
                             }
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)

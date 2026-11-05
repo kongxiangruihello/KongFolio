@@ -18,9 +18,13 @@ struct ReaderToolbarProfile:Codable,Equatable {
         }
     }
     private var unifiedPins:Set<FileToolbarAction> { Set(pinned.compactMap{FileToolbarAction(rawValue:$0)?.unified}) }
-    func visible(width:Double)->[FileToolbarAction] { Array((actions.filter{unifiedPins.contains($0)}+actions.filter{!unifiedPins.contains($0)}).prefix(SingleRowToolbarPolicy.visibleCount(width:width))) }
+    func visible(width:Double)->[FileToolbarAction] {
+        let chosen=Set((actions.filter{unifiedPins.contains($0)}+actions.filter{!unifiedPins.contains($0)}).prefix(SingleRowToolbarPolicy.visibleCount(width:width)))
+        return actions.filter{chosen.contains($0)}
+    }
     func hidden(width:Double)->[FileToolbarAction] { let selected = Set(visible(width:width));return actions.filter{!selected.contains($0)} }
-    static func load(_ defaults:UserDefaults = .standard)->Self { guard let d = defaults.data(forKey:key),var p = try? JSONDecoder().decode(Self.self,from:d) else { return Self() };p.order = p.actions.map(\.rawValue);p.pinned = Set(p.pinned.compactMap{FileToolbarAction(rawValue:$0)?.unified.rawValue});return p }
+    static func decode(_ data:Data?)->Self { guard let data,var p = try? JSONDecoder().decode(Self.self,from:data) else { return Self() };p.order = p.actions.map(\.rawValue);p.pinned = Set(p.pinned.compactMap{FileToolbarAction(rawValue:$0)?.unified.rawValue});return p }
+    static func load(_ defaults:UserDefaults = .standard)->Self { decode(defaults.data(forKey:key)) }
     func save(_ defaults:UserDefaults = .standard) { if let data = try? JSONEncoder().encode(self) { defaults.set(data,forKey:Self.key) } }
     mutating func move(_ action:FileToolbarAction,by delta:Int) { order = actions.map(\.rawValue);guard let i = order.firstIndex(of:action.rawValue),order.indices.contains(i+delta) else { return };order.swapAt(i,i+delta) }
 }

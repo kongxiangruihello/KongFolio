@@ -31,6 +31,7 @@ struct SearchHit: Identifiable {
     /// For a hit on a vertical page that is read from its recognition record: one box per column the match covers,
     /// as fractions of the page. `range` means nothing then.
     var strips: [CGRect]? = nil
+    var query: String? = nil
 }
 struct AnnotationNote: Identifiable {
     var id: String { "\(page)-\(index)" }
@@ -185,7 +186,7 @@ enum ReadingServices {
                     }
                     let from = max(0, first - 8), to = min(characters.count, last + 16)
                     let snippet = characters[from..<to].map(\.text).joined()
-                    hits.append(SearchHit(page: i, range: NSRange(location: 0, length: 0), snippet: repairIdeographs(snippet), label: label, strips: strips))
+                    hits.append(SearchHit(page: i, range: NSRange(location: 0, length: 0), snippet: repairIdeographs(snippet), label: label, strips: strips, query:query))
                     if hits.count >= limit { return hits }
                 }
                 continue
@@ -195,7 +196,7 @@ enum ReadingServices {
             for found in matches(in: string, query: query, simplify: simplify, cache: &cache) {
                 let lower = max(0, found.location - 32), upper = min(text.length, NSMaxRange(found) + 64)
                 let excerpt = text.substring(with: text.rangeOfComposedCharacterSequences(for: NSRange(location: lower, length: upper - lower))).replacingOccurrences(of: "\n", with: " ")
-                hits.append(SearchHit(page: i, range: found, snippet: repairIdeographs(excerpt), label: label))
+                hits.append(SearchHit(page: i, range: found, snippet: repairIdeographs(excerpt), label: label, query:query))
                 if hits.count >= limit { return hits }
             }
         }

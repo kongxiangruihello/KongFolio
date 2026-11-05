@@ -318,9 +318,9 @@ extension WorkspaceStore {
     private var task:Task<Void,Never>?
     private var token = UUID()
     func add(_ urls:[URL],to library:BookLibrary) {
-        cancel(); let current = UUID(); token = current; busy = true; message = ""
+        cancel(); let current = UUID(); token = current; busy = true; message = "";let previous=library.books.count
         task = Task { [weak self] in
-            do { try await library.addInBackground(urls); guard let self,self.token == current else { return }; self.busy = false; self.message = "手动添加已完成" }
+            do { try await library.addInBackground(urls); guard let self,self.token == current else { return }; self.busy = false;let added=library.books.count-previous;self.message = added>0 ? "已添加 \(added) 本书籍" : "书籍已在书架中，没有重复添加" }
             catch { guard let self,self.token == current else { return }; self.busy = false; self.message = FolioCancellation.matches(error) ? "已停止添加" : error.localizedDescription }
         }
     }
