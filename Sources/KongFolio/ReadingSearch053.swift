@@ -86,14 +86,36 @@ extension ReadingLibraryItem {
             case .mine:return r.note
             case .quote:return r.quote
             case .comment:return r.pdfOrigin?.contents ?? ""
-            case .all:return [r.title,r.quote,r.note,r.pdfOrigin?.contents ?? "",r.tags.joined(separator:" "),r.citations053.map{[$0.title,$0.author,$0.edition ?? "",$0.publication?.summary ?? "",$0.source.pageDescription].joined(separator:" ")}.joined(separator:"\n"),(r.extras?.quotations ?? []).map(\.text).joined(separator:"\n")].joined(separator:"\n")
+            case .all:
+                var parts:[String]=[r.title,r.quote,r.note,r.pdfOrigin?.contents ?? "",r.tags.joined(separator:" ")]
+                var sources:[String]=[]
+                for citation in r.citations053 {
+                    let fields:[String]=[citation.title,citation.author,citation.edition ?? "",citation.publication?.summary ?? "",citation.source.pageDescription]
+                    sources.append(fields.joined(separator:" "))
+                }
+                parts.append(sources.joined(separator:"\n"))
+                let quotations:[String]=(r.extras?.quotations ?? []).map(\.text)
+                parts.append(quotations.joined(separator:"\n"))
+                return parts.joined(separator:"\n")
             }
         case .essay(let e):
             switch scope {
             case .mine:return e.blocks.map(\.text).joined(separator:"\n")
             case .quote:return e.blocks.compactMap{$0.record?.quote}.joined(separator:"\n")
             case .comment:return e.blocks.compactMap{$0.record?.pdfOrigin?.contents}.joined(separator:"\n")
-            case .all:return ([e.title,e.tags.joined(separator:" "),(e.extras?.quotations ?? []).map{$0.text+" "+$0.citations.map{ReadingExportOrdering.citation($0)}.joined(separator:" ")}.joined(separator:"\n")]+e.blocks.flatMap{[$0.text,$0.record.map{ReadingLibraryItem.record($0).searchText053(.all)} ?? ""]}).joined(separator:"\n")
+            case .all:
+                var parts:[String]=[e.title,e.tags.joined(separator:" ")]
+                var quotations:[String]=[]
+                for quote in e.extras?.quotations ?? [] {
+                    let sources:[String]=quote.citations.map{ReadingExportOrdering.citation($0)}
+                    quotations.append(quote.text+" "+sources.joined(separator:" "))
+                }
+                parts.append(quotations.joined(separator:"\n"))
+                for block in e.blocks {
+                    parts.append(block.text)
+                    if let record=block.record { parts.append(ReadingLibraryItem.record(record).searchText053(.all)) } else { parts.append("") }
+                }
+                return parts.joined(separator:"\n")
             }
         }
     }

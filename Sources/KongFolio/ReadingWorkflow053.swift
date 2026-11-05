@@ -6,9 +6,19 @@ enum ReadingWorkflow053 {
     }
     static func duplicateGroups(_ state:ReadingJournalState)->[[ReadingRecord]] {
         let entries=state.records.filter{$0.removed==nil && $0.hasContent && $0.kind != .note}
-        return Dictionary(grouping:entries) { r in
-            ReadingSearchExpression053.normalized(r.quote)+"|"+(r.imageAsset ?? "")+"|"+(r.pdfOrigin?.annotationID ?? "")+"|"+r.citations.map{ReadingBookIdentity.key($0.source.path)+":"+String($0.source.page)+":"+String(describing:$0.source.rects)}.sorted().joined(separator:"|")
-        }.values.filter{$0.count>1}.map{$0.sorted{$0.created<$1.created}}.sorted{$0[0].created<$1[0].created}
+        var groups:[String:[ReadingRecord]]=[:]
+        for record in entries {
+            var locations:[String]=[]
+            for citation in record.citations {
+                let fields:[String]=[ReadingBookIdentity.key(citation.source.path),String(citation.source.page),String(describing:citation.source.rects)]
+                locations.append(fields.joined(separator:":"))
+            }
+            let fields:[String]=[ReadingSearchExpression053.normalized(record.quote),record.imageAsset ?? "",record.pdfOrigin?.annotationID ?? "",locations.sorted().joined(separator:"|")]
+            groups[fields.joined(separator:"|"),default:[]].append(record)
+        }
+        var result:[[ReadingRecord]]=[]
+        for values in groups.values where values.count>1 { result.append(values.sorted{$0.created<$1.created}) }
+        return result.sorted{$0[0].created<$1[0].created}
     }
     static func frozen(_ item:ReadingLibraryItem)->ReadingQuotation053 {
         var q=ReadingQuotation053(recordID:item.id.uuid053,title:item.title,text:item.text053,citations:item.citations053,kind:item.kind,originalCreated:item.created,originalModified:item.modified053)

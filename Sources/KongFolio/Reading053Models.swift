@@ -43,7 +43,13 @@ struct ReadingRecordExtras053:Codable,Equatable {
     var regions:[ReadingRegion053]? = nil
     var quotations:[ReadingQuotation053]? = nil
     var hasContent:Bool { !(regions ?? []).isEmpty || !(quotations ?? []).isEmpty }
-    var assets:[String] { (visualAsset.map{[$0]} ?? [])+(regions ?? []).map(\.asset)+(quotations ?? []).flatMap{$0.assets ?? []} }
+    var assets:[String] {
+        var result:[String]=[]
+        if let visualAsset { result.append(visualAsset) }
+        for region in regions ?? [] { result.append(region.asset) }
+        for quotation in quotations ?? [] { result.append(contentsOf:quotation.assets ?? []) }
+        return result
+    }
 }
 enum ReadingNoteTemplate053:String,CaseIterable,Identifiable {
     case blank="空白笔记",reflection="读书心得",source="史料核对",concept="概念辨析"
@@ -69,9 +75,17 @@ enum ReadingRecordLink053 {
 extension ReadingLibraryItem {
     var modified053:Date { switch self {case .record(let r):return r.modified;case .essay(let e):return e.modified} }
     var citations053:[ReadingCitation] {
-        let values:[ReadingCitation]
-        switch self {case .record(let r):values=r.citations053;case .essay(let e):values=e.blocks.flatMap{$0.record?.citations053 ?? []}+(e.extras?.regions ?? []).map(\.citation)+(e.extras?.quotations ?? []).flatMap(\.citations)}
-        return values.reduce(into:[]){ if !$0.contains($1) { $0.append($1) } }
+        var values:[ReadingCitation]=[]
+        switch self {
+        case .record(let record):values=record.citations053
+        case .essay(let essay):
+            for block in essay.blocks { if let record=block.record { values.append(contentsOf:record.citations053) } }
+            for region in essay.extras?.regions ?? [] { values.append(region.citation) }
+            for quotation in essay.extras?.quotations ?? [] { values.append(contentsOf:quotation.citations) }
+        }
+        var result:[ReadingCitation]=[]
+        for citation in values where !result.contains(citation) { result.append(citation) }
+        return result
     }
     var extras053:ReadingRecordExtras053 { switch self {case .record(let r):return r.extras ?? ReadingRecordExtras053();case .essay(let e):return e.extras ?? ReadingRecordExtras053()} }
     var text053:String { switch self {case .record(let r):return [r.quote,r.pdfOrigin?.contents ?? "",r.note].filter{!$0.isEmpty}.joined(separator:"\n\n");case .essay(let e):return e.blocks.map{[$0.record?.quote ?? "",$0.text].filter{!$0.isEmpty}.joined(separator:"\n\n")}.joined(separator:"\n\n")} }
@@ -105,7 +119,14 @@ extension ReadingLibraryItem {
     }
 }
 extension ReadingRecord {
-    var citations053:[ReadingCitation] { (citations+(extras?.regions ?? []).map(\.citation)+(extras?.quotations ?? []).flatMap(\.citations)).reduce(into:[]){if !$0.contains($1){$0.append($1)}} }
+    var citations053:[ReadingCitation] {
+        var values=citations
+        for region in extras?.regions ?? [] { values.append(region.citation) }
+        for quotation in extras?.quotations ?? [] { values.append(contentsOf:quotation.citations) }
+        var result:[ReadingCitation]=[]
+        for citation in values where !result.contains(citation) { result.append(citation) }
+        return result
+    }
     var assetNames053:[String] { (imageAsset.map{[$0]} ?? [])+(extras?.assets ?? []) }
     mutating func remapAssets053(_ names:[String:String]) {
         if let old=imageAsset { imageAsset=names[old] ?? old }
@@ -115,7 +136,15 @@ extension ReadingRecord {
     }
 }
 extension ReadingJournalState {
-    var assetNames053:Set<String> { Set((records+essays.flatMap{$0.blocks.compactMap(\.record)}).flatMap(\.assetNames053)+essays.flatMap{$0.extras?.assets ?? []}) }
+    var assetNames053:Set<String> {
+        var result=Set<String>()
+        for record in records { result.formUnion(record.assetNames053) }
+        for essay in essays {
+            result.formUnion(essay.extras?.assets ?? [])
+            for block in essay.blocks { if let record=block.record { result.formUnion(record.assetNames053) } }
+        }
+        return result
+    }
 }
 extension ReadingRecordExtras053 {
     mutating func remapAssets053(_ names:[String:String]) {
