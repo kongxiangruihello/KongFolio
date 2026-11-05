@@ -36,8 +36,8 @@ import KongFolioUpdateKit
             CommandGroup(replacing: .newItem) {
                 Button("打开…") { store.open() }.keyboardShortcut("o")
                 Button("新建 PDF") { store.newPDF() }
-                Button("新建 Markdown 笔记") { store.newNote() }.keyboardShortcut("n")
-                Button("速记") { store.showQuickReadingNote = true }.keyboardShortcut("n",modifiers:[.command,.option])
+                Button("新建 Markdown 文件") { store.newNote() }.keyboardShortcut("n")
+                Button("新建阅读笔记") { store.newReadingNote() }.keyboardShortcut("n",modifiers:[.command,.option])
                 Button("新建 HTML 文件") { store.newNote(format: .html) }
                 Button("新建文本文件") { store.newNote(format: .plain) }
                 Button("编辑 Markdown / HTML / 文本文件…") { store.editMarkdownFile() }.keyboardShortcut("o", modifiers: [.command, .shift])

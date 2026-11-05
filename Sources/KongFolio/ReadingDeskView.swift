@@ -23,13 +23,14 @@ struct ReadingDeskView: View {
                 Spacer()
                 if compact { Button { store.openReadingDesk(section,window:true) } label:{Image(systemName:"arrow.up.left.and.arrow.down.right")}.help("在独立窗口中打开阅读记录") }
             }
-            Picker("记录类型",selection:$section) { ForEach(ReadingDeskSection.allCases,id:\.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.menu)
+            Picker("记录类型",selection:Binding(get:{section == .essays ? .notes : section},set:{section = $0})) { ForEach(ReadingDeskSection.allCases.filter{$0 != .essays},id:\.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.menu)
             if section == .exports { ReadingExportPane(store:store,journal:journal) }
             else if section == .search { ReadingLibraryView(store:store,journal:journal,section:$section,compact:compact) }
             else if section == .essays { ReadingEssayPane(store:store,journal:journal) }
             else { records }
             Divider()
             ReadingSaveRecoveryFooter(journal:journal)
+            if let message = journal.pdfCaptureMessage { Text(message).font(.caption).foregroundStyle(.orange) }
             if let backupError = journal.backupError { Text("记录保存不受影响，自动备份尚未完成："+backupError).font(.caption).foregroundStyle(.orange) }
             if journal.unreadable { Button("保留损坏文件并恢复上一份记录") { do { try journal.recoverPrevious() } catch { store.present(error) } } }
         }.padding(compact ? 10 : 18)
@@ -60,11 +61,11 @@ struct ReadingDeskView: View {
             List { ForEach(Array(hits.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { hit in
                 switch hit {
                 case .record(let record): row(record)
-                case .essay(let essay): Button { journal.selectEssay(essay.id); section = .essays } label: { Label(essay.title+" · 札记",systemImage:"doc.text").lineLimit(2).help(essay.title) }.buttonStyle(.plain)
+                case .essay(let essay): Button { journal.selectEssay(essay.id); section = .essays } label: { Label(essay.title+" · 笔记",systemImage:"doc.text").lineLimit(2).help(essay.title) }.buttonStyle(.plain)
                 }
             } }
                 .frame(minHeight:100,maxHeight:store.readingRecordID == nil ? .infinity : 180)
-                .overlay { if hits.isEmpty { Text("这里保存你的摘录、笔记和札记").font(.caption).foregroundStyle(.secondary) } }
+                .overlay { if hits.isEmpty { Text("这里保存你的摘录、标注、评论和笔记").font(.caption).foregroundStyle(.secondary) } }
             ReadingPageControls(pagination: pagination, page: $page, size: $pageSize)
             if let draft = journal.draftRecord, draft.id == store.readingRecordID { Text("空白笔记草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary) }
             if let record = journal.record(store.pinnedReadingID ?? store.readingRecordID) { ReadingRecordDetail(store:store,journal:journal,record:record).id(record.id).disabled(journal.unreadable) }
@@ -98,6 +99,7 @@ struct ReadingRecordDetail: View {
         ScrollView {
             VStack(alignment:.leading,spacing:10) {
                 HStack { Button(store.pinnedReadingID == record.id ? "取消固定这条笔记" : "固定这条记录，翻页时继续写") { store.pinnedReadingID = store.pinnedReadingID == record.id ? nil : record.id };if store.pinnedReadingID == record.id { Text("已固定："+current.displayTitle).font(.caption).lineLimit(1) } }
+                ReadingRecordMetadataView(record:current)
                 StableTextField("记录标题（可留空）",text:binding(\.title))
                 if current.kind != .note {
                     HStack { Text("摘录原文").font(.caption); Spacer(); Button("原文与校订对照…") { showQuoteCorrection = true }; Button(editQuote ? "完成文字校正" : "校正摘录文字") { editQuote.toggle() } }
@@ -126,7 +128,7 @@ struct ReadingRecordDetail: View {
                 }
                 if current.citations.count > 20 { Text("另有来源页，导出时一并保留").font(.caption) }
                 HStack {
-                    Button("加入札记") { let id = journal.currentEssayID ?? journal.newEssay(); store.insertReadingRecord(current,in:id); store.openReadingDesk(.essays,window:true) }
+                    Button("加入笔记") { let id = journal.currentEssayID ?? journal.newEssay(); store.insertReadingRecord(current,in:id); store.openReadingDesk(.essays,window:true) }
                     Button("导出这条记录") { store.readingRecordSelection = [record.id]; store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) }
                 }.disabled(journal.draftRecord?.id == record.id || !current.hasContent)
                 if current.kind != .note { Button("针对摘录写笔记") { store.newReadingNote(linked:current) } }
@@ -223,7 +225,7 @@ struct ReadingDeskWindowView: View {
     init(store:WorkspaceStore,section:ReadingDeskSection) {
         session = ReadingDeskSession(section)
         let window = NSWindow(contentRect:NSRect(x:0,y:0,width:940,height:760),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
-        window.title = "阅读资料库 · 摘录、笔记与札记"; window.identifier = NSUserInterfaceItemIdentifier("reading-desk")
+        window.title = "阅读资料库 · 摘录、标注、评论与笔记"; window.identifier = NSUserInterfaceItemIdentifier("reading-desk")
         window.minSize = NSSize(width:600,height:460); window.isReleasedWhenClosed = false
         super.init(window:window); window.delegate = self
         window.contentView = NSHostingView(rootView:ReadingDeskWindowView(store:store,session:session))

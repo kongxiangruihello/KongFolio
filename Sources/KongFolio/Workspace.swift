@@ -239,6 +239,7 @@ import UniformTypeIdentifiers
     var wordDraftDigest: String?
     var preparingSnapshot = false
     var journalSourceIdentity:(raw:String,canonical:String)?
+    var readingAnnotationTask:Task<Void,Never>?
     var snapshotInFlight: (revision: UUID, task: Task<ProjectArchive, Error>)?
     var captureInProgress = false
     var incrementalBase: Data?
@@ -532,6 +533,7 @@ import UniformTypeIdentifiers
     /// Call after any change. `pdfChanged: false` for metadata such as bookmarks;
     /// `pages` limits thumbnail refresh to pages whose annotations changed.
     func edited(reset: Bool = false, pdfChanged: Bool = true, pages: Set<Int>? = nil) {
+        readingAnnotationTask?.cancel();readingAnnotationTask = nil
         store?.recordActivity("编辑文档")
         closePrepared = false
         dirty = true
@@ -561,6 +563,7 @@ import UniformTypeIdentifiers
         if reset {
             selectedAnnotation = nil
         }
+        if pdfChanged,let pages { captureReadingAnnotationPages(pages) }
         scheduleRecovery()
         scheduleDirectSave()
     }
@@ -626,7 +629,7 @@ import UniformTypeIdentifiers
                             return (failure, saved)
                         }.value
                         projectURL = url
-                        fileBaseline = result.1; saveConflict = false; error = nil; lastVerifiedDocumentSave = Date()
+                        fileBaseline = result.1; saveConflict = false; error = nil; lastVerifiedDocumentSave = Date();scheduleReadingAnnotationImport()
                         dirty = false
                         try persistWordDraft(); try persistTableDrafts()
                         remember([url])
@@ -644,7 +647,7 @@ import UniformTypeIdentifiers
             do { try DocumentHistory.record(archive, source: url, storage: storage, label: automatic ? "自动保存项目" : "保存项目", automatic: automatic) }
             catch { backupError = backupError ?? error }
             projectURL = url
-            fileBaseline = saved; saveConflict = false; error = nil; lastVerifiedDocumentSave = Date()
+            fileBaseline = saved; saveConflict = false; error = nil; lastVerifiedDocumentSave = Date();scheduleReadingAnnotationImport()
             dirty = false
             try persistWordDraft(); try persistTableDrafts()
             remember([url])
@@ -720,6 +723,7 @@ import UniformTypeIdentifiers
 
     /// Empties the workspace. With `keepingSource` the file it came from stays known, so the tab can load it again.
     func clearDocument(keepingSource: Bool) {
+        readingAnnotationTask?.cancel();readingAnnotationTask = nil
         autoTask?.cancel(); autoTask = nil
         saveReadingRecord(); progressTask?.cancel(); readingSaveTask?.cancel(); readingBookmarkTask?.cancel(); readingBookmarkTask = nil
         try? persistWordDraft()
@@ -953,7 +957,7 @@ import UniformTypeIdentifiers
                 prepareReadingResume(path: urls[0].path)
                 applyPendingView()
                 status = "项目已打开"
-                validateResearchSource(); loadReadingRulerIfNeeded(); store?.restoreReadingRecord(for:self)
+                validateResearchSource(); loadReadingRulerIfNeeded(); store?.restoreReadingRecord(for:self);scheduleReadingAnnotationImport()
             store?.loadedTabsChanged()
                 return
             }
@@ -1069,7 +1073,7 @@ import UniformTypeIdentifiers
             remember(urls)
             status = "已载入 \(count) 页" + (rebuilt ? "（此文件带“禁止修改”限制，已转成可编辑文档；修改后自动保存）" : "")
                 + (resumed.map { "；回到上次读到的第 \($0 + 1) 页" } ?? "")
-            validateResearchSource(); loadReadingRulerIfNeeded(); store?.restoreReadingRecord(for:self)
+            validateResearchSource(); loadReadingRulerIfNeeded(); store?.restoreReadingRecord(for:self);scheduleReadingAnnotationImport()
             store?.loadedTabsChanged()
         } }
     }

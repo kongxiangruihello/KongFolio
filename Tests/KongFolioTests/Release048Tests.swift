@@ -5,7 +5,7 @@ import PDFKit
 
 final class Release048Tests: XCTestCase {
     func folder() throws -> URL { try Release027Tests().folder() }
-    func testToolbarDefaultStartsWithNewFiles() { XCTAssertEqual(Array(ReaderToolbarProfile().actions.prefix(5)),[.newPDF,.newMarkdown,.newText,.newHTML,.open]);XCTAssertEqual(SingleRowToolbarPolicy.titleWidth(1200),0) }
+    func testToolbarDefaultStartsWithNewFiles() { XCTAssertEqual(Array(ReaderToolbarProfile().actions.prefix(2)),[.newFile,.open]);XCTAssertEqual(SingleRowToolbarPolicy.titleWidth(1200),0) }
     func testToolbarBudgetAndOverflowNeverLoseTools() { let p = ReaderToolbarProfile();for w in stride(from:320.0,through:1600,by:10) { XCTAssertEqual(Set(p.visible(width:w)+p.hidden(width:w)),Set(FileToolbarAction.allCases));XCTAssertTrue(Double(p.visible(width:w).count)*36+102<=w) } }
     func testToolbarUnknownAndDuplicatePreferencesAreRepaired() { var p = ReaderToolbarProfile();p.order = ["bad","open","open"];XCTAssertEqual(p.actions.count,FileToolbarAction.allCases.count);XCTAssertEqual(p.actions.first,.open);var previous = ReaderToolbarProfile();previous.order.removeAll{$0 == "signature"};let upgraded = previous.actions;XCTAssertEqual(upgraded.firstIndex(of:.signature),upgraded.firstIndex(of:.tools).map{$0+1}) }
     func testToolbarPinsAndOrderSurvivePreferencesReload() { let d = UserDefaults(suiteName:UUID().uuidString)!;var p = ReaderToolbarProfile();p.pinned = ["library"];p.move(.library,by:-1);p.save(d);let q = ReaderToolbarProfile.load(d);XCTAssertEqual(p,q);XCTAssertEqual(q.visible(width:320).first,.library) }

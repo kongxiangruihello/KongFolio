@@ -3,20 +3,21 @@ import AppKit
 
 struct ReaderToolbarProfile:Codable,Equatable {
     static let key = "KongFolio.readerToolbar048"
-    static let defaultActions:[FileToolbarAction] = [.newPDF,.newMarkdown,.newText,.newHTML,.open,.annotate,.tools,.signature,.excerpt,.note,.quickNote,.essay,.library,.save,.export,.books,.sidebar,.jobs]
+    static let defaultActions:[FileToolbarAction] = FileToolbarAction.allCases
     var order:[String] = Self.defaultActions.map(\.rawValue)
-    var pinned:Set<String> = ["newPDF","newMarkdown","newText","newHTML"]
+    var pinned:Set<String> = ["newFile"]
     var actions:[FileToolbarAction] {
+        var seen = Set<FileToolbarAction>()
         var upgraded = order
-        if !upgraded.contains(FileToolbarAction.signature.rawValue) {
-            let neighbor = upgraded.firstIndex(of:FileToolbarAction.tools.rawValue) ?? upgraded.firstIndex(of:FileToolbarAction.annotate.rawValue)
-            upgraded.insert(FileToolbarAction.signature.rawValue,at:neighbor.map{$0+1} ?? upgraded.count)
+        if !upgraded.contains("signature"),let i=upgraded.firstIndex(where:{FileToolbarAction(rawValue:$0)?.unified == .tools}) { upgraded.insert("signature",at:i+1) }
+        return (upgraded+Self.defaultActions.map(\.rawValue)).compactMap { raw in
+            guard let action = FileToolbarAction(rawValue:raw)?.unified,seen.insert(action).inserted else { return nil };return action
         }
-        var seen = Set<String>();return (upgraded+Self.defaultActions.map(\.rawValue)).compactMap { raw in guard seen.insert(raw).inserted else { return nil };return FileToolbarAction(rawValue:raw) }
     }
-    func visible(width:Double)->[FileToolbarAction] { Array((actions.filter{pinned.contains($0.rawValue)}+actions.filter{!pinned.contains($0.rawValue)}).prefix(SingleRowToolbarPolicy.visibleCount(width:width))) }
+    private var unifiedPins:Set<FileToolbarAction> { Set(pinned.compactMap{FileToolbarAction(rawValue:$0)?.unified}) }
+    func visible(width:Double)->[FileToolbarAction] { Array((actions.filter{unifiedPins.contains($0)}+actions.filter{!unifiedPins.contains($0)}).prefix(SingleRowToolbarPolicy.visibleCount(width:width))) }
     func hidden(width:Double)->[FileToolbarAction] { let selected = Set(visible(width:width));return actions.filter{!selected.contains($0)} }
-    static func load(_ defaults:UserDefaults = .standard)->Self { guard let d = defaults.data(forKey:key),let p = try? JSONDecoder().decode(Self.self,from:d) else { return Self() };return p }
+    static func load(_ defaults:UserDefaults = .standard)->Self { guard let d = defaults.data(forKey:key),var p = try? JSONDecoder().decode(Self.self,from:d) else { return Self() };p.order = p.actions.map(\.rawValue);p.pinned = Set(p.pinned.compactMap{FileToolbarAction(rawValue:$0)?.unified.rawValue});return p }
     func save(_ defaults:UserDefaults = .standard) { if let data = try? JSONEncoder().encode(self) { defaults.set(data,forKey:Self.key) } }
     mutating func move(_ action:FileToolbarAction,by delta:Int) { order = actions.map(\.rawValue);guard let i = order.firstIndex(of:action.rawValue),order.indices.contains(i+delta) else { return };order.swapAt(i,i+delta) }
 }
@@ -36,7 +37,7 @@ extension ReadingJournal {
         guard !unreadable,let current = state.records.first(where:{$0.id == update.current.id}),current == update.current,let block = essay(update.essay)?.blocks.first(where:{$0.id == update.block}),block.record == update.previous else { throw FolioError(message:"引用又有变化，请重新比较") }
         let before = state
         editEssay(update.essay) { e in if let i = e.blocks.firstIndex(where:{$0.id == update.block}) { e.blocks[i].record = current } }
-        bulkCheckpoint = ReadingBulkCheckpoint(before:before,after:state,label:"更新札记引用")
+        bulkCheckpoint = ReadingBulkCheckpoint(before:before,after:state,label:"更新笔记引用")
     }
     func finishBulk(_ before:ReadingJournalState,_ label:String) { if state != before { bulkCheckpoint = ReadingBulkCheckpoint(before:before,after:state,label:label) } }
     var canUndoBulk:Bool { !unreadable && bulkCheckpoint?.after == state }

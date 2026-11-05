@@ -21,7 +21,7 @@ enum FolioCommand: String, CaseIterable, Identifiable {
         case .formTemplate: return "制作或套用扫描表单模板"
         case .open: return "打开文件"
         case .newPDF: return "新建 PDF"
-        case .newMarkdown: return "新建 Markdown 笔记"
+        case .newMarkdown: return "新建 Markdown 文件"
         case .newHTML: return "新建 HTML 文件"
         case .newText: return "新建文本文件"
         case .save: return "保存当前文件"

@@ -28,6 +28,7 @@ enum ReadingRecordExport {
             for part in preferences.structuralOrder {
                 switch part {
                 case "quote":
+            if preferences.includeQuote,let origin = record.pdfOrigin,!origin.contents.isEmpty { paragraph("PDF 原评论："+origin.contents) }
             if preferences.includeQuote && !record.quote.isEmpty { paragraph((preferences.quoteHeading ?? "原文")+"：\n"+record.quote) }
             if preferences.includeQuote, let name = record.imageAsset { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(name),options:.mappedIfSafe),alt:preferences.imageHeading ?? "图片摘录")) }
                 case "note":
@@ -50,6 +51,7 @@ enum ReadingRecordExport {
                 default:break
                 }
             }
+            for line in ReadingRecordMetadata.lines(record,includeSources:preferences.includeSources) { paragraph(line) }
             if !record.tags.isEmpty { paragraph("标签："+record.tags.joined(separator:"、")) }
         }
         for item in snapshot.orderedItems {
@@ -57,6 +59,7 @@ enum ReadingRecordExport {
             case .record(let ref):try record(ref,heading:true)
             case .essay(let essay):
                 if snapshot.orderedItems.count != 1 || snapshot.title != essay.title { paragraph(essay.title,heading:2) }
+                for line in ReadingRecordMetadata.essayLines(essay) { paragraph(line) }
                 for block in essay.blocks { try Task.checkCancellation();if let ref = block.record { try record(ref,heading:false) };if preferences.includeNote { try writingParagraph(block.text) } }
             }
         }
@@ -72,6 +75,7 @@ enum ReadingRecordExport {
         var lines = ["# "+literal(snapshot.title),""]
         func record(_ ref:ReadingRecord,heading:Bool) {
             if heading { lines += ["## "+literal(preferences.heading(ref)),""] }
+            if preferences.includeQuote,let origin = ref.pdfOrigin,!origin.contents.isEmpty { lines += ["PDF 原评论："+literal(origin.contents),""] }
             if preferences.includeQuote && !ref.quote.isEmpty { lines += ref.quote.components(separatedBy:"\n").map { "> "+literal($0) }; lines.append("") }
             if preferences.includeQuote, let image = ref.imageAsset { lines += ["![图片摘录](<"+imageFolder+"/"+image+">)",""] }
             if preferences.includeNote && !ref.note.isEmpty { lines += [(ref.kind == .note ? "" : "我的笔记：\n\n")+ref.note,""] }
@@ -79,13 +83,14 @@ enum ReadingRecordExport {
                 lines.append(literal(ReadingExportOrdering.citation(citation)))
                 if let relative = preferences.sourceLinks?[citation.source.path] { lines.append("[返回原文](<"+relative+"#page="+String(citation.source.page+1)+">)") } else if let url = SourceLink.url(citation.source) { lines.append("[返回原文]("+url.absoluteString+")") }
             }
+            lines += ReadingRecordMetadata.lines(ref,includeSources:preferences.includeSources).map(literal)
             if !ref.tags.isEmpty { lines += ["标签："+literal(ref.tags.joined(separator:"、"))] }
             lines.append("")
         }
         for item in snapshot.orderedItems {
             switch item {
             case .record(let ref):record(ref,heading:true)
-            case .essay(let essay):if snapshot.orderedItems.count != 1 || snapshot.title != essay.title { lines += ["## "+literal(essay.title),""] };for block in essay.blocks { if let ref = block.record { record(ref,heading:false) };if preferences.includeNote { lines += [block.text,""] } }
+            case .essay(let essay):if snapshot.orderedItems.count != 1 || snapshot.title != essay.title { lines += ["## "+literal(essay.title),""] };lines += ReadingRecordMetadata.essayLines(essay).map(literal);for block in essay.blocks { if let ref = block.record { record(ref,heading:false) };if preferences.includeNote { lines += [block.text,""] } }
             }
         }
         return lines.joined(separator:"\n")

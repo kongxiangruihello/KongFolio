@@ -46,25 +46,31 @@ struct FunctionToolbar: View {
         .popover(isPresented:$store.showQuickReadingNote) { QuickReadingNote(store:store) }
     }
     @ViewBuilder private func control(_ action:FileToolbarAction,menu:Bool)->some View {
-        if action == .signature {
+        if action == .newFile {
+            NewDocumentMenu(store:store,showTitle:menu)
+        } else if action == .note {
+            Button { store.newReadingNote() } label:{label(action,menu:menu)}.help(action.menuTitle)
+        } else if action == .signature {
             if let workspace { SignatureToolbarMenu(workspace:workspace,showTitle:menu) }
             else { Button {} label:{label(action,menu:menu)}.disabled(true).help("打开 PDF 后导入或放置图片签名") }
         } else if action == .excerpt {
             Menu { Button("摘录选中文字") { workspace?.excerptSelection() };Button("框选图片摘录") { workspace?.tool = .region;workspace?.showAnnotationBar = true } } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle).disabled((workspace?.count ?? 0) == 0)
         } else if action == .export {
-            Menu { Button("阅读记录与札记…") { store.readingExportEssay = false;store.openReadingDesk(.exports,window:true) };Button("当前文件导出 PDF…") { store.exportActive() };if let note { Button("当前文件导出 Word…") { note.exportWord() } } } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle)
+            Menu { Button("阅读记录与笔记…") { store.readingExportEssay = false;store.openReadingDesk(.exports,window:true) };Button("当前文件导出 PDF…") { store.exportActive() };if let note { Button("当前文件导出 Word…") { note.exportWord() } } } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle)
         } else { Button { perform(action) } label:{label(action,menu:menu)}.help(action.menuTitle).accessibilityLabel(action.title).disabled(unavailable(action)) }
     }
     @ViewBuilder private func label(_ action:FileToolbarAction,menu:Bool)->some View { if menu { Label(action.menuTitle,systemImage:action.symbol) } else { Image(systemName:action.symbol).frame(width:28,height:28) } }
     private func unavailable(_ action:FileToolbarAction)->Bool {
-        switch action { case .save:return !store.canSave;case .annotate:return (workspace?.count ?? 0) == 0 || workspace?.readingLocked == true;case .tools:return workspace == nil || workspace?.readingLocked == true;default:return false }
+        switch action { case .comment:return (workspace?.count ?? 0) == 0 || workspace?.readingLocked == true;case .save:return !store.canSave;case .annotate:return (workspace?.count ?? 0) == 0 || workspace?.readingLocked == true;case .tools:return workspace == nil || workspace?.readingLocked == true;default:return false }
     }
     private func perform(_ action:FileToolbarAction) {
         switch action {
+        case .newFile:break
+        case .comment:workspace?.selectTool(.note);workspace?.showAnnotationBar = true;workspace?.status = "点击 PDF 页面放置评论"
         case .open:store.open()
         case .library:store.openReadingDesk(.search,window:true)
         case .note:store.newReadingNote()
-        case .essay:store.openReadingDesk(.essays,window:true)
+        case .essay:store.newReadingNote()
         case .annotate:workspace?.showAnnotationBar.toggle()
         case .tools:workspace?.showTools = true
         case .save:store.saveActive()
@@ -72,7 +78,7 @@ struct FunctionToolbar: View {
         case .newMarkdown:store.newNote()
         case .newText:store.newNote(format:.plain)
         case .newHTML:store.newNote(format:.html)
-        case .quickNote:store.showQuickReadingNote = true
+        case .quickNote:store.newReadingNote()
         case .books:store.showReadingHistory = true
         case .jobs:store.showBackgroundJobs = true
         case .sidebar:let key = LayoutKeys.sidebar;UserDefaults.standard.set(!(UserDefaults.standard.object(forKey:key) as? Bool ?? true),forKey:key)

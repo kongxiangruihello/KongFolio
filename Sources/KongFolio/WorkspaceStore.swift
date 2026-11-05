@@ -37,6 +37,7 @@ import UniformTypeIdentifiers
     @Published var readingDeskSection = ReadingDeskSection.excerpts
     @Published var showQuickReadingNote = false
     @Published var readingEssayBlockID:UUID?
+    @Published var readingLibraryPreferredKind:String?
     @Published var readingLibraryNavigation:ReadingLibraryID?
     @Published var readingLibraryNavigationRequest = UUID()
     @Published var writingSearchHit:ReadingTextHit?

@@ -71,8 +71,8 @@ struct ReadingLibraryView: View {
             let result = await ReadingSearchWorker.shared.library(journal.state,request:request)
             if !Task.isCancelled { items = result;if let desired = pendingFilterPage { page = ReadingPagination(total:result.count,page:desired,size:size).index;pendingFilterPage = nil };if let target = pendingNavigation,let i = result.firstIndex(where:{$0.id == target}) { page = i/size;editing = target;selection = [target];pendingNavigation = nil } }
         }
-        .onAppear { if !restoredSession { restoredSession = true;if bookSource == nil && store.readingLibraryNavigation == nil { let s = ReadingLibrarySession.load(store.readingDefaults);query = s.query;kind = s.kind;tag = s.tag;topic = s.topic;recent = s.recent;untagged = s.untagged;removed = s.removed;pendingFilterPage = s.page;size = s.size } };do { filters = try SavedReadingFilter.load(journal.folder) } catch { filterMessage = error.localizedDescription };if bookSource == nil,let target = store.readingLibraryNavigation { navigate(target) } }
-        .onChange(of:store.readingLibraryNavigationRequest) { _,_ in if bookSource == nil,let target = store.readingLibraryNavigation { navigate(target) } }
+        .onAppear { if !restoredSession { restoredSession = true;if bookSource == nil && store.readingLibraryNavigation == nil { let s = ReadingLibrarySession.load(store.readingDefaults);query = s.query;kind = (s.kind == "札记" ? "笔记" : s.kind);tag = s.tag;topic = s.topic;recent = s.recent;untagged = s.untagged;removed = s.removed;pendingFilterPage = s.page;size = s.size } };do { filters = try SavedReadingFilter.load(journal.folder) } catch { filterMessage = error.localizedDescription };if bookSource == nil { if let preferred = store.readingLibraryPreferredKind { kind = preferred;store.readingLibraryPreferredKind = nil };if let target = store.readingLibraryNavigation { navigate(target) } } }
+        .onChange(of:store.readingLibraryNavigationRequest) { _,_ in if bookSource == nil { if let preferred = store.readingLibraryPreferredKind { kind = preferred;store.readingLibraryPreferredKind = nil };if let target = store.readingLibraryNavigation { navigate(target) } } }
         .onDisappear { rememberPage();copyGeneration = UUID();contextFocus = UUID() }
         .onChange(of:page) { _,_ in rememberPage() }
         .onChange(of:journal.draftRecord?.id) { _,_ in validateEditing() }
@@ -115,7 +115,7 @@ struct ReadingLibraryView: View {
             .frame(minHeight:120,maxHeight:.infinity).accessibilityLabel("全部阅读资料")
     }
     private func libraryRow(_ item:ReadingLibraryItem)->some View {
-                VStack(alignment:.leading,spacing:4) { HStack { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading); Text(item.title).lineLimit(2).help(item.title) };if !item.sourceSummary.isEmpty { Text(item.sourceSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(item.sourceSummary) };if let context = item.matchingContext(query) { Text(context).font(.caption).lineLimit(2) } }
+                VStack(alignment:.leading,spacing:4) { HStack { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading); Text(item.title).lineLimit(2).help(item.title) };if !item.sourceSummary.isEmpty { Text(item.sourceSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(item.sourceSummary) };Text("收录 "+item.created.formatted(date:.abbreviated,time:.shortened)).font(.caption2).foregroundStyle(.secondary);if let context = item.matchingContext(query) { Text(context).font(.caption).lineLimit(2) } }
     }
     @ViewBuilder private var editor:some View {
             if let editing {
@@ -129,18 +129,18 @@ struct ReadingLibraryView: View {
             } else { Text("选择一条记录编辑；可统一新增、查找、导出或删除。删除后可以恢复。").font(.caption).foregroundStyle(.secondary) }
     }
 
-    private var searchField:some View { TextField("搜索全部摘录、笔记、札记和出处",text:$query).textFieldStyle(.roundedBorder) }
+    private var searchField:some View { TextField("搜索摘录、标注、评论、笔记与出处",text:$query).textFieldStyle(.roundedBorder) }
     private var newMenu:some View {
                 Menu("新增") {
                     Button("摘录") { newRecord(.excerpt) }
                     Button("笔记") { newRecord(.note) }
-                    Button("札记") { resetForNew(); let id = newEssay(); editing = .essay(id); selection = [] }
                 }.disabled(journal.unreadable)
     }
     @ViewBuilder private var libraryActions:some View {
                 Button("批量整理") { showOrganization = true }.disabled(selection.isEmpty || removed || journal.unreadable)
                 Button("引用关系") { showReferences = true }.disabled(editing == nil)
                 Button("导出所选…") { store.readingLibraryExportSelection = selection;store.readingRecordSelection = Set(selection.compactMap { if case .record(let id) = $0 { return id };return nil });store.readingExportEssay = false;section = .exports }.disabled(selection.isEmpty || removed)
+                Button("重新收录当前 PDF 标注与评论") { store.commandWorkspace?.scheduleReadingAnnotationImport() }.disabled(store.commandWorkspace == nil)
                 Button("备份恢复") { showBackups = true }
                 Button(removed ? "恢复所选" : "删除所选") { confirmBulk = true }.disabled(selection.isEmpty || journal.unreadable)
     }
@@ -155,7 +155,7 @@ struct ReadingLibraryView: View {
                 }
     }
     private var organizationMenu:some View { Menu("资料整理") { Button("统一整理标签…") { showTags = true };Button("批量重新关联原文…") { showRelink = true } } }
-    private var typePicker:some View { Picker("类型",selection:$kind) { ForEach(["全部","摘录","图片摘录","笔记","札记"],id:\.self) { Text($0) } }.fixedSize() }
+    private var typePicker:some View { Picker("类型",selection:$kind) { ForEach(["全部","摘录","标注","PDF 评论","笔记"],id:\.self) { Text($0) } }.fixedSize() }
     private var topicPicker:some View { Picker("专题",selection:$topic) { Text("全部").tag("");ForEach(journal.topics,id:\.self) { Text($0).tag($0) } }.fixedSize() }
 
     private func performContext(_ action:ReadingLibraryContextAction,ids:Set<ReadingLibraryID>) {
@@ -196,7 +196,7 @@ struct ReadingLibraryView: View {
     private func applyFilter(_ value:SavedReadingFilter) {
         let previous = request
         pendingFilterPage = value.page;selectedFilter = filters.contains(where:{$0.id == value.id}) ? value.id : nil
-        query = value.query;kind = value.kind;tag = value.tag;topic = value.topic;recent = value.recent;untagged = value.untagged;removed = value.removed;size = value.size
+        query = value.query;kind = value.kind == "札记" ? "笔记" : value.kind;tag = value.tag;topic = value.topic;recent = value.recent;untagged = value.untagged;removed = value.removed;size = value.size
         selection = [];editing = nil
         if previous == request { page = ReadingPagination(total:items.count,page:value.page,size:size).index;pendingFilterPage = nil }
     }

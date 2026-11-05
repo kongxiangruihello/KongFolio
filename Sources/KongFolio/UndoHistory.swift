@@ -79,6 +79,7 @@ extension Workspace {
             guard let page = annotation.page else { return nil }
             let index = document.index(for: page)
             guard index != NSNotFound else { return nil }
+            ReadingPDFCapture.stampAdded(annotation)
             let id = AnnotationIdentity.id(of: annotation)
             return AnnotationChange(page: index, id: id, before: nil, after: AnnotationIdentity.copy(annotation, id: id), resourceDocuments: [document])
         }
@@ -93,6 +94,7 @@ extension Workspace {
             guard let page = annotation.page else { return nil }
             let index = document.index(for: page)
             guard index != NSNotFound else { return nil }
+            prepareReadingAnnotationIdentity(annotation,on:page,index:index)
             let id = AnnotationIdentity.id(of: annotation)
             guard let before = AnnotationIdentity.copy(annotation, id: id) else { return nil }
             return PendingAnnotationEdit(page: index, id: id, before: before, resourceDocument: document)
@@ -103,6 +105,7 @@ extension Workspace {
     func commitAnnotationEdit(_ edits: [PendingAnnotationEdit]) {
         let changes = edits.map { edit -> AnnotationChange in
             let current = document.page(at: edit.page).flatMap { AnnotationIdentity.find(edit.id, on: $0) }
+            current?.modificationDate = Date()
             return AnnotationChange(page: edit.page, id: edit.id, before: edit.before, after: current.flatMap { AnnotationIdentity.copy($0, id: edit.id) }, resourceDocuments: [edit.resourceDocument, document].compactMap { $0 })
         }
         guard !changes.isEmpty else { return }

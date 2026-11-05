@@ -30,7 +30,7 @@ extension ReadingJournal {
             if let current = record(uuid) { outgoing = current.linkedRecords.compactMap { source in state.records.first{$0.id == source}.map(reference) } }
             for r in state.records where r.id != uuid && r.linkedRecords.contains(uuid) { incoming.append(reference(r)) }
             for e in state.essays where e.blocks.contains(where:{$0.record?.id == uuid || $0.record?.linkedRecords.contains(uuid) == true}) {
-                incoming.append(ReadingReference(id:"essay:"+e.id.uuidString,title:e.title,kind:"札记",removed:e.removed != nil,text:e.blocks.map{$0.text}.joined(separator:"\n\n")))
+                incoming.append(ReadingReference(id:"essay:"+e.id.uuidString,title:e.title,kind:"笔记",removed:e.removed != nil,text:e.blocks.map{$0.text}.joined(separator:"\n\n")))
             }
         case .essay(let uuid):
             var known = Set<UUID>()

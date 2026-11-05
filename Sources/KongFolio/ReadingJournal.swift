@@ -8,7 +8,7 @@ struct ReadingCitation: Codable, Equatable {
     var display: String { (author.isEmpty ? "" : author + "：") + "《" + title + "》，" + source.pageDescription }
 }
 struct ReadingRecord: Codable, Identifiable, Equatable {
-    enum Kind: String, Codable, CaseIterable { case excerpt = "摘录", image = "图片摘录", note = "笔记" }
+    enum Kind: String, Codable, CaseIterable { case excerpt = "摘录", image = "图片摘录", note = "笔记", annotation = "标注", comment = "PDF 评论" }
     var id = UUID()
     var kind: Kind
     var title = ""
@@ -25,20 +25,22 @@ struct ReadingRecord: Codable, Identifiable, Equatable {
     var modified = Date()
     var removed: Date?
     var wholeBook = false
+    var pdfOrigin:ReadingPDFOrigin? = nil
     var hasContent: Bool {
         let heading = wholeBook && title == "整本书心得" ? "" : title
-        return [heading, quote, note].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || imageAsset != nil || !linkedRecords.isEmpty || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return pdfOrigin != nil || [heading, quote, note].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || imageAsset != nil || !linkedRecords.isEmpty || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
     var displayTitle: String {
         if !title.isEmpty { return title }
-        let text = kind == .note ? note : quote
+        let text = pdfOrigin.map { quote.isEmpty ? ($0.contents.isEmpty ? "标注 · "+$0.type : $0.contents) : quote } ?? (kind == .note ? note : quote)
         return String(text.split(separator:"\n").first?.prefix(48) ?? Substring(kind.rawValue))
     }
     func matches(_ query:String, book:String? = nil, tag:String = "", after:Date? = nil) -> Bool {
-        if let book, !citations.contains(where: { $0.source.path == book }) { return false }
+        if let book, !citations.contains(where: { ReadingBookIdentity.key($0.source.path) == ReadingBookIdentity.key(book) }) { return false }
         if !tag.isEmpty && !tags.contains(tag) { return false }
         if let after, modified < after { return false }
-        let haystack = title + "\n" + quote + "\n" + note + "\n" + tags.joined(separator:" ") + "\n" + citations.map { $0.title + $0.author + $0.source.pageDescription }.joined(separator:"\n")
+        let sourceText = citations.map { [$0.title,$0.author,$0.source.pageDescription].joined(separator:" ") }.joined(separator:"\n")
+        let haystack = [pdfOrigin?.contents ?? "",title,quote,note,tags.joined(separator:" "),sourceText].joined(separator:"\n")
         return query.isEmpty || AnnotationFilter.folded(haystack).contains(AnnotationFilter.folded(query))
     }
 }
@@ -50,14 +52,14 @@ struct ReadingEssay: Codable, Identifiable, Equatable {
         var record: ReadingRecord?
     }
     var id = UUID()
-    var title = "未命名札记"
+    var title = "未命名笔记"
     var blocks: [Block] = [Block()]
     var tags: [String] = []
     var created = Date()
     var modified = Date()
     var removed: Date?
     var hasContent: Bool {
-        (!title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && title != "未命名札记") || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || blocks.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.record?.hasContent == true }
+        (!title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !["未命名札记","未命名笔记"].contains(title)) || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || blocks.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.record?.hasContent == true }
     }
     func matches(_ query:String) -> Bool {
         if query.isEmpty { return true }
@@ -130,6 +132,7 @@ actor ReadingJournalWriter {
     // Empty editors are transient. Only meaningful input promotes them into the catalog.
     @Published private(set) var draftRecord: ReadingRecord?
     @Published private(set) var draftEssay: ReadingEssay?
+    @Published var pdfCaptureMessage:String?
     @Published private(set) var error: String?
     @Published private(set) var saving = false
     @Published private(set) var lastVerifiedSave:Date?
@@ -195,7 +198,7 @@ actor ReadingJournalWriter {
         guard let i = state.records.firstIndex(where:{$0.id == id}) else { return }
         change { value in edit(&value.records[i]); value.records[i].modified = Date(); for citation in value.records[i].citations { value.lastNotes[citation.source.path] = id } }
     }
-    @discardableResult func newEssay(title:String = "未命名札记") -> UUID {
+    @discardableResult func newEssay(title:String = "未命名笔记") -> UUID {
         let essay = ReadingEssay(title:title)
         guard !unreadable else { return essay.id }
         if !essay.hasContent { draftEssay = essay; return essay.id }

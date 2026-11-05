@@ -26,7 +26,7 @@ struct ReadingBrowserLayout<Browser:View,Editor:View>:View {
     @ViewBuilder private var editorArea:some View {
         if hasEditor { VStack(alignment:.leading,spacing:8) { editor() }.padding(.leading,8) }
         else {
-            ContentUnavailableView("选择一条记录开始编辑",systemImage:"square.and.pencil",description:Text("在左侧查找摘录、笔记和札记，或点“新增”开始记录。"))
+            ContentUnavailableView("选择一条记录开始编辑",systemImage:"square.and.pencil",description:Text("在左侧查找摘录、标注、评论和笔记，或点“新增”开始记录。"))
         }
     }
 }

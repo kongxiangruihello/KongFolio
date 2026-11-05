@@ -13,7 +13,7 @@ struct EditorDisplaySheet: View {
                 Picker("正文行宽",selection:$note.editorDisplay.column) { ForEach(EditorDisplayOptions.Column.allCases,id:\.self) { Text($0.rawValue).tag($0) } }
                 Picker("行间距",selection:$note.editorDisplay.lineHeight) { Text("紧凑 · 1.3").tag(1.3);Text("舒适 · 1.6").tag(1.6);Text("宽松 · 1.9").tag(1.9) }
             }
-            Text("文献阅读与札记写作\n让文字保持清晰，在舒适的行宽中整理思考。").font(.system(size:note.editorDisplay.size,design:note.editorDisplay.face == .serif ? .serif : note.editorDisplay.face == .mono ? .monospaced : .default)).lineSpacing(note.editorDisplay.size*(note.editorDisplay.lineHeight-1)).padding(20).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:8))
+            Text("文献阅读与笔记写作\n让文字保持清晰，在舒适的行宽中整理思考。").font(.system(size:note.editorDisplay.size,design:note.editorDisplay.face == .serif ? .serif : note.editorDisplay.face == .mono ? .monospaced : .default)).lineSpacing(note.editorDisplay.size*(note.editorDisplay.lineHeight-1)).padding(20).frame(maxWidth:.infinity,alignment:.leading).background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:8))
             HStack { Button("恢复默认") { note.editorDisplay = EditorDisplayOptions() };Spacer();Button("完成") { dismiss() }.keyboardShortcut(.defaultAction) }
         }.padding(24).adaptiveSheet(width:520,height:440,minimumWidth:400,flexibleHeight:true)
     }
