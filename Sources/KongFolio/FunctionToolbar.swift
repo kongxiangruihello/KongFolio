@@ -15,11 +15,11 @@ struct FunctionToolbar: View {
             HStack(spacing:4) {
                 ForEach(profile.visible(width:proxy.size.width)) { action in control(action,menu:false).frame(minWidth:32,maxWidth:.infinity) }
                 Button { if let note { note.toggleReadOnly() } else { workspace?.toggleReadingLock() } } label:{ Image(systemName:(note?.readOnly ?? workspace?.readingLocked ?? false) ? "lock" : "pencil") .frame(width:28,height:28) }.help((note?.readOnly ?? workspace?.readingLocked ?? false) ? "当前为阅读模式，点击切换编辑" : "当前为编辑模式，点击保护正文").disabled(note == nil && workspace == nil)
-                RightPanelMenu(store:store)
                 Menu {
                     if !profile.hidden(width:proxy.size.width).isEmpty {
                         Section("工具栏收起的功能") { ForEach(profile.hidden(width:proxy.size.width)) { action in control(action,menu:true) } }
                     }
+                    Section("左侧辅助面板") { LeftPanelActions(store:store) }
                     Section("独立窗口与对话框") {
                         Button("跨文件全文搜索（对话框）…") { store.showFolderSearch = true }
                         Button("阅读与史料辅助工具（独立窗口）…") { store.showResearch = true }
@@ -35,12 +35,12 @@ struct FunctionToolbar: View {
                         Button("打印…") { store.printActive() }
                     }
                     Section("界面与应用设置") {
-                        Button("排列与固定常用工具…") { showToolbarSettings = true }
+                        Button("排列与显示常用工具…") { showToolbarSettings = true }
                         Button("启动恢复与阅读内存…") { store.showReadingSettings = true }
                         if workspace != nil { Button(store.readingMode ? "切换到完整 PDF 工具界面" : "切换到专注阅读界面") { store.readingMode.toggle() } }
                         Button("检查更新…") { AppUpdateWindow.shared.show() }
                     }
-                } label:{Image(systemName:"ellipsis.circle").frame(width:28,height:28)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help("更多：收起的功能、独立窗口、文件操作和应用设置；右侧内容请用“右侧面板”")
+                } label:{Image(systemName:"ellipsis.circle").frame(width:28,height:28)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help("更多：收起的功能、独立窗口、文件操作和应用设置；辅助信息统一在左侧")
             }.buttonStyle(.borderless).font(.system(size:16)).padding(.horizontal,12).frame(height:44).clipped()
                 .onAppear { toolbarWidth=proxy.size.width }
                 .onChange(of:proxy.size.width) { _,width in toolbarWidth=width }
@@ -52,6 +52,8 @@ struct FunctionToolbar: View {
     @ViewBuilder private func control(_ action:FileToolbarAction,menu:Bool)->some View {
         if action == .newFile {
             NewDocumentMenu(store:store,showTitle:menu)
+        } else if action == .sidebar {
+            Menu { LeftPanelActions(store:store) } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help("左侧辅助信息：页面、阅读资料、PDF 属性与标注")
         } else if action == .note {
             Button { store.newReadingNote() } label:{label(action,menu:menu)}.help(action.menuTitle)
         } else if action == .signature {

@@ -36,8 +36,8 @@ import PDFKit
     func testPinsDoNotOverrideUserOrderWhenWindowFitsAllTools() {
         var p=ReaderToolbarProfile();p.pinned=["library","newFile"]
         p.move(.newFile,by:1);p.move(.library,by:-1)
-        XCTAssertEqual(p.visible(width:2000),p.actions)
-        XCTAssertEqual(p.visible(width:2000).first,.open)
+        XCTAssertEqual(p.visible(width:2000),p.actions.filter{p.pinned.contains($0.rawValue)})
+        XCTAssertEqual(p.visible(width:2000).first,.newFile)
     }
     func testNarrowWindowPrioritizesPinsButPreservesTheirUserOrder() {
         var p=ReaderToolbarProfile();p.pinned=["library","books","signature"]
@@ -53,7 +53,7 @@ import PDFKit
         let name=UUID().uuidString,d=try XCTUnwrap(UserDefaults(suiteName:name));defer{d.removePersistentDomain(forName:name)}
         var p=ReaderToolbarProfile();p.move(.newFile,by:1);p.pinned=["signature"];p.save(d)
         let decoded=ReaderToolbarProfile.decode(d.data(forKey:ReaderToolbarProfile.key))
-        XCTAssertEqual(decoded,p);XCTAssertEqual(decoded.visible(width:2000),p.actions)
+        XCTAssertEqual(decoded,p);XCTAssertEqual(decoded.visible(width:2000),[.signature])
         XCTAssertEqual(ReaderToolbarProfile.decode(Data("invalid".utf8)),ReaderToolbarProfile())
         ReaderToolbarProfile().save(d);XCTAssertEqual(ReaderToolbarProfile.load(d),ReaderToolbarProfile())
     }

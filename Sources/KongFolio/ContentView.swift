@@ -92,11 +92,10 @@ struct ContentView: View {
                 if readingMode, let store = workspace.store { ReadingToolbar(store:store,workspace:workspace,width:width) }
                 else { topBar(width:width) }
             }
-            if let store = workspace.store,store.showReadingDesk,width < 850 { NarrowReadingPanelNotice(store:store) }
             if workspace.saveConflict { SaveConflictBanner(copy: workspace.chooseConflictCopy, reload: workspace.reloadAfterConflict) }
             Divider()
             HSplitView {
-                if workspace.requestedSidebar053 || LayoutMetrics.showsSidebar(preferred: showSidebar, width: width) {
+                if workspace.requestedSidebar053 || (workspace.store?.showReadingDesk != true && (readingMode || !showInspector) && LayoutMetrics.showsSidebar(preferred: showSidebar, width: width)) {
                     VStack(spacing:0) {
                         if workspace.requestedSidebar053 {
                             HStack { Text(workspace.pageEditing053 ? "PDF 页面编辑" : "PDF 正文搜索").font(.headline);Spacer();Button { workspace.requestedSidebar053=false;workspace.pageEditing053=false } label:{Image(systemName:"xmark")}.help("关闭侧栏") }.padding(10)
@@ -105,18 +104,19 @@ struct ContentView: View {
                         if workspace.pageEditing053 { PDFPageEditor053(workspace:workspace) } else { sidebar }
                     }.frame(minWidth:180,idealWidth:240,maxWidth:300)
                 }
+                if !workspace.requestedSidebar053, let store = workspace.store, store.showReadingDesk {
+                    ReadingSidePanel(store:store).frame(minWidth:280,idealWidth:330,maxWidth:400)
+                }
+                if !workspace.requestedSidebar053 && workspace.store?.showReadingDesk != true && !readingMode && showInspector {
+                    VStack(spacing:0) { RightPanelHeader(title:"左侧 · PDF 属性与标注") { showInspector = false };Divider();inspector }.frame(minWidth:220,idealWidth:290,maxWidth:340)
+                }
+                if boardShown(width: width), let board = workspace.store?.board { BoardView(board: board, workspace: workspace).frame(minWidth: 280, idealWidth: 380, maxWidth: .infinity) }
                 canvas.frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
                 if splitShown(width: width), let partner = workspace.splitPartner {
                     SplitPane(primary: workspace, partner: partner) { workspace.splitPartner = nil }
                         .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
                 }
-                if boardShown(width: width), let board = workspace.store?.board { BoardView(board: board, workspace: workspace).frame(minWidth: 280, idealWidth: 380, maxWidth: .infinity) }
-                if readingMode, width >= 850, let store = workspace.store, store.showReadingDesk {
-                    ReadingSidePanel(store:store).frame(minWidth:280,idealWidth:330,maxWidth:400)
-                }
-                if !readingMode && LayoutMetrics.showsInspector(preferred: showInspector, width: width, boardShown: boardShown(width: width), splitShown: splitShown(width: width)) {
-                    VStack(spacing:0) { RightPanelHeader(title:"右侧 · PDF 属性与标注") { showInspector = false };Divider();inspector }.frame(minWidth:220,idealWidth:290,maxWidth:340)
-                }
+
             }
             Divider()
             statusBar(width: width)

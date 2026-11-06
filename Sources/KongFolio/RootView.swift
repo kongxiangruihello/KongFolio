@@ -16,10 +16,9 @@ struct RootView: View {
                 case .note(let note):
                     GeometryReader { geometry in
                         VStack(spacing:0) {
-                            if store.showReadingDesk && geometry.size.width < 850 { NarrowReadingPanelNotice(store:store) }
                             HSplitView {
+                                if store.showReadingDesk { ReadingSidePanel(store:store).frame(minWidth:220,idealWidth:300,maxWidth:360) }
                                 MarkdownEditorView(note:note,store:store,showsPrimaryToolbar:false).id(note.id).frame(minWidth:240,maxWidth:.infinity)
-                                if store.showReadingDesk && geometry.size.width >= 850 { ReadingSidePanel(store:store).frame(minWidth:280,idealWidth:340,maxWidth:400) }
                             }
                         }
                     }
