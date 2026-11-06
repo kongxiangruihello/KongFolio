@@ -12,7 +12,7 @@ final class Reading052Tests: XCTestCase {
         XCTAssertEqual(Array(p.actions.prefix(2)),[.newFile,.note]);XCTAssertEqual(p.actions.filter{$0 == .newFile}.count,1);XCTAssertEqual(p.actions.filter{$0 == .note}.count,1)
         XCTAssertEqual(Set(p.actions),Set(FileToolbarAction.allCases));XCTAssertEqual(p.pinned,["newFile"])
         XCTAssertEqual(p.visible(width:400)+p.hidden(width:400),p.actions)
-        XCTAssertTrue(p.actions.contains(.comment))
+        XCTAssertFalse(p.actions.contains(.comment));XCTAssertTrue(p.actions.contains(.annotate))
     }
     func testOldEssayAndQuickNoteRemainSearchableAsNotesWithOriginalDates() async throws {
         let created=Date(timeIntervalSince1970:100),modified=Date(timeIntervalSince1970:200)

@@ -6,8 +6,8 @@ struct ReaderToolbarSettings: View {
     @Environment(\.dismiss) private var dismiss
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
-            Text("工具栏排列与固定").font(.headline)
-            Text("列表从上到下，对应工具栏从左到右。固定只决定窗口变窄时优先保留哪些工具，不改变排列顺序；空间不足的功能仍在“更多”中。").font(.caption)
+            Text("工具栏排列与显示").font(.headline)
+            Text("勾选的工具才显示在工具栏。上移／下移调整从左到右的顺序；未勾选或窗口放不下的功能可从“更多”打开。").font(.caption)
             Text("当前窗口显示 \(profile.visible(width:width).count) 项，另有 \(profile.hidden(width:width).count) 项收在“更多”中").font(.caption).foregroundStyle(.secondary)
             ScrollView(.horizontal) {
                 HStack(spacing:12) { ForEach(profile.visible(width:width)) { action in

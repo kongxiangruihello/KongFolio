@@ -5,7 +5,7 @@ struct ReaderToolbarProfile:Codable,Equatable {
     static let key = "KongFolio.readerToolbar048"
     static let defaultActions:[FileToolbarAction] = FileToolbarAction.allCases
     var order:[String] = Self.defaultActions.map(\.rawValue)
-    var pinned:Set<String> = ["newFile"]
+    var pinned:Set<String> = Set(Self.defaultActions.map(\.rawValue))
     var actions:[FileToolbarAction] {
         var seen = Set<FileToolbarAction>()
         var previous=Set<String>()
@@ -19,8 +19,7 @@ struct ReaderToolbarProfile:Codable,Equatable {
     }
     private var unifiedPins:Set<FileToolbarAction> { Set(pinned.compactMap{FileToolbarAction(rawValue:$0)?.unified}) }
     func visible(width:Double)->[FileToolbarAction] {
-        let chosen=Set((actions.filter{unifiedPins.contains($0)}+actions.filter{!unifiedPins.contains($0)}).prefix(SingleRowToolbarPolicy.visibleCount(width:width)))
-        return actions.filter{chosen.contains($0)}
+        Array(actions.filter{unifiedPins.contains($0)}.prefix(SingleRowToolbarPolicy.visibleCount(width:width)))
     }
     func hidden(width:Double)->[FileToolbarAction] { let selected = Set(visible(width:width));return actions.filter{!selected.contains($0)} }
     static func decode(_ data:Data?)->Self { guard let data,var p = try? JSONDecoder().decode(Self.self,from:data) else { return Self() };p.order = p.actions.map(\.rawValue);p.pinned = Set(p.pinned.compactMap{FileToolbarAction(rawValue:$0)?.unified.rawValue});return p }
