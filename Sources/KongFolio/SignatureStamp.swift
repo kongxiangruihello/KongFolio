@@ -9,9 +9,13 @@ import PDFKit
     /// otherwise in the middle of the view.
     func beginSignaturePlacement(_ image: CGImage, widthFraction: Double, page: PDFPage?, rect: CGRect?)
     func resizeSignaturePlacement(widthFraction: Double)
+    func resizePageImage(widthInPoints: CGFloat)
     /// The page under the stamp and the stamp's rectangle in that page's coordinate space; nil when no stamp is shown.
     func signaturePlacement() -> (page: PDFPage, rect: CGRect)?
     func endSignaturePlacement()
+}
+extension SignaturePlacing {
+    func resizePageImage(widthInPoints: CGFloat) {}
 }
 
 /// Puts a signature image onto a page.
@@ -67,6 +71,9 @@ enum SignatureStamp {
         guard let reference = source.pageRef else { return nil }
         let crop = source.bounds(for: .cropBox)
         let rotation = source.rotation
+        if preserve && !preservesAnnotations(source) {
+            return bakeInPageCoordinates(images,onto:source,reference:reference,extras:extras)
+        }
         let quarterTurn = abs(rotation % 180) == 90
         var box = CGRect(origin: .zero, size: quarterTurn ? CGSize(width: crop.height, height: crop.width) : crop.size)
         let data = NSMutableData()
@@ -95,6 +102,46 @@ enum SignatureStamp {
         }
         return page
     }
+
+    /// Preserve the PDF's coordinate space so links, widgets and ink keep their original positions.
+    private static func bakeInPageCoordinates(_ images: [(image:CGImage,rect:CGRect)], onto source: PDFPage,
+                                              reference: CGPDFPage, extras: [PDFAnnotation]) -> PDFPage? {
+        let data = NSMutableData()
+        var media = source.bounds(for:.mediaBox)
+        guard let consumer = CGDataConsumer(data:data),
+              let context = CGContext(consumer:consumer,mediaBox:&media,nil) else { return nil }
+        let boxes: [(CFString,PDFDisplayBox)] = [
+            (kCGPDFContextMediaBox,.mediaBox),(kCGPDFContextCropBox,.cropBox),
+            (kCGPDFContextBleedBox,.bleedBox),(kCGPDFContextTrimBox,.trimBox),(kCGPDFContextArtBox,.artBox)
+        ]
+        var info: [String:Data] = [:]
+        for (key,box) in boxes {
+            var bounds = source.bounds(for:box)
+            info[key as String] = Data(bytes:&bounds,count:MemoryLayout<CGRect>.size)
+        }
+        context.beginPDFPage(info as CFDictionary)
+        context.drawPDFPage(reference)
+        context.interpolationQuality = .high
+        let rotation = source.rotation
+        let quarterTurn = abs(rotation % 180) == 90
+        for (image,rect) in images {
+            let size = quarterTurn ? CGSize(width:rect.height,height:rect.width) : rect.size
+            context.saveGState()
+            context.translateBy(x:rect.midX,y:rect.midY)
+            context.rotate(by:CGFloat(rotation) * .pi / 180)
+            context.draw(image,in:CGRect(x:-size.width/2,y:-size.height/2,width:size.width,height:size.height))
+            context.restoreGState()
+        }
+        context.endPDFPage()
+        context.closePDF()
+        guard let page = PDFDocument(data:data as Data)?.page(at:0) else { return nil }
+        page.rotation = rotation
+        for annotation in source.annotations + extras {
+            if let copy = annotation.copy() as? PDFAnnotation { page.addAnnotation(copy) }
+        }
+        return page
+    }
+
 }
 
 /// A placed signature, persisted with its editing source in projects and local PDF metadata.
@@ -195,6 +242,7 @@ extension Workspace {
             } else {
                 view.beginSignaturePlacement(image,widthFraction:0.45,page:nil,rect:nil)
             }
+            updatePageImageSize()
             status = "拖动图片调整位置，拖角调整大小；回车确认，Esc 取消"
         } else {
             view.beginSignaturePlacement(image,widthFraction:signatureWidth,page:nil,rect:nil)
@@ -204,6 +252,18 @@ extension Workspace {
 
     private static func decodePNG(_ data: Data) -> CGImage? {
         CGImageSourceCreateWithData(data as CFData, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
+    }
+
+    func updatePageImageSize() {
+        guard placingSignature?.isPageImage == true,
+              let placement = (pdfView as? SignaturePlacing)?.signaturePlacement() else { return }
+        let quarterTurn = abs(placement.page.rotation % 180) == 90
+        pageImageWidthPoints = quarterTurn ? placement.rect.height : placement.rect.width
+    }
+
+    func setPageImageWidth(_ points: Double) {
+        guard placingSignature?.isPageImage == true, points.isFinite, points > 0 else { return }
+        (pdfView as? SignaturePlacing)?.resizePageImage(widthInPoints:points)
     }
 
     func setSignatureWidth(_ fraction: Double) {
@@ -224,6 +284,7 @@ extension Workspace {
         (pdfView as? SignaturePlacing)?.endSignaturePlacement()
         placingSignature = nil
         pageImageTarget = nil
+        pageImageWidthPoints = nil
     }
 
     /// Writes the signature (new, or one that was picked up) into the PDF at the place shown on the page.
@@ -254,42 +315,73 @@ extension Workspace {
                 if let snapshot = moveSnapshot { pushUndo(.snapshot(snapshot)) } else { checkpoint() }
                 try rebake(layer, items: layer.items + [item])
             } else {
-                // The page object may be stale after in-memory edits, so the page is redrawn from a freshly serialized
-                // copy of that one page; the rest of the document is not touched.
-                let single = DocumentServices.subset(document, indexes: [index])
-                let committed = try PDFDocument(data: single.dataRepresentation().unwrap("无法读取当前页")).unwrap("无法读取当前页")
-                let page = try committed.page(at: 0).unwrap("页面读取失败")
-                let preserve = SignatureStamp.preservesAnnotations(page)
-                let baked = try SignatureStamp.bake([(image, rect)], onto: page, preserve: preserve).unwrap("无法把"+label+"写入页面")
-                // The page without signatures, and without annotations that stay annotations, is what later redraws start from.
-                let baseDocument = try PDFDocument(data: single.dataRepresentation().unwrap("无法读取当前页")).unwrap("无法读取当前页")
-                if preserve, let basePage = baseDocument.page(at: 0) { for annotation in basePage.annotations { basePage.removeAnnotation(annotation) } }
-                let baseData = try baseDocument.dataRepresentation().unwrap("无法保存页面")
-                let crop = page.bounds(for: .cropBox)
-                checkpoint()
-                document.removePage(at: index)
-                document.insert(baked, at: index)
-                ReadingServices.applyOutline(outlineEntries, to: document)
-                let layer = SignatureLayer(base: baseData, preserved: preserve, size: crop.size, rotation: page.rotation,
-                                           items: [PlacedSignature(id: UUID(), png: data, rect: rect, isPageImage: template.isPageImage)], page: baked)
-                signatureLayers[ObjectIdentifier(baked)] = layer
+                try addFirstPlacedImage(image,png:data,rect:rect,template:template,page:placement.page,index:index)
             }
             movingSignature = nil
             moveSnapshot = nil
             (pdfView as? SignaturePlacing)?.endSignaturePlacement()
             placingSignature = nil
             pageImageTarget = nil
+            pageImageWidthPoints = nil
             selection = index
             changed()
             status = label+"已放置，可撤销。双击或右键可再次移动。"
         } catch { self.error = error.localizedDescription }
     }
 
+    private func addFirstPlacedImage(_ image:CGImage,png:Data,rect:CGRect,template:SignatureTemplate,page original:PDFPage,index:Int) throws {
+        let isPageImage = template.isPageImage == true
+        let preserve = isPageImage || SignatureStamp.preservesAnnotations(original)
+        let clean = try (original.copy() as? PDFPage).unwrap("无法复制当前页")
+        if preserve { for annotation in clean.annotations { clean.removeAnnotation(annotation) } }
+        let single = PDFDocument()
+        single.insert(clean,at:0)
+        let base = try single.dataRepresentation().unwrap("无法保存页面")
+        let committed = try PDFDocument(data:base).unwrap("无法读取当前页")
+        let page = try committed.page(at:0).unwrap("页面读取失败")
+        let label = isPageImage ? "图片" : "签名"
+        let baked = try SignatureStamp.bake([(image,rect)],onto:page,preserve:preserve).unwrap("无法把"+label+"写入页面")
+        let crop = page.bounds(for:.cropBox)
+        checkpoint()
+        replacePage(original,with:baked,at:index,preservingAnnotations:preserve)
+        let item = PlacedSignature(id:UUID(),png:png,rect:rect,isPageImage:template.isPageImage)
+        signatureLayers[ObjectIdentifier(baked)] = SignatureLayer(base:base,preserved:preserve,size:crop.size,
+                                                                 rotation:page.rotation,items:[item],page:baked)
+    }
+
+    private func replacePage(_ old:PDFPage,with page:PDFPage,at index:Int,preservingAnnotations:Bool) {
+        let annotations = preservingAnnotations ? old.annotations : []
+        var links: [(annotation:PDFAnnotation, action:Bool, page:Int, point:CGPoint, zoom:CGFloat)] = []
+        for number in 0..<(preservingAnnotations ? document.pageCount : 0) {
+            guard let source = document.page(at:number) else { continue }
+            for annotation in source.annotations where annotation.type == "Link" || annotation.type == "Widget" {
+                let action = annotation.action as? PDFActionGoTo
+                guard let destination = annotation.destination ?? action?.destination, let target = destination.page,
+                      source === old || target === old else { continue }
+                let targetIndex = document.index(for:target)
+                guard targetIndex != NSNotFound else { continue }
+                links.append((annotation,annotation.destination == nil,targetIndex,destination.point,destination.zoom))
+            }
+        }
+        for annotation in annotations { old.removeAnnotation(annotation) }
+        document.removePage(at:index)
+        document.insert(page,at:index)
+        for annotation in annotations { page.addAnnotation(annotation) }
+        for link in links {
+            guard let target = document.page(at:link.page) else { continue }
+            let destination = PDFDestination(page:target,at:link.point)
+            destination.zoom = link.zoom
+            if link.action { link.annotation.action = PDFActionGoTo(destination:destination) }
+            else { link.annotation.destination = destination }
+        }
+        ReadingServices.applyOutline(outlineEntries,to:document)
+    }
+
     // MARK: Moving a placed signature
 
     /// The movable signatures of a page that is in the document, if it still is the page they were drawn on.
     func signatureLayer(for page: PDFPage) -> SignatureLayer? {
-        guard let layer = signatureLayers[ObjectIdentifier(page)], layer.page === page, page.rotation == 0, page.bounds(for: .cropBox) == layer.shownBounds, document.index(for: page) != NSNotFound else { return nil }
+        guard let layer = signatureLayers[ObjectIdentifier(page)], layer.page === page, page.rotation == (layer.preserved ? layer.rotation : 0), page.bounds(for: .cropBox) == layer.shownBounds, document.index(for: page) != NSNotFound else { return nil }
         return layer
     }
 
@@ -314,6 +406,7 @@ extension Workspace {
             placingSignature = SignatureTemplate(name: "移动"+item.label, pdf: Data(), image: item.png, isPageImage:item.isPageImage)
             signatureWidth = min(0.8, max(0.08, Double(shown.width / max(1, width))))
             view.beginSignaturePlacement(image, widthFraction: signatureWidth, page: page, rect: shown)
+            if item.isPageImage == true { updatePageImageSize() }
             changed()
             status = "拖动移动，拖角缩放；回车确认，Esc 放回原处"
         } catch {
@@ -338,12 +431,13 @@ extension Workspace {
     func rebake(_ layer: SignatureLayer, items: [PlacedSignature]) throws -> PDFPage {
         let old = layer.page
         let index = document.index(for: old)
-        guard index != NSNotFound, let basePage = PDFDocument(data: layer.base)?.page(at: 0) else { throw FolioError(message: "页面已变化，无法再移动这个签名。") }
-        let images = items.compactMap { item in Self.decodePNG(item.png).map { (image: $0, rect: item.rect) } }
-        let page = try SignatureStamp.bake(images, onto: basePage, preserve: layer.preserved, extras: old.annotations).unwrap("无法重绘页面")
-        document.removePage(at: index)
-        document.insert(page, at: index)
-        ReadingServices.applyOutline(outlineEntries, to: document)
+        guard index != NSNotFound, let baseDocument = PDFDocument(data:layer.base),
+              let basePage = baseDocument.page(at:0) else { throw FolioError(message:"页面已变化，无法再移动这个内容。") }
+        let images = items.compactMap { item in Self.decodePNG(item.png).map { (image:$0,rect:item.rect) } }
+        let extras = layer.preserved ? [] : old.annotations
+        let page = try SignatureStamp.bake(images,onto:basePage,preserve:layer.preserved,extras:extras).unwrap("无法重绘页面")
+        withExtendedLifetime(baseDocument) {}
+        replacePage(old,with:page,at:index,preservingAnnotations:layer.preserved)
         signatureLayers[ObjectIdentifier(old)] = nil
         layer.page = page
         layer.items = items

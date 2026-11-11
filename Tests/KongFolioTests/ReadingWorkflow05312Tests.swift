@@ -48,6 +48,22 @@ final class ReadingWorkflow05312Tests: XCTestCase {
         XCTAssertEqual(uncertain.candidates.map(\.index),[1,2])
     }
 
+    @MainActor func testRelocatedTextReturnsTheMatchedLineCoordinates() throws {
+        let folder = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at:folder) }
+        let file = folder.appendingPathComponent("修订后.pdf")
+        let document = try TextImport.render("A unique historical passage",markdown:false)
+        document.insert(scan(190),at:0)
+        XCTAssertTrue(document.write(to:file))
+        let source = SourceRef(path:"/old.pdf",fileName:"原文.pdf",page:0,anchor:"unique historical passage")
+        let result = try ReadingSourceRecovery.inspect(ReadingSourceInput(url:file),citation:ReadingCitation(source:source,title:"原文"),quote:"")
+        let found = try XCTUnwrap(result.exact)
+        XCTAssertEqual(found.index,1)
+        XCTAssertFalse(found.passage.isEmpty)
+        let text = try TextImport.render("Same phrase\nSame phrase",markdown:false)
+        XCTAssertTrue(ReadingSourceRecovery.passageRects(try XCTUnwrap(text.page(at:0)),anchor:"Same phrase").isEmpty)
+    }
+
     @MainActor func testReadingSourceRegistryKeepsIdentityWhenPDFMoves() throws {
         let root = try Release027Tests().folder()
         defer { try? FileManager.default.removeItem(at:root) }

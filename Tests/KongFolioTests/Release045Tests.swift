@@ -105,7 +105,7 @@ final class Release045Tests: XCTestCase {
         let old = Data(#"{"fontName":"Songti SC","fontSize":12,"includeQuote":true,"includeNote":true,"includeSources":true}"#.utf8);let options = try JSONDecoder().decode(ReadingExportOptions.self,from:old);XCTAssertTrue(options.valid);XCTAssertNil(options.footnotes)
     }
     func testExportProfilesPersistLayoutAndRejectInvalidOptions() throws {
-        let defaults = UserDefaults(suiteName:"Profiles045-"+UUID().uuidString)!,profiles = ReadingExportProfile.presets;try ReadingExportProfile.save(profiles,defaults:defaults);XCTAssertEqual(ReadingExportProfile.load(defaults:defaults).map(\.name),["正文与出处","摘录汇编","读书笔记","研究笔记"])
+        let defaults = UserDefaults(suiteName:"Profiles045-"+UUID().uuidString)!,profiles = ReadingExportProfile.presets;try ReadingExportProfile.save(profiles,defaults:defaults);XCTAssertEqual(ReadingExportProfile.load(defaults:defaults).map(\.name),["正文与出处","文献摘录","单本书笔记","专题汇总"])
         var bad = profiles[0];bad.options.margin = 999;XCTAssertThrowsError(try ReadingExportProfile.save([bad],defaults:defaults));XCTAssertEqual(ReadingExportProfile.load(defaults:defaults).count,profiles.count)
     }
     func testMixedExportOrderIncludesNotesAndEssaysInManualOrder() throws {
@@ -117,6 +117,28 @@ final class Release045Tests: XCTestCase {
         let xml = try WordExportTests().unzip(["-p",file.path,"word/document.xml"]),notes = try WordExportTests().unzip(["-p",file.path,"word/footnotes.xml"])
         XCTAssertTrue(xml.contains("footnoteReference"));XCTAssertTrue(xml.contains("[^literal]"));XCTAssertTrue(notes.contains("初版"));XCTAssertTrue(notes.contains("PDF 第 9 页"));XCTAssertTrue(notes.contains("印刷页码 五"))
     }
+    func testExportSummaryAndLastSuccessfulTemplate() throws {
+        let suite = "KongFolio-export-"+UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName:suite))
+        defer { defaults.removePersistentDomain(forName:suite) }
+        var r = record()
+        r.imageAsset = "selected.png"
+        r.extras = ReadingRecordExtras053(visualAsset:"optional.png")
+        r.citations[0].source.invalidPage053 = true
+        let independent = ReadingRecord(kind:.note,note:"独立笔记")
+        let profile = ReadingExportProfile(name:"上次成功导出",format:.pdf,options:ReadingExportOptions(),scope:.book,sort:.page)
+        profile.rememberSuccessful(defaults:defaults)
+        XCTAssertEqual(ReadingExportProfile.lastSuccessful(defaults:defaults)?.scope,.book)
+        XCTAssertEqual(ReadingExportProfile.lastSuccessful(defaults:defaults)?.sort,.page)
+        XCTAssertEqual(ReadingExportProfile.lastSuccessful(defaults:defaults)?.format,.pdf)
+        var snapshot = ReadingExportSnapshot(title:"核对",records:[r,independent])
+        XCTAssertEqual(ReadingExportOrdering.summary(snapshot),.init(items:2,images:1,missingSources:1,sourcesToReview:1))
+        var options = ReadingExportOptions()
+        options.includeQuote = false
+        snapshot.options = options
+        XCTAssertEqual(ReadingExportOrdering.summary(snapshot).images,0)
+    }
+
     func testMarkdownOwnFormattingDoesNotReformatLiteralQuote() throws {
         let r = ReadingRecord(kind:.excerpt,quote:"**原文星号**",note:"## 我的标题\n**我的强调**"),snapshot = ReadingExportSnapshot(title:"检查",records:[r]);let rich = try ReadingRecordExport.rich(snapshot,assets:try root())
         XCTAssertTrue(rich.blocks.contains{if case .paragraph(let s,let heading) = $0 { return heading == 2 && s.string == "我的标题" };return false});XCTAssertTrue(rich.blocks.contains{if case .paragraph(let s,_) = $0 { return s.string.contains("**原文星号**") };return false})

@@ -1,6 +1,11 @@
 import AppKit
 import PDFKit
 
+@MainActor protocol ReadingSourceHighlighting: AnyObject {
+    func showSourceHighlight(_ rects:[CGRect],on page:PDFPage,keep:Bool)
+    func clearSourceHighlight()
+}
+
 extension Workspace {
     /// Marks a highlight in the document as the colouring of an excerpt card.
     static let cardKey = PDFAnnotationKey(rawValue: "KongFolioCard")
@@ -191,6 +196,7 @@ extension Workspace {
         selectedPages = [selection]
         readingPoint = target.point
         navigationToken = UUID()
+        (pdfView as? ReadingSourceHighlighting)?.clearSourceHighlight()
         flash(marks, on: selection, keep: keep)
     }
 
@@ -209,16 +215,16 @@ extension Workspace {
     }
 
     private func flash(_ rects: [CGRect], on index: Int, keep: Bool = false) {
-        guard !rects.isEmpty, let page = document.page(at: index) else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            guard let view = self?.pdfView, view.document === self?.document else { return }
-            let marks = rects.compactMap { page.selection(for: $0) }
-            marks.forEach { $0.color = (keep ? NSColor.systemYellow : NSColor.systemOrange).withAlphaComponent(0.55) }
-            view.highlightedSelections = marks
-            // Kept marks stay until the next search, reveal or flash replaces them.
-            if !keep { DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { view.highlightedSelections = nil } }
+        guard !rects.isEmpty, let page = document.page(at:index) else { return }
+        let token = navigationToken
+        DispatchQueue.main.asyncAfter(deadline:.now()+0.25) { [weak self,weak page] in
+            guard let self, let page, self.navigationToken == token,
+                  let view = self.pdfView, view.document === self.document,
+                  self.document.index(for:page) == index else { return }
+            (view as? ReadingSourceHighlighting)?.showSourceHighlight(rects,on:page,keep:keep)
         }
     }
+
 }
 
 extension WorkspaceStore {

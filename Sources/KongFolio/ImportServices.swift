@@ -59,8 +59,9 @@ extension Workspace {
         let generation = UUID();importGeneration = generation
         isImporting = true;busy = true;progress = 0;taskLabel = "读取文件…"
         let root = storage
+        let prepare = prepareImportFiles
         let worker = Task.detached { () async throws -> (ImportPayload,PreparedReading?) in
-            try await CloudFilePreparation.prepare(urls) { phase in Task { @MainActor [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = phase } }
+            try await prepare(urls) { phase in Task { @MainActor [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = phase } }
             await MainActor.run { [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = "等候文件解析…" }
             try await ImportLimiter.shared.acquire();defer { Task { await ImportLimiter.shared.release() } }
             await MainActor.run { [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = "正在解析文件…" }

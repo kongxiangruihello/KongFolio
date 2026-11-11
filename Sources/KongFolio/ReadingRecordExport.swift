@@ -295,12 +295,12 @@ actor ReadingExportWorker {
             } catch { guard let self, self.generation == token else { return }; self.busy = false; self.message = FolioCancellation.matches(error) ? "已停止旧预览" : error.localizedDescription }
         }
     }
-    func export(_ snapshot:ReadingExportSnapshot,format:ReadingRecordExport.Format,assets:URL,to url:URL,expected:FileBaseline) {
+    func export(_ snapshot:ReadingExportSnapshot,format:ReadingRecordExport.Format,assets:URL,to url:URL,expected:FileBaseline,onSuccess: @escaping () -> Void = {}) {
         cancel(); let token = UUID(); generation = token; busy = true
         job = Task { [weak self] in
             do {
                 try await ReadingExportWorker.shared.export(snapshot,format:format,assets:assets,to:url,expected:expected)
-                guard let self, self.generation == token else { return }; self.busy = false; self.lastExportURL = url; self.message = "已导出并核验 "+url.lastPathComponent+" · "+String(snapshot.orderedItems.count)+" 项"+(format == .markdown ? "；请将 Markdown 与配套图片目录一起保存。" : "")
+                guard let self, self.generation == token else { return }; self.busy = false; self.lastExportURL = url; onSuccess(); self.message = "已导出并核验 "+url.lastPathComponent+" · "+String(snapshot.orderedItems.count)+" 项"+(format == .markdown ? "；请将 Markdown 与配套图片目录一起保存。" : "")
             } catch { guard let self, self.generation == token else { return }; self.busy = false; self.message = FolioCancellation.matches(error) ? "已取消，已有记录保留" : "导出失败："+error.localizedDescription }
         }
     }

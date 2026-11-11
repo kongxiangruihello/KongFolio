@@ -64,9 +64,31 @@ enum ReadingExportOrdering {
         for c in snapshot.citations053 { let key=citationKey(c);if result[key]==nil { result[key]=sourceDetail(c,rendered:formatter.render(c,shorten:snapshot.options?.shortenedCitations053==true)) } }
         return result
     }
+    struct Summary: Equatable {
+        var items: Int
+        var images: Int
+        var missingSources: Int
+        var sourcesToReview: Int
+    }
+
+    static func summary(_ snapshot:ReadingExportSnapshot) -> Summary {
+        let entries = snapshot.orderedItems
+        let options = snapshot.options ?? ReadingExportOptions()
+        var images = options.includeQuote ? snapshot.assetNames053 : []
+        if options.includeRegionImages != true {
+            var extras = snapshot.allRecords.compactMap(\.extras)
+            extras += ([snapshot.essay].compactMap{$0}+(snapshot.essays ?? [])).compactMap(\.extras)
+            let included = Set(snapshot.allRecords.compactMap(\.imageAsset)
+                + extras.flatMap { ($0.regions ?? []).map(\.asset)+($0.quotations ?? []).flatMap { $0.assets ?? [] } })
+            images.formIntersection(included)
+        }
+        return Summary(items:entries.count,images:images.count,
+                       missingSources:entries.filter{$0.citations.isEmpty}.count,
+                       sourcesToReview:entries.filter{$0.citations.contains{$0.source.invalidPage053 == true || $0.tracking?.needsReview == true}}.count)
+    }
+
     static func warnings(_ snapshot:ReadingExportSnapshot) -> [String] {
         var result:[String] = []
-        if snapshot.allRecords.contains(where:{$0.citations.isEmpty}) { result.append("部分记录没有出处，请核对后再用于引用。") }
         if snapshot.allRecords.contains(where:{$0.quote.contains("�") || $0.quote.contains("[待核]")}) { result.append("摘录中含有待核文字。") }
         return result
     }

@@ -42,19 +42,41 @@ struct ReadingExportPreferences: Codable, Equatable {
     var directoryURL:URL? { guard let path = directoryPath, path.hasPrefix("/") else { return nil }; var directory:ObjCBool = false; guard FileManager.default.fileExists(atPath:path,isDirectory:&directory),directory.boolValue else { return nil }; return URL(fileURLWithPath:path,isDirectory:true) }
 }
 
+enum ReadingExportScope: String, Codable, CaseIterable {
+    case selected = "所选资料"
+    case book = "当前书的全部记录"
+    case essay = "当前笔记"
+    case library = "全部阅读资料"
+}
+
 struct ReadingExportProfile:Codable,Identifiable {
     var id = UUID()
     var name:String
     var format:ReadingRecordExport.Format? = nil
     var options:ReadingExportOptions
+    var scope:ReadingExportScope? = nil
+    var sort:ReadingExportOrdering.Sort? = nil
+    private static let lastKey = "KongFolio.lastSuccessfulReadingExport"
+
+    static func lastSuccessful(defaults:UserDefaults = .standard) -> Self? {
+        guard let data = defaults.data(forKey:lastKey), let profile = try? JSONDecoder().decode(Self.self,from:data),
+              profile.options.valid else { return nil }
+        return profile
+    }
+
+    func rememberSuccessful(defaults:UserDefaults = .standard) {
+        guard options.valid, let data = try? JSONEncoder().encode(self) else { return }
+        defaults.set(data,forKey:Self.lastKey)
+    }
+
     static var presets:[Self] {
         var excerpts = ReadingExportOptions();excerpts.includeNote = false;excerpts.lineHeight = 1.3;excerpts.margin = 56;excerpts.footnotes = true
         var notes = ReadingExportOptions();notes.lineHeight = 1.5
         var body = ReadingExportOptions()
         body.noteHeading = "正文"
         body.sourcesHeading = "出处"
-        var essay = ReadingExportOptions();essay.lineHeight = 1.6;essay.margin = 80;essay.footnotes = true
-        return [Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000104")!,name:"正文与出处",options:body),Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000101")!,name:"摘录汇编",options:excerpts),Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000102")!,name:"读书笔记",options:notes),Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000103")!,name:"研究笔记",options:essay)]
+        var essay = ReadingExportOptions();essay.lineHeight = 1.6;essay.margin = 80;essay.footnotes = true;essay.bibliography053 = true
+        return [Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000104")!,name:"正文与出处",options:body),Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000101")!,name:"文献摘录",options:excerpts,sort:.page),Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000102")!,name:"单本书笔记",options:notes,scope:.book,sort:.page),Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000103")!,name:"专题汇总",options:essay,sort:.book)]
     }
     static func load(defaults:UserDefaults = .standard) -> [Self] { guard let data = defaults.data(forKey:"KongFolio.readingExportProfiles"),let profiles = try? JSONDecoder().decode([Self].self,from:data) else { return [] };return profiles.filter{$0.options.valid} }
     static func save(_ profiles:[Self],defaults:UserDefaults = .standard) throws { guard profiles.count<=100,profiles.allSatisfy({$0.options.valid && !$0.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty}) else { throw FolioError(message:"模板名称或设置无效，最多保存 100 份模板") };defaults.set(try JSONEncoder().encode(profiles),forKey:"KongFolio.readingExportProfiles") }

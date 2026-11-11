@@ -22,6 +22,7 @@ struct ReadingSourcePage: Identifiable {
     let label: String?
     let text: String
     let fingerprint: String?
+    var passage: [CGRect] = []
     var id: Int { index }
 }
 
@@ -57,6 +58,14 @@ enum ReadingSourceRecovery {
                                  text:String(text.prefix(180)),fingerprint:digest ?? fingerprint(page))
     }
 
+    static func passageRects(_ page: PDFPage, anchor: String) -> [CGRect] {
+        guard !anchor.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, let text = page.string else { return [] }
+        var cache: [String:String] = [:]
+        let matches = ReadingServices.matches(in:text,query:anchor,cache:&cache,limit:2)
+        guard matches.count == 1, let selection = page.selection(for:matches[0]) else { return [] }
+        return selection.selectionsByLine().map { $0.bounds(for:page) }.filter { !$0.isEmpty && !$0.isInfinite }
+    }
+
     static func inspect(_ input: ReadingSourceInput, citation: ReadingCitation, quote: String) throws -> ReadingSourceInspection {
         try Task.checkCancellation()
         let digest: String?
@@ -73,13 +82,14 @@ enum ReadingSourceRecovery {
         guard let document,!document.isLocked else { return result }
         result.pageCount = document.pageCount
         let source = citation.source
+        let rawAnchor = source.anchor ?? String(quote.prefix(60))
         if digest != nil, digest == source.fingerprint, source.invalidPage053 != true,
-           citation.tracking?.needsReview != true, let current = page(document,at:source.page) {
+           citation.tracking?.needsReview != true, var current = page(document,at:source.page) {
+            if source.rects.isEmpty, let page = document.page(at:source.page) { current.passage = passageRects(page,anchor:rawAnchor) }
             result.exact = current
             return result
         }
         let originalFingerprint = citation.tracking?.visualFingerprint
-        let rawAnchor = source.anchor ?? String(quote.prefix(60))
         let anchor = AnnotationFilter.folded(rawAnchor).filter { !$0.isWhitespace }
         // A short string often appears on many pages and is only useful for manual comparison.
         let useAnchor = anchor.count >= 8
@@ -109,14 +119,18 @@ enum ReadingSourceRecovery {
         let visualIDs = Set(images.map(\.index))
         let narrowed = passages.filter { visualIDs.contains($0.index) }
         let matches = images.count > 1 && !narrowed.isEmpty ? narrowed : (images.isEmpty ? passages : images)
-        if complete && matches.count == 1 { result.exact = matches[0] }
+        if complete && matches.count == 1, var current = matches.first, let page = document.page(at:current.index) {
+            current.passage = passageRects(page,anchor:rawAnchor)
+            result.exact = current
+        }
         result.candidates = Array(matches.prefix(24))
         return result
     }
 
-    static func preview(_ input: ReadingSourceInput, index: Int) -> (ReadingSourcePage,Data?)? {
+    static func preview(_ input: ReadingSourceInput, index: Int, anchor: String = "") -> (ReadingSourcePage,Data?)? {
         guard let document = input.document(), let page = document.page(at:index),
-              let summary = self.page(document,at:index) else { return nil }
+              var summary = self.page(document,at:index) else { return nil }
+        summary.passage = passageRects(page,anchor:anchor)
         let bitmap = page.thumbnail(of:CGSize(width:300,height:390),for:.cropBox)
         return (summary,bitmap.tiffRepresentation)
     }

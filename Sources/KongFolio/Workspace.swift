@@ -55,6 +55,9 @@ import UniformTypeIdentifiers
     @Published var ocrSettings = OCRSettings.load() { didSet { if ocrSettings != oldValue { ocrSettings.save() } } }
     var estimateTask: Task<ExportEstimate, Error>?
     var cancelAuxiliary: (() -> Void)?
+    var prepareImportFiles: CloudFilePreparation.Handler = { urls, progress in
+        try await CloudFilePreparation.prepare(urls,progress:progress)
+    }
 
     // MARK: Document
     @Published var document = PDFDocument()
@@ -197,6 +200,7 @@ import UniformTypeIdentifiers
     @Published var signaturePositions: [SignaturePosition] = []
     @Published var placingSignature: SignatureTemplate?
     var pageImageTarget: PDFPage?
+    @Published var pageImageWidthPoints: Double?
     /// Signatures placed on pages in this session, by page, so they can be moved later (see `SignatureLayer`).
     var signatureLayers: [ObjectIdentifier: SignatureLayer] = [:]
     /// A placed signature that was picked up and is being moved, and the document as it was before.
@@ -757,7 +761,7 @@ import UniformTypeIdentifiers
         else { pdfView?.clearSelection(); pdfView?.document = nil }
         pdfView = nil
         displayCache = nil; copiedAnnotations.removeAll()
-        signatureLayers.removeAll(); movingSignature = nil; moveSnapshot = nil; placingSignature = nil; pageImageTarget = nil
+        signatureLayers.removeAll(); movingSignature = nil; moveSnapshot = nil; placingSignature = nil; pageImageTarget = nil; pageImageWidthPoints = nil
         drawingInProgress = false; pendingReveal = nil; deferredOpen = nil
         if let path = rulerPath { try? readingRuler.save(path:path,storage:storage) }
         rulerTask?.cancel(); rulerPath = nil

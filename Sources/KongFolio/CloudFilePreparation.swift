@@ -2,6 +2,7 @@ import Foundation
 
 /// Download preparation is cancellable and never waits on the UI thread. File parsing remains on a worker.
 enum CloudFilePreparation {
+    typealias Handler = @Sendable ([URL], @escaping @Sendable (String) -> Void) async throws -> Void
     static func prepare(_ urls: [URL], progress: @escaping @Sendable (String) -> Void) async throws {
         for original in urls {
             var url = original

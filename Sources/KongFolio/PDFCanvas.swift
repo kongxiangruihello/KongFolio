@@ -17,6 +17,7 @@ struct PDFCanvas: NSViewRepresentable {
         if view.workspace !== workspace {
             if let previous = view.workspace, previous.pdfView === view { previous.pdfView = nil }
             context.coordinator.resetPosition()
+            view.clearSourceHighlight()
         }
         workspace.pdfView = view
         if workspace.tool != .select { view.hideSelectionToolbar() }
@@ -29,7 +30,11 @@ struct PDFCanvas: NSViewRepresentable {
         case .continuous: display = .singlePageContinuous
         }
         let layoutChanged = view.displayMode != display
-        if replaced { view.document = workspace.document; workspace.loadReadingRulerIfNeeded() }
+        if replaced {
+            view.clearSourceHighlight()
+            view.document = workspace.document
+            workspace.loadReadingRulerIfNeeded()
+        }
         view.refreshReadingRuler()
         if layoutChanged { view.displayMode = display }
         if replaced || layoutChanged || context.coordinator.navigation != workspace.navigationToken {
@@ -91,7 +96,10 @@ struct PDFCanvas: NSViewRepresentable {
             guard let current else { return }
             current.postsBoundsChangedNotifications = true
             scrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: current, queue: .main) { [weak self, weak view] _ in
-                MainActor.assumeIsolated { self?.schedulePosition(view: view, workspace: view?.workspace) }
+                MainActor.assumeIsolated {
+                    view?.refreshSourceHighlight()
+                    self?.schedulePosition(view:view,workspace:view?.workspace)
+                }
             }
         }
         func resetPosition() {
@@ -118,7 +126,7 @@ final class ReadingPDFContainer: NSView {
     }
     required init?(coder: NSCoder) { fatalError("not used") }
 }
-final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceReleasing {
+final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceReleasing, ReadingSourceHighlighting {
     weak var workspace: Workspace?
     private var points: [CGPoint] = []
     private weak var drawingPage: PDFPage?
@@ -128,7 +136,31 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         if readingGuide.superview == nil { readingGuide.frame = bounds; readingGuide.autoresizingMask = [.width,.height]; addSubview(readingGuide) }
         readingGuide.isHidden = workspace?.readingRuler.enabled != true; readingGuide.needsDisplay = true
     }
-    override func layout() { super.layout(); readingGuide.needsDisplay = true }
+    override func layout() { super.layout(); readingGuide.needsDisplay = true; refreshSourceHighlight() }
+    private var sourceHighlight: ReadingSourceOverlay?
+    private var sourceHighlightExpiry: Task<Void,Never>?
+
+    func showSourceHighlight(_ rects:[CGRect],on page:PDFPage,keep:Bool) {
+        clearSourceHighlight()
+        let overlay = ReadingSourceOverlay(pdfView:self,page:page,rects:rects,keep:keep)
+        sourceHighlight = overlay
+        addSubview(overlay,positioned:.above,relativeTo:nil)
+        if !keep {
+            sourceHighlightExpiry = Task { @MainActor [weak self] in
+                do { try await Task.sleep(nanoseconds:2_500_000_000) } catch { return }
+                self?.clearSourceHighlight()
+            }
+        }
+    }
+
+    func refreshSourceHighlight() { sourceHighlight?.needsDisplay = true }
+
+    func clearSourceHighlight() {
+        sourceHighlightExpiry?.cancel()
+        sourceHighlightExpiry = nil
+        sourceHighlight?.removeFromSuperview()
+        sourceHighlight = nil
+    }
     private lazy var strokePreview = StrokePreviewView(pdfView: self)
     private var moving: PDFAnnotation?
     private var pendingMove: [PendingAnnotationEdit] = []
@@ -164,7 +196,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
 
     /// SwiftUI may cache the native view after a tab disappears. Drop its PDF and overlays explicitly.
     func releaseReadingResources() {
-        endSignaturePlacement(); hideSelectionToolbar()
+        endSignaturePlacement(); hideSelectionToolbar(); clearSourceHighlight()
         points.removeAll(); drawingPage = nil; provisional = nil; moving = nil
         pendingMove.removeAll(); contextSignature = nil; regionStart = nil
         excerptDragStart = nil; excerptDragSource = nil
@@ -195,6 +227,19 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         guard let overlay = placement else { return }
         let center = CGPoint(x: overlay.frame.midX, y: overlay.frame.midY)
         overlay.frame = SignatureStamp.fit(aspect: overlay.aspect, width: max(40, bounds.width * widthFraction), center: center, in: bounds)
+    }
+
+    func resizePageImage(widthInPoints: CGFloat) {
+        guard let overlay = placement, let target = signaturePlacement() else { return }
+        let pageBounds = convert(target.page.bounds(for:.cropBox),from:target.page)
+        let crop = target.page.bounds(for:.cropBox)
+        let quarterTurn = abs(target.page.rotation % 180) == 90
+        let displayedWidth = quarterTurn ? crop.height : crop.width
+        guard displayedWidth > 0 else { return }
+        let width = widthInPoints * pageBounds.width / displayedWidth
+        let center = CGPoint(x:overlay.frame.midX,y:overlay.frame.midY)
+        overlay.frame = SignatureStamp.fit(aspect:overlay.aspect,width:width,center:center,in:pageBounds)
+        workspace?.updatePageImageSize()
     }
 
     func signaturePlacement() -> (page: PDFPage, rect: CGRect)? {
@@ -670,10 +715,49 @@ final class SignaturePlacementView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         dragging = false; resizing = false
-        if event.clickCount == 2, let pdfView = superview as? DrawingPDFView { pdfView.workspace?.confirmSignaturePlacement() }
+        if let pdfView = superview as? DrawingPDFView {
+            pdfView.workspace?.updatePageImageSize()
+            if event.clickCount == 2 { pdfView.workspace?.confirmSignaturePlacement() }
+        }
     }
 }
 
+
+private final class ReadingSourceOverlay: NSView {
+    weak var pdfView: PDFView?
+    weak var page: PDFPage?
+    let rects: [CGRect]
+    let color: NSColor
+
+    init(pdfView:PDFView,page:PDFPage,rects:[CGRect],keep:Bool) {
+        self.pdfView = pdfView
+        self.page = page
+        self.rects = rects
+        color = keep ? .systemYellow : .systemOrange
+        super.init(frame:pdfView.bounds)
+        autoresizingMask = [.width,.height]
+    }
+
+    required init?(coder:NSCoder) { nil }
+    override func hitTest(_ point:NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect:NSRect) {
+        guard let pdfView, let page, pdfView.document === page.document else { return }
+        color.withAlphaComponent(0.23).setFill()
+        color.withAlphaComponent(0.8).setStroke()
+        let crop = page.bounds(for:.cropBox)
+        for rect in rects {
+            let clipped = rect.intersection(crop)
+            guard !clipped.isEmpty else { continue }
+            let frame = pdfView.convert(clipped,from:page)
+            guard frame.intersects(dirtyRect) else { continue }
+            let path = NSBezierPath(roundedRect:frame,xRadius:2,yRadius:2)
+            path.lineWidth = 1.5
+            path.fill()
+            path.stroke()
+        }
+    }
+}
 
 /// A small borderless button that runs a closure; used by the floating selection toolbar.
 final class ActionButton: NSButton {

@@ -2,13 +2,15 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ReadingExportPane: View {
-    enum Scope:String,CaseIterable { case selected = "所选资料",book = "当前书的全部记录",essay = "当前笔记",library = "全部阅读资料" }
+    typealias Scope = ReadingExportScope
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var journal:ReadingJournal
     @StateObject private var controller = ReadingExportController()
     @State private var scope = Scope.selected
     @State private var preferences = ReadingExportPreferences.load()
     @State private var profiles = ReadingExportProfile.load()
+    @State private var lastExport = ReadingExportProfile.lastSuccessful()
+    @State private var pendingSort: ReadingExportOrdering.Sort?
     @State private var temporarySort: ReadingExportOrdering.Sort?
     private var sort: ReadingExportOrdering.Sort { temporarySort ?? preferences.sort ?? .date }
     private var sortSelection: Binding<ReadingExportOrdering.Sort> {
@@ -52,7 +54,14 @@ struct ReadingExportPane: View {
         VStack(alignment:.leading,spacing:10) {
             ScrollView {
                 VStack(alignment:.leading,spacing:14) {
-                    Text("内容与格式").font(.headline)
+                    HStack {
+                        Text("内容与格式").font(.headline)
+                        Spacer()
+                        Menu("套用模板") {
+                            if let lastExport { Button("上次成功导出的设置") { apply(lastExport) }; Divider() }
+                            ForEach(ReadingExportProfile.presets+profiles) { profile in Button(profile.name) { apply(profile) } }
+                        }
+                    }
                     settings
                     DisclosureGroup("核对导出清单 · \(snapshot.orderedItems.count)/\(candidates.count) 项") { selectionList }
                     DisclosureGroup("版式与模板") {
@@ -73,6 +82,7 @@ struct ReadingExportPane: View {
          .onChange(of:scope) { _,value in
             page = 0; excluded = []; order = []
             temporarySort = value == .selected ? .selection : nil
+            if let pendingSort { sortSelection.wrappedValue = pendingSort; self.pendingSort = nil }
         }.onChange(of:candidates.count) { _,_ in page = pagination.index }
         .sheet(isPresented:$showReview) { ReadingOutputReviewView(store:store,snapshot:snapshot,assets:assets) }
         .sheet(isPresented:$showIncremental) { ReadingIncrementalExportView(journal:journal,controller:store.incrementalExport,options:preferences.options) }
@@ -84,6 +94,17 @@ struct ReadingExportPane: View {
             ViewThatFits(in:.horizontal) {
                 HStack { Text("核对与预览").font(.headline); Spacer(); reviewActions }
                 VStack(alignment:.leading,spacing:8) { Text("核对与预览").font(.headline); reviewActions }
+            }
+            let summary = ReadingExportOrdering.summary(snapshot)
+            if summary.items > 0 {
+                Text("\(summary.items) 项 · "+sort.rawValue+" · \(summary.images) 张图片")
+                    .font(.callout)
+                if !preferences.options.includeSources {
+                    Text("成稿不附出处").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("无出处 \(summary.missingSources) 项 · 出处待核对 \(summary.sourcesToReview) 项")
+                        .font(.caption).foregroundStyle(summary.missingSources + summary.sourcesToReview > 0 ? Color.orange : Color.secondary)
+                }
             }
             ForEach(ReadingExportOrdering.warnings(snapshot),id:\.self) { warning in
                 Text(warning).font(.caption).foregroundStyle(.orange)
@@ -159,9 +180,8 @@ struct ReadingExportPane: View {
     private var layoutSettings: some View {
         VStack(alignment:.leading,spacing:8) {
             HStack {
-                Menu("套用模板") { ForEach(ReadingExportProfile.presets+profiles) { profile in Button(profile.name) { preferences.options = profile.options;if let format = profile.format { preferences.format = format } } } }
                 Menu("管理模板") { ForEach(profiles) { profile in Button("删除："+profile.name) { do { let updated = profiles.filter{$0.id != profile.id};try ReadingExportProfile.save(updated);profiles = updated } catch { controller.message = error.localizedDescription } } } }.disabled(profiles.isEmpty)
-                Button("保存模板…") { if let name = TextPrompt.ask("保存导出模板",detail:"保存格式、字体、版式、内容顺序与出处选项",button:"保存"),!name.isEmpty { do { var updated = profiles;updated.append(ReadingExportProfile(name:name,format:preferences.format,options:preferences.options));try ReadingExportProfile.save(updated);profiles = updated } catch { controller.message = error.localizedDescription } } }
+                Button("保存模板…") { if let name = TextPrompt.ask("保存导出模板",detail:"保存格式、字体、版式、内容顺序与出处选项",button:"保存"),!name.isEmpty { do { var updated = profiles;updated.append(ReadingExportProfile(name:name,format:preferences.format,options:preferences.options,scope:scope,sort:reusableSort));try ReadingExportProfile.save(updated);profiles = updated } catch { controller.message = error.localizedDescription } } }
             }
             HStack {
                 Picker("字体",selection:$preferences.options.fontName) { Text("宋体").tag("Songti SC");Text("苹方").tag("PingFang SC");Text("Times New Roman").tag("Times New Roman") }
@@ -183,6 +203,22 @@ struct ReadingExportPane: View {
         }
     }
     private func move(_ id:String,_ delta:Int) { var ids = candidates.map(\.id);guard let i = ids.firstIndex(of:id),ids.indices.contains(i+delta) else { return };ids.swapAt(i,i+delta);order = ids;temporarySort = .manual }
+    private var reusableSort: ReadingExportOrdering.Sort? { sort == .manual ? nil : sort }
+
+    private func apply(_ profile:ReadingExportProfile) {
+        preferences.options = profile.options
+        if let format = profile.format { preferences.format = format }
+        let available = profile.scope != .book || store.commandWorkspace?.readingJournalPath != nil
+        let hasEssay = profile.scope != .essay || journal.essay(journal.currentEssayID)?.hasContent == true
+        if let target = profile.scope, available && hasEssay && target != scope {
+            pendingSort = profile.sort
+            scope = target
+        } else if let sort = profile.sort, sort != .selection || scope == .selected {
+            sortSelection.wrappedValue = sort
+        }
+        if !available { controller.message = "打开要导出的 PDF 后，可切换到当前书的全部记录。" }
+    }
+
     private func preview() {
         let value = snapshot, kind = format
         withSavedRecords {
@@ -192,6 +228,7 @@ struct ReadingExportPane: View {
 
     private func export() {
         let value = snapshot, kind = format
+        let profile = ReadingExportProfile(name:"上次成功导出",format:kind,options:preferences.options,scope:scope,sort:reusableSort)
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension:kind.ext) ?? .data]
         panel.directoryURL = preferences.directoryURL
@@ -202,7 +239,10 @@ struct ReadingExportPane: View {
         do {
             let baseline = try FileBaseline.capture(url)
             withSavedRecords {
-                controller.export(value,format:kind,assets:assets,to:url,expected:baseline)
+                controller.export(value,format:kind,assets:assets,to:url,expected:baseline) {
+                    profile.rememberSuccessful()
+                    lastExport = profile
+                }
             }
         } catch { controller.message = error.localizedDescription }
     }

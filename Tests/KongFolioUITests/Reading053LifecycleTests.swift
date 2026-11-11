@@ -5,9 +5,9 @@ import AppKit
 @testable import KongFolio
 
 final class Reading053LifecycleTests: XCTestCase {
-    @MainActor func wait(_ predicate:@escaping ()->Bool) async throws {
+    @MainActor func wait(_ stage:String = "生成文献验证",_ predicate:@escaping ()->Bool) async throws {
         for _ in 0..<2000 { if predicate() { return };try await Task.sleep(nanoseconds:5_000_000) }
-        throw NSError(domain:"Reading053Lifecycle",code:1,userInfo:[NSLocalizedDescriptionKey:"生成文献验证等待超时"])
+        throw NSError(domain:"Reading053Lifecycle",code:1,userInfo:[NSLocalizedDescriptionKey:stage+"等待超时"])
     }
     @MainActor func testTenMixedRoundsOfTwentyFilesStayOperable() async throws {
         _=NSApplication.shared
@@ -55,6 +55,137 @@ final class Reading053LifecycleTests: XCTestCase {
         if let first=samples.first,let last=samples.last { XCTAssertTrue(last-first<250,"多轮释放后的内存增长过大") }
         host.rootView=RootView(store:WorkspaceStore(storage:root.appendingPathComponent("Empty")));host.layoutSubtreeIfNeeded()
     }
+    @MainActor func testPendingCloudDownloadDoesNotBlockThreeBatchesOfReading() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("KongFolio-cloud-"+UUID().uuidString)
+        try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+        defer { try? FileManager.default.removeItem(at:root) }
+        let suite = "KongFolio-cloud-"+UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName:suite))
+        defer { defaults.removePersistentDomain(forName:suite) }
+        let store = WorkspaceStore(storage:root.appendingPathComponent("Support"),readingDefaults:defaults)
+        let files = (0..<20).map { index -> URL in
+            let file = root.appendingPathComponent("文献-\(index).pdf")
+            let document = PDFDocument()
+            for _ in 0..<2 { document.insert(PDFPage(),at:document.pageCount) }
+            XCTAssertTrue(document.write(to:file))
+            return file
+        }
+
+        for round in 1...3 {
+            store.openEach(files)
+            let cloud = try XCTUnwrap(store.tabs.compactMap(\.workspace).first{$0.sourceURL == files.last})
+            let waitingURL = cloud.sourceURL
+            cloud.prepareImportFiles = { urls, progress in
+                guard urls.first == waitingURL else { return }
+                progress("正在下载 iCloud 文件")
+                try await Task.sleep(nanoseconds:60_000_000_000)
+            }
+            store.select(cloud.id)
+            try await wait("第 \(round) 轮云文件开始准备") { cloud.isImporting && cloud.taskLabel.contains("iCloud") }
+            let locals = store.tabs.compactMap(\.workspace).filter { $0.id != cloud.id && $0.sourceURL != nil }
+            XCTAssertEqual(locals.count,19)
+            for local in locals {
+                store.select(local.id)
+                try await wait("第 \(round) 轮载入 \(local.displayName)") { (local.count == 2 || local.error != nil) && !local.busy }
+                XCTAssertEqual(local.count,2,local.error ?? local.status)
+                XCTAssertTrue(cloud.isImporting)
+                local.selectPage(1)
+                XCTAssertEqual(local.selection,1)
+                store.close(local.id)
+                try await wait("第 \(round) 轮关闭 \(local.displayName)") { !store.tabs.contains(where:{$0.id == local.id}) }
+            }
+            store.close(cloud.id)
+            try await wait("第 \(round) 轮取消云下载") { !cloud.isImporting && !cloud.busy }
+            XCTAssertNil(cloud.error)
+        }
+    }
+
+    @MainActor func testLibraryNoteEditorSurvivesSaveListPasteUndoAndSwitch() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("KongFolio-input-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:root) }
+        let journal = ReadingJournal(storage:root)
+        let note = ReadingRecord(kind:.note,note:"- 首行\n- 第二行")
+        let other = ReadingRecord(kind:.note,note:"另一条笔记")
+        journal.add(note)
+        journal.add(other)
+        try await journal.flush()
+        let session = WritingSession()
+        func editor(_ id:UUID) -> AnyView {
+            AnyView(StableTextEditor(text:Binding(get:{journal.record(id)?.note ?? ""},set:{ body in
+                journal.editRecord(id) { $0.note = body }
+            }),label:"资料库笔记",identity:id.uuidString,session:session,markdown:true).id(id))
+        }
+        let host = NSHostingView(rootView:editor(note.id))
+        host.frame = NSRect(x:0,y:0,width:500,height:270)
+        host.layoutSubtreeIfNeeded()
+        try await wait { session.view != nil }
+        let view = try XCTUnwrap(session.view as? ComposingTextView)
+        let caret = NSRange(location:4,length:0)
+        view.setSelectedRange(caret)
+        view.setMarkedText("zhong",selectedRange:NSRange(location:5,length:0),replacementRange:caret)
+        try await journal.flush()
+        XCTAssertEqual(journal.record(note.id)?.note,note.note)
+        XCTAssertTrue(view.hasMarkedText())
+        view.insertText("中",replacementRange:view.markedRange())
+        XCTAssertEqual(view.selectedRange(),NSRange(location:5,length:0))
+        view.breakUndoCoalescing()
+        view.insertNewline(nil)
+        XCTAssertEqual(view.string,"- 首行中\n- \n- 第二行")
+        let inserted = String(repeating:"长篇史料和中文段落。",count:300)
+        view.insertText(inserted,replacementRange:view.selectedRange())
+        XCTAssertTrue(journal.record(note.id)?.note.contains(inserted) == true)
+        view.breakUndoCoalescing()
+        view.undoManager?.undo()
+        XCTAssertFalse(view.string.contains(inserted))
+        let expected = view.string
+        host.rootView = editor(other.id)
+        host.layoutSubtreeIfNeeded()
+        try await wait { session.view?.string == other.note }
+        try await journal.flush()
+        XCTAssertEqual(ReadingJournal(storage:root).record(note.id)?.note,expected)
+        XCTAssertEqual(journal.record(other.id)?.note,other.note)
+    }
+
+    @MainActor func testNativeCanvasImageWidthIsExactAndSourceFlashDoesNotEditPDF() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("KongFolio-placement-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:root) }
+        let workspace = Workspace(storage:root)
+        let page = PDFPage()
+        page.setBounds(CGRect(x:0,y:0,width:400,height:500),for:.mediaBox)
+        page.rotation = 90
+        workspace.document.insert(page,at:0)
+        let window = NSWindow(contentRect:CGRect(x:0,y:0,width:640,height:550),
+                              styleMask:[.borderless],backing:.buffered,defer:false)
+        let view = DrawingPDFView(frame:window.contentLayoutRect)
+        window.contentView = view
+        view.document = workspace.document
+        view.workspace = workspace
+        workspace.pdfView = view
+        view.autoScales = true
+        view.go(to:page)
+        view.layoutDocumentView()
+        let context = try XCTUnwrap(CGContext(data:nil,width:80,height:40,bitsPerComponent:8,bytesPerRow:0,
+                                            space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue))
+        let image = try XCTUnwrap(context.makeImage())
+        workspace.beginPlacingPageImage(image,png:try XCTUnwrap(SignatureImage.pngData(image)),on:page)
+        workspace.setPageImageWidth(72)
+        XCTAssertEqual(try XCTUnwrap(workspace.pageImageWidthPoints),72,accuracy:0.15)
+        let placement = try XCTUnwrap(view.signaturePlacement())
+        XCTAssertEqual(placement.rect.height/placement.rect.width,2,accuracy:0.01)
+        workspace.cancelSignaturePlacement()
+
+        let originalSubViewCount = view.subviews.count
+        view.showSourceHighlight([CGRect(x:25,y:25,width:70,height:50)],on:page,keep:false)
+        XCTAssertEqual(view.subviews.count,originalSubViewCount+1)
+        XCTAssertTrue(page.annotations.isEmpty)
+        XCTAssertFalse(workspace.dirty)
+        try await wait("原文选区高亮消退") { view.subviews.count == originalSubViewCount }
+        XCTAssertTrue(page.annotations.isEmpty)
+    }
+
     @MainActor func testTwoNativeEditorsRetainConcurrentTextWithoutResettingComposition() {
         var text="甲乙丙丁"
         let a=StableInputCoordinator(read:{text},write:{text=$0}),b=StableInputCoordinator(read:{text},write:{text=$0}),va=ComposingTextView(),vb=ComposingTextView()

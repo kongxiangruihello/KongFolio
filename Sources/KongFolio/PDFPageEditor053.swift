@@ -3,6 +3,7 @@ import SwiftUI
 struct PDFPageEditor053:View {
     @ObservedObject var workspace:Workspace
     @State private var deleteConfirmation=false
+    @State private var imageWidth = ""
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
             Text("共 \(workspace.count) 页 · 已选 \(workspace.effectivePages.count) 页").font(.callout)
@@ -25,9 +26,13 @@ struct PDFPageEditor053:View {
                 Button("删除所选页面…",role:.destructive) { deleteConfirmation=true }.disabled(workspace.effectivePages.count>=workspace.count)
             }.disabled(workspace.readingLocked || workspace.busy || workspace.placingSignature != nil)
             if workspace.placingSignature?.isPageImage == true {
-                Text("拖动图片或拖角缩放。").font(.caption).foregroundStyle(.secondary)
-                if let page = workspace.pageImageTarget, !page.annotations.isEmpty, !SignatureStamp.preservesAnnotations(page) {
-                    Text("此页的旋转或裁切会使标注固化，原有链接和表单可能失效。").font(.caption).foregroundStyle(.orange)
+                Text("拖动图片或拖角等比缩放。").font(.caption).foregroundStyle(.secondary)
+                HStack(spacing:6) {
+                    Text("宽度")
+                    TextField("毫米",text:$imageWidth).textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("图片宽度（毫米）").onSubmit(applyImageWidth)
+                    Text("毫米").font(.caption)
+                    Button("应用",action:applyImageWidth).disabled(imageWidthMillimetres == nil)
                 }
                 HStack {
                     Button("放置图片") { workspace.confirmSignaturePlacement() }.buttonStyle(.borderedProminent)
@@ -46,6 +51,24 @@ struct PDFPageEditor053:View {
                 }
             }.disabled(workspace.placingSignature?.isPageImage == true)
         }.padding(10)
+        .onChange(of:workspace.pageImageWidthPoints,initial:true) { _,width in
+            updateWidthText(width)
+        }
         .confirmationDialog("删除 \(workspace.effectivePages.count) 页？",isPresented:$deleteConfirmation) { Button("删除页面",role:.destructive) { workspace.remove() } }
+    }
+
+    private var imageWidthMillimetres: Double? {
+        guard let value = try? Double(imageWidth,format:.number), value.isFinite, value > 0 else { return nil }
+        return value
+    }
+
+    private func applyImageWidth() {
+        guard let width = imageWidthMillimetres else { return }
+        workspace.setPageImageWidth(width*72/25.4)
+        updateWidthText(workspace.pageImageWidthPoints)
+    }
+
+    private func updateWidthText(_ width:Double?) {
+        imageWidth = width.map { ($0*25.4/72).formatted(.number.precision(.fractionLength(2))) } ?? ""
     }
 }

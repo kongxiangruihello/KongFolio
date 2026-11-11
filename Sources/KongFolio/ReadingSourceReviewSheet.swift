@@ -27,13 +27,16 @@ struct ReadingSourceReview: Identifiable {
         let path = store.library.resolve(ReadingShortcut(path:resolved,title:original.fileName,position:original.position)).path
         let workspace = store.tabs.compactMap(\.workspace).first { $0.count > 0 && $0.matches(path:path) }
         if !reviewOnly, ReadingBookIdentity.key(path) == ReadingBookIdentity.key(original.path),
-           let workspace, workspace.fileBaseline?.digest != nil,
+           let workspace, !workspace.dirty, workspace.fileBaseline?.digest != nil,
            workspace.fileBaseline?.digest == original.fingerprint, original.invalidPage053 != true,
            citation.tracking?.needsReview != true, workspace.document.page(at:original.page) != nil {
             var source = original
             source.path = path
-            store.reveal(source,beside:false)
-            return
+            if !source.rects.isEmpty { source.anchor = nil }
+            if !source.rects.isEmpty || (source.anchor == nil && record.quote.isEmpty) {
+                store.reveal(source,beside:false)
+                return
+            }
         }
         let seed = ReadingSourceReview(recordID:record.id,citation:citation,quote:record.quote,inspection:nil,message:"")
         guard !path.isEmpty, FileManager.default.fileExists(atPath:path) || workspace != nil else {
@@ -59,7 +62,8 @@ struct ReadingSourceReview: Identifiable {
                 }
                 let snapshot = input
                 let worker = Task.detached(priority:.userInitiated) {
-                    try ReadingSourceRecovery.inspect(snapshot,citation:seed.citation,quote:seed.quote)
+                    if snapshot.bytes == nil { try await CloudFilePreparation.prepare([snapshot.url]) { _ in } }
+                    return try ReadingSourceRecovery.inspect(snapshot,citation:seed.citation,quote:seed.quote)
                 }
                 let found = try await withTaskCancellationHandler(operation:{ try await worker.value },onCancel:{ worker.cancel() })
                 guard !Task.isCancelled, let self, self.generation == token else { return }
@@ -119,9 +123,11 @@ struct ReadingSourceReview: Identifiable {
         if let verified = input.storedDigest ?? (input.bytes == nil ? inspection.digest : nil) {
             citation.source.fingerprint = verified
         }
-        if manual || (!sameVersion && request.citation.tracking?.visualFingerprint != page.fingerprint) {
-            citation.source.rects = []
-            if manual { citation.source.anchor = nil }
+        let sameVisualPage = request.citation.tracking?.visualFingerprint.map { $0 == page.fingerprint } == true
+        let sameOriginalPage = sameVersion && oldPage == page.index
+        if citation.source.rects.isEmpty || (!sameOriginalPage && !sameVisualPage) {
+            citation.source.rects = page.passage
+            if manual && page.passage.isEmpty { citation.source.anchor = nil }
         }
         let identity = ReadingDocumentRegistry053.shared(store.storage).identity(input.url.path,digest:input.storedDigest ?? (input.bytes == nil ? inspection.digest : nil))
         if citation.tracking == nil {
@@ -135,7 +141,10 @@ struct ReadingSourceReview: Identifiable {
         citation.tracking?.pageFingerprint = workspace?.pageIdentity053(page.index)
         store.journal.repairCitation(in:request.recordID,original:request.citation,replacement:citation)
         review = nil
-        store.reveal(citation.source,beside:false)
+        var target = citation.source
+        // The worker already verified this page. Avoid a second, unbounded scan on the UI thread.
+        target.anchor = nil
+        store.reveal(target,beside:false)
     }
 
     func cancel() {
@@ -199,8 +208,21 @@ struct ReadingSourceReviewSheet: View {
                         if let preview,let image = NSImage(data:preview) {
                             Image(nsImage:image).resizable().scaledToFit().frame(maxWidth:.infinity,maxHeight:300)
                         }
-                        if let text = inspectedPage?.text, !text.isEmpty {
-                            Text(text).lineLimit(3).font(.caption).textSelection(.enabled)
+                        if let inspectedPage {
+                            if !inspectedPage.passage.isEmpty {
+                                Label("已找到唯一匹配的原句，返回时会高亮。",systemImage:"checkmark.circle")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else if !request.citation.source.rects.isEmpty,
+                                      let fingerprint = inspectedPage.fingerprint,
+                                      fingerprint == request.citation.tracking?.visualFingerprint {
+                                Label("与原页图像一致，返回时会标出原选区。",systemImage:"checkmark.circle")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                Text("确认后会返回此页。").font(.caption).foregroundStyle(.secondary)
+                            }
+                            if !inspectedPage.text.isEmpty {
+                                Text(inspectedPage.text).lineLimit(3).font(.caption).textSelection(.enabled)
+                            }
                         }
                     }
                     Spacer(minLength:0)
@@ -223,7 +245,10 @@ struct ReadingSourceReviewSheet: View {
             inspectedPage = nil
             guard let inspection = request.inspection, pageNumber > 0,pageNumber <= inspection.pageCount else { return }
             let index = pageNumber-1
-            let result = await Task.detached(priority:.userInitiated) { ReadingSourceRecovery.preview(inspection.input,index:index) }.value
+            let anchor = request.citation.source.anchor ?? String(request.quote.prefix(60))
+            let result = await Task.detached(priority:.userInitiated) {
+                ReadingSourceRecovery.preview(inspection.input,index:index,anchor:anchor)
+            }.value
             guard !Task.isCancelled else { return }
             inspectedPage = result?.0
             preview = result?.1

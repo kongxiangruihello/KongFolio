@@ -190,6 +190,69 @@ final class SignatureTests: XCTestCase {
         XCTAssertTrue(baked.annotations.contains { $0.contents == "保留我" })
     }
 
+    @MainActor func testPageImagePreservesRotatedCropTextLinkAndWidgetAfterSaving() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:folder) }
+        let workspace = Workspace(storage:folder)
+        workspace.document = try TextImport.render("Searchable PDF source",markdown:false)
+        let page = try XCTUnwrap(workspace.page)
+        let crop = CGRect(x:20,y:25,width:520,height:790)
+        page.setBounds(crop,for:.cropBox)
+        page.rotation = 90
+        XCTAssertTrue(page.string?.contains("Searchable PDF source") == true)
+        let otherPage = PDFPage()
+        otherPage.setBounds(CGRect(x:0,y:0,width:595,height:842),for:.mediaBox)
+        workspace.document.insert(otherPage,at:1)
+        let jump = PDFAnnotation(bounds:CGRect(x:125,y:140,width:70,height:24),forType:.link,withProperties:nil)
+        jump.destination = PDFDestination(page:otherPage,at:CGPoint(x:30,y:60))
+        page.addAnnotation(jump)
+        let back = PDFAnnotation(bounds:jump.bounds,forType:.link,withProperties:nil)
+        back.destination = PDFDestination(page:page,at:CGPoint(x:35,y:115))
+        otherPage.addAnnotation(back)
+        let note = PDFAnnotation(bounds:CGRect(x:35,y:115,width:70,height:24),forType:.freeText,withProperties:nil)
+        note.contents = "Editable comment"
+        page.addAnnotation(note)
+        let link = PDFAnnotation(bounds:CGRect(x:35,y:140,width:70,height:24),forType:.link,withProperties:nil)
+        let url = try XCTUnwrap(URL(string:"https://example.org/reference"))
+        link.action = PDFActionURL(url:url)
+        page.addAnnotation(link)
+        let widget = PDFAnnotation(bounds:CGRect(x:35,y:170,width:70,height:24),forType:.widget,withProperties:nil)
+        widget.widgetFieldType = .text
+        widget.fieldName = "entry"
+        widget.widgetStringValue = "Retained value"
+        page.addAnnotation(widget)
+
+        let view = StubView()
+        workspace.pdfView = view
+        let image = blackSquare()
+        let rect = CGRect(x:210,y:340,width:80,height:55)
+        workspace.beginPlacingPageImage(image,png:try XCTUnwrap(SignatureImage.pngData(image)),on:page)
+        view.target = (page,rect)
+        workspace.updatePageImageSize()
+        XCTAssertEqual(workspace.pageImageWidthPoints,55)
+        workspace.confirmSignaturePlacement()
+        XCTAssertNil(workspace.error)
+        let edited = try XCTUnwrap(workspace.page)
+        XCTAssertNotNil(workspace.signatureLayer(for:edited))
+        let reopened = try XCTUnwrap(PDFDocument(data:try XCTUnwrap(workspace.document.dataRepresentation())))
+        let savedPage = try XCTUnwrap(reopened.page(at:0))
+        XCTAssertEqual(savedPage.rotation,90)
+        XCTAssertEqual(savedPage.bounds(for:.cropBox),crop)
+        XCTAssertTrue(savedPage.string?.contains("Searchable PDF source") == true)
+        XCTAssertEqual(savedPage.annotations.first{$0.contents == note.contents}?.bounds,note.bounds)
+        let links = savedPage.annotations.filter{$0.type == "Link"}
+        XCTAssertEqual(links.compactMap{$0.action as? PDFActionURL}.first?.url,url)
+        let destination = try XCTUnwrap(links.compactMap(\.destination).first?.page)
+        XCTAssertEqual(reopened.index(for:destination),1)
+        let backlink = try XCTUnwrap(reopened.page(at:1)?.annotations.first?.destination?.page)
+        XCTAssertEqual(reopened.index(for:backlink),0)
+        XCTAssertEqual(savedPage.annotations.first{$0.fieldName == "entry"}?.widgetStringValue,"Retained value")
+        let drawn = rendered(savedPage,width:Int(crop.height),height:Int(crop.width))
+        let local = rect.offsetBy(dx:-crop.minX,dy:-crop.minY)
+        let upright = SignatureStamp.uprightRect(local,pageSize:crop.size,rotation:90)
+        XCTAssertLessThan(pixel(drawn,Int(upright.midX),Int(upright.midY)).r,60)
+    }
+
     @MainActor final class StubView: PDFView, SignaturePlacing {
         var shown: (CGImage, Double)?
         var shownAt: (page: PDFPage, rect: CGRect)?
