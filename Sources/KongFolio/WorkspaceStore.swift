@@ -38,6 +38,7 @@ import UniformTypeIdentifiers
     var lastRightPanelWasSearch = false
     var lastRightPanelNoteID: UUID?
     @Published var readingImageOCRRequest: ReadingImageOCRRequest?
+    var pendingPDFExcerptDrag: PDFExcerptDrag?
     var readingDeskWindowSection = ReadingDeskSection.search
     @Published var readingDeskSection = ReadingDeskSection.excerpts
     @Published var showQuickReadingNote = false

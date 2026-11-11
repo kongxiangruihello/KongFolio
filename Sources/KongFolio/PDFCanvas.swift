@@ -138,6 +138,8 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     /// The card of an excerpt colour that was pressed (a click without dragging shows the card in the workspace).
     private var pressedCard: UUID?
     private var pressMoved = false
+    private var excerptDragStart: NSPoint?
+    private var excerptDragSource: PDFExcerptDragSource?
     /// Rubber band of the region excerpt tool.
     private var regionStart: CGPoint?
     private lazy var regionView: NSView = {
@@ -165,6 +167,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         endSignaturePlacement(); hideSelectionToolbar()
         points.removeAll(); drawingPage = nil; provisional = nil; moving = nil
         pendingMove.removeAll(); contextSignature = nil; regionStart = nil
+        excerptDragStart = nil; excerptDragSource = nil
         strokePreview.annotation = nil; strokePreview.page = nil
         strokePreview.removeFromSuperview(); regionView.removeFromSuperview(); readingGuide.removeFromSuperview()
         clearSelection(); highlightedSelections = nil; delegate = nil; document = nil; workspace = nil
@@ -341,11 +344,66 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         workspace.tool = .select
     }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        guard let hit, let event = NSApp?.currentEvent, event.type == .leftMouseDown,
+              let window, event.window === window, let workspace, !workspace.busy else { return hit }
+        if let selectionBar, hit === selectionBar || hit.isDescendant(of:selectionBar) { return hit }
+        let location = convert(event.locationInWindow,from:nil)
+        // PDFKit subviews may receive the press. Keep a press on the selected glyphs with the drag source.
+        return canDragSelection(at:location,event:event,workspace:workspace) ? self : hit
+    }
+
+    private func canDragSelection(at location: NSPoint, event: NSEvent, workspace: Workspace) -> Bool {
+        guard workspace.tool == .select, workspace.store?.acceptsPDFExcerptDrop == true,
+              placement == nil, event.clickCount == 1,
+              event.modifierFlags.intersection([.shift,.control,.option,.command]).isEmpty,
+              let page = page(for:location,nearest:false),
+              let selected = currentSelection,
+              let text = selected.string, !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,
+              selected.pages.contains(where:{ $0 === page }) else { return false }
+        let point = convert(location,to:page)
+        if let annotation = page.annotation(at:point),
+           ["Widget","Link","FreeText","Text"].contains(annotation.type ?? "") { return false }
+        let lines = selected.selectionsByLine().filter { $0.pages.contains(where:{ $0 === page }) }
+        return (lines.isEmpty ? [selected] : lines).contains {
+            $0.bounds(for:page).insetBy(dx:-1,dy:-1).contains(point)
+        }
+    }
+
+    private func startExcerptDrag(with event: NSEvent) {
+        guard let workspace, let store = workspace.store, let selection = currentSelection,
+              let record = workspace.readingExcerpt(from:selection),
+              let drag = store.beginPDFExcerptDrag(record,from:workspace) else { return }
+        let item = NSDraggingItem(pasteboardWriter:drag.pasteboardItem())
+        let preview = NSImage(size:NSSize(width:230,height:40),flipped:false) { rect in
+            NSColor.windowBackgroundColor.setFill()
+            NSBezierPath(roundedRect:rect,xRadius:7,yRadius:7).fill()
+            let text = String(record.quote.split(whereSeparator:\.isNewline).first?.prefix(36) ?? "")
+            let style = NSMutableParagraphStyle()
+            style.lineBreakMode = .byTruncatingTail
+            (text as NSString).draw(in:rect.insetBy(dx:10,dy:11),
+                                    withAttributes:[.font:NSFont.systemFont(ofSize:13),.foregroundColor:NSColor.labelColor,.paragraphStyle:style])
+            return true
+        }
+        let point = convert(event.locationInWindow,from:nil)
+        item.setDraggingFrame(NSRect(x:point.x-12,y:point.y-20,width:230,height:40),contents:preview)
+        let source = PDFExcerptDragSource(store:store,token:drag.token)
+        excerptDragSource = source
+        beginDraggingSession(with:[item],event:event,source:source).animatesToStartingPositionsOnCancelOrFail = true
+    }
+
     override func mouseDown(with event: NSEvent) {
+        excerptDragStart = nil
         hideSelectionToolbar()
         if let workspace { workspace.store?.focus(workspace) }
         guard let workspace, !workspace.busy else { super.mouseDown(with: event); return }
         let location = convert(event.locationInWindow, from: nil)
+        if canDragSelection(at:location,event:event,workspace:workspace) {
+            excerptDragStart = location
+            pressedCard = nil
+            return
+        }
         if workspace.readingLocked,workspace.tool != .region {
             if let page = page(for:location,nearest:false),let hit = page.annotation(at:convert(location,to:page)),["Widget","FreeText","Text"].contains(hit.type ?? "") { return }
             super.mouseDown(with:event);return
@@ -421,6 +479,14 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let start = excerptDragStart {
+            let point = convert(event.locationInWindow,from:nil)
+            if hypot(point.x-start.x,point.y-start.y) >= 5 {
+                excerptDragStart = nil
+                startExcerptDrag(with:event)
+            }
+            return
+        }
         if pressedCard != nil { pressMoved = true }
         if let start = regionStart {
             let current = convert(event.locationInWindow, from: nil)
@@ -452,6 +518,11 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func mouseUp(with event: NSEvent) {
+        if excerptDragStart != nil {
+            excerptDragStart = nil
+            clearSelection()
+            return
+        }
         // The selection is final only after PDFView has handled the release.
         defer { DispatchQueue.main.async { [weak self] in self?.showSelectionToolbar() } }
         if let id = pressedCard {

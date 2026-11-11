@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct LeftPanelActions: View {
     @ObservedObject var store: WorkspaceStore
@@ -45,6 +46,7 @@ struct ReadingExcerptActions: View {
 struct RightReadingPanelLayout<Content: View>: View {
     @ObservedObject var store: WorkspaceStore
     @ViewBuilder var content: () -> Content
+    @State private var excerptDropTargeted = false
 
 
     var body: some View {
@@ -90,12 +92,47 @@ struct RightReadingPanelLayout<Content: View>: View {
             }.font(.system(size:12)).padding(.horizontal,8).padding(.vertical,9).background(.bar)
             Divider()
             if store.showReadingDesk {
-                ReadingDeskView(store:store,journal:store.journal,section:$store.readingDeskSection,compact:true)
+                if store.readingDeskSection == .excerpts {
+                    excerptDropArea
+                } else {
+                    ReadingDeskView(store:store,journal:store.journal,section:$store.readingDeskSection,compact:true)
+                }
             } else if let workspace = store.rightPDFSearchWorkspace {
                 ReadingSidebar(workspace:workspace,searchOnly:true).id(workspace.id).padding(.top,10)
             }
         }.frame(maxHeight:.infinity).background(Color(nsColor:.windowBackgroundColor))
     }
+    private var excerptDropArea: some View {
+        VStack(spacing:0) {
+            if store.acceptsPDFExcerptDrop && store.canSearchPDF {
+                Label(excerptDropTargeted ? "松手保存摘录" : "把 PDF 选中的文字拖到这里",systemImage:"text.quote")
+                    .font(.caption)
+                    .foregroundStyle(excerptDropTargeted ? Color.accentColor : Color.secondary)
+                    .frame(maxWidth:.infinity)
+                    .padding(.vertical,8)
+                    .background(excerptDropTargeted ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.05))
+            }
+            ReadingDeskView(store:store,journal:store.journal,section:$store.readingDeskSection,compact:true)
+        }
+        .frame(maxWidth:.infinity,maxHeight:.infinity)
+        .contentShape(Rectangle())
+        .overlay {
+            if excerptDropTargeted {
+                RoundedRectangle(cornerRadius:6).strokeBorder(Color.accentColor,lineWidth:2).allowsHitTesting(false)
+            }
+        }
+        .onDrop(of:[UTType.kongFolioPDFExcerpt],isTargeted:$excerptDropTargeted) { providers in
+            guard store.acceptsPDFExcerptDrop, store.pendingPDFExcerptDrag != nil,
+                  let provider = providers.first(where:{ $0.hasItemConformingToTypeIdentifier(UTType.kongFolioPDFExcerpt.identifier) }) else { return false }
+            provider.loadDataRepresentation(forTypeIdentifier:UTType.kongFolioPDFExcerpt.identifier) { [weak store] data,_ in
+                guard let data, data.count == 36, let text = String(data:data,encoding:.utf8),
+                      let token = UUID(uuidString:text) else { return }
+                Task { @MainActor in _ = store?.acceptPDFExcerptDrop(token) }
+            }
+            return true
+        }
+    }
+
     private func isSelected(_ section: ReadingDeskSection) -> Bool {
         store.showReadingDesk && (store.readingDeskSection == section ||
                                   (section == .notes && store.readingDeskSection == .essays))
