@@ -14,6 +14,7 @@ struct ReadingSourceIdentity053:Codable,Equatable,Hashable {
     var pageFingerprint:String?
     var capturedPageLabel:String?
     var needsReview:Bool? = nil
+    var visualFingerprint: String? = nil
 }
 struct ReadingRegion053:Codable,Equatable,Identifiable {
     var id=UUID()

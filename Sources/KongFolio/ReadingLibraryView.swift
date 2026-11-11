@@ -18,6 +18,7 @@ struct ReadingLibraryView: View {
     @State private var confirmBulk = false
     @State private var contextRequest:ReadingLibraryContextRequest?
     @State private var contextFocus = UUID()
+    @StateObject private var sourceNavigator = ReadingSourceNavigator()
     @State private var copyGeneration = UUID()
     @State private var showTags = false
     @State private var showRelink = false
@@ -56,6 +57,9 @@ struct ReadingLibraryView: View {
             }
             }
         }
+        .sheet(item:$sourceNavigator.review,onDismiss:{ sourceNavigator.cancel() }) { request in
+            ReadingSourceReviewSheet(request:request,navigator:sourceNavigator,store:store).id(request.id)
+        }
         .sheet(isPresented:$showOrganization) { ReadingOrganizationSheet(journal:journal,ids:selection) }
         .sheet(isPresented:$showReferences) { if let editing { ReadingReferencesView(journal:journal,id:editing,open:{ target in showReferences = false;store.openReadingItem(target) }) } }
         .sheet(isPresented:$showTags) { ReadingTagManager(journal:journal) }
@@ -85,7 +89,7 @@ struct ReadingLibraryView: View {
         }
         .onAppear { if !restoredSession { restoredSession = true;if bookSource == nil && store.readingLibraryNavigation == nil { let s = ReadingLibrarySession.load(store.readingDefaults);query = s.query;kind = (s.kind == "札记" ? "笔记" : s.kind);tag = s.tag;topic = s.topic;recent = s.recent;untagged = s.untagged;removed = s.removed;pendingFilterPage = s.page;size = s.size } };do { filters = try SavedReadingFilter.load(journal.folder) } catch { filterMessage = error.localizedDescription };if bookSource == nil { if let preferred = store.readingLibraryPreferredKind { kind = preferred;store.readingLibraryPreferredKind = nil };if let target = store.readingLibraryNavigation { navigate(target) } } }
         .onChange(of:store.readingLibraryNavigationRequest) { _,_ in if bookSource == nil { if let preferred = store.readingLibraryPreferredKind { kind = preferred;store.readingLibraryPreferredKind = nil };if let target = store.readingLibraryNavigation { navigate(target) } } }
-        .onDisappear { rememberPage();copyGeneration = UUID();contextFocus = UUID() }
+        .onDisappear { rememberPage();copyGeneration = UUID();contextFocus = UUID();sourceNavigator.cancel() }
         .onChange(of:page) { _,_ in rememberPage() }
         .onChange(of:journal.draftRecord?.id) { _,_ in validateEditing() }
         .onChange(of:journal.draftEssay?.id) { _,_ in validateEditing() }
@@ -249,7 +253,12 @@ struct ReadingLibraryView: View {
             guard !scope.removed,!journal.unreadable else { return };contextRequest = ReadingLibraryContextRequest(kind:.organize,ids:scope.ids,removed:scope.removed)
         case .references:guard scope.single != nil else { return };contextRequest = ReadingLibraryContextRequest(kind:.references,ids:scope.ids,removed:scope.removed)
         case .remove:guard !journal.unreadable else { return };contextRequest = ReadingLibraryContextRequest(kind:.remove,ids:scope.ids,removed:scope.removed)
-        case .source(let source):guard scope.single != nil,scope.sources().contains(where:{$0.source == source}) else { filterMessage = "资料来源已变化，请重新打开菜单";return };_ = store.reveal(source,beside:false)
+        case .source(let source):
+            guard let item = scope.single, let citation = scope.sources().first(where:{$0.source == source}) else {
+                filterMessage = "资料来源已变化，请重新打开菜单";return
+            }
+            if case .record(let record) = item { sourceNavigator.open(citation,record:record,store:store) }
+            else { store.reveal(source,beside:false) }
         case .append:
             guard scope.canAppend,!journal.unreadable else { return };let id = journal.currentEssayID ?? journal.newEssay();for record in scope.records { store.insertReadingRecord(record,in:id) };store.openReadingDesk(.essays,window:true)
         case .newExcerpt,.newNote,.newEssay:break

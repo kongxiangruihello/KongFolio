@@ -123,11 +123,13 @@ struct ReadingSidebar: View {
                 Button { workspace.find() } label: { Image(systemName: "magnifyingglass") }
             }
             .padding(.horizontal, 10)
-            .onAppear { searchFocused053=true }
+            .onAppear { workspace.resumePDFSearchIfNeeded(); searchFocused053=true }
+            .onChange(of:workspace.busy) { _,busy in if !busy { workspace.resumePDFSearchIfNeeded() } }
             .onChange(of:workspace.pdfSearchFocusRequest) { _,_ in searchFocused053=true }
             HStack { Button("上一处") { workspace.stepSearch(-1) };Button("下一处") { workspace.stepSearch(1) };if workspace.searchTask != nil { Button("停止") { workspace.cancelSearch053() } } }.font(.caption).padding(.horizontal,10)
             Text(workspace.searchMessage).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
-            ScrollView {
+            ScrollViewReader { proxy in
+                ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(workspace.searchResults) { hit in
                         Button { workspace.goToSearch(hit) } label: {
@@ -137,14 +139,25 @@ struct ReadingSidebar: View {
                             }
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+                            .background(activeSearchHitID == hit.id ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.08),
+                                        in:RoundedRectangle(cornerRadius:6))
                         }
                         .buttonStyle(.plain)
+                        .id(hit.id)
                     }
                 }
                 .padding(8)
+                }
+                .onChange(of:activeSearchHitID,initial:true) { _,id in
+                    if let id { proxy.scrollTo(id,anchor:.center) }
+                }
             }
         }
+    }
+
+    private var activeSearchHitID: UUID? {
+        guard let cursor = workspace.searchCursor, workspace.searchResults.indices.contains(cursor) else { return nil }
+        return workspace.searchResults[cursor].id
     }
 
     private var shownNotes: [AnnotationNote] { workspace.noteFilter.apply(to: workspace.annotationNotes) }

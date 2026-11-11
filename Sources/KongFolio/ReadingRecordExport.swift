@@ -29,8 +29,8 @@ enum ReadingRecordExport {
         func extraContent053(_ extras:ReadingRecordExtras053?) throws {
             guard let extras else { return }
             if preferences.includeQuote {
-                for q in extras.quotations ?? [] { paragraph("引用副本："+q.title,heading:3);paragraph(q.text);for asset in Set(q.assets ?? []).sorted() { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(asset)),alt:"引用图片副本")) };if let created=q.originalCreated { paragraph("原记录创建："+ReadingRecordMetadata.date(created)) };if preferences.includeSources { for c in q.citations { paragraph(ReadingExportOrdering.citation(c)) } };paragraph("引用时间："+ReadingRecordMetadata.date(q.captured)) }
-                for region in extras.regions ?? [] { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(region.asset)),alt:"来源区域"));if preferences.includeSources { paragraph(ReadingExportOrdering.citation(region.citation)) } }
+                for q in extras.quotations ?? [] { paragraph("引用副本："+q.title,heading:3);paragraph(q.text);for asset in Set(q.assets ?? []).sorted() { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(asset)),alt:"引用图片副本")) };if let created=q.originalCreated { paragraph("原记录创建："+ReadingRecordMetadata.date(created)) };paragraph("引用时间："+ReadingRecordMetadata.date(q.captured)) }
+                for region in extras.regions ?? [] { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(region.asset)),alt:"来源区域")) }
             }
             if preferences.includeQuote,preferences.includeRegionImages==true,let name=extras.visualAsset { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(name)),alt:"标注快照")) }
         }
@@ -49,27 +49,35 @@ enum ReadingRecordExport {
             if preferences.includeQuote && !record.quote.isEmpty { paragraph((preferences.quoteHeading ?? "原文")+"：\n"+record.quote) }
             if preferences.includeQuote, let name = record.imageAsset { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(name),options:.mappedIfSafe),alt:preferences.imageHeading ?? "图片摘录")) }
                 case "note":
-            if preferences.includeNote && !record.note.isEmpty { if record.kind != .note { paragraph((preferences.noteHeading ?? "我的笔记")+"：") };try writingParagraph(record.note) }
+            if preferences.includeNote && !record.note.isEmpty { if let heading = preferences.noteHeading { paragraph(heading,heading:3) } else if record.kind != .note { paragraph("我的笔记：") };try writingParagraph(record.note) }
                 case "sources":
-                    if let label = preferences.sourcesHeading,!label.isEmpty,preferences.includeSources { paragraph(label) }
-            for citation in preferences.includeSources ? record.citations : [] {
-                if preferences.footnotes == true, wordFootnotes {
-                    let key = ReadingExportOrdering.citationKey(citation)
-                    let marker = NSMutableAttributedString(attributedString:RichTextDocument.styled("[注]",options:options,markdown:false))
-                    marker.addAttribute(NSAttributedString.Key("KongFolioFootnote"),value:key,range:NSRange(location:0,length:marker.length));blocks.append(.paragraph(marker,heading:0));continue
-                }
-                let value = NSMutableAttributedString(attributedString:RichTextDocument.styled(citationFormat053.render(citation,shorten:preferences.shortenedCitations053==true),options:options,markdown:false))
-                if let link = SourceLink.url(citation.source) {
-                    let suffix = RichTextDocument.styled("　返回原文",options:options,markdown:false)
-                    let start = value.length; value.append(suffix); value.addAttribute(.link,value:link,range:NSRange(location:start,length:suffix.length))
-                }
-                blocks.append(.paragraph(value,heading:0))
-            }
+                    guard preferences.includeSources else { break }
+                    let citations = record.citations053
+                    if citations.isEmpty { paragraph("出处：独立笔记（未关联文献）");break }
+                    paragraph(preferences.sourcesHeading ?? "出处",heading:3)
+                    for (index,citation) in citations.enumerated() {
+                        if preferences.footnotes == true, wordFootnotes {
+                            let key = ReadingExportOrdering.citationKey(citation)
+                            let marker = NSMutableAttributedString(attributedString:RichTextDocument.styled("\(index+1). [注]",options:options,markdown:false))
+                            marker.addAttribute(NSAttributedString.Key("KongFolioFootnote"),value:key,range:NSRange(location:0,length:marker.length))
+                            blocks.append(.paragraph(marker,heading:0));continue
+                        }
+                        let formatted = citationFormat053.render(citation,shorten:preferences.shortenedCitations053==true)
+                        let text = ReadingExportOrdering.sourceLine(citation,index:index,rendered:formatted)
+                        let value = NSMutableAttributedString(attributedString:RichTextDocument.styled(text,options:options,markdown:false))
+                        if citation.source.invalidPage053 != true, let link = SourceLink.url(citation.source) {
+                            let suffix = RichTextDocument.styled("　返回原文",options:options,markdown:false)
+                            let start = value.length
+                            value.append(suffix)
+                            value.addAttribute(.link,value:link,range:NSRange(location:start,length:suffix.length))
+                        }
+                        blocks.append(.paragraph(value,heading:0))
+                    }
                 default:break
                 }
             }
             try extraContent053(record.extras)
-            for line in ReadingRecordMetadata.lines(record,includeSources:preferences.includeSources) { paragraph(line) }
+            for line in ReadingRecordMetadata.lines(record,includeSources:false) { paragraph(line) }
             if !record.tags.isEmpty { paragraph("标签："+record.tags.joined(separator:"、")) }
         }
         for item in snapshot.orderedItems {
@@ -78,6 +86,13 @@ enum ReadingRecordExport {
             case .essay(let essay):
                 if snapshot.orderedItems.count != 1 || snapshot.title != essay.title { paragraph(essay.title,heading:2) }
                 try extraContent053(essay.extras)
+                if preferences.includeSources, let extras = essay.extras {
+                    let sources = (extras.regions ?? []).map(\.citation)+(extras.quotations ?? []).flatMap(\.citations)
+                    if !sources.isEmpty { paragraph(preferences.sourcesHeading ?? "出处",heading:3) }
+                    for (index,citation) in sources.enumerated() {
+                        paragraph(ReadingExportOrdering.sourceLine(citation,index:index,rendered:ReadingExportOrdering.citation(citation)))
+                    }
+                }
                 for line in ReadingRecordMetadata.essayLines(essay) { paragraph(line) }
                 for block in essay.blocks { try Task.checkCancellation();if let ref = block.record { try record(ref,heading:false) };if preferences.includeNote { try writingParagraph(block.text) } }
             }
@@ -96,29 +111,73 @@ enum ReadingRecordExport {
         var citationFormat053=ReadingCitationFormat053()
         func extras053(_ extras:ReadingRecordExtras053?) {
             guard let extras,preferences.includeQuote else { return }
-            for q in extras.quotations ?? [] { for asset in Set(q.assets ?? []).sorted() { lines += ["![引用图片副本](<"+imageFolder+"/"+asset+">)",""] };lines += ["### 引用副本："+literal(q.title),"",q.text,""]+q.citations.map{literal(ReadingExportOrdering.citation($0))}+["引用时间："+ReadingRecordMetadata.date(q.captured),""] }
-            for region in extras.regions ?? [] { lines += ["![来源区域](<"+imageFolder+"/"+region.asset+">)",literal(ReadingExportOrdering.citation(region.citation)),""] }
+            for q in extras.quotations ?? [] { for asset in Set(q.assets ?? []).sorted() { lines += ["![引用图片副本](<"+imageFolder+"/"+asset+">)",""] };lines += ["### 引用副本："+literal(q.title),"",q.text,""]+["引用时间："+ReadingRecordMetadata.date(q.captured),""] }
+            for region in extras.regions ?? [] { lines += ["![来源区域](<"+imageFolder+"/"+region.asset+">)",""] }
             if preferences.includeQuote,preferences.includeRegionImages==true,let name=extras.visualAsset { lines += ["![标注快照](<"+imageFolder+"/"+name+">)",""] }
         }
         func record(_ ref:ReadingRecord,heading:Bool) {
-            if heading { lines += ["## "+literal(preferences.heading(ref)),""] }
-            if preferences.includeQuote,let origin = ref.pdfOrigin,!origin.contents.isEmpty { lines += ["PDF 原评论："+literal(origin.contents),""] }
-            if preferences.includeQuote && !ref.quote.isEmpty { lines += ref.quote.components(separatedBy:"\n").map { "> "+literal($0) }; lines.append("") }
-            if preferences.includeQuote, let image = ref.imageAsset { lines += ["![图片摘录](<"+imageFolder+"/"+image+">)",""] }
-            if preferences.includeNote && !ref.note.isEmpty { lines += [(ref.kind == .note ? "" : "我的笔记：\n\n")+ref.note,""] }
-            for citation in preferences.includeSources ? ref.citations : [] {
-                lines.append(literal(citationFormat053.render(citation,shorten:preferences.shortenedCitations053==true)))
-                if let relative = preferences.sourceLinks?[citation.source.path] { lines.append("[返回原文](<"+relative+"#page="+String(citation.source.page+1)+">)") } else if let url = SourceLink.url(citation.source) { lines.append("[返回原文]("+url.absoluteString+")") }
+            if heading,preferences.showRecordTitles != false { lines += ["## "+literal(preferences.heading(ref)),""] }
+            for part in preferences.structuralOrder {
+                switch part {
+                case "quote":
+                    if preferences.includeQuote,let origin = ref.pdfOrigin,!origin.contents.isEmpty {
+                        lines += ["PDF 原评论："+literal(origin.contents),""]
+                    }
+                    if preferences.includeQuote && !ref.quote.isEmpty {
+                        if let heading = preferences.quoteHeading { lines += ["### "+literal(heading),""] }
+                        lines += ref.quote.components(separatedBy:"\n").map { "> "+literal($0) }
+                        lines.append("")
+                    }
+                    if preferences.includeQuote, let image = ref.imageAsset {
+                        lines += ["!["+literal(preferences.imageHeading ?? "图片摘录")+"](<"+imageFolder+"/"+image+">)",""]
+                    }
+                case "note":
+                    if preferences.includeNote && !ref.note.isEmpty {
+                        if let heading = preferences.noteHeading { lines += ["### "+literal(heading),""] }
+                        else if ref.kind != .note { lines += ["我的笔记：",""] }
+                        lines += [ref.note,""]
+                    }
+                case "sources":
+                    guard preferences.includeSources else { break }
+                    let sources = ref.citations053
+                    if sources.isEmpty { lines += ["出处：独立笔记（未关联文献）",""];break }
+                    lines += ["### "+literal(preferences.sourcesHeading ?? "出处"),""]
+                    for (index,citation) in sources.enumerated() {
+                        let rendered = citationFormat053.render(citation,shorten:preferences.shortenedCitations053==true)
+                        lines.append(literal(ReadingExportOrdering.sourceLine(citation,index:index,rendered:rendered)))
+                        if citation.source.invalidPage053 != true {
+                            if let relative = preferences.sourceLinks?[citation.source.path] {
+                                lines.append("[返回原文](<"+relative+"#page="+String(citation.source.page+1)+">)")
+                            } else if let url = SourceLink.url(citation.source) { lines.append("[返回原文]("+url.absoluteString+")") }
+                        }
+                        lines.append("")
+                    }
+                default: break
+                }
             }
             extras053(ref.extras)
-            lines += ReadingRecordMetadata.lines(ref,includeSources:preferences.includeSources).map(literal)
+            lines += ReadingRecordMetadata.lines(ref,includeSources:false).map(literal)
             if !ref.tags.isEmpty { lines += ["标签："+literal(ref.tags.joined(separator:"、"))] }
             lines.append("")
         }
         for item in snapshot.orderedItems {
             switch item {
             case .record(let ref):record(ref,heading:true)
-            case .essay(let essay):extras053(essay.extras);if snapshot.orderedItems.count != 1 || snapshot.title != essay.title { lines += ["## "+literal(essay.title),""] };lines += ReadingRecordMetadata.essayLines(essay).map(literal);for block in essay.blocks { if let ref = block.record { record(ref,heading:false) };if preferences.includeNote { lines += [block.text,""] } }
+            case .essay(let essay):
+                if snapshot.orderedItems.count != 1 || snapshot.title != essay.title { lines += ["## "+literal(essay.title),""] }
+                extras053(essay.extras)
+                if preferences.includeSources, let extras = essay.extras {
+                    let sources = (extras.regions ?? []).map(\.citation)+(extras.quotations ?? []).flatMap(\.citations)
+                    if !sources.isEmpty { lines += ["### "+literal(preferences.sourcesHeading ?? "出处"),""] }
+                    for (index,citation) in sources.enumerated() {
+                        lines += [literal(ReadingExportOrdering.sourceLine(citation,index:index,rendered:ReadingExportOrdering.citation(citation))),""]
+                    }
+                }
+                lines += ReadingRecordMetadata.essayLines(essay).map(literal)
+                for block in essay.blocks {
+                    if let ref = block.record { record(ref,heading:false) }
+                    if preferences.includeNote { lines += [block.text,""] }
+                }
             }
         }
         if preferences.bibliography053==true { lines += ["## 参考文献",""]+ReadingWorkflow053.bibliography(snapshot.orderedItems.map { value in switch value {case .record(let r):return ReadingLibraryItem.record(r);case .essay(let e):return ReadingLibraryItem.essay(e)} }) }

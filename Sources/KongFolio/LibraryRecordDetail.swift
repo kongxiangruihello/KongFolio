@@ -11,6 +11,8 @@ struct LibraryRecordDetail: View {
     @State private var showLinkPicker = false
     @State private var noteSourceStatus = ""
     @StateObject private var imageOCR = ReadingImageOCRController()
+    @StateObject private var sourceNavigator = ReadingSourceNavigator()
+    @State private var showOCRComparison = false
     private var current:ReadingRecord { journal.record(record.id) ?? record }
     var body:some View {
         ScrollViewReader { proxy in
@@ -19,11 +21,20 @@ struct LibraryRecordDetail: View {
                 StableTextField("记录标题（可留空）",text:binding(\.title),fontSize:20)
                 if current.kind == .note { noteSourceControls }
                 ReadingRecordMetadataView(record:current)
+                if sourceNavigator.busy {
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("正在核对出处…").font(.caption)
+                        Button("停止") { sourceNavigator.cancel() }
+                    }
+                }
                 ReadingRecordExtrasView053(store:store,journal:journal,item:.record(current))
                 HStack {
                     Text(current.kind.rawValue).font(.system(size:13,weight:.medium)).foregroundStyle(.secondary)
                     Spacer()
-                    if let source = current.citations053.first?.source { Button("返回原文") { _ = store.reveal(source,beside:false) }.disabled(source.path.isEmpty) }
+                    if let citation = current.citations053.first {
+                        Button("返回原文") { sourceNavigator.open(citation,record:current,store:store) }.disabled(sourceNavigator.busy)
+                    }
                     Menu("记录操作") {
                         Button(store.pinnedReadingID == record.id ? "取消固定" : "固定记录，翻页时继续写") { store.pinnedReadingID = store.pinnedReadingID == record.id ? nil : record.id }
                         if current.kind == .note { Button("关联更多摘录…") { showLinkPicker = true } }
@@ -47,7 +58,9 @@ struct LibraryRecordDetail: View {
                 if current.pdfOrigin != nil && !current.quote.isEmpty { Text(current.quote).font(.system(size:16)).textSelection(.enabled) }
                 if current.kind == .note && !current.quote.isEmpty { DisclosureGroup("关联原文（展开查看）") { Text(current.quote).font(.system(size:16)).textSelection(.enabled) } }
                 if let image = current.imageAsset, imageOCR.text.isEmpty { ReadingRecordImage(url:journal.assetURL(image),pending:journal.pendingImage(image)).frame(maxHeight:220) }
-                if current.kind == .image { imageRecognition.onAppear { imageOCR.restoreSegments(current) } }
+                if current.kind == .image {
+                    imageRecognition.onAppear { imageOCR.restoreSegments(current); startRequestedOCR() }
+                }
                 if let original = current.originalQuote ?? current.originalOCR { DisclosureGroup("校订前文字（保留）") { Text(original).textSelection(.enabled) } }
                 Text(current.kind == .note || current.pdfOrigin != nil ? "我的笔记" : "我的理解与评论").font(.caption)
                 LibraryWritingEditor(text:binding(\.note),label:"阅读笔记正文",identity:"note:"+record.id.uuidString).id("note:"+record.id.uuidString).frame(height:380)
@@ -60,8 +73,8 @@ struct LibraryRecordDetail: View {
                         Text(current.wholeBook ? "《"+citation.title+"》 · 整本书" : citation.display).font(.caption).textSelection(.enabled)
                         HStack {
                             Button("快看原页") { contextSource = ReadingContextRequest(source:citation.source) }
-                            Button("返回原文") { _ = store.reveal(citation.source,beside:false) }.disabled(citation.source.path.isEmpty)
-                            Button("重新关联…") { relink(citation) }
+                            Button("返回原文") { sourceNavigator.open(citation,record:current,store:store) }.disabled(sourceNavigator.busy)
+                            Button("核对出处…") { sourceNavigator.open(citation,record:current,store:store,reviewOnly:true) }.disabled(sourceNavigator.busy)
                         }
                     }
                 }
@@ -80,7 +93,15 @@ struct LibraryRecordDetail: View {
             DispatchQueue.main.async { proxy.scrollTo(hit.identity,anchor:.center) }
             DispatchQueue.main.asyncAfter(deadline:.now()+0.25) { if store.writingSearchRequest == token { WritingRegistry.jumpIfCurrent(hit) } }
         }
-        }.sheet(isPresented:$showQuoteCorrection) { ReadingQuoteCorrectionView(journal:journal,record:current) }.sheet(item:$contextSource) { request in ReadingContextView(store:store,source:request.source) }.onAppear { if journal.draftRecord?.id == record.id && record.kind != .note { editQuote = true } }.onDisappear { imageOCR.cancel() }.sheet(isPresented:$showLinkPicker) {
+        }.sheet(isPresented:$showQuoteCorrection) { ReadingQuoteCorrectionView(journal:journal,record:current) }.sheet(item:$contextSource) { request in ReadingContextView(store:store,source:request.source) }.onAppear { if journal.draftRecord?.id == record.id && record.kind != .note { editQuote = true } } .onChange(of:store.readingImageOCRRequest) { _,_ in startRequestedOCR() }
+        .onDisappear { imageOCR.cancel(); sourceNavigator.cancel() }
+        .sheet(item:$sourceNavigator.review,onDismiss:{ sourceNavigator.cancel() }) { request in
+            ReadingSourceReviewSheet(request:request,navigator:sourceNavigator,store:store).id(request.id)
+        }
+        .sheet(isPresented:$showOCRComparison) {
+            ReadingImageOCRComparisonSheet(controller:imageOCR,record:current,journal:journal) { applyOCR() }
+        }
+        .sheet(isPresented:$showLinkPicker) {
             ReadingRecordPicker(journal:journal) { other in
                 journal.editRecord(record.id) { value in
                     guard !value.linkedRecords.contains(other.id) else { return }
@@ -110,8 +131,8 @@ struct LibraryRecordDetail: View {
                         }
                     }
                     ForEach(Array(current.citations053.enumerated()),id:\.offset) { _, citation in
-                        Button("返回 " + citation.display) { _ = store.reveal(citation.source,beside:false) }
-                            .disabled(citation.source.path.isEmpty)
+                        Button("返回 " + citation.display) { sourceNavigator.open(citation,record:current,store:store) }
+                            .disabled(sourceNavigator.busy)
                     }
                 } label: { noteSourceLabel }.menuStyle(.borderlessButton)
                     .help("查看或修改笔记出处")
@@ -138,24 +159,32 @@ struct LibraryRecordDetail: View {
                 if imageOCR.busy { ProgressView().controlSize(.small); Button("取消识别") { imageOCR.cancel() } }
             }
             if !imageOCR.text.isEmpty {
-                HSplitView {
-                    if let image = current.imageAsset { ReadingRecordImage(url:journal.assetURL(image),pending:journal.pendingImage(image)).frame(minWidth:100,minHeight:180) }
-                    LibraryWritingEditor(text:$imageOCR.text,label:"对照校订识别文字",identity:"ocr:"+record.id.uuidString).frame(minWidth:180,minHeight:180)
+                HStack {
+                    Button("图片与文字对照…") { showOCRComparison = true }
+                    Button("采用识别文字") { applyOCR() }
                 }
-                ReadingOCRSegmentEditor(controller:imageOCR)
-                Button("采用识别文字") { journal.editRecord(record.id) { $0.originalQuote = $0.originalQuote ?? ($0.quote.isEmpty ? nil : $0.quote);$0.originalOCR = $0.originalOCR ?? imageOCR.originalText;$0.quote = imageOCR.text;$0.ocrSegments = imageOCR.segments }; editQuote = true }
             }
             if !imageOCR.message.isEmpty { Text(imageOCR.message).font(.caption) }
         }
     }
+    private func startRequestedOCR() {
+        guard let request = store.readingImageOCRRequest, request.recordID == record.id,
+              current.kind == .image else { return }
+        store.readingImageOCRRequest = nil
+        imageOCR.recognize(current,journal:journal,vertical:request.mode != .horizontal,
+                           traditional:request.mode == .traditional)
+    }
+
+    private func applyOCR() {
+        journal.editRecord(record.id) {
+            $0.originalQuote = $0.originalQuote ?? ($0.quote.isEmpty ? nil : $0.quote)
+            $0.originalOCR = $0.originalOCR ?? imageOCR.originalText
+            $0.quote = imageOCR.text
+            $0.ocrSegments = imageOCR.segments
+        }
+        editQuote = true
+    }
+
     private func binding(_ key:WritableKeyPath<ReadingRecord,String>) -> Binding<String> { Binding(get:{current[keyPath:key]},set:{text in journal.editRecord(record.id) { if key == \ReadingRecord.quote, $0.originalQuote == nil, !$0.quote.isEmpty { $0.originalQuote = $0.quote };$0[keyPath:key] = text }}) }
     static func tags(_ text:String) -> [String] { var seen = Set<String>(); return text.replacingOccurrences(of:"，",with:",").split(separator:",").map{$0.trimmingCharacters(in:.whitespacesAndNewlines)}.filter{!$0.isEmpty && seen.insert($0).inserted} }
-    private func relink(_ citation:ReadingCitation) {
-        let panel = NSOpenPanel(); panel.message = "选择这条记录的原书；记录文字和原页码保留，请核对来源。"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            if citation.source.path.isEmpty { journal.relink(old:"",to:url,recordID:record.id) }
-            else { try store.library.relink(path:citation.source.path,to:url,defaults:store.readingDefaults) }
-        } catch { store.present(error) }
-    }
 }

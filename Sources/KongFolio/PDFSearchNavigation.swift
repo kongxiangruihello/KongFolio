@@ -13,7 +13,14 @@ import Foundation
         return partner
     }
 
+    func rememberRightPanelNote() {
+        guard showReadingDesk, readingDeskSection == .notes else { return }
+        let record = journal.record(pinnedReadingID ?? readingRecordID)
+        if let record, record.kind == .note, record.removed == nil { lastRightPanelNoteID = record.id }
+    }
+
     func closeRightReadingPanel() {
+        rememberRightPanelNote()
         showReadingDesk = false
         pdfSearchWorkspaceID = nil
     }
@@ -21,6 +28,7 @@ import Foundation
     /// The reader magnifier never opens the reading-record library or a text-file editor.
     @discardableResult func openPDFSearch()->Bool {
         guard canSearchPDF,let workspace=commandWorkspace else { return false }
+        rememberRightPanelNote()
         showReadingDesk = false
         lastRightPanelWasSearch = true
         pdfSearchWorkspaceID = workspace.id

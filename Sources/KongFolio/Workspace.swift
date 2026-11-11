@@ -38,7 +38,8 @@ import UniformTypeIdentifiers
     @Published var nightReading = UserDefaults.standard.bool(forKey: Workspace.nightKey) {
         didSet { UserDefaults.standard.set(nightReading, forKey: Workspace.nightKey); applyNightReading() }
     }
-    var searchCursor: Int?
+    @Published var searchCursor: Int?
+    var searchResume: PDFSearchResume?
     var copiedAnnotations: [PDFAnnotation] = []
     /// The outline as the reader has arranged it, kept while the tab is open so closing the editor loses nothing.
     var outlineDraft: OutlineDraft?
@@ -65,7 +66,10 @@ import UniformTypeIdentifiers
     @Published var revision = UUID()
     @Published var title = "未命名文档"
     @Published var readingLocked = false
-    @Published var tool = AnnotationTool.select
+    var readingRegionOCRMode: ReadingImageOCRMode?
+    @Published var tool = AnnotationTool.select {
+        didSet { if tool != .region { readingRegionOCRMode = nil } }
+    }
     @Published var note = ""
     @Published var status = "所有处理均在本机完成"
     @Published var error: String?
@@ -726,6 +730,12 @@ import UniformTypeIdentifiers
 
     /// Empties the workspace. With `keepingSource` the file it came from stays known, so the tab can load it again.
     func clearDocument(keepingSource: Bool) {
+        if keepingSource {
+            if searchResume == nil, !search.isEmpty {
+                let hit = searchCursor.flatMap { searchResults.indices.contains($0) ? searchResults[$0] : nil }
+                searchResume = PDFSearchResume(query:search,executedQuery:searchResults.first?.query ?? (searchTask != nil ? search : nil),page:hit?.page,range:hit?.range,strips:hit?.strips)
+            }
+        } else { searchResume = nil }
         readingAnnotationTask?.cancel();readingAnnotationTask = nil
         autoTask?.cancel(); autoTask = nil
         saveReadingRecord(); progressTask?.cancel(); readingSaveTask?.cancel(); readingBookmarkTask?.cancel(); readingBookmarkTask = nil

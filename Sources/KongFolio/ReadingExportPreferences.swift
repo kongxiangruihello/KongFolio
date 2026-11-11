@@ -34,6 +34,7 @@ struct ReadingExportPreferences: Codable, Equatable {
     var format = ReadingRecordExport.Format.word
     var options = ReadingExportOptions()
     var directoryPath:String?
+    var sort:ReadingExportOrdering.Sort? = nil
     static func load(defaults:UserDefaults = .standard) -> Self {
         guard let data = defaults.data(forKey:key), let value = try? JSONDecoder().decode(Self.self,from:data), value.options.valid else { return Self() }; return value
     }
@@ -49,8 +50,11 @@ struct ReadingExportProfile:Codable,Identifiable {
     static var presets:[Self] {
         var excerpts = ReadingExportOptions();excerpts.includeNote = false;excerpts.lineHeight = 1.3;excerpts.margin = 56;excerpts.footnotes = true
         var notes = ReadingExportOptions();notes.lineHeight = 1.5
+        var body = ReadingExportOptions()
+        body.noteHeading = "正文"
+        body.sourcesHeading = "出处"
         var essay = ReadingExportOptions();essay.lineHeight = 1.6;essay.margin = 80;essay.footnotes = true
-        return [Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000101")!,name:"摘录汇编",options:excerpts),Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000102")!,name:"读书笔记",options:notes),Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000103")!,name:"研究笔记",options:essay)]
+        return [Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000104")!,name:"正文与出处",options:body),Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000101")!,name:"摘录汇编",options:excerpts),Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000102")!,name:"读书笔记",options:notes),Self(id:UUID(uuidString:"00000000-0000-0000-0000-000000000103")!,name:"研究笔记",options:essay)]
     }
     static func load(defaults:UserDefaults = .standard) -> [Self] { guard let data = defaults.data(forKey:"KongFolio.readingExportProfiles"),let profiles = try? JSONDecoder().decode([Self].self,from:data) else { return [] };return profiles.filter{$0.options.valid} }
     static func save(_ profiles:[Self],defaults:UserDefaults = .standard) throws { guard profiles.count<=100,profiles.allSatisfy({$0.options.valid && !$0.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty}) else { throw FolioError(message:"模板名称或设置无效，最多保存 100 份模板") };defaults.set(try JSONEncoder().encode(profiles),forKey:"KongFolio.readingExportProfiles") }

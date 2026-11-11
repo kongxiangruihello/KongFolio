@@ -67,6 +67,8 @@ extension Workspace {
 
     /// Sends a captured region of the page (a figure, a table, a scanned passage) to the workspace.
     func excerptRegion(imageData: Data, size: CGSize, page: PDFPage, pageRect: CGRect) {
+        let ocrMode = readingRegionOCRMode
+        readingRegionOCRMode = nil
         if let store, store.readingMode {
             guard !store.journal.unreadable else { error = store.journal.error; return }
             let index = document.index(for:page)
@@ -78,7 +80,12 @@ extension Workspace {
                 } catch { recordError(error);return }
             }
             let record = ReadingRecord(kind:.image,citations:[readingCitation(page:index == NSNotFound ? selection : index,rects:[pageRect])])
-            store.journal.add(record,image:imageData); store.readingRecordID = record.id; store.openReadingDesk(.excerpts); status = "图片摘录已保存到阅读记录"; return
+            store.journal.add(record,image:imageData)
+            store.readingRecordID = record.id
+            store.openReadingDesk(.excerpts)
+            if let ocrMode { store.readingImageOCRRequest = ReadingImageOCRRequest(recordID:record.id,mode:ocrMode) }
+            status = ocrMode == nil ? "图片摘录已保存到阅读记录" : "图片摘录已保存，正在准备文字识别"
+            return
         }
         guard let board = store?.board else { error = "工作区不可用。"; return }
         let id = board.addImage(imageData, size: size, source: sourceReference(page: page, rects: [pageRect]))
@@ -215,6 +222,18 @@ extension Workspace {
 }
 
 extension WorkspaceStore {
+    func startReadingRegionCapture(ocr: ReadingImageOCRMode? = nil) {
+        guard canSearchPDF, let workspace = commandWorkspace else { return }
+        showReadingPanel(.excerpts)
+        multiRegionTarget053 = nil
+        if let pinned = journal.record(pinnedReadingID), pinned.kind != .note { pinnedReadingID = nil }
+        readingImageOCRRequest = nil
+        workspace.tool = .region
+        workspace.readingRegionOCRMode = ocr
+        workspace.showAnnotationBar = true
+        workspace.status = ocr == nil ? "在 PDF 页面上拖动框选图片" : "在 PDF 页面上拖动框选，保存图片后识别文字"
+    }
+
     /// Takes the reader to a card's source. By default (setting `cardsBeside`) the source document is shown in the right
     /// pane next to the document in front, so the reader keeps their place; otherwise the tab that already shows the file
     /// is brought to the front, or a new tab opens it. Returns false when the file cannot be found.

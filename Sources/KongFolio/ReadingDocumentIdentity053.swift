@@ -34,8 +34,9 @@ struct ReadingDocumentIdentity053:Codable {
         }
         return value
     }
-    func resolve(_ path:String)->String {
-        guard !FileManager.default.fileExists(atPath:path),let entry=entries.first(where:{$0.paths.contains(ReadingBookIdentity.key(path))}) else { return path }
+    func resolve(_ path:String, documentID:UUID? = nil)->String {
+        guard !FileManager.default.fileExists(atPath:path),
+              let entry = entries.first(where:{ $0.id == documentID || $0.paths.contains(ReadingBookIdentity.key(path)) }) else { return path }
         for alias in entry.paths.reversed() where FileManager.default.fileExists(atPath:alias) { return alias }
         if let data=entry.bookmark { var stale=false;if let url=try? URL(resolvingBookmarkData:data,options:.withoutUI,relativeTo:nil,bookmarkDataIsStale:&stale),FileManager.default.fileExists(atPath:url.path) { return url.path } }
         return path

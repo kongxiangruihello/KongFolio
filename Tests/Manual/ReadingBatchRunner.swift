@@ -44,8 +44,13 @@ import AppKit
             for id in ids {
                 let start = ProcessInfo.processInfo.systemUptime
                 store.select(id);let w = store.activeWorkspace!
-                try await waitFor({!w.busy && w.count>0},"打开文献")
+                try await waitFor({!w.busy && (w.count>0 || w.error != nil)},"打开文献")
+                guard w.count > 0 else { throw FolioError(message:w.error ?? "未能打开扫描文献") }
                 w.selectPage(max(0,w.count-1));w.bookmarkName = "第\(round)轮验证书签";w.addBookmark()
+                store.newReadingNote()
+                let note = try store.readingRecordID.unwrap("连续阅读笔记未打开")
+                store.journal.editRecord(note) { $0.note = "第\(round)轮扫描文献阅读笔记" }
+                try await store.journal.flush()
                 closedReferences.append(WeakReadingWorkspace(w))
                 store.close(id)
                 try await waitFor({w.count == 0 && !w.saving && !w.busy},"关闭并保存")
@@ -61,9 +66,11 @@ import AppKit
         try await waitFor({!check.busy && check.count>0},"核对重开书签")
         guard check.bookmarks.contains(where:{$0.label == "第\(rounds)轮验证书签"}),ticks>20,longest<25 else { throw FolioError(message:"阅读记录或响应验证未通过") }
         guard try source.map({OCRPageCache.digest(try Data(contentsOf:$0))}) == checksums else { throw FolioError(message:"输入文献发生变化") }
+        let reopenedNotes = ReadingJournal(storage:store.storage).state.records.filter { $0.kind == .note }
+        guard reopenedNotes.count == rounds*20 else { throw FolioError(message:"批量阅读后的笔记未全部保存") }
         let growth = (memory.last ?? 0)-(memory.dropFirst(2).min() ?? memory.first ?? 0)
         guard gap < 5,growth < 256 else { throw FolioError(message:"响应或内存趋势超出阅读验证预算") }
-        let report:[String:Any] = ["closedWorkspaceReferencesStillLive":liveAfterRounds,"testMode":false,"rounds":rounds,"opened":rounds*20,"closed":rounds*20,"bookmarksRestored":true,"sourceFixturesUnchanged":true,"mainActorHeartbeats":ticks,"maxHeartbeatGapSeconds":gap,"longestStepSeconds":longest,"residentMB":memory,"postWarmupGrowthMB":growth,"heartbeatBudgetSeconds":5,"memoryGrowthBudgetMB":256]
+        let report:[String:Any] = ["closedWorkspaceReferencesStillLive":liveAfterRounds,"testMode":false,"rounds":rounds,"opened":rounds*20,"closed":rounds*20,"bookmarksRestored":true,"notesRestored":reopenedNotes.count,"sourceFixturesUnchanged":true,"mainActorHeartbeats":ticks,"maxHeartbeatGapSeconds":gap,"longestStepSeconds":longest,"residentMB":memory,"postWarmupGrowthMB":growth,"heartbeatBudgetSeconds":5,"memoryGrowthBudgetMB":256]
         let data = try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]);if let path = ProcessInfo.processInfo.environment["KONGFOLIO_READING_BATCH_REPORT"] { try data.write(to:URL(fileURLWithPath:path),options:.atomic) }
         print(String(data:data,encoding:.utf8)!);print("PASS: normal-mode repeated batch reading and close/save")
         _ = await check.finishPendingSave();_ = check.closeDocument()

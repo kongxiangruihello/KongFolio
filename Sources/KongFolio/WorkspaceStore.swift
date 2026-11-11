@@ -36,6 +36,8 @@ import UniformTypeIdentifiers
     @Published var showReadingDesk = false
     @Published var pdfSearchWorkspaceID: UUID?
     var lastRightPanelWasSearch = false
+    var lastRightPanelNoteID: UUID?
+    @Published var readingImageOCRRequest: ReadingImageOCRRequest?
     var readingDeskWindowSection = ReadingDeskSection.search
     @Published var readingDeskSection = ReadingDeskSection.excerpts
     @Published var showQuickReadingNote = false
@@ -144,7 +146,10 @@ import UniformTypeIdentifiers
     }
 
     func focus(_ workspace: Workspace) {
-        if focusedID != workspace.id { focusedID = workspace.id }
+        if focusedID != workspace.id {
+            focusedID = workspace.id
+            if pdfSearchWorkspaceID != nil { pdfSearchWorkspaceID = workspace.id }
+        }
     }
     var activeNote: MarkdownNote? { activeTab?.note }
     var canSave: Bool {
@@ -266,6 +271,7 @@ import UniformTypeIdentifiers
         if selectedID != id { activeWorkspace?.saveReadingRecord() }
         selectedID = id
         focusedID = id
+        if pdfSearchWorkspaceID != nil { pdfSearchWorkspaceID = id }
         tab.workspace?.refreshSignatureLibrary()
         forwarding = tab.changes.sink { [weak self] _ in self?.objectWillChange.send() }
         recordActivity("切换标签页")

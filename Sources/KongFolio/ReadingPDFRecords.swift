@@ -63,7 +63,7 @@ enum ReadingPDFCapture {
         guard let path = readingJournalPath,!path.isEmpty,let journal = store?.journal,!journal.unreadable else { return }
         let records = pages.sorted().flatMap { index -> [ReadingRecord] in
             guard let page = document.page(at:index) else { return [] }
-            let source = readingCitation(page:index)
+            let source = readingCitation(page:index,trackVisual:false)
             return page.annotations.compactMap { a in
                 guard var record=ReadingPDFCapture.record(a,page:page,index:index,source:source) else { return nil }
                 if let bytes=ReadingVisual053.annotation(a),let name=try? journal.stageAsset053(bytes) { record.extras=ReadingRecordExtras053(colorMeaning:ReadingColorSemantics053.meaning(a.color),visualAsset:name) }

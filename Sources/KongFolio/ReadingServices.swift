@@ -21,6 +21,14 @@ struct ReadingState: Codable {
     var scale: Double?
     var bibliography: Bibliography? = nil
 }
+struct PDFSearchResume {
+    let query: String
+    let executedQuery: String?
+    let page: Int?
+    let range: NSRange?
+    let strips: [CGRect]?
+}
+
 struct SearchHit: Identifiable {
     var id = UUID()
     var page: Int
@@ -320,7 +328,15 @@ extension Workspace {
         return combined
     }
 
-    func startSearch() {
+    func resumePDFSearchIfNeeded() {
+        guard count > 0, !busy, let previous = searchResume else { return }
+        searchResume = nil
+        search = previous.query
+        if let executed = previous.executedQuery, executed == previous.query { startSearch(resuming:previous) }
+    }
+
+    func startSearch(resuming previous: PDFSearchResume? = nil) {
+        searchResume = nil
         searchTask?.cancel();searchTask=nil;searchResults=[];searchMessage="";searchCursor=nil
         guard !search.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,count>0 else { return }
         let query=search,version=revision;searchMessage="正在搜索…"
@@ -339,6 +355,9 @@ extension Workspace {
                 let hits=try await job.value
                 guard !job.isCancelled,let self,self.revision==version,self.search==query else { return }
                 self.searchResults=hits;self.searchTask=nil
+                if let previous, let page = previous.page {
+                    self.searchCursor = hits.firstIndex { $0.page == page && $0.range == previous.range && $0.strips == previous.strips }
+                }
                 self.searchMessage=hits.isEmpty ? "没有找到匹配文字。扫描件需先识别文字；请在快捷工具中使用 OCR。" : (hits.count==1000 ? "显示前 1000 处匹配，请缩小范围":"找到 \(hits.count) 处匹配；点击结果跳到原页")
             } catch { guard !job.isCancelled,let self,self.revision==version,self.search==query else { return };self.searchTask=nil;if !FolioCancellation.matches(error) { self.searchMessage=error.localizedDescription } }
         }

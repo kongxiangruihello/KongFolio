@@ -105,8 +105,8 @@ final class Release045Tests: XCTestCase {
         let old = Data(#"{"fontName":"Songti SC","fontSize":12,"includeQuote":true,"includeNote":true,"includeSources":true}"#.utf8);let options = try JSONDecoder().decode(ReadingExportOptions.self,from:old);XCTAssertTrue(options.valid);XCTAssertNil(options.footnotes)
     }
     func testExportProfilesPersistLayoutAndRejectInvalidOptions() throws {
-        let defaults = UserDefaults(suiteName:"Profiles045-"+UUID().uuidString)!,profiles = ReadingExportProfile.presets;try ReadingExportProfile.save(profiles,defaults:defaults);XCTAssertEqual(ReadingExportProfile.load(defaults:defaults).map(\.name),["摘录汇编","读书笔记","研究笔记"])
-        var bad = profiles[0];bad.options.margin = 999;XCTAssertThrowsError(try ReadingExportProfile.save([bad],defaults:defaults));XCTAssertEqual(ReadingExportProfile.load(defaults:defaults).count,3)
+        let defaults = UserDefaults(suiteName:"Profiles045-"+UUID().uuidString)!,profiles = ReadingExportProfile.presets;try ReadingExportProfile.save(profiles,defaults:defaults);XCTAssertEqual(ReadingExportProfile.load(defaults:defaults).map(\.name),["正文与出处","摘录汇编","读书笔记","研究笔记"])
+        var bad = profiles[0];bad.options.margin = 999;XCTAssertThrowsError(try ReadingExportProfile.save([bad],defaults:defaults));XCTAssertEqual(ReadingExportProfile.load(defaults:defaults).count,profiles.count)
     }
     func testMixedExportOrderIncludesNotesAndEssaysInManualOrder() throws {
         let a = record("笔记甲"),b = record("笔记乙"),e = ReadingEssay(title:"札记丙",blocks:[ReadingEssay.Block(text:"论述丙")]);let snapshot = ReadingExportSnapshot(title:"合集",records:[a,b],essays:[e],order:["r:"+b.id.uuidString,"e:"+e.id.uuidString,"r:"+a.id.uuidString]);let md = ReadingRecordExport.markdown(snapshot,imageFolder:"Images");XCTAssertTrue(try XCTUnwrap(md.range(of:"笔记乙")).lowerBound < XCTUnwrap(md.range(of:"论述丙")).lowerBound);XCTAssertTrue(try XCTUnwrap(md.range(of:"论述丙")).lowerBound < XCTUnwrap(md.range(of:"笔记甲")).lowerBound)

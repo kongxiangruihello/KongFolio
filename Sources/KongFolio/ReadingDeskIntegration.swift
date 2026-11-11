@@ -13,11 +13,16 @@ extension Workspace {
         if let cached = journalSourceIdentity,cached.raw == path { return cached.canonical }
         let canonical = ReadingProgress.canonicalPath(path); journalSourceIdentity = (path,canonical); return canonical
     }
-    func readingCitation(page index:Int? = nil,rects:[CGRect] = [],anchor:String? = nil) -> ReadingCitation {
+    func readingCitation(page index:Int? = nil,rects:[CGRect] = [],anchor:String? = nil,trackVisual:Bool = true) -> ReadingCitation {
         let i = index ?? selection
         let label = store?.research.displayLabel(path:displayPath ?? "",page:i,fallback:ReadingServices.pageLabel(document.page(at:i) ?? PDFPage(),index:i) ?? String(i+1))
         var citation=ReadingCitation(source:SourceRef(path:readingJournalPath ?? "",fileName:displayName,page:max(0,i),pageLabel:label,fingerprint:fileBaseline?.digest,rects:rects,anchor:anchor),title:bibliography.title.isEmpty ? title : bibliography.title,author:bibliography.author,edition:bibliography.edition.isEmpty ? nil : bibliography.edition)
-        if let path=readingJournalPath { let identity=ReadingDocumentRegistry053.shared(storage).identity(path,digest:fileBaseline?.digest);citation.tracking=ReadingSourceIdentity053(documentID:identity.id,capturedPage:max(0,i),pageFingerprint:pageIdentity053(max(0,i)),capturedPageLabel:label) }
+        if let path = readingJournalPath {
+            let identity = ReadingDocumentRegistry053.shared(storage).identity(path,digest:fileBaseline?.digest)
+            citation.tracking = ReadingSourceIdentity053(documentID:identity.id,capturedPage:max(0,i),
+                pageFingerprint:pageIdentity053(max(0,i)),capturedPageLabel:label,
+                visualFingerprint:trackVisual ? document.page(at:i).flatMap(ReadingSourceRecovery.fingerprint) : nil)
+        }
         return citation
     }
     func captureReadingExcerpt(_ selection:PDFSelection) -> Bool {
@@ -35,7 +40,13 @@ extension Workspace {
 }
 extension WorkspaceStore {
     func openNoteLibrary() { readingLibraryPreferredKind = "笔记";readingLibraryNavigation = nil;readingLibraryNavigationRequest = UUID();openReadingDesk(.search,window:true) }
-    func showReadingPanel(_ section:ReadingDeskSection) {
+    func showReadingPanel(_ section:ReadingDeskSection, noteID: UUID? = nil) {
+        let returningToNotes = section == .notes && (!showReadingDesk || readingDeskSection != .notes)
+        if section != .notes { rememberRightPanelNote() }
+        if let noteID { readingRecordID = noteID }
+        else if returningToNotes, let last = journal.record(lastRightPanelNoteID), last.kind == .note, last.removed == nil {
+            readingRecordID = last.id
+        }
         lastRightPanelWasSearch = false
         pdfSearchWorkspaceID = nil
         readingMode = true
@@ -55,8 +66,8 @@ extension WorkspaceStore {
     }
 
     func newReadingNote(source: ReadingNoteSource = .currentPage, linked: ReadingRecord? = nil) {
-        guard prepareReadingNote(source:source,linked:linked) != nil else { return }
-        showReadingPanel(.notes)
+        guard let draft = prepareReadingNote(source:source,linked:linked) else { return }
+        showReadingPanel(.notes,noteID:draft.id)
     }
 
     func prepareReadingNote(source: ReadingNoteSource = .currentPage, linked: ReadingRecord? = nil) -> ReadingRecord? {

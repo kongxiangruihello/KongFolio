@@ -1,6 +1,18 @@
 import Foundation
 import AppKit
 
+enum ReadingImageOCRMode: String, CaseIterable, Identifiable {
+    case horizontal = "横排文字"
+    case vertical = "竖排文字"
+    case traditional = "竖排古籍（优先繁体）"
+    var id: Self { self }
+}
+
+struct ReadingImageOCRRequest: Equatable {
+    let recordID: UUID
+    let mode: ReadingImageOCRMode
+}
+
 actor ReadingImageOCRWorker {
     static let shared = ReadingImageOCRWorker()
     func recognize(file:URL,pending:Data?,vertical:Bool,traditional:Bool) throws -> [ReadingOCRSegment] {

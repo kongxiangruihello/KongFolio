@@ -33,10 +33,11 @@ struct ReadingExcerptActions: View {
             store.showReadingPanel(.excerpts)
             store.commandWorkspace?.excerptSelection()
         }.disabled(!store.canSearchPDF)
-        Button("框选图片摘录") {
-            store.showReadingPanel(.excerpts)
-            store.commandWorkspace?.tool = .region
-            store.commandWorkspace?.showAnnotationBar = true
+        Button("框选图片摘录") { store.startReadingRegionCapture() }.disabled(!store.canSearchPDF)
+        Menu("框选并识别文字") {
+            ForEach(ReadingImageOCRMode.allCases) { mode in
+                Button(mode.rawValue) { store.startReadingRegionCapture(ocr:mode) }
+            }
         }.disabled(!store.canSearchPDF)
     }
 }
