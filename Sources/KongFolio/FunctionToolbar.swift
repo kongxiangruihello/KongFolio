@@ -17,25 +17,31 @@ struct FunctionToolbar: View {
         GeometryReader { proxy in
             let visible = profile.visible(width:proxy.size.width,context:context)
             let overflow = profile.hidden(width:proxy.size.width,context:context)
-            HStack(spacing:4) {
+            HStack(spacing:0) {
                 ForEach(visible) { action in
-                    if profile.order == ReaderToolbarProfile().order && action != visible.first &&
-                        ((context == .pdf && action == .search) || action == .export) {
-                        Divider().frame(height:16)
-                    }
-                    control(action,menu:false).frame(width:32)
+                    ToolbarControlSurface(selected:isSelected(action)) {
+                        control(action,menu:false)
+                    }.frame(maxWidth:.infinity)
                 }
-                Menu {
-                    moreActions(overflow)
-                } label: {
-                    Image(systemName:"ellipsis.circle").frame(width:28,height:28)
-                }.menuStyle(.borderlessButton).menuIndicator(.hidden).help("更多工具").accessibilityLabel("更多工具")
-                Spacer(minLength:0)
+                ToolbarControlSurface {
+                    Menu {
+                        moreActions(overflow)
+                    } label: {
+                        Image(systemName:"ellipsis.circle").frame(width:28,height:28)
+                    }.menuStyle(.borderlessButton).menuIndicator(.hidden)
+                        .help("更多工具").accessibilityLabel("更多工具")
+                }.frame(maxWidth:visible.isEmpty ? nil : .infinity)
             }
-            .buttonStyle(.borderless).font(.system(size:16)).padding(.horizontal,12).frame(height:44).clipped()
+            .buttonStyle(.borderless)
+            .font(.system(size:16,weight:.medium))
+            .foregroundStyle(Color(nsColor:.secondaryLabelColor))
+            .padding(.horizontal,12)
+            .frame(maxWidth:CGFloat(visible.count+1)*128)
+            .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:visible.isEmpty ? .trailing : .center)
             .onAppear { toolbarWidth = proxy.size.width }
             .onChange(of:proxy.size.width) { _,width in toolbarWidth = width }
         }.frame(height:44)
+        .background(.bar)
         .sheet(isPresented:$showToolbarSettings) {
             ReaderToolbarSettings(
                 profile:Binding(get:{profile},set:{profileData = (try? JSONEncoder().encode($0)) ?? Data()}),
@@ -112,10 +118,19 @@ struct FunctionToolbar: View {
             } label:{ label(action,menu:menu) }.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle)
         default:
             Button { perform(action) } label:{ label(action,menu:menu) }
-                .foregroundStyle(action == .sidebar && store.rightReadingPanelVisible ? Color.accentColor : Color.primary)
                 .help(action == .sidebar ? rightPanelTitle : action.menuTitle)
                 .accessibilityLabel(action == .sidebar ? rightPanelTitle : action.title)
                 .disabled(unavailable(action))
+        }
+    }
+
+    private func isSelected(_ action: FileToolbarAction) -> Bool {
+        switch action {
+        case .sidebar: return store.rightReadingPanelVisible
+        case .annotate: return workspace?.showAnnotationBar == true
+        case .search: return store.rightPDFSearchWorkspace != nil
+        case .pdfPages: return store.activeWorkspace?.pageEditing053 == true
+        default: return false
         }
     }
 
@@ -150,6 +165,23 @@ struct FunctionToolbar: View {
         case .sidebar: store.toggleRightReadingPanel()
         default: break
         }
+    }
+}
+
+private struct ToolbarControlSurface<Content: View>: View {
+    var selected = false
+    @ViewBuilder var content: () -> Content
+    @State private var hovered = false
+
+    var body: some View {
+        content()
+            .frame(width:34,height:32)
+            .foregroundStyle(selected ? Color.accentColor : Color(nsColor:.secondaryLabelColor))
+            .background {
+                RoundedRectangle(cornerRadius:7)
+                    .fill(selected ? Color.accentColor.opacity(0.13) : Color.primary.opacity(hovered ? 0.07 : 0))
+            }
+            .onHover { hovered = $0 }
     }
 }
 
