@@ -9,6 +9,13 @@ enum SignatureLibrary {
         guard Set(result.map(\.id)).count == result.count else { throw FolioError(message:"签名编号重复") }
         return result
     }
+    static func update(storage: URL, _ edit: (inout [SignatureTemplate]) -> Void) throws -> [SignatureTemplate] {
+        var values = try read(storage:storage)
+        edit(&values)
+        try write(values,storage:storage)
+        return values
+    }
+
     static func write(_ values:[SignatureTemplate],storage:URL) throws {
         let file = storage.appendingPathComponent("Signatures.json")
         try FileManager.default.createDirectory(at:storage,withIntermediateDirectories:true)

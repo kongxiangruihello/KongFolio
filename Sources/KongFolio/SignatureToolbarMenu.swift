@@ -5,6 +5,7 @@ struct SignatureToolbarMenu: View {
     var showTitle = false
     var body:some View {
         Menu {
+            if let store = workspace.store { Button("签名管理…") { store.showSignatureManager = true } }
             Button("导入图片签名…") { workspace.showSignatureImport = true }
             Divider()
             if workspace.signatures.isEmpty { Text("尚无已保存的签名") }

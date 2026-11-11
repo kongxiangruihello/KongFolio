@@ -78,6 +78,7 @@ import UniformTypeIdentifiers
     let board: Board
     let documentTasks: DocumentTaskQueue
     @Published var showBackgroundJobs = false
+    @Published var showSignatureManager = false
     @Published var exportReview: ExportReviewRequest?
     @Published var showRecoveryCenter = false
     var pendingRecoveryURL: URL?

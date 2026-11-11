@@ -136,9 +136,7 @@ extension Workspace {
 
     @discardableResult func updateSignatureLibrary(_ mutate:(inout [SignatureTemplate])->Void) -> Bool {
         do {
-            var updated = try SignatureLibrary.read(storage:storage)
-            mutate(&updated)
-            try SignatureLibrary.write(updated,storage:storage)
+            let updated = try SignatureLibrary.update(storage:storage,mutate)
             signatures = updated
             for tab in store?.tabs ?? [] where tab.workspace?.storage.standardizedFileURL == storage.standardizedFileURL { tab.workspace?.signatures = updated }
             return true

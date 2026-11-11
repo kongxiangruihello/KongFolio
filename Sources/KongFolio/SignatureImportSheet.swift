@@ -3,7 +3,27 @@ import UniformTypeIdentifiers
 
 /// Turns a photo, scan or screenshot of a signature into a transparent stamp and saves it to the library.
 struct SignatureImportSheet: View {
-    @ObservedObject var workspace: Workspace
+    private let canPlace: Bool
+    private let onSave: (CGImage,String?,Bool) throws -> Void
+
+    init(workspace: Workspace) {
+        canPlace = workspace.count > 0 && !workspace.readingLocked
+        onSave = { image,name,place in
+            guard let template = workspace.addSignatureImage(image,name:name) else {
+                let failure = FolioError(message:workspace.error ?? "保存失败，请重试")
+                workspace.error = nil
+                throw failure
+            }
+            if place {
+                DispatchQueue.main.async { workspace.beginPlacing(template) }
+            }
+        }
+    }
+
+    init(saveToLibrary: @escaping (CGImage,String?) throws -> Void) {
+        canPlace = false
+        onSave = { image,name,_ in try saveToLibrary(image,name) }
+    }
     @Environment(\.dismiss) private var dismiss
     @State private var source: CGImage?
     @State private var sourceID = UUID()
@@ -45,7 +65,9 @@ struct SignatureImportSheet: View {
                 Spacer()
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("保存到签名库") { save(place: false) }.disabled(processed == nil)
-                Button("保存并放置") { save(place: true) }.disabled(processed == nil).keyboardShortcut(.defaultAction)
+                if canPlace {
+                    Button("保存并放置") { save(place: true) }.disabled(processed == nil).keyboardShortcut(.defaultAction)
+                }
             }
         }
         .padding(20)
@@ -104,9 +126,11 @@ struct SignatureImportSheet: View {
 
     private func save(place: Bool) {
         guard let processed else { return }
-        guard let saved = workspace.addSignatureImage(processed, name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : name) else { message = workspace.error ?? "保存失败，请重试"; workspace.error = nil; return }
-        dismiss()
-        if place { workspace.beginPlacing(saved) }
+        let trimmed = name.trimmingCharacters(in:.whitespacesAndNewlines)
+        do {
+            try onSave(processed,trimmed.isEmpty ? nil : trimmed,place)
+            dismiss()
+        } catch { message = error.localizedDescription }
     }
 }
 
@@ -130,7 +154,7 @@ struct SignatureThumbnail: View {
     var body: some View {
         ZStack {
             Checkerboard()
-            if let data = template.image, let image = NSImage(data: data) {
+            if let image = NSImage(data:template.image ?? template.pdf) {
                 Image(nsImage: image).resizable().scaledToFit().padding(3)
             } else {
                 Image(systemName: "signature").foregroundStyle(.secondary)

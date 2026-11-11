@@ -20,6 +20,27 @@ final class Release045Tests: XCTestCase {
         let folder = try root(),file = folder.appendingPathComponent("Signatures.json"),bytes = Data("损坏的原库".utf8);try bytes.write(to:file)
         let workspace = Workspace(storage:folder);XCTAssertNil(workspace.addSignatureImage(SignaturePositionTests().square(),name:"不应假称保存"));XCTAssertEqual(try Data(contentsOf:file),bytes);XCTAssertNotNil(workspace.error)
     }
+    @MainActor func testSignatureManagementWorksFromATextTabAndRefreshesOpenPDFTabs() throws {
+        let folder = try root()
+        defer { try? FileManager.default.removeItem(at:folder) }
+        let store = WorkspaceStore(storage:folder)
+        let pdf = store.addWorkspace()
+        let existing = try XCTUnwrap(pdf.addSignatureImage(SignaturePositionTests().square(),name:"原签名"))
+        _ = store.newNote()
+        XCTAssertNil(store.commandWorkspace)
+
+        let imported = SignatureTemplate(name:"新签名",pdf:Data(),image:existing.image)
+        let renamed = try store.editManagedSignatures {
+            $0[0].name = "已改名"
+            $0.append(imported)
+        }
+        XCTAssertEqual(renamed.map(\.name),["已改名","新签名"])
+        XCTAssertEqual(pdf.signatures.map(\.name),renamed.map(\.name))
+        let remaining = try store.editManagedSignatures { $0.removeAll { $0.id == existing.id } }
+        XCTAssertEqual(remaining.map(\.id),[imported.id])
+        XCTAssertEqual(try SignatureLibrary.read(storage:folder).map(\.id),[imported.id])
+    }
+
     @MainActor func testSignatureImageReallyRemainsInSavedPDFWithoutLocalMetadata() throws {
         let folder = try root(),workspace = Workspace(storage:folder);workspace.document = SignaturePositionTests().document(pages:1)
         let image = SignaturePositionTests().square(),template = try XCTUnwrap(workspace.addSignatureImage(image,name:"持久签名")),view = SignaturePositionTests.StubView();workspace.pdfView = view
