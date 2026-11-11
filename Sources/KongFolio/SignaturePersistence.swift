@@ -66,7 +66,7 @@ extension Workspace {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let original = try SignatureImage.load(url).unwrap("无法读取签名图片")
-            let processed = try SignatureImage.process(original, options: SignatureOptions()).unwrap("签名图片处理失败")
+            let processed = item.isPageImage == true ? original : try SignatureImage.process(original, options: SignatureOptions()).unwrap("签名图片处理失败")
             let png = try SignatureImage.pngData(processed).unwrap("签名图片编码失败")
             try replacePlacedSignature(item, in: layer, png: png)
         } catch { self.error = error.localizedDescription }
@@ -79,7 +79,7 @@ extension Workspace {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { throw FolioError(message: "签名已不存在") }
         items[index].png = png
         try rebake(layer, items: items)
-        pushUndo(.snapshot(before)); changed(); status = "已替换签名，可撤销"
+        pushUndo(.snapshot(before)); changed(); status = "已替换"+item.label+"，可撤销"
     }
 }
 

@@ -633,7 +633,7 @@ struct ContentView: View {
                     }
                 }
             }
-            if workspace.placingSignature != nil {
+            if let placing = workspace.placingSignature, placing.isPageImage != true {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("正在放置签名").font(.headline)
                     HStack {

@@ -113,9 +113,13 @@ struct FunctionToolbar: View {
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle)
         case .export:
             Menu {
-                if context != .empty { Button("当前文件导出 PDF…") { store.exportActive() }.disabled(!store.canSave) }
-                if context == .text { Button("当前文件导出 Word…") { store.exportWordActive() } }
-                Button("阅读记录与笔记…") { store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) }
+                if context != .empty {
+                    Text("当前文件")
+                    Button("导出为 PDF…") { store.exportActive() }.disabled(!store.canSave)
+                    Button("导出为 Word…") { store.exportWordActive() }.disabled(!store.canSave)
+                    Divider()
+                }
+                Button("导出阅读资料…") { store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) }
             } label:{ label(action,menu:menu) }.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle)
         default:
             Button { perform(action) } label:{ label(action,menu:menu) }

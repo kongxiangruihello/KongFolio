@@ -232,6 +232,37 @@ final class SignatureTests: XCTestCase {
         XCTAssertTrue(pixel(rendered(try workspace.document.page(at: 1).unwrap("没有页面"), width: 200, height: 300), 85, 125).r > 200)
     }
 
+    @MainActor func testPageImageKeepsOriginalPixelsAndDoesNotEnterSignatureLibrary() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let workspace = Workspace(storage:directory)
+        workspace.document = blankDocument(pages:2)
+        let page = try XCTUnwrap(workspace.page)
+        let view = StubView()
+        workspace.pdfView = view
+        let image = photo()
+        let png = try XCTUnwrap(SignatureImage.pngData(image))
+        workspace.beginPlacingPageImage(image,png:png,on:page)
+        XCTAssertNotNil(view.shown)
+
+        let rect = CGRect(x:20,y:40,width:100,height:50)
+        view.target = (try XCTUnwrap(workspace.document.page(at:1)),rect)
+        workspace.confirmSignaturePlacement()
+        XCTAssertNotNil(workspace.placingSignature)
+        view.target = (page,rect)
+        workspace.confirmSignaturePlacement()
+        let modifiedPage = try XCTUnwrap(workspace.page)
+        let item = try XCTUnwrap(workspace.signatureLayer(for:modifiedPage)?.items.first)
+        XCTAssertEqual(item.isPageImage,true)
+        XCTAssertEqual(item.png,png)
+        XCTAssertEqual(item.rect,rect)
+        XCTAssertEqual(workspace.count,2)
+        XCTAssertTrue(workspace.signatures.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath:directory.appendingPathComponent("Signatures.json").path))
+        workspace.undo()
+        XCTAssertNil(workspace.signatureLayer(for:try XCTUnwrap(workspace.page)))
+    }
+
     /// A scan-sized document (about 10 MB of incompressible picture data): placing a signature must stay quick.
     @MainActor func testPlacingOnATenMegabyteDocumentIsQuick() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)

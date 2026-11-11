@@ -246,11 +246,11 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             let point = convert(location, to: page)
             if let hit = workspace.placedSignature(on: page, at: point) {
                 contextSignature = hit
-                let move = NSMenuItem(title: "移动或缩放此签名", action: #selector(moveHitSignature), keyEquivalent: "")
+                let move = NSMenuItem(title: "移动或缩放此"+hit.item.label, action: #selector(moveHitSignature), keyEquivalent: "")
                 move.target = self
-                let replace = NSMenuItem(title: "替换此签名图片…", action: #selector(replaceHitSignature), keyEquivalent: "")
+                let replace = NSMenuItem(title: hit.item.isPageImage == true ? "替换此图片…" : "替换此签名图片…", action: #selector(replaceHitSignature), keyEquivalent: "")
                 replace.target = self; menu.insertItem(replace, at: 0)
-                let remove = NSMenuItem(title: "删除此签名", action: #selector(removeHitSignature), keyEquivalent: "")
+                let remove = NSMenuItem(title: "删除此"+hit.item.label, action: #selector(removeHitSignature), keyEquivalent: "")
                 remove.target = self
                 menu.insertItem(move, at: 0)
                 menu.insertItem(remove, at: 1)

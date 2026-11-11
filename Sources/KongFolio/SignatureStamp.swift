@@ -84,7 +84,8 @@ enum SignatureStamp {
         context.restoreGState()
         context.interpolationQuality = .high
         for (image, rect) in images {
-            context.draw(image, in: uprightRect(rect, pageSize: crop.size, rotation: rotation))
+            let local = rect.offsetBy(dx:-crop.minX,dy:-crop.minY)
+            context.draw(image, in: uprightRect(local, pageSize: crop.size, rotation: rotation))
         }
         context.endPDFPage()
         context.closePDF()
@@ -102,6 +103,8 @@ struct PlacedSignature: Identifiable, Codable {
     var png: Data
     /// In the coordinates of the page as it was before the signatures were drawn.
     var rect: CGRect
+    var isPageImage: Bool? = nil
+    var label: String { isPageImage == true ? "图片" : "签名" }
 }
 
 /// The state needed to redraw one page with a different set of signatures: the page before any signature was drawn.
@@ -115,6 +118,7 @@ final class SignatureLayer {
     var items: [PlacedSignature]
     var page: PDFPage
     let shownBounds: CGRect
+    private lazy var baseOrigin = PDFDocument(data:base)?.page(at:0)?.bounds(for:.cropBox).origin ?? .zero
 
     init(base: Data, preserved: Bool, size: CGSize, rotation: Int, items: [PlacedSignature], page: PDFPage) {
         self.base = base; self.preserved = preserved; self.size = size; self.rotation = rotation; self.items = items; self.page = page; self.shownBounds = page.bounds(for: .cropBox)
@@ -122,12 +126,16 @@ final class SignatureLayer {
 
     /// Where the signature appears on the page that is in the document.
     func shownRect(_ item: PlacedSignature) -> CGRect {
-        preserved ? item.rect : SignatureStamp.uprightRect(item.rect, pageSize: size, rotation: rotation)
+        guard !preserved else { return item.rect }
+        let local = item.rect.offsetBy(dx:-baseOrigin.x,dy:-baseOrigin.y)
+        return SignatureStamp.uprightRect(local,pageSize:size,rotation:rotation)
     }
 
     /// A rectangle on the page that is in the document, in the coordinates the signatures are stored in.
     func storedRect(fromShown rect: CGRect) -> CGRect {
-        preserved ? rect : SignatureStamp.originalRect(rect, pageSize: size, rotation: rotation)
+        guard !preserved else { return rect }
+        let local = SignatureStamp.originalRect(rect,pageSize:size,rotation:rotation)
+        return local.offsetBy(dx:baseOrigin.x,dy:baseOrigin.y)
     }
 }
 
@@ -160,12 +168,38 @@ extension Workspace {
     /// Shows the signature on the page; it is only written into the PDF by `confirmSignaturePlacement`.
     func beginPlacing(_ template: SignatureTemplate) {
         guard !readingLocked else { status = "请先切换到编辑模式";return }
+        guard placingSignature?.isPageImage != true else { status = "请先完成图片放置";return }
         guard let data = template.image, let image = Self.decodePNG(data) else { insertSignature(template); return }
         guard let view = pdfView as? SignaturePlacing else { return }
+        showImagePlacement(template,image:image,in:view)
+    }
+
+    func beginPlacingPageImage(_ image: CGImage, png: Data, on page: PDFPage) {
+        guard !readingLocked, !busy, placingSignature == nil, self.page === page,
+              let view = pdfView as? SignaturePlacing else { return }
+        let template = SignatureTemplate(name:"页面图片",pdf:Data(),image:png,isPageImage:true)
+        pageImageTarget = page
+        showImagePlacement(template,image:image,in:view)
+    }
+
+    private func showImagePlacement(_ template: SignatureTemplate, image: CGImage, in view: SignaturePlacing) {
         tool = .select
         placingSignature = template
-        view.beginSignaturePlacement(image, widthFraction: signatureWidth, page: nil, rect: nil)
-        status = "拖动签名到位置，拖角调整大小；回车确认，Esc 取消"
+        if template.isPageImage == true, let page, let pdfView {
+            let pageFrame = pdfView.convert(page.bounds(for:.cropBox),from:page)
+            let visible = pageFrame.intersection(pdfView.bounds)
+            if !visible.isEmpty {
+                let rect = SignatureStamp.fit(aspect:CGFloat(image.width)/CGFloat(image.height),
+                                              width:visible.width*0.45,center:CGPoint(x:visible.midX,y:visible.midY),in:visible)
+                view.beginSignaturePlacement(image,widthFraction:0.45,page:page,rect:pdfView.convert(rect,to:page))
+            } else {
+                view.beginSignaturePlacement(image,widthFraction:0.45,page:nil,rect:nil)
+            }
+            status = "拖动图片调整位置，拖角调整大小；回车确认，Esc 取消"
+        } else {
+            view.beginSignaturePlacement(image,widthFraction:signatureWidth,page:nil,rect:nil)
+            status = "拖动签名到位置，拖角调整大小；回车确认，Esc 取消"
+        }
     }
 
     private static func decodePNG(_ data: Data) -> CGImage? {
@@ -189,6 +223,7 @@ extension Workspace {
         }
         (pdfView as? SignaturePlacing)?.endSignaturePlacement()
         placingSignature = nil
+        pageImageTarget = nil
     }
 
     /// Writes the signature (new, or one that was picked up) into the PDF at the place shown on the page.
@@ -197,10 +232,25 @@ extension Workspace {
               let placement = (pdfView as? SignaturePlacing)?.signaturePlacement() else { cancelSignaturePlacement(); return }
         let index = document.index(for: placement.page)
         guard index != NSNotFound else { cancelSignaturePlacement(); return }
+        if let target = pageImageTarget, target !== placement.page {
+            if document.index(for:target) == NSNotFound {
+                cancelSignaturePlacement()
+                status = "原页面已变化，请重新导入图片。"
+            } else { status = "请把图片拖回要插入的页面后确认。" }
+            return
+        }
+        let label = template.isPageImage == true ? "图片" : "签名"
+        let rect: CGRect
+        if template.isPageImage == true {
+            let proposed = placement.rect
+            rect = SignatureStamp.fit(aspect:proposed.width/max(proposed.height,0.01),
+                                      width:proposed.width,center:CGPoint(x:proposed.midX,y:proposed.midY),
+                                      in:placement.page.bounds(for:.cropBox))
+        } else { rect = placement.rect }
         do {
             if let layer = signatureLayer(for: placement.page) {
                 // The page already has movable signatures (or one was just picked up from it).
-                let item = PlacedSignature(id: movingSignature?.item.id ?? UUID(), png: data, rect: layer.storedRect(fromShown: placement.rect))
+                let item = PlacedSignature(id: movingSignature?.item.id ?? UUID(), png: data, rect: layer.storedRect(fromShown: rect), isPageImage: template.isPageImage)
                 if let snapshot = moveSnapshot { pushUndo(.snapshot(snapshot)) } else { checkpoint() }
                 try rebake(layer, items: layer.items + [item])
             } else {
@@ -210,7 +260,7 @@ extension Workspace {
                 let committed = try PDFDocument(data: single.dataRepresentation().unwrap("无法读取当前页")).unwrap("无法读取当前页")
                 let page = try committed.page(at: 0).unwrap("页面读取失败")
                 let preserve = SignatureStamp.preservesAnnotations(page)
-                let baked = try SignatureStamp.bake([(image, placement.rect)], onto: page, preserve: preserve).unwrap("无法把签名写入页面")
+                let baked = try SignatureStamp.bake([(image, rect)], onto: page, preserve: preserve).unwrap("无法把"+label+"写入页面")
                 // The page without signatures, and without annotations that stay annotations, is what later redraws start from.
                 let baseDocument = try PDFDocument(data: single.dataRepresentation().unwrap("无法读取当前页")).unwrap("无法读取当前页")
                 if preserve, let basePage = baseDocument.page(at: 0) { for annotation in basePage.annotations { basePage.removeAnnotation(annotation) } }
@@ -221,16 +271,17 @@ extension Workspace {
                 document.insert(baked, at: index)
                 ReadingServices.applyOutline(outlineEntries, to: document)
                 let layer = SignatureLayer(base: baseData, preserved: preserve, size: crop.size, rotation: page.rotation,
-                                           items: [PlacedSignature(id: UUID(), png: data, rect: placement.rect)], page: baked)
+                                           items: [PlacedSignature(id: UUID(), png: data, rect: rect, isPageImage: template.isPageImage)], page: baked)
                 signatureLayers[ObjectIdentifier(baked)] = layer
             }
             movingSignature = nil
             moveSnapshot = nil
             (pdfView as? SignaturePlacing)?.endSignaturePlacement()
             placingSignature = nil
+            pageImageTarget = nil
             selection = index
             changed()
-            status = "签名已放置（可撤销）；双击签名或右键可再次移动"
+            status = label+"已放置，可撤销。双击或右键可再次移动。"
         } catch { self.error = error.localizedDescription }
     }
 
@@ -260,7 +311,7 @@ extension Workspace {
             let shown = layer.shownRect(item)
             let width = page.bounds(for: .cropBox).width
             tool = .select
-            placingSignature = SignatureTemplate(name: "移动签名", pdf: Data(), image: item.png)
+            placingSignature = SignatureTemplate(name: "移动"+item.label, pdf: Data(), image: item.png, isPageImage:item.isPageImage)
             signatureWidth = min(0.8, max(0.08, Double(shown.width / max(1, width))))
             view.beginSignaturePlacement(image, widthFraction: signatureWidth, page: page, rect: shown)
             changed()
@@ -278,7 +329,7 @@ extension Workspace {
             checkpoint()
             try rebake(layer, items: layer.items.filter { $0.id != item.id })
             changed()
-            status = "已删除签名（可撤销）"
+            status = "已删除"+item.label+"（可撤销）"
         } catch { self.error = error.localizedDescription }
     }
 

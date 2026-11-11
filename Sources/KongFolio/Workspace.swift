@@ -196,6 +196,7 @@ import UniformTypeIdentifiers
     @Published var signatures: [SignatureTemplate] = []
     @Published var signaturePositions: [SignaturePosition] = []
     @Published var placingSignature: SignatureTemplate?
+    var pageImageTarget: PDFPage?
     /// Signatures placed on pages in this session, by page, so they can be moved later (see `SignatureLayer`).
     var signatureLayers: [ObjectIdentifier: SignatureLayer] = [:]
     /// A placed signature that was picked up and is being moved, and the document as it was before.
@@ -756,7 +757,7 @@ import UniformTypeIdentifiers
         else { pdfView?.clearSelection(); pdfView?.document = nil }
         pdfView = nil
         displayCache = nil; copiedAnnotations.removeAll()
-        signatureLayers.removeAll(); movingSignature = nil; moveSnapshot = nil; placingSignature = nil
+        signatureLayers.removeAll(); movingSignature = nil; moveSnapshot = nil; placingSignature = nil; pageImageTarget = nil
         drawingInProgress = false; pendingReveal = nil; deferredOpen = nil
         if let path = rulerPath { try? readingRuler.save(path:path,storage:storage) }
         rulerTask?.cancel(); rulerPath = nil
@@ -862,13 +863,17 @@ import UniformTypeIdentifiers
 
     // MARK: Opening
 
-    func open(insert: Bool = false, merge: Bool = false) {
+    func open(insert: Bool = false, merge: Bool = false, imagesOnly: Bool = false) {
         if DocumentOpenPanel.coordinator.revealExisting() { return }
         guard !busy, openPanel == nil else { return }
         let panel = NSOpenPanel()
         var types: [UTType] = [ReadingShortcut.fileType,.pdf,.image,.html,.plainText,UTType(exportedAs:"com.kongfolio.project")]
         types += TextImport.markdownExtensions.compactMap { UTType(filenameExtension:$0) }
-        panel.allowedContentTypes = types; panel.allowsMultipleSelection = true; DocumentOpenPanel.configure(panel); openPanel = panel
+        panel.allowedContentTypes = imagesOnly ? [.image] : types
+        panel.allowsMultipleSelection = true
+        DocumentOpenPanel.configure(panel)
+        if imagesOnly { panel.message = "所选图片将作为新页面插入当前页之后，可多选并调整顺序。" }
+        openPanel = panel
         let completion: (NSApplication.ModalResponse) -> Void = { [weak self,weak panel] response in
             // Retain the chosen URLs before releasing our last reference to the chooser.
             let urls = response == .OK ? (panel?.urls ?? []) : []
@@ -876,7 +881,10 @@ import UniformTypeIdentifiers
             self.openPanel = nil
             guard !urls.isEmpty else { return }
             // Return to AppKit so its sheet can dismiss before installing a batch of native PDF views.
-            DispatchQueue.main.async { [weak self] in self?.openSelected(urls,insert:insert,merge:merge) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !imagesOnly || (self.count > 0 && !self.readingLocked) else { return }
+                self.openSelected(urls,insert:insert,merge:merge)
+            }
         }
         DocumentOpenPanel.coordinator.present(panel,preferred:pdfView?.window,completion:completion)
     }

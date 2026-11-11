@@ -312,4 +312,5 @@ struct SignatureTemplate: Codable, Identifiable {
     var pdf: Data
     /// A processed picture (PNG with transparency) for signatures imported from a photo or scan; `pdf` is empty then.
     var image: Data? = nil
+    var isPageImage: Bool? = nil
 }

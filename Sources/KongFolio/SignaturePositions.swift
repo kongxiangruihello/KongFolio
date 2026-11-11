@@ -104,6 +104,7 @@ extension Workspace {
     /// shown too: the stamp simply moves.
     func placeSignature(_ template: SignatureTemplate, at position: SignaturePosition) {
         guard !readingLocked else { return }
+        guard placingSignature?.isPageImage != true else { status = "请先完成图片放置";return }
         guard let data = template.image,
               let image = CGImageSourceCreateWithData(data as CFData, nil).flatMap({ CGImageSourceCreateImageAtIndex($0, 0, nil) }) else {
             beginPlacing(template)

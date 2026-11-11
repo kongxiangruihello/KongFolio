@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import UniformTypeIdentifiers
 import PDFKit
 
 enum ImportPayload { case project(ProjectArchive), documents([Data]) }
@@ -79,6 +81,61 @@ extension Workspace {
                 isImporting = false;busy = false;cancelAuxiliary = nil
                 if FolioCancellation.matches(error) { status = "已取消导入" } else { recordError(error) }
             }
+        }
+    }
+}
+
+extension Workspace {
+    func choosePageImage() {
+        guard !busy, !readingLocked, placingSignature == nil, let page, let view = pdfView else { return }
+        guard !DocumentOpenPanel.coordinator.revealExisting() else { return }
+        let panel = NSOpenPanel()
+        DocumentOpenPanel.configure(panel)
+        panel.allowedContentTypes = [.image]
+        panel.message = "选取一张图片，在当前 PDF 页面中调整位置和大小。"
+        DocumentOpenPanel.coordinator.present(panel,preferred:view.window) { [weak self,weak page] response in
+            guard response == .OK, let url = panel.url, let page else { return }
+            DispatchQueue.main.async { [weak self] in self?.preparePageImage(url,on:page) }
+        }
+    }
+
+    private func preparePageImage(_ url: URL, on page: PDFPage) {
+        guard !busy, !readingLocked, placingSignature == nil, self.page === page else { return }
+        let generation = UUID()
+        importGeneration = generation
+        isImporting = true
+        busy = true
+        progress = 0
+        taskLabel = "读取图片…"
+        let worker = Task.detached(priority:.userInitiated) { [weak self] in
+            try await CloudFilePreparation.prepare([url]) { phase in
+                Task { @MainActor [weak self] in
+                    guard let self, self.importGeneration == generation else { return }
+                    self.taskLabel = phase
+                }
+            }
+            try Task.checkCancellation()
+            let image = try SignatureImage.load(url).unwrap("无法读取图片："+url.lastPathComponent)
+            let bytes = try SignatureImage.pngData(image).unwrap("无法处理图片："+url.lastPathComponent)
+            try Task.checkCancellation()
+            return (image,bytes)
+        }
+        cancelAuxiliary = { worker.cancel() }
+        Task {
+            let result = await worker.result
+            guard importGeneration == generation else { return }
+            isImporting = false
+            busy = false
+            cancelAuxiliary = nil
+            taskLabel = ""
+            do {
+                let (image,bytes) = try result.get()
+                guard self.page === page, pdfView != nil else {
+                    status = "页面已切换，请在要插入图片的页面重试。"
+                    return
+                }
+                beginPlacingPageImage(image,png:bytes,on:page)
+            } catch { recordError(error) }
         }
     }
 }
