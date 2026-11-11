@@ -38,6 +38,17 @@ struct ReadingRecord: Codable, Identifiable, Equatable {
         let text = pdfOrigin.map { quote.isEmpty ? ($0.contents.isEmpty ? "标注 · "+$0.type : $0.contents) : quote } ?? (kind == .note ? note : quote)
         return String(text.split(separator:"\n").first?.prefix(48) ?? Substring(kind.rawValue))
     }
+    var canChangeNoteSource: Bool {
+        kind == .note && removed == nil && linkedRecords.isEmpty && quote.isEmpty && citations053.count <= 1 &&
+            (extras?.hasContent != true) && imageAsset == nil
+    }
+    var noteSourceSummary: String {
+        let sources = citations053
+        guard let first = sources.first else { return "独立笔记" }
+        let title = first.title.isEmpty ? first.source.fileName : first.title
+        let location = wholeBook ? "整本书" : first.source.pageDescription
+        return "《" + title + "》 · " + location + (sources.count > 1 ? " · 共 \(sources.count) 处" : "")
+    }
     func matches(_ query:String, book:String? = nil, tag:String = "", after:Date? = nil) -> Bool {
         if let book, !citations.contains(where: { ReadingBookIdentity.key($0.source.path) == ReadingBookIdentity.key(book) }) { return false }
         if !tag.isEmpty && !tags.contains(tag) { return false }

@@ -74,6 +74,56 @@ import PDFKit
         XCTAssertEqual(store.journal.state.records.first?.note,"读书笔记")
         XCTAssertEqual(store.journal.state.records.first?.citations,draft.citations)
     }
+    func testDraftCanSwitchScopeAndKeepItsPageWhenReadingContinues() throws {
+        let root = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at:root) }
+        let store = WorkspaceStore(storage:root)
+        store.bootstrap()
+        let workspace = try XCTUnwrap(store.activeWorkspace)
+        let file = try PDFTextSnapshot053Tests().fixture(root)
+        workspace.load([file],prepared:.documents([try Data(contentsOf:file)]))
+        store.newReadingNote()
+        let draft = try XCTUnwrap(store.journal.draftRecord)
+        XCTAssertEqual(draft.citations.map(\.source.page),[0])
+        workspace.selectPage(1)
+        XCTAssertEqual(store.readingRecordID,draft.id)
+        XCTAssertEqual(store.journal.draftRecord?.citations.map(\.source.page),[0])
+
+        store.changeNoteSource(draft.id,to:.wholeBook)
+        XCTAssertTrue(try XCTUnwrap(store.journal.draftRecord).wholeBook)
+        store.changeNoteSource(draft.id,to:.currentPage)
+        XCTAssertEqual(store.journal.draftRecord?.citations.map(\.source.page),[0])
+        store.changeNoteSource(draft.id,to:.independent)
+        XCTAssertTrue(try XCTUnwrap(store.journal.draftRecord).citations.isEmpty)
+        XCTAssertTrue(store.journal.state.records.isEmpty)
+        store.journal.editRecord(draft.id) { $0.note = "一条独立笔记" }
+        XCTAssertTrue(store.addCurrentPageToNote(draft.id))
+        XCTAssertFalse(store.addCurrentPageToNote(draft.id))
+        let saved = try XCTUnwrap(store.journal.record(draft.id))
+        XCTAssertEqual(saved.created,draft.created)
+        XCTAssertEqual(saved.note,"一条独立笔记")
+        XCTAssertEqual(saved.citations.map(\.source.page),[1])
+
+        workspace.selectPage(0)
+        XCTAssertTrue(store.addCurrentPageToNote(draft.id))
+        XCTAssertEqual(store.journal.record(draft.id)?.citations.map(\.source.page),[1,0])
+    }
+
+    func testSourceFiltersDistinguishIndependentNotesAndCurrentBook() async {
+        let source = SourceRef(path:"/tmp/reading.pdf",fileName:"reading.pdf",page:2)
+        let citation = ReadingCitation(source:source,title:"研究资料")
+        let book = ReadingRecord(kind:.note,note:"相关笔记",citations:[citation])
+        let independent = ReadingRecord(kind:.note,note:"独立笔记")
+        let state = ReadingJournalState(records:[book,independent])
+        let worker = ReadingSearchWorker.shared
+        let current = await worker.records(state,query:"",notes:true,source:.book("/private/tmp/reading.pdf"),tag:"",removed:false,recent:false)
+        let standalone = await worker.records(state,query:"",notes:true,source:.independent,tag:"",removed:false,recent:false)
+        let all = await worker.records(state,query:"",notes:true,source:.all,tag:"",removed:false,recent:false)
+        XCTAssertEqual(current.map(\.id),["record:"+book.id.uuidString])
+        XCTAssertEqual(standalone.map(\.id),["record:"+independent.id.uuidString])
+        XCTAssertEqual(all.count,2)
+    }
+
     func testLibrarySearchFindsAllRecordKindsAndRespectsVisibleScope() async {
         let origin=ReadingPDFOrigin(annotationID:"generated",type:"批注",contents:"海关评论",originalCreated:nil,originalModified:nil)
         let excerpt=ReadingRecord(kind:.excerpt,quote:"海关摘录"),mark=ReadingRecord(kind:.annotation,quote:"海关标注"),comment=ReadingRecord(kind:.comment,pdfOrigin:origin),note=ReadingRecord(kind:.note,note:"海关笔记")

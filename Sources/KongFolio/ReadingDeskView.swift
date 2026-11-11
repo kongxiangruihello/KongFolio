@@ -7,14 +7,35 @@ struct ReadingDeskView: View {
     var compact = false
     @State private var query = ""
     @State private var tag = ""
-    @State private var bookOnly = true
+    private enum NoteFilter: String, CaseIterable {
+        case current = "当前书", independent = "独立笔记", all = "全部"
+    }
+    @State private var noteFilter = NoteFilter.current
+    @State private var excerptsBookOnly = true
     @State private var recent = false
     @State private var removed = false
     @State private var page = 0
     @AppStorage("readingRecordsPageSize") private var pageSize = 10
     private var path:String? { store.commandWorkspace?.readingJournalPath }
     @State private var hits:[ReadingDeskHit] = []
-    private var searchRequest:ReadingSearchRequest { ReadingSearchRequest(revision:journal.revisionID,query:query,kind:section.rawValue,tag:tag,topic:(bookOnly ? "book:"+(path ?? "") : "all")+(recent ? ":recent" : ""),removed:removed) }
+    private var sourceFilter: ReadingDeskSourceFilter {
+        if section == .notes && noteFilter == .independent { return .independent }
+        let currentBookOnly = section == .notes ? noteFilter == .current : excerptsBookOnly
+        if currentBookOnly, let path { return .book(path) }
+        return .all
+    }
+    private struct RecordsRequest: Hashable {
+        let revision: Int
+        let section: ReadingDeskSection
+        let source: ReadingDeskSourceFilter
+        let query: String
+        let tag: String
+        let removed: Bool
+        let recent: Bool
+    }
+    private var searchRequest: RecordsRequest {
+        RecordsRequest(revision:journal.revisionID,section:section,source:sourceFilter,query:query,tag:tag,removed:removed,recent:recent)
+    }
     private var pagination: ReadingPagination { ReadingPagination(total: hits.count, page: page, size: pageSize) }
     var body:some View {
         VStack(alignment:.leading,spacing:8) {
@@ -35,14 +56,16 @@ struct ReadingDeskView: View {
             if journal.unreadable { Button("保留损坏文件并恢复上一份记录") { do { try journal.recoverPrevious() } catch { store.present(error) } } }
         }.padding(compact ? 10 : 18)
         .task(id:searchRequest) {
-            guard section == .notes || section == .excerpts else { return }
+            let request = searchRequest
+            guard request.section == .notes || request.section == .excerpts else { return }
             do { try await Task.sleep(nanoseconds:300_000_000) } catch { return }
-            let result = await ReadingSearchWorker.shared.records(journal.state,query:query,notes:section == .notes,book:bookOnly ? path : nil,tag:tag,removed:removed,recent:recent)
+            let result = await ReadingSearchWorker.shared.records(journal.state,query:request.query,notes:request.section == .notes,
+                                                                  source:request.source,tag:request.tag,removed:request.removed,recent:request.recent)
             if !Task.isCancelled { hits = result }
         }
         .onChange(of:query) { _,_ in page = 0 }.onChange(of:tag) { _,_ in page = 0 }.onChange(of:path) { _,_ in page = 0 }
         .onChange(of:section) { _,_ in page = 0 }
-        .onChange(of:bookOnly) { _,_ in page = 0 }.onChange(of:recent) { _,_ in page = 0 }.onChange(of:removed) { _,_ in page = 0 }
+        .onChange(of:sourceFilter) { _,_ in page = 0 }.onChange(of:recent) { _,_ in page = 0 }.onChange(of:removed) { _,_ in page = 0 }
         .onChange(of:pageSize) { _,_ in page = 0 }.onChange(of:hits.count) { _,_ in page = pagination.index }
         .onChange(of:journal.draftRecord?.id) { _,id in if id != nil { page = 0; query = ""; tag = ""; removed = false; recent = false } }
     }
@@ -74,8 +97,18 @@ struct ReadingDeskView: View {
     private var recordList: some View {
         VStack(alignment:.leading,spacing:8) {
             TextField("搜索摘录、笔记、书名或页码",text:$query).textFieldStyle(.roundedBorder)
+            if section == .notes {
+                Picker("笔记范围",selection:Binding(
+                    get:{ path == nil && noteFilter == .current ? .all : noteFilter },
+                    set:{ noteFilter = $0 }
+                )) {
+                    ForEach(NoteFilter.allCases.filter { $0 != .current || path != nil },id:\.self) { filter in
+                        Text(filter.rawValue).tag(filter)
+                    }
+                }.pickerStyle(.segmented).labelsHidden()
+            }
             HStack {
-                if section != .search { Toggle("仅当前书",isOn:$bookOnly).disabled(path == nil) }
+                if section == .excerpts { Toggle("仅当前书",isOn:$excerptsBookOnly).disabled(path == nil) }
                 Toggle("最近七天",isOn:$recent)
             }.font(.caption)
             HStack {
@@ -87,8 +120,9 @@ struct ReadingDeskView: View {
             }
             if section == .notes {
                 Menu("新建笔记") {
-                    Button("当前页笔记") { createNote() }
-                    Button("整本书心得") { createNote(bookWide:true) }
+                    Button("当前页笔记") { createNote() }.disabled(store.currentNoteSourceWorkspace == nil)
+                    Button("整本书心得") { createNote(source:.wholeBook) }.disabled(store.currentNoteSourceWorkspace == nil)
+                    Button("独立笔记") { createNote(source:.independent) }
                     if let current = journal.record(store.readingRecordID), current.kind != .note {
                         Button("关联这条摘录的笔记") { createNote(linked:current) }
                     }
@@ -97,7 +131,14 @@ struct ReadingDeskView: View {
             List { ForEach(Array(hits.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { hit in
                 switch hit {
                 case .record(let record): row(record)
-                case .essay(let essay): Button { journal.selectEssay(essay.id); section = .essays } label: { Label(essay.title+" · 笔记",systemImage:"doc.text").lineLimit(2).help(essay.title) }.buttonStyle(.plain)
+                case .essay(let essay):
+                    Button { journal.selectEssay(essay.id); section = .essays } label: {
+                        VStack(alignment:.leading,spacing:3) {
+                            Label(essay.title,systemImage:"doc.text").lineLimit(2).help(essay.title)
+                            let source = ReadingLibraryItem.essay(essay).citations053.first?.display ?? "独立笔记"
+                            Text(source).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(source)
+                        }
+                    }.buttonStyle(.plain)
                 }
             } }
                 .frame(minHeight:100,maxHeight:.infinity)
@@ -105,9 +146,9 @@ struct ReadingDeskView: View {
             ReadingPageControls(pagination: pagination, page: $page, size: $pageSize)
         }
     }
-    private func createNote(bookWide:Bool = false,linked:ReadingRecord? = nil) {
-        if compact { store.newReadingNote(bookWide:bookWide,linked:linked) }
-        else if store.prepareReadingNote(bookWide:bookWide,linked:linked) != nil { section = .notes }
+    private func createNote(source:ReadingNoteSource = .currentPage,linked:ReadingRecord? = nil) {
+        if compact { store.newReadingNote(source:source,linked:linked) }
+        else if store.prepareReadingNote(source:source,linked:linked) != nil { section = .notes }
     }
     private func row(_ record:ReadingRecord) -> some View {
         HStack(alignment:.top) {
@@ -115,7 +156,11 @@ struct ReadingDeskView: View {
             Button { store.pinnedReadingID = nil; store.readingRecordID = record.id } label: {
                 VStack(alignment:.leading,spacing:3) {
                     Text(record.displayTitle).lineLimit(2).help(record.displayTitle)
-                    if let source = record.citations.first { Text(source.display).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(source.display) }
+                    if record.kind == .note {
+                        Text(record.noteSourceSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(record.noteSourceSummary)
+                    } else if let source = record.citations.first {
+                        Text(source.display).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(source.display)
+                    }
                     if !record.tags.isEmpty { Text(record.tags.joined(separator:" · ")).font(.caption).foregroundStyle(.blue) }
                 }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
             }.buttonStyle(.plain)

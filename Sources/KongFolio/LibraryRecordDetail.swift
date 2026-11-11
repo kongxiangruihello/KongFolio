@@ -9,6 +9,7 @@ struct LibraryRecordDetail: View {
     @State private var editQuote = false
     @State private var showQuoteCorrection = false
     @State private var showLinkPicker = false
+    @State private var noteSourceStatus = ""
     @StateObject private var imageOCR = ReadingImageOCRController()
     private var current:ReadingRecord { journal.record(record.id) ?? record }
     var body:some View {
@@ -16,6 +17,7 @@ struct LibraryRecordDetail: View {
         ScrollView {
             VStack(alignment:.leading,spacing:10) {
                 StableTextField("记录标题（可留空）",text:binding(\.title),fontSize:20)
+                if current.kind == .note { noteSourceControls }
                 ReadingRecordMetadataView(record:current)
                 ReadingRecordExtrasView053(store:store,journal:journal,item:.record(current))
                 HStack {
@@ -88,6 +90,42 @@ struct LibraryRecordDetail: View {
                 }
             }
         }
+    }
+    private var noteSourceControls: some View {
+        let canSwitch = current.canChangeNoteSource
+        let canAdd = store.currentNoteSourceWorkspace != nil && current.removed == nil
+        return VStack(alignment:.leading,spacing:4) {
+            if canSwitch || canAdd || !current.citations053.isEmpty {
+                Menu {
+                    if canSwitch {
+                        let hasSource = canAdd || !current.citations.isEmpty
+                        Button(current.citations.isEmpty ? "关联到当前页" : "关联到出处页") { changeSource(.currentPage) }.disabled(!hasSource)
+                        Button("关联到整本书") { changeSource(.wholeBook) }.disabled(!hasSource)
+                        Button("设为独立笔记") { changeSource(.independent) }
+                        Divider()
+                    }
+                    if canAdd {
+                        Button(current.wholeBook ? "改为页码出处并添加当前页" : "添加当前页为出处") {
+                            noteSourceStatus = store.addCurrentPageToNote(record.id) ? "已更新出处" : "当前页已在出处中"
+                        }
+                    }
+                    ForEach(Array(current.citations053.enumerated()),id:\.offset) { _, citation in
+                        Button("返回 " + citation.display) { _ = store.reveal(citation.source,beside:false) }
+                            .disabled(citation.source.path.isEmpty)
+                    }
+                } label: { noteSourceLabel }.menuStyle(.borderlessButton)
+                    .help("查看或修改笔记出处")
+            } else { noteSourceLabel }
+            if !noteSourceStatus.isEmpty { Text(noteSourceStatus).font(.caption).foregroundStyle(.secondary) }
+        }
+    }
+    private var noteSourceLabel: some View {
+        Label(current.noteSourceSummary,systemImage:"link")
+            .lineLimit(1).help(current.noteSourceSummary)
+    }
+    private func changeSource(_ source: ReadingNoteSource) {
+        store.changeNoteSource(record.id,to:source)
+        noteSourceStatus = ""
     }
     private var imageRecognition:some View {
         VStack(alignment:.leading,spacing:6) {

@@ -13,6 +13,18 @@ struct ReadingSearchRequest:Hashable {
     var options053:ReadingLibraryOptions053? = nil
     var indexFolder:String? = nil
 }
+enum ReadingDeskSourceFilter: Hashable {
+    case all, book(String), independent
+
+    func includes(_ item: ReadingLibraryItem) -> Bool {
+        switch self {
+        case .all: return true
+        case .book(let path): return item.isFromBook(path)
+        case .independent: return item.citations053.isEmpty
+        }
+    }
+}
+
 actor ReadingSearchWorker {
     static let shared = ReadingSearchWorker()
     func library(_ state:ReadingJournalState,request:ReadingSearchRequest) async -> [ReadingLibraryItem] {
@@ -20,11 +32,20 @@ actor ReadingSearchWorker {
         guard !Task.isCancelled else { return [] };let recentIDs = Set(state.records.filter{$0.modified >= Date().addingTimeInterval(-7*86400)}.map{ReadingLibraryID.record($0.id)}+state.essays.filter{$0.modified >= Date().addingTimeInterval(-7*86400)}.map{ReadingLibraryID.essay($0.id)})
         return ReadingLibraryItem.results(state,query:request.query,kind:request.kind,tag:request.tag,removed:request.removed).filter{ (request.bookPath == nil || $0.isFromBook(request.bookPath!)) && (request.topic.isEmpty || $0.tags.contains("专题："+request.topic)) && (!request.recent || recentIDs.contains($0.id)) && (!request.untagged || $0.tags.isEmpty) }
     }
-    func records(_ state:ReadingJournalState,query:String,notes:Bool,book:String?,tag:String,removed:Bool,recent:Bool) -> [ReadingDeskHit] {
-        guard !Task.isCancelled else { return [] };let records = state.records.filter { !Task.isCancelled && $0.hasContent && ($0.removed != nil) == removed && (notes ? $0.kind == .note : [.excerpt,.image].contains($0.kind)) && $0.matches(query,book:book,tag:tag,after:recent ? Date().addingTimeInterval(-7*86400) : nil) }.sorted { $0.created == $1.created ? $0.id.uuidString<$1.id.uuidString : $0.created>$1.created }.map(ReadingDeskHit.record)
-        guard notes else { return records }
-        let essays = state.essays.filter { $0.hasContent && ($0.removed != nil) == removed && (!recent || $0.modified >= Date().addingTimeInterval(-7*86400)) && $0.matches(query) && (tag.isEmpty || $0.tags.contains(tag)) && (book == nil || ReadingLibraryItem.essay($0).isFromBook(book!)) }.map(ReadingDeskHit.essay)
-        return (records+essays).sorted{$0.date>$1.date}
+    func records(_ state:ReadingJournalState,query:String,notes:Bool,source:ReadingDeskSourceFilter,tag:String,removed:Bool,recent:Bool) -> [ReadingDeskHit] {
+        guard !Task.isCancelled else { return [] }
+        let after = recent ? Date().addingTimeInterval(-7*86400) : nil
+        let records = state.records.filter { record in
+            !Task.isCancelled && record.hasContent && (record.removed != nil) == removed &&
+                (notes ? record.kind == .note : [.excerpt,.image].contains(record.kind)) &&
+                source.includes(.record(record)) && record.matches(query,tag:tag,after:after)
+        }.map(ReadingDeskHit.record)
+        let essays = notes ? state.essays.filter { essay in
+            !Task.isCancelled && essay.hasContent && (essay.removed != nil) == removed &&
+                (after.map { essay.modified >= $0 } ?? true) && essay.matches(query) &&
+                (tag.isEmpty || essay.tags.contains(tag)) && source.includes(.essay(essay))
+        }.map(ReadingDeskHit.essay) : []
+        return (records+essays).sorted { $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date }
     }
     func essays(_ state:ReadingJournalState,query:String) -> [ReadingEssay] { state.essays.filter{!Task.isCancelled && $0.hasContent && $0.removed == nil && $0.matches(query)}.sorted{$0.created == $1.created ? $0.id.uuidString<$1.id.uuidString : $0.created>$1.created} }
 }

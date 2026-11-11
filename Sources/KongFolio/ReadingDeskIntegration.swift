@@ -3,6 +3,10 @@ import PDFKit
 import AppKit
 
 enum ReadingDeskSection:String,CaseIterable { case excerpts = "摘录", notes = "笔记", essays = "札记", search = "全部资料", exports = "导出" }
+enum ReadingNoteSource: Equatable {
+    case currentPage, wholeBook, independent
+}
+
 extension Workspace {
     var readingJournalPath:String? {
         guard let path = displayPath else { return nil }
@@ -43,23 +47,75 @@ extension WorkspaceStore {
             readingDeskWindowRequest = UUID()
         } else { showReadingPanel(section) }
     }
-    func newReadingNote(bookWide:Bool = false,linked:ReadingRecord? = nil) {
-        guard prepareReadingNote(bookWide:bookWide,linked:linked) != nil else { return }
+    var currentNoteSourceWorkspace: Workspace? {
+        guard let workspace = commandWorkspace, workspace.count > 0, !workspace.busy,
+              workspace.readingJournalPath != nil else { return nil }
+        return workspace
+    }
+
+    func newReadingNote(source: ReadingNoteSource = .currentPage, linked: ReadingRecord? = nil) {
+        guard prepareReadingNote(source:source,linked:linked) != nil else { return }
         showReadingPanel(.notes)
     }
-    @discardableResult
-    func prepareReadingNote(bookWide:Bool = false,linked:ReadingRecord? = nil) -> ReadingRecord? {
+
+    func prepareReadingNote(source: ReadingNoteSource = .currentPage, linked: ReadingRecord? = nil) -> ReadingRecord? {
         guard !journal.unreadable else { present(FolioError(message:journal.error ?? "阅读记录未能读取")); return nil }
-        let citation = commandWorkspace.flatMap { $0.count > 0 ? $0.readingCitation() : nil }
-        let refs = linked?.citations ?? citation.map { [$0] } ?? []
-        let record = ReadingRecord(kind:.note,title:bookWide ? "整本书心得" : "",quote:linked.map{$0.quote.isEmpty ? ($0.pdfOrigin?.contents ?? "") : $0.quote} ?? "",citations:refs,linkedRecords:linked.flatMap { journal.record($0.id) != nil ? [$0.id]:nil } ?? [],wholeBook:bookWide)
-        pinnedReadingID = nil; journal.beginNote(record); readingRecordID = record.id; return record
+        let citation = source == .independent || linked != nil ? nil : currentNoteSourceWorkspace?.readingCitation()
+        let refs = linked?.citations053 ?? citation.map { [$0] } ?? []
+        let record = ReadingRecord(kind:.note,quote:linked.map{$0.quote.isEmpty ? ($0.pdfOrigin?.contents ?? "") : $0.quote} ?? "",
+                                   citations:refs,linkedRecords:linked.flatMap { journal.record($0.id) != nil ? [$0.id]:nil } ?? [],
+                                   wholeBook:linked?.wholeBook ?? (source == .wholeBook && !refs.isEmpty))
+        pinnedReadingID = nil
+        journal.beginNote(record)
+        readingRecordID = record.id
+        return record
+    }
+
+    func changeNoteSource(_ id: UUID, to source: ReadingNoteSource) {
+        guard let record = journal.record(id), record.canChangeNoteSource else { return }
+        let citation = source == .independent ? nil : (record.citations.first ?? currentNoteSourceWorkspace?.readingCitation())
+        guard source == .independent || citation != nil else { return }
+        let citations = citation.map { [$0] } ?? []
+        let wholeBook = source == .wholeBook
+        guard record.citations != citations || record.wholeBook != wholeBook else { return }
+        let isDraft = journal.draftRecord?.id == id
+        journal.editRecord(id) {
+            if isDraft && $0.wholeBook && $0.title == "整本书心得" { $0.title = "" }
+            $0.citations = citations
+            $0.wholeBook = wholeBook
+        }
+    }
+
+    @discardableResult
+    func addCurrentPageToNote(_ id: UUID) -> Bool {
+        guard !journal.unreadable, let record = journal.record(id), record.kind == .note,
+              record.removed == nil, let workspace = currentNoteSourceWorkspace else { return false }
+        let citation = workspace.readingCitation()
+        let book = ReadingBookIdentity.key(citation.source.path)
+        let alreadyAdded = record.citations053.contains { existing in
+            let sameDocument = citation.tracking.map { existing.tracking?.documentID == $0.documentID } ?? false
+            return existing.source.page == citation.source.page &&
+                (ReadingBookIdentity.key(existing.source.path) == book || sameDocument)
+        }
+        guard !alreadyAdded || record.wholeBook else { return false }
+        let isDraft = journal.draftRecord?.id == id
+        journal.editRecord(id) {
+            if $0.wholeBook && $0.title == "整本书心得" && isDraft { $0.title = "" }
+            $0.wholeBook = false
+            if !alreadyAdded { $0.citations.append(citation) }
+        }
+        return true
     }
     func importLegacyReadingRecords() async {
         await journal.importLegacy(cards:board.cards,books:library.books+(library.catalog.pendingBooks ?? []),topics:research.state.topics ?? [],annotations:research.state.annotations)
     }
     func restoreReadingRecord(for workspace:Workspace) {
-        guard readingMode, let path = workspace.readingJournalPath, let id = journal.state.lastNotes[path], let record = journal.record(id), record.removed == nil, record.hasContent else { return }
+        guard readingMode, let path = workspace.readingJournalPath, let id = journal.state.lastNotes[path],
+              let record = journal.record(id), record.removed == nil, record.hasContent,
+              ReadingLibraryItem.record(record).isFromBook(path) else { return }
+        if showReadingDesk, readingDeskSection == .notes,
+           let current = journal.record(pinnedReadingID ?? readingRecordID),
+           current.kind == .note, current.removed == nil { return }
         readingRecordID = id; readingDeskSection = record.kind == .note ? .notes : .excerpts
     }
     func newReadingEssay() { _ = journal.newEssay(); openReadingDesk(.essays,window:true) }
