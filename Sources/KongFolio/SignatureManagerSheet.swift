@@ -11,6 +11,7 @@ struct SignatureManagerSheet: View {
     @State private var newName = ""
     @State private var message = ""
     @State private var readable = false
+    @State private var loaded = false
 
     private var placementWorkspace: Workspace? {
         guard let workspace = store.commandWorkspace, workspace.count > 0,
@@ -21,32 +22,22 @@ struct SignatureManagerSheet: View {
     var body: some View {
         VStack(alignment:.leading,spacing:14) {
             HStack {
-                Text("签名管理").font(.title3.bold())
+                VStack(alignment:.leading,spacing:4) {
+                    Text("签名管理").font(.title3.bold())
+                    if readable { Text("\(templates.count) 枚已保存签名").font(.caption).foregroundStyle(.secondary) }
+                }
                 Spacer()
                 Button("导入图片签名…") { showImport = true }.disabled(!readable)
             }
             if !message.isEmpty { Text(message).font(.callout).foregroundStyle(.red) }
-            if readable && templates.isEmpty {
+            if !loaded {
+                ProgressView("正在读取签名…").frame(maxWidth:.infinity,minHeight:130)
+            } else if readable && templates.isEmpty {
                 ContentUnavailableView("还没有保存的签名",systemImage:"signature",
                                        description:Text("可从图片或剪贴板导入。"))
-                    .frame(maxWidth:.infinity,maxHeight:.infinity)
+                    .frame(maxWidth:.infinity,minHeight:160)
             } else if readable {
-                List(templates) { template in
-                    HStack(spacing:12) {
-                        SignatureThumbnail(template:template)
-                        Text(template.name).lineLimit(2).help(template.name)
-                        Spacer(minLength:0)
-                        if placementWorkspace != nil {
-                            Button("放置到当前 PDF") { place(template) }.buttonStyle(.borderless)
-                        }
-                        Menu {
-                            Button("重命名…") { target = template; newName = template.name; showRename = true }
-                            Button("删除签名…",role:.destructive) { target = template; showDelete = true }
-                        } label: { Image(systemName:"ellipsis.circle") }
-                            .menuStyle(.borderlessButton).menuIndicator(.hidden)
-                            .help("管理 "+template.name).accessibilityLabel("管理 "+template.name)
-                    }.padding(.vertical,5)
-                }.listStyle(.inset)
+                signatureRows
             }
             HStack {
                 Text("签名保存在本机。").font(.caption).foregroundStyle(.secondary)
@@ -55,7 +46,7 @@ struct SignatureManagerSheet: View {
             }
         }
         .padding(20)
-        .adaptiveSheet(width:580,height:460,minimumWidth:400,flexibleHeight:true)
+        .adaptiveSheet(width:600,height:max(310,min(460,180+CGFloat(templates.count)*64)),minimumWidth:400,flexibleHeight:true)
         .task { load() }
         .sheet(isPresented:$showImport) {
             SignatureImportSheet { image,name in
@@ -86,7 +77,41 @@ struct SignatureManagerSheet: View {
         }
     }
 
+    private var signatureRows: some View {
+        // The adaptive sheet measures its content without a vertical proposal. Give the scrolling list a viewport.
+        ScrollView {
+            LazyVStack(spacing:0) {
+                ForEach(templates) { template in
+                    signatureRow(template)
+                    if template.id != templates.last?.id { Divider().padding(.horizontal,10) }
+                }
+            }.frame(maxWidth:.infinity)
+        }
+        .frame(height:min(280,CGFloat(templates.count)*64))
+        .background(Color(nsColor:.controlBackgroundColor),in:RoundedRectangle(cornerRadius:8))
+        .overlay { RoundedRectangle(cornerRadius:8).strokeBorder(.quaternary).allowsHitTesting(false) }
+        .accessibilityLabel("已保存签名列表")
+    }
+
+    private func signatureRow(_ template: SignatureTemplate) -> some View {
+        HStack(spacing:10) {
+            SignatureThumbnail(template:template)
+            Text(template.name).lineLimit(2).help(template.name)
+                .frame(maxWidth:.infinity,alignment:.leading)
+            Button("放置") { place(template) }.disabled(placementWorkspace == nil)
+                .help(placementWorkspace == nil ? "打开可编辑的 PDF 后即可放置" : "放置到当前 PDF")
+                .accessibilityLabel("放置 "+template.name)
+            Button("重命名") { target = template; newName = template.name; showRename = true }
+                .accessibilityLabel("重命名 "+template.name)
+            Button("删除",role:.destructive) { target = template; showDelete = true }
+                .accessibilityLabel("删除 "+template.name)
+        }
+        .font(.system(size:13)).buttonStyle(.borderless)
+        .padding(.horizontal,12).frame(minHeight:63)
+    }
+
     private func load() {
+        defer { loaded = true }
         do {
             templates = try SignatureLibrary.read(storage:store.storage)
             readable = true
