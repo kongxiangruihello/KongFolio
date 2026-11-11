@@ -14,7 +14,7 @@ struct FunctionToolbar: View {
         GeometryReader { proxy in
             HStack(spacing:4) {
                 ForEach(profile.visible(width:proxy.size.width)) { action in control(action,menu:false).frame(minWidth:32,maxWidth:.infinity) }
-                Button { if let note { note.toggleReadOnly() } else { workspace?.toggleReadingLock() } } label:{ Image(systemName:(note?.readOnly ?? workspace?.readingLocked ?? false) ? "lock" : "pencil") .frame(width:28,height:28) }.help((note?.readOnly ?? workspace?.readingLocked ?? false) ? "当前为阅读模式，点击切换编辑" : "当前为编辑模式，点击保护正文").disabled(note == nil && workspace == nil)
+                Button { if let note { note.toggleReadOnly() } else { workspace?.toggleReadingLock() } } label:{ Image(systemName:(note?.readOnly ?? workspace?.readingLocked ?? false) ? "lock" : "square.and.pencil") .frame(width:28,height:28) }.help((note?.readOnly ?? workspace?.readingLocked ?? false) ? "当前为阅读模式，点击切换编辑" : "当前为编辑模式，点击保护正文").disabled(note == nil && workspace == nil)
                 Menu {
                     if !profile.hidden(width:proxy.size.width).isEmpty {
                         Section("工具栏收起的功能") { ForEach(profile.hidden(width:proxy.size.width)) { action in control(action,menu:true) } }
