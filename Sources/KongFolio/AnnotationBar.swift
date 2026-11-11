@@ -157,6 +157,7 @@ struct AnnotationBar: View {
             presetsMenu
             textBoxMenu
             layersMenu
+            SignatureToolbarMenu(workspace:workspace)
             Menu {
                 ForEach([1.0, 2.0, 3.0, 5.0, 8.0], id: \.self) { width in
                     Button("\(Int(width)) 磅") { workspace.penWidth = width }

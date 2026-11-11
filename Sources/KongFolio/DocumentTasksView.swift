@@ -41,10 +41,14 @@ struct DocumentTasksView: View {
 struct DocumentTaskButton: View {
     @ObservedObject var queue: DocumentTaskQueue
     @ObservedObject var store: WorkspaceStore
+    var onlyWhileRunning = false
     var body: some View {
-        Button { store.showBackgroundJobs = true } label: {
-            Image(systemName: queue.running ? "clock.arrow.circlepath" : "checklist")
-            if queue.running { Text("\(queue.activeCount)").font(.caption) }
-        }.buttonStyle(.plain).help("后台任务：查看进度、取消处理和打开结果").padding(.horizontal, 6)
+        if !onlyWhileRunning || queue.running {
+            Button { store.showBackgroundJobs = true } label: {
+                Image(systemName:queue.running ? "clock.arrow.circlepath" : "checklist")
+                if queue.running { Text("\(queue.activeCount)").font(.caption) }
+            }.buttonStyle(.plain).help("后台任务：查看进度、取消处理和打开结果")
+                .accessibilityLabel("后台任务").padding(.horizontal,6)
+        }
     }
 }

@@ -15,7 +15,18 @@ struct DocumentSaveDetails: View {
             if workspace.saveConflict { Text("原文件已被其他程序修改，请回到阅读窗口处理冲突或另存副本。").foregroundStyle(.orange) }
             if let error = workspace.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
             HStack {
-                Button("重试保存") { retrying = true;Task { _ = await workspace.saveInBackground(automatic:false,includePrivateData:true);retrying = false } }.disabled(retrying || workspace.busy || workspace.saving || workspace.saveConflict || workspace.historySource == nil)
+                Button(workspace.error == nil ? "立即保存" : "重试保存") {
+                    if workspace.historySource == nil {
+                        dismiss()
+                        DispatchQueue.main.asyncAfter(deadline:.now()+0.25) { workspace.saveDirectly() }
+                    } else {
+                        retrying = true
+                        Task {
+                            _ = await workspace.saveInBackground(automatic:false,includePrivateData:true)
+                            retrying = false
+                        }
+                    }
+                }.disabled(retrying || workspace.busy || workspace.saving || workspace.saveConflict)
                 Button("另存副本…") { workspace.saveProject(asNew:true) }.disabled(workspace.busy || workspace.saving)
                 Spacer();Button("关闭") { dismiss() }
             }

@@ -14,6 +14,21 @@ final class ToolbarSelection0533Tests: XCTestCase {
         XCTAssertFalse(p.actions.contains(.comment))
         XCTAssertEqual(p.actions.filter{$0 == .annotate}.count,1)
     }
+    func testSlimDefaultsAndDocumentContext() {
+        let profile = ReaderToolbarProfile()
+        XCTAssertEqual(profile.visible(width:1280),[.newFile,.open,.search,.annotate,.sidebar,.export])
+        XCTAssertEqual(profile.visible(width:1280,context:.empty),[.newFile,.open,.sidebar])
+        XCTAssertEqual(profile.visible(width:1280,context:.text),[.newFile,.open,.sidebar,.export])
+    }
+
+    func testNarrowWindowPrioritizesSelectedReadingToolsAndRestoresCustomOrder() {
+        let order = ["newFile","open","signature","library","sidebar","annotate","search"]
+        let profile = ReaderToolbarProfile(order:order,pinned:Set(order))
+        XCTAssertEqual(profile.visible(width:320),[.sidebar,.annotate,.search])
+        XCTAssertEqual(profile.visible(width:1280).map(\.rawValue),order)
+        XCTAssertEqual(profile.visible(width:1280,context:.text),[.newFile,.open,.library,.sidebar])
+    }
+
     func testNarrowWindowsKeepSelectedOrderAndOverflowEveryOtherAction() {
         var p=ReaderToolbarProfile();p.pinned=["open","annotate","library","signature"]
         for width in stride(from:320.0,through:1800,by:20) {

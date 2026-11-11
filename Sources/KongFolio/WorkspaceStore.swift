@@ -35,6 +35,7 @@ import UniformTypeIdentifiers
     @Published var readingMode = true { didSet { readingDefaults.set(readingMode,forKey:Self.readingModeKey) } }
     @Published var showReadingDesk = false
     @Published var pdfSearchWorkspaceID: UUID?
+    var lastRightPanelWasSearch = false
     var readingDeskWindowSection = ReadingDeskSection.search
     @Published var readingDeskSection = ReadingDeskSection.excerpts
     @Published var showQuickReadingNote = false

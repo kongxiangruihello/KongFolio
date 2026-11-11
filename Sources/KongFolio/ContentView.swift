@@ -145,6 +145,7 @@ struct ContentView: View {
             }
             if width >= 760 { Text(workspace.savePhase.isEmpty ? workspace.recoveryStatus : workspace.savePhase + " \(Int(workspace.saveProgress*100))%").foregroundStyle(.secondary).lineLimit(1) }
             if workspace.count > 0 { Button { workspace.showSaveDetails = true } label:{ Image(systemName:workspace.saveConflict || workspace.error != nil ? "exclamationmark.circle" : (workspace.saving || workspace.dirty ? "clock" : "checkmark.circle")) }.buttonStyle(.plain).help("保存状态与重试").sheet(isPresented:$workspace.showSaveDetails) { DocumentSaveDetails(workspace:workspace) } }
+            if let store = workspace.store { DocumentTaskButton(queue:store.documentTasks,store:store,onlyWhileRunning:true) }
             if workspace.canRetry { Button("重试任务") { workspace.retryJob() } }
             if width >= 640 { Text("KongFolio \(AppInfo.version)").foregroundStyle(.tertiary).lineLimit(1) }
         }
@@ -446,6 +447,9 @@ struct ContentView: View {
                 Text("每一页，都井井有条。").font(.system(size: 28, weight: .medium))
                 Text("PDF 与文本文档的阅读、批注、整理工作台").foregroundStyle(.secondary)
                 Button("打开文档…") { workspace.open() }.buttonStyle(.borderedProminent).controlSize(.large)
+                if let store = workspace.store {
+                    Button { store.showReadingHistory = true } label:{ Label("个人书架",systemImage:"books.vertical") }
+                }
                 Text("PDF · 图片 · Markdown · HTML · TXT · 可直接拖入窗口").font(.caption).foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

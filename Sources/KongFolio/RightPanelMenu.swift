@@ -24,17 +24,6 @@ struct LeftPanelActions: View {
     }
 }
 
-struct RightPanelActions: View {
-    @ObservedObject var store: WorkspaceStore
-
-    var body: some View {
-        Button("搜索当前 PDF 正文（⌃F）") { store.openPDFSearch() }.disabled(!store.canSearchPDF)
-        Button("摘录") { store.showReadingPanel(.excerpts) }
-        Button("笔记") { store.showReadingPanel(.notes) }
-        Button("全部阅读资料") { store.showReadingPanel(.search) }
-    }
-}
-
 struct ReadingExcerptActions: View {
     @ObservedObject var store: WorkspaceStore
 
@@ -56,7 +45,6 @@ struct RightReadingPanelLayout<Content: View>: View {
     @ObservedObject var store: WorkspaceStore
     @ViewBuilder var content: () -> Content
 
-    private var visible: Bool { store.showReadingDesk || store.rightPDFSearchWorkspace != nil }
 
     var body: some View {
         GeometryReader { geometry in
@@ -65,12 +53,12 @@ struct RightReadingPanelLayout<Content: View>: View {
             let docked = width >= (split ? 1080 : 560)
             HSplitView {
                 content().frame(minWidth:240,maxWidth:.infinity,maxHeight:.infinity)
-                if visible && docked {
+                if store.rightReadingPanelVisible && docked {
                     panel.frame(minWidth:280,idealWidth:330,maxWidth:400)
                 }
             }
             .overlay(alignment:.trailing) {
-                if visible && !docked {
+                if store.rightReadingPanelVisible && !docked {
                     panel.frame(width:min(370,max(260,width-44)))
                         .shadow(color:.black.opacity(0.18),radius:8,x:-3)
                 }
@@ -80,22 +68,25 @@ struct RightReadingPanelLayout<Content: View>: View {
 
     private var panel: some View {
         VStack(spacing:0) {
-            HStack {
-                Menu {
-                    RightPanelActions(store:store)
-                } label: {
-                    Label(store.showReadingDesk ? store.readingDeskSection.rawValue : "PDF 正文搜索",systemImage:"sidebar.right")
-                        .font(.system(size:13,weight:.semibold))
-                }.menuStyle(.borderlessButton).fixedSize().help("切换右侧面板内容")
-                Spacer()
+            HStack(spacing:6) {
+                panelTab("搜索",selected:store.rightPDFSearchWorkspace != nil) { store.openPDFSearch() }
+                    .disabled(!store.canSearchPDF)
+                panelTab("摘录",selected:isSelected(.excerpts)) { store.showReadingPanel(.excerpts) }
+                panelTab("笔记",selected:isSelected(.notes)) { store.showReadingPanel(.notes) }
+                panelTab("全部资料",selected:isSelected(.search)) { store.showReadingPanel(.search) }
+                Spacer(minLength:0)
                 if store.showReadingDesk && store.readingDeskSection == .notes {
                     Button { store.newReadingNote() } label: { Image(systemName:"plus") }
                         .buttonStyle(.borderless).help("新建笔记").accessibilityLabel("新建笔记")
                         .disabled(store.journal.unreadable)
                 }
+                if store.showReadingDesk {
+                    Button { store.openReadingDesk(store.readingDeskSection,window:true) } label: { Image(systemName:"arrow.up.left.and.arrow.down.right") }
+                        .buttonStyle(.borderless).help("在独立窗口打开阅读资料").accessibilityLabel("在独立窗口打开阅读资料")
+                }
                 Button { store.closeRightReadingPanel() } label: { Image(systemName:"xmark") }
                     .buttonStyle(.borderless).help("隐藏右侧面板").accessibilityLabel("隐藏右侧面板")
-            }.padding(.horizontal,12).padding(.vertical,9).background(.bar)
+            }.font(.system(size:12)).padding(.horizontal,8).padding(.vertical,9).background(.bar)
             Divider()
             if store.showReadingDesk {
                 ReadingDeskView(store:store,journal:store.journal,section:$store.readingDeskSection,compact:true)
@@ -104,11 +95,25 @@ struct RightReadingPanelLayout<Content: View>: View {
             }
         }.frame(maxHeight:.infinity).background(Color(nsColor:.windowBackgroundColor))
     }
+    private func isSelected(_ section: ReadingDeskSection) -> Bool {
+        store.showReadingDesk && (store.readingDeskSection == section ||
+                                  (section == .notes && store.readingDeskSection == .essays))
+    }
+
+    private func panelTab(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action:action) {
+            Text(title).fontWeight(selected ? .semibold : .regular).fixedSize()
+                .padding(.horizontal,4).padding(.vertical,3)
+                .background(selected ? Color.accentColor.opacity(0.15) : .clear,in:RoundedRectangle(cornerRadius:4))
+        }.buttonStyle(.borderless).accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
 }
 
 extension WorkspaceStore {
+    var rightReadingPanelVisible: Bool { showReadingDesk || rightPDFSearchWorkspace != nil }
+
     func toggleRightReadingPanel() {
-        if showReadingDesk || rightPDFSearchWorkspace != nil { closeRightReadingPanel() }
-        else { showReadingPanel(readingDeskSection) }
+        if rightReadingPanelVisible { closeRightReadingPanel() }
+        else if !lastRightPanelWasSearch || !openPDFSearch() { showReadingPanel(readingDeskSection) }
     }
 }

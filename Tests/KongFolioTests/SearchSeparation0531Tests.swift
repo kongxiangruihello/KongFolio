@@ -25,7 +25,11 @@ import PDFKit
         XCTAssertEqual(w.sidebarTab,.bookmarks)
         XCTAssertTrue(w.pageEditing053)
         XCTAssertFalse(first==w.pdfSearchFocusRequest);let second=w.pdfSearchFocusRequest
-        XCTAssertTrue(store.openPDFSearch());XCTAssertFalse(second==w.pdfSearchFocusRequest)
+        store.toggleRightReadingPanel()
+        XCTAssertFalse(store.rightReadingPanelVisible)
+        store.toggleRightReadingPanel()
+        XCTAssertTrue(store.rightPDFSearchWorkspace === w)
+        XCTAssertFalse(second==w.pdfSearchFocusRequest)
         XCTAssertFalse(store.showReadingDesk);XCTAssertNil(store.readingDeskWindowRequest)
         let bytes=try w.pdfData()
         XCTAssertEqual(try ReadingServices.search(bytes,query:"FindPage2Only").map(\.page),[1])

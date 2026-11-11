@@ -1,11 +1,25 @@
 import Foundation
 import AppKit
 
+enum ReaderToolbarContext {
+    case empty, pdf, text
+
+    func supports(_ action: FileToolbarAction) -> Bool {
+        switch action {
+        case .search,.annotate,.pdfPages: return self == .pdf
+        case .tools,.signature: return self != .text
+        case .save,.export: return self != .empty
+        default: return true
+        }
+    }
+}
+
 struct ReaderToolbarProfile:Codable,Equatable {
     static let key = "KongFolio.readerToolbar048"
     static let defaultActions:[FileToolbarAction] = FileToolbarAction.allCases
     var order:[String] = Self.defaultActions.map(\.rawValue)
-    var pinned:Set<String> = Set(Self.defaultActions.map(\.rawValue))
+    private static let defaultPins: [FileToolbarAction] = [.newFile,.open,.search,.annotate,.sidebar,.export]
+    var pinned:Set<String> = Set(Self.defaultPins.map(\.rawValue))
     var actions:[FileToolbarAction] {
         var seen = Set<FileToolbarAction>()
         var previous=Set<String>()
@@ -18,10 +32,21 @@ struct ReaderToolbarProfile:Codable,Equatable {
         }
     }
     private var unifiedPins:Set<FileToolbarAction> { Set(pinned.compactMap{FileToolbarAction(rawValue:$0)?.unified}) }
-    func visible(width:Double)->[FileToolbarAction] {
-        Array(actions.filter{unifiedPins.contains($0)}.prefix(SingleRowToolbarPolicy.visibleCount(width:width)))
+    func visible(width:Double, context:ReaderToolbarContext = .pdf)->[FileToolbarAction] {
+        let pins = unifiedPins
+        let available = actions.filter { pins.contains($0) && context.supports($0) }
+        let capacity = SingleRowToolbarPolicy.visibleCount(width:width)
+        guard available.count > capacity else { return available }
+        let primary: Set<FileToolbarAction> = [.search,.annotate,.sidebar]
+        let priority = available.filter { primary.contains($0) }
+        let secondary = available.filter { !primary.contains($0) }
+        let retained = Set((priority+secondary).prefix(capacity))
+        return available.filter { retained.contains($0) }
     }
-    func hidden(width:Double)->[FileToolbarAction] { let selected = Set(visible(width:width));return actions.filter{!selected.contains($0)} }
+    func hidden(width:Double, context:ReaderToolbarContext = .pdf)->[FileToolbarAction] {
+        let selected = Set(visible(width:width,context:context))
+        return actions.filter { !selected.contains($0) }
+    }
     static func decode(_ data:Data?)->Self { guard let data,var p = try? JSONDecoder().decode(Self.self,from:data) else { return Self() };p.order = p.actions.map(\.rawValue);p.pinned = Set(p.pinned.compactMap{FileToolbarAction(rawValue:$0)?.unified.rawValue});return p }
     static func load(_ defaults:UserDefaults = .standard)->Self { decode(defaults.data(forKey:key)) }
     func save(_ defaults:UserDefaults = .standard) { if let data = try? JSONEncoder().encode(self) { defaults.set(data,forKey:Self.key) } }

@@ -39,12 +39,12 @@ struct ReadingDeskView: View {
     private var pagination: ReadingPagination { ReadingPagination(total: hits.count, page: page, size: pageSize) }
     var body:some View {
         VStack(alignment:.leading,spacing:8) {
-            HStack {
+            if !compact {
                 Text(section == .search ? "阅读资料库" : "阅读记录").font(.headline)
-                Spacer()
-                if compact { Button { store.openReadingDesk(section,window:true) } label:{Image(systemName:"arrow.up.left.and.arrow.down.right")}.help("在独立窗口中打开阅读记录") }
+                Picker("记录类型",selection:Binding(get:{section == .essays ? .notes : section},set:{section = $0})) {
+                    ForEach(ReadingDeskSection.allCases.filter{$0 != .essays},id:\.self) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.menu)
             }
-            Picker("记录类型",selection:Binding(get:{section == .essays ? .notes : section},set:{section = $0})) { ForEach(ReadingDeskSection.allCases.filter{$0 != .essays},id:\.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.menu)
             if section == .exports { ReadingExportPane(store:store,journal:journal) }
             else if section == .search { ReadingLibraryView(store:store,journal:journal,section:$section,compact:compact) }
             else if section == .essays { ReadingEssayPane(store:store,journal:journal) }

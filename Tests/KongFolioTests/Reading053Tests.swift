@@ -126,5 +126,5 @@ import Foundation
     func testExtraAssetPathsAreValidated() {
         let r=ReadingRecord(kind:.image,extras:ReadingRecordExtras053(visualAsset:"../outside.png"));XCTAssertThrowsError(try ReadingJournalState(records:[r]).validate())
     }
-    func testToolbarKeepsSearchAndPDFEditingInOneRowPolicy() { let p=ReaderToolbarProfile();XCTAssertTrue(p.visible(width:800).contains(.search));XCTAssertTrue(p.visible(width:800).contains(.pdfPages));XCTAssertEqual(p.visible(width:800).count+p.hidden(width:800).count,FileToolbarAction.allCases.count) }
+    func testToolbarKeepsSearchVisibleAndPDFEditingAvailable() { let p=ReaderToolbarProfile();XCTAssertTrue(p.visible(width:800).contains(.search));XCTAssertTrue(p.hidden(width:800).contains(.pdfPages));XCTAssertEqual(p.visible(width:800).count+p.hidden(width:800).count,FileToolbarAction.allCases.count) }
 }

@@ -22,6 +22,7 @@ import Foundation
     @discardableResult func openPDFSearch()->Bool {
         guard canSearchPDF,let workspace=commandWorkspace else { return false }
         showReadingDesk = false
+        lastRightPanelWasSearch = true
         pdfSearchWorkspaceID = workspace.id
         workspace.pdfSearchFocusRequest=UUID()
         return true

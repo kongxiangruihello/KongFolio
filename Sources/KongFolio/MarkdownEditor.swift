@@ -22,6 +22,7 @@ struct MarkdownEditorView: View {
                 HStack {
                     Text(note.status.isEmpty ? (note.fileURL?.path ?? "尚未保存到文件") : note.status).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
+                    if let store { DocumentTaskButton(queue:store.documentTasks,store:store,onlyWhileRunning:true) }
                     WritingCharacterCount(session:note.writingSession).lineLimit(1).fixedSize()
                 }
                 .font(.system(size:12)).foregroundStyle(.secondary)
@@ -49,9 +50,14 @@ struct MarkdownEditorView: View {
                     guard note.textView?.hasMarkedText() != true,(NSApp?.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() != true else { return };note.cleanEditing = !value
                 })) { Text("段落").tag(false);Text("源码").tag(true) }.pickerStyle(.segmented).labelsHidden().accessibilityLabel("编辑方式").frame(width:140).fixedSize(horizontal:true,vertical:false).help("段落编辑显示图片；源码编辑提供全文格式和查找工具")
             }
+            if !showsPrimaryToolbar {
+                Button { note.save() } label:{ Image(systemName:"square.and.arrow.down") }
+                    .help("保存当前文件（⌘S）").accessibilityLabel("保存当前文件")
+            }
             Button { showDisplay = true } label:{ if width >= 720 { Label("显示设置",systemImage:"textformat.size") } else { Image(systemName:"textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
             Menu {
                 Button(note.readOnly ? "切换为编辑模式" : "切换为阅读模式") { note.toggleReadOnly() }
+                Button("插入图片…") { note.chooseImage() }.disabled(note.readOnly || note.format == .plain)
                 if note.format != .plain {
                     Toggle("显示右侧导出预览",isOn:$note.showPreview)
                     Toggle("预览跟随正文段落",isOn:$note.followPreview)

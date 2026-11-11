@@ -3,14 +3,15 @@ import SwiftUI
 struct ReaderToolbarSettings: View {
     @Binding var profile:ReaderToolbarProfile
     var width:Double=800
+    var context:ReaderToolbarContext = .pdf
     @Environment(\.dismiss) private var dismiss
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
             Text("工具栏排列与显示").font(.headline)
-            Text("勾选的工具才显示在工具栏。上移／下移调整从左到右的顺序；未勾选或窗口放不下的功能可从“更多”打开。").font(.caption)
-            Text("当前窗口显示 \(profile.visible(width:width).count) 项，另有 \(profile.hidden(width:width).count) 项收在“更多”中").font(.caption).foregroundStyle(.secondary)
+            Text("勾选的工具才显示在工具栏。上移／下移调整顺序。窄窗口优先保留已勾选的搜索、标注和右侧面板，其余入口见“更多”。").font(.caption)
+            Text("当前窗口显示 \(profile.visible(width:width,context:context).count) 项，另有 \(profile.hidden(width:width,context:context).filter { context.supports($0) }.count) 项收在“更多”中").font(.caption).foregroundStyle(.secondary)
             ScrollView(.horizontal) {
-                HStack(spacing:12) { ForEach(profile.visible(width:width)) { action in
+                HStack(spacing:12) { ForEach(profile.visible(width:width,context:context)) { action in
                     Label(action.title,systemImage:action.symbol).font(.caption).fixedSize()
                 } }.padding(8)
             }.background(.quaternary,in:RoundedRectangle(cornerRadius:6)).accessibilityLabel("当前工具栏排列预览")
