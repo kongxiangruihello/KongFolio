@@ -31,18 +31,29 @@ extension Workspace {
 }
 extension WorkspaceStore {
     func openNoteLibrary() { readingLibraryPreferredKind = "笔记";readingLibraryNavigation = nil;readingLibraryNavigationRequest = UUID();openReadingDesk(.search,window:true) }
-    func showReadingPanel(_ section:ReadingDeskSection) { readingMode = true;readingDeskSection = section;showReadingDesk = true }
-    func openReadingDesk(_ section:ReadingDeskSection,window:Bool = false) {
+    func showReadingPanel(_ section:ReadingDeskSection) {
+        pdfSearchWorkspaceID = nil
+        readingMode = true
         readingDeskSection = section
-        if window || section == .essays || section == .exports || (NSApp?.keyWindow?.frame.width ?? 1000) < 850 || (activeWorkspace != nil && !readingMode) { readingDeskWindowRequest = UUID() }
-        else { showReadingPanel(section) }
+        showReadingDesk = true
+    }
+    func openReadingDesk(_ section:ReadingDeskSection,window:Bool = false) {
+        if window || section == .essays || section == .exports {
+            readingDeskWindowSection = section
+            readingDeskWindowRequest = UUID()
+        } else { showReadingPanel(section) }
     }
     func newReadingNote(bookWide:Bool = false,linked:ReadingRecord? = nil) {
-        guard !journal.unreadable else { present(FolioError(message:journal.error ?? "阅读记录未能读取")); return }
+        guard prepareReadingNote(bookWide:bookWide,linked:linked) != nil else { return }
+        showReadingPanel(.notes)
+    }
+    @discardableResult
+    func prepareReadingNote(bookWide:Bool = false,linked:ReadingRecord? = nil) -> ReadingRecord? {
+        guard !journal.unreadable else { present(FolioError(message:journal.error ?? "阅读记录未能读取")); return nil }
         let citation = commandWorkspace.flatMap { $0.count > 0 ? $0.readingCitation() : nil }
         let refs = linked?.citations ?? citation.map { [$0] } ?? []
         let record = ReadingRecord(kind:.note,title:bookWide ? "整本书心得" : "",quote:linked.map{$0.quote.isEmpty ? ($0.pdfOrigin?.contents ?? "") : $0.quote} ?? "",citations:refs,linkedRecords:linked.flatMap { journal.record($0.id) != nil ? [$0.id]:nil } ?? [],wholeBook:bookWide)
-        pinnedReadingID = nil; journal.beginNote(record); readingRecordID = record.id; openReadingDesk(.notes)
+        pinnedReadingID = nil; journal.beginNote(record); readingRecordID = record.id; return record
     }
     func importLegacyReadingRecords() async {
         await journal.importLegacy(cards:board.cards,books:library.books+(library.catalog.pendingBooks ?? []),topics:research.state.topics ?? [],annotations:research.state.annotations)

@@ -162,7 +162,7 @@ struct ReadingLibraryView: View {
             if let editing {
                 switch editing {
                 case .record(let id):
-                    if let record = journal.record(id) { ReadingSearchMatches(store:store,item:.record(record),query:query);LibraryRecordDetail(store:store,journal:journal,record:record).id(id).disabled(journal.unreadable || removed) }
+                    if let record = journal.record(id) { ReadingSearchMatches(store:store,item:.record(record),query:query);LibraryRecordDetail(store:store,journal:journal,record:record,onNewLinkedNote:newLinkedNote).id(id).disabled(journal.unreadable || removed) }
                 case .essay(let id):
                     if let essay = journal.essay(id) { ReadingSearchMatches(store:store,item:.essay(essay),query:query) }
                     LibraryEssayDetail(store:store,journal:journal,id:id,onExport:{section = .exports}).id(id).disabled(journal.unreadable || removed)
@@ -296,6 +296,12 @@ struct ReadingLibraryView: View {
         case .essay(let id):valid = journal.essay(id).map{($0.removed != nil) == removed} ?? false
         }
         if !valid { self.editing = nil;selection.remove(editing) }
+    }
+    private func newLinkedNote(_ source: ReadingRecord) {
+        guard let record = store.prepareReadingNote(linked:source) else { return }
+        resetForNew()
+        selection = []
+        editing = .record(record.id)
     }
     private func newEssay()->UUID { journal.beginLibraryEssay(source:bookSource) }
     private func newRecord(_ kind:ReadingRecord.Kind) { resetForNew(); let record = journal.beginLibraryRecord(kind,source:bookSource); store.readingRecordID = record.id; selection = []; editing = .record(record.id) }

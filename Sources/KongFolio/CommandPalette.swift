@@ -131,7 +131,7 @@ extension WorkspaceStore {
         case .exportPDF: exportActive()
         case .exportWord: exportWordActive()
         case .printDocument: printActive()
-        case .find: w?.sidebarTab = .search; w?.find()
+        case .find: _ = openPDFSearch()
         case .searchFiles: showFolderSearch = true
         case .rotate: w?.rotate()
         case .extractPages: w?.exportPDF(currentOnly: true)

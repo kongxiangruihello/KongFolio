@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ReadingSidebar: View {
     @ObservedObject var workspace: Workspace
+    var searchOnly = false
     @FocusState private var searchFocused053:Bool
     @State private var outlineTitle = ""
     @State private var outlineDepth = 0
@@ -10,7 +11,7 @@ struct ReadingSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            switch workspace.sidebarTab {
+            switch searchOnly ? .search : workspace.sidebarTab {
             case .outline: outline
             case .bookmarks: bookmarks
             case .search: searchResults

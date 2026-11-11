@@ -4,6 +4,7 @@ struct LibraryRecordDetail: View {
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var journal:ReadingJournal
     let record:ReadingRecord
+    var onNewLinkedNote: ((ReadingRecord) -> Void)?
     @State private var contextSource:ReadingContextRequest?
     @State private var editQuote = false
     @State private var showQuoteCorrection = false
@@ -24,7 +25,12 @@ struct LibraryRecordDetail: View {
                     Menu("记录操作") {
                         Button(store.pinnedReadingID == record.id ? "取消固定" : "固定记录，翻页时继续写") { store.pinnedReadingID = store.pinnedReadingID == record.id ? nil : record.id }
                         if current.kind == .note { Button("关联更多摘录…") { showLinkPicker = true } }
-                        if current.kind != .note { Button("针对摘录写笔记") { store.newReadingNote(linked:current) } }
+                        if current.kind != .note {
+                            Button("针对摘录写笔记") {
+                                if let onNewLinkedNote { onNewLinkedNote(current) }
+                                else { store.newReadingNote(linked:current) }
+                            }
+                        }
                         if journal.draftRecord?.id == record.id { Button("关闭空白草稿") { journal.discardNoteDraft();store.readingRecordID = nil } }
                         else if current.removed != nil { Button("恢复记录") { journal.editRecord(record.id) { $0.removed = nil } } }
                         else { Button("移到最近移除",role:.destructive) { journal.editRecord(record.id) { $0.removed = Date() };store.readingRecordID = nil;store.readingRecordSelection.remove(record.id) } }

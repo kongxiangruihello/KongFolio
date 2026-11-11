@@ -34,6 +34,8 @@ import UniformTypeIdentifiers
     static let readingModeKey = "KongFolio.focusedReadingMode"
     @Published var readingMode = true { didSet { readingDefaults.set(readingMode,forKey:Self.readingModeKey) } }
     @Published var showReadingDesk = false
+    @Published var pdfSearchWorkspaceID: UUID?
+    var readingDeskWindowSection = ReadingDeskSection.search
     @Published var readingDeskSection = ReadingDeskSection.excerpts
     @Published var showQuickReadingNote = false
     @Published var readingEssayBlockID:UUID?

@@ -26,6 +26,44 @@ final class Reading041LifecycleTests:XCTestCase {
         XCTAssertEqual(try Data(contentsOf:file),bytes); XCTAssertTrue(w.document.page(at:0)!.annotations.isEmpty)
         host.rootView = RootView(store:WorkspaceStore(storage:try self.folder())); host.layoutSubtreeIfNeeded()
     }
+    @MainActor func testNewReadingNoteUsesTheEditorToTheRightOfThePDF() async throws {
+        _ = NSApplication.shared
+        let root = try folder()
+        defer { try? FileManager.default.removeItem(at:root) }
+        let file = root.appendingPathComponent("阅读.pdf")
+        let document = try RichTextDocument("阅读与写作",format:.plain).pdf()
+        let bytes = try XCTUnwrap(document.dataRepresentation())
+        try bytes.write(to:file)
+        let store = WorkspaceStore(storage:root)
+        store.bootstrap()
+        let workspace = try XCTUnwrap(store.activeWorkspace)
+        workspace.load([file],prepared:.documents([bytes]))
+        let host = NSHostingView(rootView:AnyView(RootView(store:store)))
+        host.frame = NSRect(x:0,y:0,width:1200,height:800)
+        defer { host.rootView = AnyView(EmptyView()); host.layoutSubtreeIfNeeded() }
+
+        store.newReadingNote()
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(nanoseconds:100_000_000)
+        host.layoutSubtreeIfNeeded()
+        let draft = try XCTUnwrap(store.journal.draftRecord)
+        let editor = try XCTUnwrap(noteEditor(in:host))
+        let pdf = try XCTUnwrap(ResearchPreviewLifecycleTests().find(host))
+        XCTAssertGreaterThan(editor.convert(editor.bounds,to:host).midX,pdf.convert(pdf.bounds,to:host).midX)
+
+        store.journal.editRecord(draft.id) { $0.note = "第一条阅读笔记" }
+        try await store.journal.flush()
+        try await Task.sleep(nanoseconds:100_000_000)
+        host.layoutSubtreeIfNeeded()
+        XCTAssertTrue(noteEditor(in:host) === editor)
+        XCTAssertEqual(editor.string,"第一条阅读笔记")
+    }
+
+    @MainActor private func noteEditor(in view: NSView) -> DisplayTextView? {
+        if let editor = view as? DisplayTextView { return editor }
+        return view.subviews.lazy.compactMap { self.noteEditor(in:$0) }.first
+    }
+
     @MainActor func testTextPreviewDividerRespondsWithoutRecreatingTextEditor() async throws {
         _ = NSApplication.shared
         let key = "KongFolio.textPreviewEditorFraction", old = UserDefaults.standard.object(forKey:key)

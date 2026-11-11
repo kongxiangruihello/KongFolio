@@ -19,7 +19,8 @@ struct FunctionToolbar: View {
                     if !profile.hidden(width:proxy.size.width).isEmpty {
                         Section("工具栏收起的功能") { ForEach(profile.hidden(width:proxy.size.width)) { action in control(action,menu:true) } }
                     }
-                    Section("左侧辅助面板") { LeftPanelActions(store:store) }
+                    Section("右侧面板") { RightPanelActions(store:store) }
+                    Section("左侧导航") { LeftPanelActions(store:store) }
                     Section("独立窗口与对话框") {
                         Button("跨文件全文搜索（对话框）…") { store.showFolderSearch = true }
                         Button("阅读与史料辅助工具（独立窗口）…") { store.showResearch = true }
@@ -40,7 +41,7 @@ struct FunctionToolbar: View {
                         if workspace != nil { Button(store.readingMode ? "切换到完整 PDF 工具界面" : "切换到专注阅读界面") { store.readingMode.toggle() } }
                         Button("检查更新…") { AppUpdateWindow.shared.show() }
                     }
-                } label:{Image(systemName:"ellipsis.circle").frame(width:28,height:28)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help("更多：收起的功能、独立窗口、文件操作和应用设置；辅助信息统一在左侧")
+                } label:{Image(systemName:"ellipsis.circle").frame(width:28,height:28)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help("更多：收起的工具、面板、文件操作和应用设置")
             }.buttonStyle(.borderless).font(.system(size:16)).padding(.horizontal,12).frame(height:44).clipped()
                 .onAppear { toolbarWidth=proxy.size.width }
                 .onChange(of:proxy.size.width) { _,width in toolbarWidth=width }
@@ -53,14 +54,14 @@ struct FunctionToolbar: View {
         if action == .newFile {
             NewDocumentMenu(store:store,showTitle:menu)
         } else if action == .sidebar {
-            Menu { LeftPanelActions(store:store) } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help("左侧辅助信息：页面、阅读资料、PDF 属性与标注")
+            Menu { RightPanelActions(store:store) } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help("右侧面板：搜索 PDF、摘录和笔记").accessibilityLabel("右侧面板")
         } else if action == .note {
             Button { store.newReadingNote() } label:{label(action,menu:menu)}.help(action.menuTitle)
         } else if action == .signature {
             if let workspace { SignatureToolbarMenu(workspace:workspace,showTitle:menu) }
             else { Button {} label:{label(action,menu:menu)}.disabled(true).help("打开 PDF 后导入或放置图片签名") }
         } else if action == .excerpt {
-            Menu { Button("摘录选中文字") { workspace?.excerptSelection() };Button("框选图片摘录") { workspace?.tool = .region;workspace?.showAnnotationBar = true } } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle).disabled((workspace?.count ?? 0) == 0)
+            Menu { ReadingExcerptActions(store:store) } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle)
         } else if action == .export {
             Menu { Button("阅读记录与笔记…") { store.readingExportEssay = false;store.openReadingDesk(.exports,window:true) };Button("当前文件导出 PDF…") { store.exportActive() };if let note { Button("当前文件导出 Word…") { note.exportWord() } } } label:{label(action,menu:menu)}.menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle)
         } else { Button { perform(action) } label:{label(action,menu:menu)}.help(action.menuTitle).accessibilityLabel(action.title).disabled(unavailable(action)) }
@@ -73,7 +74,7 @@ struct FunctionToolbar: View {
         switch action {
         case .newFile:break
         case .search:store.openPDFSearch()
-        case .pdfPages:workspace?.requestedSidebar053=true;workspace?.pageEditing053=true
+        case .pdfPages:store.activeWorkspace?.pageEditing053=true
         case .comment:workspace?.selectTool(.note);workspace?.showAnnotationBar = true;workspace?.status = "点击 PDF 页面放置评论"
         case .open:store.open()
         case .library:store.openReadingDesk(.search,window:true)
@@ -89,7 +90,7 @@ struct FunctionToolbar: View {
         case .quickNote:store.newReadingNote()
         case .books:store.showReadingHistory = true
         case .jobs:store.showBackgroundJobs = true
-        case .sidebar:let key = LayoutKeys.sidebar;UserDefaults.standard.set(!(UserDefaults.standard.object(forKey:key) as? Bool ?? true),forKey:key)
+        case .sidebar:store.toggleRightReadingPanel()
         case .excerpt,.export,.signature:break
         }
     }

@@ -95,20 +95,28 @@ struct ContentView: View {
             if workspace.saveConflict { SaveConflictBanner(copy: workspace.chooseConflictCopy, reload: workspace.reloadAfterConflict) }
             Divider()
             HSplitView {
-                if workspace.requestedSidebar053 || (workspace.store?.showReadingDesk != true && (readingMode || !showInspector) && LayoutMetrics.showsSidebar(preferred: showSidebar, width: width)) {
+                if workspace.pageEditing053 {
                     VStack(spacing:0) {
-                        if workspace.requestedSidebar053 {
-                            HStack { Text(workspace.pageEditing053 ? "PDF 页面编辑" : "PDF 正文搜索").font(.headline);Spacer();Button { workspace.requestedSidebar053=false;workspace.pageEditing053=false } label:{Image(systemName:"xmark")}.help("关闭侧栏") }.padding(10)
-                            Divider()
-                        }
-                        if workspace.pageEditing053 { PDFPageEditor053(workspace:workspace) } else { sidebar }
+                        HStack {
+                            Text("PDF 页面编辑").font(.headline)
+                            Spacer()
+                            Button { workspace.pageEditing053=false } label:{ Image(systemName:"xmark") }.help("关闭页面编辑")
+                        }.padding(10)
+                        Divider()
+                        PDFPageEditor053(workspace:workspace)
                     }.frame(minWidth:180,idealWidth:240,maxWidth:300)
-                }
-                if !workspace.requestedSidebar053, let store = workspace.store, store.showReadingDesk {
-                    ReadingSidePanel(store:store).frame(minWidth:280,idealWidth:330,maxWidth:400)
-                }
-                if !workspace.requestedSidebar053 && workspace.store?.showReadingDesk != true && !readingMode && showInspector {
-                    VStack(spacing:0) { RightPanelHeader(title:"左侧 · PDF 属性与标注") { showInspector = false };Divider();inspector }.frame(minWidth:220,idealWidth:290,maxWidth:340)
+                } else if LayoutMetrics.showsInspector(preferred:!readingMode && showInspector,width:width,boardShown:boardShown(width:width),splitShown:splitShown(width:width)) {
+                    VStack(spacing:0) {
+                        HStack {
+                            Text("PDF 属性与标注").font(.headline)
+                            Spacer()
+                            Button { showInspector = false } label:{ Image(systemName:"xmark") }.help("关闭 PDF 属性与标注")
+                        }.padding(10)
+                        Divider()
+                        inspector
+                    }.frame(minWidth:220,idealWidth:290,maxWidth:340)
+                } else if LayoutMetrics.showsSidebar(preferred:showSidebar,width:width) {
+                    sidebar.frame(minWidth:180,idealWidth:240,maxWidth:300)
                 }
                 if boardShown(width: width), let board = workspace.store?.board { BoardView(board: board, workspace: workspace).frame(minWidth: 280, idealWidth: 380, maxWidth: .infinity) }
                 canvas.frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
@@ -358,7 +366,7 @@ struct ContentView: View {
     private var sidebar: some View {
         VStack(spacing: 8) {
             Picker("导航", selection: $workspace.sidebarTab) {
-                ForEach(SidebarTab.allCases) { Text($0.title).tag($0) }
+                ForEach([SidebarTab.pages,.outline,.bookmarks]) { Text($0.title).tag($0) }
             }
             .labelsHidden()
             .padding(.horizontal, 12)
@@ -532,10 +540,8 @@ struct ContentView: View {
                 Button("下一页") { workspace.selectPage(workspace.selection + 1) }.disabled(workspace.selection >= workspace.count - 1)
                 Button { workspace.addBookmark() } label: { Image(systemName: "bookmark") }
             }
-            HStack {
-                TextField("搜索文本（简繁通查）", text: $workspace.search).onSubmit { workspace.find() }
-                Button { workspace.find() } label: { Image(systemName: "magnifyingglass") }
-            }
+            Button("搜索 PDF 正文…") { workspace.store?.openPDFSearch() }
+                .disabled(workspace.store?.canSearchPDF != true)
             Divider()
             Text("页面管理 · 选中 \(workspace.effectivePages.count) 页").font(.subheadline.bold())
             HStack {

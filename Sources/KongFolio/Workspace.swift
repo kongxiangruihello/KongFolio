@@ -7,7 +7,6 @@ import UniformTypeIdentifiers
 @MainActor final class Workspace: ObservableObject {
     // MARK: Reading
     @Published var sidebarTab = SidebarTab.pages
-    @Published var requestedSidebar053 = false
     @Published var pageEditing053 = false
     @Published var pdfSearchFocusRequest = UUID()
     @Published var readingLayout = ReadingLayout.continuous { didSet { if readingLayout != oldValue { scheduleReadingRecord() } } }

@@ -50,6 +50,8 @@ import KongFolioUpdateKit
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
             CommandMenu("阅读") {
+                Button("搜索当前 PDF 正文") { store.openPDFSearch() }
+                    .keyboardShortcut("f",modifiers:.control).disabled(!store.canSearchPDF)
                 Button("阅读与史料研究…") { store.showResearch = true }
                 Button("显示／隐藏阅读尺") { if let w = store.commandWorkspace { w.loadReadingRulerIfNeeded(); w.readingRuler.enabled.toggle() } }.disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Button("阅读尺前移") { store.commandWorkspace?.readingRuler.move(-0.04) }.keyboardShortcut(.upArrow,modifiers:[.command,.option])
@@ -84,13 +86,17 @@ import KongFolioUpdateKit
             }
             CommandGroup(replacing: .sidebar) {
                 Button(showSidebar ? "隐藏左侧栏" : "显示左侧栏") { showSidebar.toggle() }.keyboardShortcut("1", modifiers: [.command, .option])
-                Button(showInspector ? "隐藏右侧栏" : "显示右侧栏") { showInspector.toggle() }.keyboardShortcut("2", modifiers: [.command, .option])
+                Button("显示或隐藏右侧面板") { store.toggleRightReadingPanel() }.keyboardShortcut("2", modifiers: [.command, .option])
                 Button((store.commandWorkspace?.nightReading ?? false) ? "关闭夜间阅读" : "夜间阅读（页面反色）") {
                     if let w = store.commandWorkspace { w.nightReading.toggle() }
                 }.keyboardShortcut("d", modifiers: [.command, .option]).disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Button("专注阅读（隐藏/恢复两侧栏）") {
-                    let show = !showSidebar && !showInspector
+                    let show = !showSidebar && !showInspector && !store.showReadingDesk && store.rightPDFSearchWorkspace == nil
                     showSidebar = show; showInspector = show
+                    if !show {
+                        store.activeWorkspace?.pageEditing053 = false
+                        store.closeRightReadingPanel()
+                    }
                 }.keyboardShortcut("3", modifiers: [.command, .option])
             }
             CommandGroup(after: .pasteboard) {

@@ -323,7 +323,7 @@ extension Workspace {
     func startSearch() {
         searchTask?.cancel();searchTask=nil;searchResults=[];searchMessage="";searchCursor=nil
         guard !search.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,count>0 else { return }
-        let query=search,version=revision;searchMessage="正在搜索…";sidebarTab = .search
+        let query=search,version=revision;searchMessage="正在搜索…"
         var records:[Int:[RecognizedLine]]=[:]
         for i in 0..<count { if let lines=meta(i).ocrRegions,OrderedText.isVertical(lines) { records[i]=lines } }
         let job=Task { [weak self,records] () throws->[SearchHit] in

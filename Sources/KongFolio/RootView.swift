@@ -10,25 +10,18 @@ struct RootView: View {
             Divider()
             FunctionToolbar(store:store)
             Divider()
-            if let tab = store.activeTab {
-                switch tab {
-                case .document(let workspace): ContentView(workspace: workspace,readingMode:store.readingMode,showsPrimaryToolbar:false).id(workspace.id)
-                case .note(let note):
-                    GeometryReader { geometry in
-                        VStack(spacing:0) {
-                            HSplitView {
-                                if store.showReadingDesk { ReadingSidePanel(store:store).frame(minWidth:220,idealWidth:300,maxWidth:360) }
-                                MarkdownEditorView(note:note,store:store,showsPrimaryToolbar:false).id(note.id).frame(minWidth:240,maxWidth:.infinity)
-                            }
-                        }
+            RightReadingPanelLayout(store:store) {
+                if let tab = store.activeTab {
+                    switch tab {
+                    case .document(let workspace):
+                        ContentView(workspace:workspace,readingMode:store.readingMode,showsPrimaryToolbar:false).id(workspace.id)
+                    case .note(let note):
+                        MarkdownEditorView(note:note,store:store,showsPrimaryToolbar:false).id(note.id)
                     }
-                }
-            } else {
-                Color.clear
+                } else { Color.clear }
             }
         }
         .task { await store.importLegacyReadingRecords() }
-        .onChange(of:store.readingMode) { _,reading in if !reading { store.showReadingDesk = false } }
         .onChange(of:store.readingDeskWindowRequest) { _,request in if request != nil { ReadingDeskWindowManager.shared.show(store) } }
         .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in store.checkOpenSourceChanges() }
         .onChange(of: store.showResearch) { _,show in

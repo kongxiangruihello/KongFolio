@@ -16,7 +16,7 @@ struct ReadingToolbar: View {
                 Button { workspace.open() } label:{Image(systemName:"folder")}.help("打开 PDF 文献")
                 Button { workspace.showAnnotationBar.toggle() } label:{Image(systemName:"pencil.tip.crop.circle")}.disabled(workspace.count == 0).help("标注工具")
                 Button { workspace.showTools = true } label:{Image(systemName:"square.grid.2x2")}.help("快捷工具：OCR、页面整理与转换")
-                Menu { LeftPanelActions(store:store) } label:{Image(systemName:"sidebar.left")}.help("左侧辅助面板")
+                Menu { RightPanelActions(store:store) } label:{Image(systemName:"sidebar.right")}.help("右侧面板")
                 Menu {
                     Button("个人书架（手动维护）") { store.showReadingHistory = true }
                     Button("阅读资料库：管理摘录、标注、评论与笔记") { store.openReadingDesk(.search,window:true) }

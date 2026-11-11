@@ -46,7 +46,32 @@ struct ReadingDeskView: View {
         .onChange(of:pageSize) { _,_ in page = 0 }.onChange(of:hits.count) { _,_ in page = pagination.index }
         .onChange(of:journal.draftRecord?.id) { _,id in if id != nil { page = 0; query = ""; tag = ""; removed = false; recent = false } }
     }
-    private var records:some View {
+    private var selectedRecord: ReadingRecord? {
+        guard let record = journal.record(store.pinnedReadingID ?? store.readingRecordID),
+              (record.kind == .note) == (section == .notes) else { return nil }
+        return record
+    }
+    private var records: some View {
+        ReadingBrowserLayout(hasEditor:selectedRecord != nil,compact:compact,onBack:{
+            store.pinnedReadingID = nil
+            store.readingRecordID = nil
+        }) {
+            recordList
+        } editor: {
+            if let record = selectedRecord {
+                if section == .notes {
+                    if journal.draftRecord?.id == record.id {
+                        Text("空白草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary)
+                    }
+                    LibraryRecordDetail(store:store,journal:journal,record:record).id(record.id).disabled(journal.unreadable)
+                } else {
+                    ReadingRecordDetail(store:store,journal:journal,record:record,onNewLinkedNote:{ createNote(linked:$0) })
+                        .id(record.id).disabled(journal.unreadable)
+                }
+            }
+        }
+    }
+    private var recordList: some View {
         VStack(alignment:.leading,spacing:8) {
             TextField("搜索摘录、笔记、书名或页码",text:$query).textFieldStyle(.roundedBorder)
             HStack {
@@ -57,24 +82,37 @@ struct ReadingDeskView: View {
                 TextField("按标签筛选",text:$tag)
                 Toggle("最近移除",isOn:$removed).font(.caption)
             }
-            if section == .notes { Menu("新建笔记") { Button("当前页笔记") { store.newReadingNote() }; Button("整本书心得") { store.newReadingNote(bookWide:true) }; if let current = journal.record(store.readingRecordID) { Button("关联这条摘录的笔记") { store.newReadingNote(linked:current) } } }.disabled(journal.unreadable) }
+            if section == .excerpts && compact {
+                Menu("摘录操作") { ReadingExcerptActions(store:store) }
+            }
+            if section == .notes {
+                Menu("新建笔记") {
+                    Button("当前页笔记") { createNote() }
+                    Button("整本书心得") { createNote(bookWide:true) }
+                    if let current = journal.record(store.readingRecordID), current.kind != .note {
+                        Button("关联这条摘录的笔记") { createNote(linked:current) }
+                    }
+                }.disabled(journal.unreadable)
+            }
             List { ForEach(Array(hits.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { hit in
                 switch hit {
                 case .record(let record): row(record)
                 case .essay(let essay): Button { journal.selectEssay(essay.id); section = .essays } label: { Label(essay.title+" · 笔记",systemImage:"doc.text").lineLimit(2).help(essay.title) }.buttonStyle(.plain)
                 }
             } }
-                .frame(minHeight:100,maxHeight:store.readingRecordID == nil ? .infinity : 180)
+                .frame(minHeight:100,maxHeight:.infinity)
                 .overlay { if hits.isEmpty { Text("这里保存你的摘录、标注、评论和笔记").font(.caption).foregroundStyle(.secondary) } }
             ReadingPageControls(pagination: pagination, page: $page, size: $pageSize)
-            if let draft = journal.draftRecord, draft.id == store.readingRecordID { Text("空白笔记草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary) }
-            if let record = journal.record(store.pinnedReadingID ?? store.readingRecordID) { ReadingRecordDetail(store:store,journal:journal,record:record).id(record.id).disabled(journal.unreadable) }
         }
+    }
+    private func createNote(bookWide:Bool = false,linked:ReadingRecord? = nil) {
+        if compact { store.newReadingNote(bookWide:bookWide,linked:linked) }
+        else if store.prepareReadingNote(bookWide:bookWide,linked:linked) != nil { section = .notes }
     }
     private func row(_ record:ReadingRecord) -> some View {
         HStack(alignment:.top) {
             Toggle("选择记录",isOn:Binding(get:{store.readingRecordSelection.contains(record.id)},set:{ if $0 { store.readingRecordSelection.insert(record.id) } else { store.readingRecordSelection.remove(record.id) } })).labelsHidden()
-            Button { store.readingRecordID = record.id } label: {
+            Button { store.pinnedReadingID = nil; store.readingRecordID = record.id } label: {
                 VStack(alignment:.leading,spacing:3) {
                     Text(record.displayTitle).lineLimit(2).help(record.displayTitle)
                     if let source = record.citations.first { Text(source.display).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(source.display) }
@@ -88,6 +126,7 @@ struct ReadingRecordDetail: View {
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var journal:ReadingJournal
     let record:ReadingRecord
+    var onNewLinkedNote: ((ReadingRecord) -> Void)?
     @State private var contextSource:ReadingContextRequest?
     @State private var editQuote = false
     @State private var showQuoteCorrection = false
@@ -131,7 +170,12 @@ struct ReadingRecordDetail: View {
                     Button("加入笔记") { let id = journal.currentEssayID ?? journal.newEssay(); store.insertReadingRecord(current,in:id); store.openReadingDesk(.essays,window:true) }
                     Button("导出这条记录") { store.readingRecordSelection = [record.id]; store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) }
                 }.disabled(journal.draftRecord?.id == record.id || !current.hasContent)
-                if current.kind != .note { Button("针对摘录写笔记") { store.newReadingNote(linked:current) } }
+                if current.kind != .note {
+                    Button("针对摘录写笔记") {
+                        if let onNewLinkedNote { onNewLinkedNote(current) }
+                        else { store.newReadingNote(linked:current) }
+                    }
+                }
                 if journal.draftRecord?.id == record.id { Button("关闭空白草稿") { journal.discardNoteDraft(); store.readingRecordID = nil } }
                 else if current.removed != nil { Button("恢复记录") { journal.editRecord(record.id) { $0.removed = nil } } }
                 else { Button("移到最近移除") { journal.editRecord(record.id) { $0.removed = Date() }; store.readingRecordID = nil; store.readingRecordSelection.remove(record.id) } }
@@ -211,10 +255,10 @@ struct ReadingDeskWindowView: View {
     func show(_ store:WorkspaceStore) {
         let key = ObjectIdentifier(store)
         if let controller = windows[key] {
-            if !(controller.session.section == .essays && store.readingDeskSection == .excerpts) { controller.session.section = store.readingDeskSection }
+            controller.session.section = store.readingDeskWindowSection
             controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil); return
         }
-        let controller = ReadingDeskWindowController(store:store,section:store.readingDeskSection)
+        let controller = ReadingDeskWindowController(store:store,section:store.readingDeskWindowSection)
         controller.closed = { [weak self] in self?.windows[key] = nil }; windows[key] = controller
         controller.window?.center(); controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil)
     }
