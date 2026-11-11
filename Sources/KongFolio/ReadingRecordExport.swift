@@ -34,46 +34,73 @@ enum ReadingRecordExport {
             }
             if preferences.includeQuote,preferences.includeRegionImages==true,let name=extras.visualAsset { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(name)),alt:"标注快照")) }
         }
+        func sourceParagraphs(_ citations: [ReadingCitation]) {
+            for (index,citation) in citations.enumerated() {
+                if preferences.footnotes == true, wordFootnotes {
+                    let key = ReadingExportOrdering.citationKey(citation)
+                    let marker = NSMutableAttributedString(attributedString:RichTextDocument.styled("\(index+1). [注]",options:options,markdown:false))
+                    marker.addAttribute(NSAttributedString.Key("KongFolioFootnote"),value:key,range:NSRange(location:0,length:marker.length))
+                    blocks.append(.paragraph(marker,heading:0))
+                    continue
+                }
+                let formatted = citationFormat053.render(citation,shorten:preferences.shortenedCitations053==true)
+                let text = ReadingExportOrdering.sourceLine(citation,index:index,rendered:formatted)
+                let value = NSMutableAttributedString(attributedString:RichTextDocument.styled(text,options:options,markdown:false))
+                if citation.source.invalidPage053 != true, let link = SourceLink.url(citation.source) {
+                    let suffix = RichTextDocument.styled("　返回原文",options:options,markdown:false)
+                    let start = value.length
+                    value.append(suffix)
+                    value.addAttribute(.link,value:link,range:NSRange(location:start,length:suffix.length))
+                }
+                blocks.append(.paragraph(value,heading:0))
+            }
+        }
+
         func record(_ record:ReadingRecord, heading:Bool) throws {
             if heading,preferences.showRecordTitles != false { paragraph(preferences.heading(record),heading:2) }
+            let segmented = record.excerptSegments != nil && preferences.includeQuote
+            let displayedSources = Set(segmented ? record.textExcerptSegments.flatMap { $0.citationIndices } : [])
             for part in preferences.structuralOrder {
                 switch part {
                 case "quote":
-            if preferences.includeQuote,let origin=record.pdfOrigin,!origin.contents.isEmpty {
-                if wordFootnotes,preferences.nativeWordComments != false {
-                    let anchor=NSMutableAttributedString(attributedString:RichTextDocument.styled("[PDF 评论]",options:options,markdown:false))
-                    let comment=ReadingWordComment053(text:origin.contents,author:origin.author ?? "未记录作者",date:origin.originalModified ?? origin.originalCreated)
-                    anchor.addAttribute(NSAttributedString.Key("KongFolioComment053"),value:try JSONEncoder().encode(comment),range:NSRange(location:0,length:anchor.length));blocks.append(.paragraph(anchor,heading:0))
-                } else { paragraph("PDF 原评论："+origin.contents) }
-            }
-            if preferences.includeQuote && !record.quote.isEmpty { paragraph((preferences.quoteHeading ?? "原文")+"：\n"+record.quote) }
-            if preferences.includeQuote, let name = record.imageAsset { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(name),options:.mappedIfSafe),alt:preferences.imageHeading ?? "图片摘录")) }
+                    guard preferences.includeQuote else { break }
+                    if let origin = record.pdfOrigin,!origin.contents.isEmpty {
+                        if wordFootnotes,preferences.nativeWordComments != false {
+                            let anchor = NSMutableAttributedString(attributedString:RichTextDocument.styled("[PDF 评论]",options:options,markdown:false))
+                            let comment = ReadingWordComment053(text:origin.contents,author:origin.author ?? "未记录作者",date:origin.originalModified ?? origin.originalCreated)
+                            anchor.addAttribute(NSAttributedString.Key("KongFolioComment053"),value:try JSONEncoder().encode(comment),range:NSRange(location:0,length:anchor.length))
+                            blocks.append(.paragraph(anchor,heading:0))
+                        } else { paragraph("PDF 原评论："+origin.contents) }
+                    }
+                    if segmented {
+                        for (index,segment) in record.textExcerptSegments.enumerated() {
+                            paragraph("第 \(index+1) 段 · "+ReadingRecordMetadata.date(segment.captured),heading:3)
+                            paragraph(segment.text)
+                            if preferences.includeSources { sourceParagraphs(segment.sources(in:record)) }
+                        }
+                    } else if !record.quote.isEmpty { paragraph((preferences.quoteHeading ?? "原文")+"：\n"+record.quote) }
+                    if let name = record.imageAsset {
+                        blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(name),options:.mappedIfSafe),alt:preferences.imageHeading ?? "图片摘录"))
+                    }
                 case "note":
-            if preferences.includeNote && !record.note.isEmpty { if let heading = preferences.noteHeading { paragraph(heading,heading:3) } else if record.kind != .note { paragraph("我的笔记：") };try writingParagraph(record.note) }
+                    guard preferences.includeNote else { break }
+                    if let remark = record.excerptRemark,!remark.isEmpty { paragraph("备注："+remark) }
+                    if !record.note.isEmpty {
+                        if let heading = preferences.noteHeading { paragraph(heading,heading:3) }
+                        else if record.kind != .note { paragraph("我的笔记：") }
+                        try writingParagraph(record.note)
+                    }
                 case "sources":
                     guard preferences.includeSources else { break }
-                    let citations = record.citations053
-                    if citations.isEmpty { paragraph("出处：独立笔记（未关联文献）");break }
-                    paragraph(preferences.sourcesHeading ?? "出处",heading:3)
-                    for (index,citation) in citations.enumerated() {
-                        if preferences.footnotes == true, wordFootnotes {
-                            let key = ReadingExportOrdering.citationKey(citation)
-                            let marker = NSMutableAttributedString(attributedString:RichTextDocument.styled("\(index+1). [注]",options:options,markdown:false))
-                            marker.addAttribute(NSAttributedString.Key("KongFolioFootnote"),value:key,range:NSRange(location:0,length:marker.length))
-                            blocks.append(.paragraph(marker,heading:0));continue
-                        }
-                        let formatted = citationFormat053.render(citation,shorten:preferences.shortenedCitations053==true)
-                        let text = ReadingExportOrdering.sourceLine(citation,index:index,rendered:formatted)
-                        let value = NSMutableAttributedString(attributedString:RichTextDocument.styled(text,options:options,markdown:false))
-                        if citation.source.invalidPage053 != true, let link = SourceLink.url(citation.source) {
-                            let suffix = RichTextDocument.styled("　返回原文",options:options,markdown:false)
-                            let start = value.length
-                            value.append(suffix)
-                            value.addAttribute(.link,value:link,range:NSRange(location:start,length:suffix.length))
-                        }
-                        blocks.append(.paragraph(value,heading:0))
+                    let shown = displayedSources.compactMap { record.citations.indices.contains($0) ? record.citations[$0] : nil }
+                    let citations = record.citations053.filter { !shown.contains($0) }
+                    if citations.isEmpty {
+                        if !segmented { paragraph("出处：独立笔记（未关联文献）") }
+                        break
                     }
-                default:break
+                    paragraph(preferences.sourcesHeading ?? "出处",heading:3)
+                    sourceParagraphs(citations)
+                default: break
                 }
             }
             try extraContent053(record.extras)
@@ -115,43 +142,61 @@ enum ReadingRecordExport {
             for region in extras.regions ?? [] { lines += ["![来源区域](<"+imageFolder+"/"+region.asset+">)",""] }
             if preferences.includeQuote,preferences.includeRegionImages==true,let name=extras.visualAsset { lines += ["![标注快照](<"+imageFolder+"/"+name+">)",""] }
         }
+        func sourceLines(_ citations: [ReadingCitation]) {
+            for (index,citation) in citations.enumerated() {
+                let rendered = citationFormat053.render(citation,shorten:preferences.shortenedCitations053==true)
+                lines.append(literal(ReadingExportOrdering.sourceLine(citation,index:index,rendered:rendered)))
+                if citation.source.invalidPage053 != true {
+                    if let relative = preferences.sourceLinks?[citation.source.path] {
+                        lines.append("[返回原文](<"+relative+"#page="+String(citation.source.page+1)+">)")
+                    } else if let url = SourceLink.url(citation.source) { lines.append("[返回原文]("+url.absoluteString+")") }
+                }
+                lines.append("")
+            }
+        }
+
         func record(_ ref:ReadingRecord,heading:Bool) {
             if heading,preferences.showRecordTitles != false { lines += ["## "+literal(preferences.heading(ref)),""] }
+            let segmented = ref.excerptSegments != nil && preferences.includeQuote
             for part in preferences.structuralOrder {
                 switch part {
                 case "quote":
-                    if preferences.includeQuote,let origin = ref.pdfOrigin,!origin.contents.isEmpty {
+                    guard preferences.includeQuote else { break }
+                    if let origin = ref.pdfOrigin,!origin.contents.isEmpty {
                         lines += ["PDF 原评论："+literal(origin.contents),""]
                     }
-                    if preferences.includeQuote && !ref.quote.isEmpty {
+                    if segmented {
+                        for (index,segment) in ref.textExcerptSegments.enumerated() {
+                            lines += ["### 第 \(index+1) 段 · "+ReadingRecordMetadata.date(segment.captured),""]
+                            lines += segment.text.components(separatedBy:"\n").map { "> "+literal($0) }+[""]
+                            if preferences.includeSources { sourceLines(segment.sources(in:ref)) }
+                        }
+                    } else if !ref.quote.isEmpty {
                         if let heading = preferences.quoteHeading { lines += ["### "+literal(heading),""] }
                         lines += ref.quote.components(separatedBy:"\n").map { "> "+literal($0) }
                         lines.append("")
                     }
-                    if preferences.includeQuote, let image = ref.imageAsset {
+                    if let image = ref.imageAsset {
                         lines += ["!["+literal(preferences.imageHeading ?? "图片摘录")+"](<"+imageFolder+"/"+image+">)",""]
                     }
                 case "note":
-                    if preferences.includeNote && !ref.note.isEmpty {
+                    guard preferences.includeNote else { break }
+                    if let remark = ref.excerptRemark,!remark.isEmpty { lines += ["备注："+literal(remark),""] }
+                    if !ref.note.isEmpty {
                         if let heading = preferences.noteHeading { lines += ["### "+literal(heading),""] }
                         else if ref.kind != .note { lines += ["我的笔记：",""] }
                         lines += [ref.note,""]
                     }
                 case "sources":
                     guard preferences.includeSources else { break }
-                    let sources = ref.citations053
-                    if sources.isEmpty { lines += ["出处：独立笔记（未关联文献）",""];break }
-                    lines += ["### "+literal(preferences.sourcesHeading ?? "出处"),""]
-                    for (index,citation) in sources.enumerated() {
-                        let rendered = citationFormat053.render(citation,shorten:preferences.shortenedCitations053==true)
-                        lines.append(literal(ReadingExportOrdering.sourceLine(citation,index:index,rendered:rendered)))
-                        if citation.source.invalidPage053 != true {
-                            if let relative = preferences.sourceLinks?[citation.source.path] {
-                                lines.append("[返回原文](<"+relative+"#page="+String(citation.source.page+1)+">)")
-                            } else if let url = SourceLink.url(citation.source) { lines.append("[返回原文]("+url.absoluteString+")") }
-                        }
-                        lines.append("")
+                    let shown = segmented ? ref.textExcerptSegments.flatMap { $0.sources(in:ref) } : []
+                    let sources = ref.citations053.filter { !shown.contains($0) }
+                    if sources.isEmpty {
+                        if !segmented { lines += ["出处：独立笔记（未关联文献）",""] }
+                        break
                     }
+                    lines += ["### "+literal(preferences.sourcesHeading ?? "出处"),""]
+                    sourceLines(sources)
                 default: break
                 }
             }

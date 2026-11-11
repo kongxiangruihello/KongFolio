@@ -83,11 +83,11 @@ extension ReadingLibraryItem {
         switch self {
         case .record(let r):
             switch scope {
-            case .mine:return r.note
+            case .mine:return [r.note,r.excerptRemark ?? ""].joined(separator:"\n")
             case .quote:return r.quote
             case .comment:return r.pdfOrigin?.contents ?? ""
             case .all:
-                var parts:[String]=[r.title,r.quote,r.note,r.pdfOrigin?.contents ?? "",r.tags.joined(separator:" ")]
+                var parts:[String]=[r.title,r.quote,r.note,r.excerptRemark ?? "",r.pdfOrigin?.contents ?? "",r.tags.joined(separator:" ")]
                 var sources:[String]=[]
                 for citation in r.citations053 {
                     let fields:[String]=[citation.title,citation.author,citation.edition ?? "",citation.publication?.summary ?? "",citation.source.pageDescription]

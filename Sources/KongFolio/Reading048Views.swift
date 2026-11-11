@@ -7,14 +7,26 @@ struct ReadingContextView: View {
     @State private var message = ""
     @State private var full = false
     @State private var zoom = 1.0
+    @State private var showPassage = false
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
             Text(result?.title ?? "原文上下文").font(.headline)
             HStack { Toggle("整页",isOn:$full);Text("放大");Slider(value:$zoom,in:1...3) }
+            if let passage = result?.passage {
+                DisclosureGroup("选区前后几行",isExpanded:$showPassage) {
+                    ScrollView {
+                        VStack(alignment:.leading,spacing:5) {
+                            if !passage.before.isEmpty { Text(passage.before).foregroundStyle(.secondary) }
+                            Text(passage.selection).padding(4).background(Color.accentColor.opacity(0.14),in:RoundedRectangle(cornerRadius:4))
+                            if !passage.after.isEmpty { Text(passage.after).foregroundStyle(.secondary) }
+                        }.frame(maxWidth:.infinity,alignment:.leading).textSelection(.enabled)
+                    }.frame(maxHeight:160)
+                }
+            }
             ScrollView([.horizontal,.vertical]) { if let result,let image = NSImage(data:result.png) { Image(nsImage:image).resizable().scaledToFit().frame(width:580*zoom) } else { Text(message.isEmpty ? "正在载入原文…" : message).padding(40) } }
             HStack { Button("关闭") { dismiss() };Spacer();Button("返回原文") { dismiss();_ = store.reveal(source,beside:false) } }
         }.padding(18).adaptiveSheet(width:760,height:650,minimumWidth:380)
-        .task(id:full) { result = nil;message = "";let source = source,full = full;do { let r = try await Task.detached(priority:.utility) { try ReadingContextLoader.load(source,wholePage:full) }.value;if !Task.isCancelled { result = r } } catch { if !Task.isCancelled { message = error.localizedDescription } } }
+        .task(id:full) { result = nil;message = "";var resolved = source;resolved.path = ReadingDocumentRegistry053.shared(store.storage).resolve(source.path);let source = resolved,full = full;do { let r = try await Task.detached(priority:.utility) { try ReadingContextLoader.load(source,wholePage:full) }.value;if !Task.isCancelled { result = r } } catch { if !Task.isCancelled { message = error.localizedDescription } } }
     }
 }
 struct ReadingCitationUpdatesView: View {

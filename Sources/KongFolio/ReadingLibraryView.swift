@@ -31,6 +31,7 @@ struct ReadingLibraryView: View {
     @State private var showReferences = false
     @State private var showBackups = false
     @State private var selection:Set<ReadingLibraryID> = []
+    @State private var selectionOrder: [ReadingLibraryID] = []
     @State private var editing:ReadingLibraryID?
     @AppStorage("readingRecordsPageSize") private var size = 10
     @State private var items:[ReadingLibraryItem] = []
@@ -95,7 +96,9 @@ struct ReadingLibraryView: View {
         .onChange(of:journal.draftEssay?.id) { _,_ in validateEditing() }
         .onChange(of:journal.revisionID) { _,_ in validateEditing() }
         .onChange(of:recent) { _,_ in resetPage() }.onChange(of:untagged) { _,_ in resetPage() }
-        .onChange(of:selection) { _,ids in if ids.count == 1,let id = ids.first { editing = id; if case .record(let r) = id { store.readingRecordID = r;store.focusLibraryAnnotation053(r) } } }
+        .onChange(of:selection) { _,ids in
+            selectionOrder = orderedSelection(ids)
+            if ids.count == 1,let id = ids.first { editing = id; if case .record(let r) = id { store.readingRecordID = r;store.focusLibraryAnnotation053(r) } } }
         .onChange(of:query) { _,_ in resetPage() }.onChange(of:kind) { _,_ in resetPage() }.onChange(of:tag) { _,_ in resetPage() }.onChange(of:removed) { _,_ in resetPage() }
         .onChange(of:topic) { _,_ in resetPage() }
         .onChange(of:size) { _,_ in page = 0 }.onChange(of:items.count) { _,_ in page = pagination.index }
@@ -128,7 +131,7 @@ struct ReadingLibraryView: View {
     }
     private var pageItems:[ReadingLibraryItem] { Array(items.dropFirst(pagination.range.lowerBound).prefix(pagination.size)) }
     private var itemList:some View {
-        List(selection:$selection) {
+        List(selection:Binding(get:{selection},set:{ updateSelection($0) })) {
             if options053.groupChapters {
                 ForEach(Array(Set(pageItems.map(\.chapter053))).sorted(),id:\.self) { chapter in Section(chapter) { ForEach(pageItems.filter{$0.chapter053==chapter}) { item in libraryRow(item).tag(item.id) } } }
             } else { ForEach(pageItems) { item in libraryRow(item).tag(item.id) } }
@@ -151,6 +154,10 @@ struct ReadingLibraryView: View {
     private func libraryRow(_ item:ReadingLibraryItem)->some View {
         VStack(alignment:.leading,spacing:4) {
             HStack(alignment:.top) {
+                if let index = selectionOrder.firstIndex(of:item.id) {
+                    Text("\(index+1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        .accessibilityLabel("第 \(index+1) 个选中")
+                }
                 if options053.showKind { Text(item.kind).font(.caption).foregroundStyle(.secondary).frame(width:62,alignment:.leading) }
                 Text(SearchResultHighlight.text(item.title,query:query)).lineLimit(2).help(item.title).frame(maxWidth:options053.table ? options053.titleWidth:.infinity,alignment:.leading)
                 if options053.table,options053.showSource { Text(item.sourceSummary).font(.caption).lineLimit(2).frame(width:options053.sourceWidth,alignment:.leading).help(item.sourceSummary) }
@@ -206,7 +213,7 @@ struct ReadingLibraryView: View {
                 Button("阅读整理与输出…") { showTools053=true }
                 Button("批量整理") { showOrganization = true }.disabled(selection.isEmpty || removed || journal.unreadable)
                 Button("引用关系") { showReferences = true }.disabled(editing == nil)
-                Button("导出所选…") { store.readingLibraryExportSelection = selection;store.readingRecordSelection = Set(selection.compactMap { if case .record(let id) = $0 { return id };return nil });store.readingExportEssay = false;section = .exports }.disabled(selection.isEmpty || removed)
+                Button("导出所选…") { store.prepareCheckedReadingExport(orderedSelection(selection));section = .exports }.disabled(selection.isEmpty || removed)
                 Button("重新收录当前 PDF 标注与评论") { store.commandWorkspace?.scheduleReadingAnnotationImport() }.disabled(store.commandWorkspace == nil)
                 Button("备份恢复") { showBackups = true }
                 Button(removed ? "恢复所选" : "删除所选") { confirmBulk = true }.disabled(selection.isEmpty || journal.unreadable)
@@ -224,6 +231,18 @@ struct ReadingLibraryView: View {
     private var organizationMenu:some View { Menu("资料整理") { Button("统一整理标签…") { showTags = true };Button("批量重新关联原文…") { showRelink = true } } }
     private var typePicker:some View { Picker("类型",selection:$kind) { ForEach(["全部","摘录","标注","PDF 评论","笔记"],id:\.self) { Text($0) } }.fixedSize() }
     private var topicPicker:some View { Picker("专题",selection:$topic) { Text("全部").tag("");ForEach(journal.topics,id:\.self) { Text($0).tag($0) } }.fixedSize() }
+
+    private func updateSelection(_ ids: Set<ReadingLibraryID>) {
+        selectionOrder = orderedSelection(ids)
+        selection = ids
+    }
+
+    private func orderedSelection(_ ids: Set<ReadingLibraryID>) -> [ReadingLibraryID] {
+        let existing = selectionOrder.filter { ids.contains($0) }
+        let remaining = ids.subtracting(existing)
+        let visible = items.map(\.id).filter { remaining.contains($0) }
+        return existing+visible+remaining.subtracting(visible).sorted { $0.exportOrderKey < $1.exportOrderKey }
+    }
 
     private func performContext(_ action:ReadingLibraryContextAction,ids:Set<ReadingLibraryID>) {
         switch action {
@@ -248,7 +267,7 @@ struct ReadingLibraryView: View {
             let token = UUID();copyGeneration = token;filterMessage = "正在准备复制 \(scope.items.count) 条资料…"
             Task { let text = await Task.detached(priority:.userInitiated) { scope.clipboardText() }.value;guard copyGeneration == token else { return };NSPasteboard.general.clearContents();if NSPasteboard.general.setString(text,forType:.string) { filterMessage = "已复制 \(scope.items.count) 条正文与出处" } else { filterMessage = "复制未完成，请重试" } }
         case .export:
-            guard !scope.removed else { return };store.readingLibraryExportSelection = scope.ids;store.readingRecordSelection = Set(scope.records.map(\.id));store.readingExportEssay = false;section = .exports
+            guard !scope.removed else { return };store.prepareCheckedReadingExport(orderedSelection(scope.ids));section = .exports
         case .organize:
             guard !scope.removed,!journal.unreadable else { return };contextRequest = ReadingLibraryContextRequest(kind:.organize,ids:scope.ids,removed:scope.removed)
         case .references:guard scope.single != nil else { return };contextRequest = ReadingLibraryContextRequest(kind:.references,ids:scope.ids,removed:scope.removed)

@@ -15,6 +15,10 @@ struct ReadingDeskView: View {
     @State private var recent = false
     @State private var removed = false
     @State private var page = 0
+    @State private var excerptInList: UUID?
+    @State private var excerptScrollTarget: UUID?
+    @State private var pendingExcerptReveal: UUID?
+    @State private var highlightedExcerpt: UUID?
     @AppStorage("readingRecordsPageSize") private var pageSize = 10
     private var path:String? { store.commandWorkspace?.readingJournalPath }
     @State private var hits:[ReadingDeskHit] = []
@@ -39,6 +43,7 @@ struct ReadingDeskView: View {
     private var pagination: ReadingPagination { ReadingPagination(total: hits.count, page: page, size: pageSize) }
     var body:some View {
         VStack(alignment:.leading,spacing:8) {
+            if section == .excerpts, let feedback = store.readingExcerptFeedback { excerptFeedback(feedback) }
             if !compact {
                 Text(section == .search ? "阅读资料库" : "阅读记录").font(.headline)
                 Picker("记录类型",selection:Binding(get:{section == .essays ? .notes : section},set:{section = $0})) {
@@ -61,7 +66,18 @@ struct ReadingDeskView: View {
             do { try await Task.sleep(nanoseconds:300_000_000) } catch { return }
             let result = await ReadingSearchWorker.shared.records(journal.state,query:request.query,notes:request.section == .notes,
                                                                   source:request.source,tag:request.tag,removed:request.removed,recent:request.recent)
-            if !Task.isCancelled { hits = result }
+            if !Task.isCancelled {
+                hits = result
+                positionCapturedExcerpt(in:result)
+            }
+        }
+        .onChange(of:store.readingExcerptFeedback?.id,initial:true) { _,_ in
+            if section == .excerpts, let feedback = store.readingExcerptFeedback { locateCapturedExcerpt(feedback) }
+        }
+        .task(id:highlightedExcerpt) {
+            guard highlightedExcerpt != nil else { return }
+            do { try await Task.sleep(nanoseconds:2_000_000_000) } catch { return }
+            highlightedExcerpt = nil
         }
         .onChange(of:query) { _,_ in page = 0 }.onChange(of:tag) { _,_ in page = 0 }.onChange(of:path) { _,_ in page = 0 }
         .onChange(of:section) { _,_ in page = 0 }
@@ -71,11 +87,15 @@ struct ReadingDeskView: View {
     }
     private var selectedRecord: ReadingRecord? {
         let ids = [store.readingImageOCRRequest?.recordID,store.pinnedReadingID,store.readingRecordID]
-        return ids.compactMap { journal.record($0) }.first { ($0.kind == .note) == (section == .notes) }
+        let selected = ids.compactMap { journal.record($0) }.first { ($0.kind == .note) == (section == .notes) }
+        if section == .excerpts, let excerptInList, selected?.id == excerptInList,
+           store.readingImageOCRRequest?.recordID != excerptInList { return nil }
+        return selected
     }
     private var records: some View {
         ReadingBrowserLayout(hasEditor:selectedRecord != nil,compact:compact,onBack:{
             if section == .notes { store.lastRightPanelNoteID = nil }
+            if section == .excerpts { excerptInList = store.readingRecordID }
             store.pinnedReadingID = nil
             store.readingRecordID = nil
         }) {
@@ -115,8 +135,13 @@ struct ReadingDeskView: View {
                 TextField("按标签筛选",text:$tag)
                 Toggle("最近移除",isOn:$removed).font(.caption)
             }
-            if section == .excerpts && compact {
-                Menu("摘录操作") { ReadingExcerptActions(store:store) }
+            if section == .excerpts {
+                HStack {
+                    if compact { Menu("摘录操作") { ReadingExcerptActions(store:store) } }
+                    if !store.readingRecordSelection.isEmpty {
+                        Button("按选中顺序导出…") { store.exportCheckedReadingRecords() }
+                    }
+                }
             }
             if section == .notes {
                 Menu("新建笔记") {
@@ -128,9 +153,10 @@ struct ReadingDeskView: View {
                     }
                 }.disabled(journal.unreadable)
             }
-            List { ForEach(Array(hits.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { hit in
+            ScrollViewReader { proxy in
+                List { ForEach(Array(hits.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { hit in
                 switch hit {
-                case .record(let record): row(record)
+                case .record(let record): row(record).id(record.id)
                 case .essay(let essay):
                     Button { journal.selectEssay(essay.id); section = .essays } label: {
                         VStack(alignment:.leading,spacing:3) {
@@ -142,10 +168,56 @@ struct ReadingDeskView: View {
                 }
             } }
                 .frame(minHeight:100,maxHeight:.infinity)
-                .overlay { if hits.isEmpty { Text("这里保存你的摘录、标注、评论和笔记").font(.caption).foregroundStyle(.secondary) } }
+                .overlay { if hits.isEmpty { Text("这里保存你的摘录、标注、评论和笔记").font(.caption).foregroundStyle(.secondary).allowsHitTesting(false) } }
+                .task(id:excerptScrollTarget) {
+                    guard let id = excerptScrollTarget else { return }
+                    await Task.yield()
+                    if !Task.isCancelled { proxy.scrollTo(id,anchor:.center) }
+                }
+            }
             ReadingPageControls(pagination: pagination, page: $page, size: $pageSize)
         }
     }
+    private func excerptFeedback(_ feedback: ReadingExcerptFeedback) -> some View {
+        HStack(spacing:8) {
+            Text(feedback.message).lineLimit(1).help(feedback.message)
+            Spacer(minLength:0)
+            Button("写备注") {
+                excerptInList = nil
+                store.readingRecordID = feedback.recordID
+            }.disabled(journal.record(feedback.recordID) == nil)
+            if store.readingExcerptUndo?.saved.id == feedback.recordID,
+               journal.record(feedback.recordID) == store.readingExcerptUndo?.saved {
+                Button("撤销") { _ = store.undoCapturedExcerpt(feedback.recordID) }
+            }
+            Button { store.readingExcerptFeedback = nil } label: { Image(systemName:"xmark") }.help("关闭摘录提示")
+        }.font(.caption).buttonStyle(.borderless).padding(6)
+            .background(Color.accentColor.opacity(0.10),in:RoundedRectangle(cornerRadius:6))
+    }
+
+    private func locateCapturedExcerpt(_ feedback: ReadingExcerptFeedback) {
+        guard let record = journal.record(feedback.recordID) else { return }
+        excerptInList = record.id
+        highlightedExcerpt = record.id
+        excerptScrollTarget = nil
+        pendingExcerptReveal = record.id
+        if !record.matches(query,tag:tag) { query = "";tag = "" }
+        if recent && record.modified < Date().addingTimeInterval(-7*86400) { recent = false }
+        removed = false
+        if excerptsBookOnly, let path, !ReadingLibraryItem.record(record).isFromBook(path) {
+            excerptsBookOnly = false
+        }
+        positionCapturedExcerpt(in:hits)
+    }
+
+    private func positionCapturedExcerpt(in results: [ReadingDeskHit]) {
+        guard section == .excerpts, let id = pendingExcerptReveal,
+              let index = results.firstIndex(where:{ $0.id == "record:"+id.uuidString }) else { return }
+        page = index/max(1,pageSize)
+        excerptScrollTarget = id
+        pendingExcerptReveal = nil
+    }
+
     private func createNote(source:ReadingNoteSource = .currentPage,linked:ReadingRecord? = nil) {
         if compact { store.newReadingNote(source:source,linked:linked) }
         else if store.prepareReadingNote(source:source,linked:linked) != nil { section = .notes }
@@ -153,7 +225,11 @@ struct ReadingDeskView: View {
     private func row(_ record:ReadingRecord) -> some View {
         HStack(alignment:.top) {
             Toggle("选择记录",isOn:Binding(get:{store.readingRecordSelection.contains(record.id)},set:{ if $0 { store.readingRecordSelection.insert(record.id) } else { store.readingRecordSelection.remove(record.id) } })).labelsHidden()
-            Button { store.pinnedReadingID = nil; store.readingRecordID = record.id } label: {
+            if section == .excerpts, let index = store.readingRecordSelectionOrder.firstIndex(of:record.id) {
+                Text("\(index+1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    .accessibilityLabel("第 \(index+1) 个选中")
+            }
+            Button { excerptInList = nil; store.pinnedReadingID = nil; store.readingRecordID = record.id } label: {
                 VStack(alignment:.leading,spacing:3) {
                     Text(record.displayTitle).lineLimit(2).help(record.displayTitle)
                     if record.kind == .note {
@@ -161,10 +237,14 @@ struct ReadingDeskView: View {
                     } else if let source = record.citations.first {
                         Text(source.display).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(source.display)
                     }
+                    if let remark = record.excerptRemark, !remark.isEmpty {
+                        Text(remark).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
                     if !record.tags.isEmpty { Text(record.tags.joined(separator:" · ")).font(.caption).foregroundStyle(.blue) }
                 }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
             }.buttonStyle(.plain)
-        }.padding(.vertical,3).listRowBackground(store.readingRecordID == record.id ? Color.accentColor.opacity(0.12) : .clear)
+        }.padding(.vertical,3).listRowBackground(highlightedExcerpt == record.id ? Color.accentColor.opacity(0.23) :
+                                                       (store.readingRecordID == record.id ? Color.accentColor.opacity(0.10) : .clear))
     }
 }
 struct ReadingRecordDetail: View {
@@ -194,7 +274,12 @@ struct ReadingRecordDetail: View {
                     }
                 }
                 StableTextField("记录标题（可留空）",text:binding(\.title))
-                if current.kind != .note {
+                if current.kind == .excerpt || current.kind == .image {
+                    ReadingExcerptRemarkField(journal:journal,recordID:record.id)
+                }
+                if current.excerptSegments != nil {
+                    segmentedExcerpt
+                } else if current.kind != .note {
                     HStack { Text("摘录原文").font(.caption); Spacer(); Button("原文与校订对照…") { showQuoteCorrection = true }; Button(editQuote ? "完成文字校正" : "校正摘录文字") { editQuote.toggle() } }
                     if editQuote { ReadingWritingEditor(text:binding(\.quote),label:"摘录校订文字",identity:"quote:"+record.id.uuidString).id("quote:"+record.id.uuidString).frame(height:100).border(.quaternary) }
                     else if !current.quote.isEmpty { Text(current.quote).textSelection(.enabled) }
@@ -215,7 +300,7 @@ struct ReadingRecordDetail: View {
                         ReadingCitationEditor(journal:journal,record:record.id,index:index)
                         Text(current.wholeBook ? "《"+citation.title+"》 · 整本书" : citation.display).font(.caption).textSelection(.enabled)
                         HStack {
-                            Button("快看原页") { contextSource = ReadingContextRequest(source:citation.source) }
+                            Button("原文上下文…") { contextSource = ReadingContextRequest(source:citation.source) }
                             Button("返回原文") { sourceNavigator.open(citation,record:current,store:store) }.disabled(sourceNavigator.busy)
                             Button("核对出处…") { sourceNavigator.open(citation,record:current,store:store,reviewOnly:true) }.disabled(sourceNavigator.busy)
                         }
@@ -224,7 +309,7 @@ struct ReadingRecordDetail: View {
                 if current.citations.count > 20 { Text("另有来源页，导出时一并保留").font(.caption) }
                 HStack {
                     Button("加入笔记") { let id = journal.currentEssayID ?? journal.newEssay(); store.insertReadingRecord(current,in:id); store.openReadingDesk(.essays,window:true) }
-                    Button("导出这条记录") { store.readingRecordSelection = [record.id]; store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) }
+                    Button("导出这条记录") { store.exportCheckedReadingRecords(only:record.id) }
                 }.disabled(journal.draftRecord?.id == record.id || !current.hasContent)
                 if current.kind != .note {
                     Button("针对摘录写笔记") {
@@ -248,7 +333,7 @@ struct ReadingRecordDetail: View {
             ReadingSourceReviewSheet(request:request,navigator:sourceNavigator,store:store).id(request.id)
         }
         .sheet(isPresented:$showOCRComparison) {
-            ReadingImageOCRComparisonSheet(controller:imageOCR,record:current,journal:journal) { applyOCR() }
+            ReadingImageOCRComparisonSheet(controller:imageOCR,record:current,journal:journal,store:store) { applyOCR() }
         }
         .sheet(isPresented:$showLinkPicker) {
             ReadingRecordPicker(journal:journal) { other in
@@ -261,6 +346,15 @@ struct ReadingRecordDetail: View {
             }
         }
     }
+    private var segmentedExcerpt: some View {
+        VStack(alignment:.leading,spacing:8) {
+            Button(editQuote ? "完成分段校订" : "校订各段") { editQuote.toggle() }
+            ReadingExcerptSegmentsView(journal:journal,record:current,editing:editQuote,
+                openSource:{ sourceNavigator.open($0,record:current,store:store) },
+                showContext:{ contextSource = ReadingContextRequest(source:$0) })
+        }
+    }
+
     private var imageRecognition:some View {
         VStack(alignment:.leading,spacing:6) {
             HStack {

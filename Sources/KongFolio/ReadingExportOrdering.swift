@@ -23,10 +23,13 @@ extension ReadingExportSnapshot {
     }
 }
 enum ReadingExportOrdering {
-    enum Sort:String,CaseIterable,Codable { case manual = "手动顺序",date = "记录日期",book = "书名",page = "来源页码" }
-    static func sorted(_ items:[ReadingExportItem],by sort:Sort) -> [ReadingExportItem] {
-        items.enumerated().sorted { a,b in
+    enum Sort:String,CaseIterable,Codable { case selection = "选中顺序",manual = "手动顺序",date = "记录日期",book = "书名",page = "来源页码" }
+    static func sorted(_ items:[ReadingExportItem],by sort:Sort,selection:[String] = []) -> [ReadingExportItem] {
+        let indices = Dictionary(selection.enumerated().map{($0.element,$0.offset)},uniquingKeysWith:min)
+        return items.enumerated().sorted { a,b in
             switch sort {
+            case .selection:
+                return (indices[a.element.id] ?? Int.max,a.offset)<(indices[b.element.id] ?? Int.max,b.offset)
             case .manual:return a.offset<b.offset
             case .date:return a.element.created == b.element.created ? a.offset<b.offset : a.element.created<b.element.created
             case .book,.page:
@@ -68,6 +71,30 @@ enum ReadingExportOrdering {
         return result
     }
 }
+extension ReadingLibraryID {
+    var exportOrderKey: String {
+        switch self {
+        case .record(let id): return "r:"+id.uuidString
+        case .essay(let id): return "e:"+id.uuidString
+        }
+    }
+}
+
+extension WorkspaceStore {
+    func prepareCheckedReadingExport(_ ids: [ReadingLibraryID]) {
+        readingLibraryExportOrder = ids
+        readingLibraryExportSelection = Set(ids)
+        readingRecordSelection = Set(ids.compactMap { if case .record(let id) = $0 { return id };return nil })
+        readingExportEssay = false
+    }
+
+    func exportCheckedReadingRecords(only recordID: UUID? = nil) {
+        let ids = recordID.map { [$0] } ?? readingRecordSelectionOrder
+        prepareCheckedReadingExport(ids.map(ReadingLibraryID.record))
+        openReadingDesk(.exports,window:true)
+    }
+}
+
 extension ReadingRecordExport {
     static func word(_ snapshot:ReadingExportSnapshot,assets:URL,to file:URL,warnings:[String]=[]) throws {
         var document=try rich(snapshot,assets:assets,wordFootnotes:true)

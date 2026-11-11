@@ -49,7 +49,12 @@ struct LibraryRecordDetail: View {
                         else { Button("移到最近移除",role:.destructive) { journal.editRecord(record.id) { $0.removed = Date() };store.readingRecordID = nil;store.readingRecordSelection.remove(record.id) } }
                     }.fixedSize()
                 }
-                if current.kind != .note && current.pdfOrigin == nil {
+                if current.kind == .excerpt || current.kind == .image {
+                    ReadingExcerptRemarkField(journal:journal,recordID:record.id)
+                }
+                if current.excerptSegments != nil {
+                    segmentedExcerpt
+                } else if current.kind != .note && current.pdfOrigin == nil {
                     HStack { Text("摘录原文").font(.caption); Spacer(); Button("原文与校订对照…") { showQuoteCorrection = true }; Button(editQuote ? "完成文字校正" : "校正摘录文字") { editQuote.toggle() } }
                     if editQuote { LibraryWritingEditor(text:binding(\.quote),label:"摘录校订文字",identity:"quote:"+record.id.uuidString).id("quote:"+record.id.uuidString).frame(height:300) }
                     else if current.quote.count>400 { DisclosureGroup("展开原文（\(current.quote.count) 字）") { Text(current.quote).textSelection(.enabled) } }
@@ -72,7 +77,7 @@ struct LibraryRecordDetail: View {
                         ReadingCitationEditor(journal:journal,record:record.id,index:index).disabled(current.pdfOrigin != nil)
                         Text(current.wholeBook ? "《"+citation.title+"》 · 整本书" : citation.display).font(.caption).textSelection(.enabled)
                         HStack {
-                            Button("快看原页") { contextSource = ReadingContextRequest(source:citation.source) }
+                            Button("原文上下文…") { contextSource = ReadingContextRequest(source:citation.source) }
                             Button("返回原文") { sourceNavigator.open(citation,record:current,store:store) }.disabled(sourceNavigator.busy)
                             Button("核对出处…") { sourceNavigator.open(citation,record:current,store:store,reviewOnly:true) }.disabled(sourceNavigator.busy)
                         }
@@ -83,7 +88,7 @@ struct LibraryRecordDetail: View {
                 }.font(.system(size:13))
                 HStack {
                     Button("加入笔记") { let id = journal.currentEssayID ?? journal.newEssay(); store.insertReadingRecord(current,in:id); store.openReadingDesk(.essays,window:true) }
-                    Button("导出这条记录") { store.readingRecordSelection = [record.id]; store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) }
+                    Button("导出这条记录") { store.exportCheckedReadingRecords(only:record.id) }
                 }.disabled(journal.draftRecord?.id == record.id || !current.hasContent)
             }.padding(.horizontal,12).padding(.vertical,8)
 
@@ -99,7 +104,7 @@ struct LibraryRecordDetail: View {
             ReadingSourceReviewSheet(request:request,navigator:sourceNavigator,store:store).id(request.id)
         }
         .sheet(isPresented:$showOCRComparison) {
-            ReadingImageOCRComparisonSheet(controller:imageOCR,record:current,journal:journal) { applyOCR() }
+            ReadingImageOCRComparisonSheet(controller:imageOCR,record:current,journal:journal,store:store) { applyOCR() }
         }
         .sheet(isPresented:$showLinkPicker) {
             ReadingRecordPicker(journal:journal) { other in
@@ -148,6 +153,15 @@ struct LibraryRecordDetail: View {
         store.changeNoteSource(record.id,to:source)
         noteSourceStatus = ""
     }
+    private var segmentedExcerpt: some View {
+        VStack(alignment:.leading,spacing:8) {
+            Button(editQuote ? "完成分段校订" : "校订各段") { editQuote.toggle() }
+            ReadingExcerptSegmentsView(journal:journal,record:current,editing:editQuote,
+                openSource:{ sourceNavigator.open($0,record:current,store:store) },
+                showContext:{ contextSource = ReadingContextRequest(source:$0) })
+        }
+    }
+
     private var imageRecognition:some View {
         VStack(alignment:.leading,spacing:6) {
             HStack {

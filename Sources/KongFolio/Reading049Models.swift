@@ -37,7 +37,7 @@ extension ReadingLibraryItem {
             return ns.substring(with:NSRange(location:start,length:end-start)).replacingOccurrences(of:"\n",with:" ↵ ")
         }
         switch self {
-        case .record(let r):return context(r.quote) ?? context(r.note)
+        case .record(let r):return context(r.quote) ?? context(r.excerptRemark ?? "") ?? context(r.note)
         case .essay(let e):for block in e.blocks { if let hit=context(block.text) ?? context(block.record?.quote ?? "") ?? context(block.record?.note ?? "") { return hit } };return nil
         }
     }

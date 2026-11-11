@@ -30,7 +30,7 @@ extension Workspace {
         guard !store.journal.unreadable else { error = store.journal.error; return true }
         guard let record = readingExcerpt(from:selection) else { error = "请选中文字；扫描页可使用图片摘录"; return true }
         store.saveReadingExcerpt(record)
-        status = "摘录已加入阅读记录，原文未改动"
+        status = store.readingExcerptFeedback?.message ?? "摘录已加入阅读记录"
         return true
     }
 
@@ -50,14 +50,6 @@ extension Workspace {
     }
 }
 extension WorkspaceStore {
-    func saveReadingExcerpt(_ record: ReadingRecord) {
-        rememberRightPanelNote()
-        if let pinned = journal.record(pinnedReadingID), pinned.kind != .note { pinnedReadingID = nil }
-        journal.add(record)
-        readingRecordID = record.id
-        openReadingDesk(.excerpts)
-    }
-
     func openNoteLibrary() { readingLibraryPreferredKind = "笔记";readingLibraryNavigation = nil;readingLibraryNavigationRequest = UUID();openReadingDesk(.search,window:true) }
     func showReadingPanel(_ section:ReadingDeskSection, noteID: UUID? = nil) {
         let returningToNotes = section == .notes && (!showReadingDesk || readingDeskSection != .notes)
@@ -94,7 +86,7 @@ extension WorkspaceStore {
         let citation = source == .independent || linked != nil ? nil : currentNoteSourceWorkspace?.readingCitation()
         let refs = linked?.citations053 ?? citation.map { [$0] } ?? []
         let record = ReadingRecord(kind:.note,quote:linked.map{$0.quote.isEmpty ? ($0.pdfOrigin?.contents ?? "") : $0.quote} ?? "",
-                                   citations:refs,linkedRecords:linked.flatMap { journal.record($0.id) != nil ? [$0.id]:nil } ?? [],
+                                   note:linked?.excerptRemark ?? "",citations:refs,linkedRecords:linked.flatMap { journal.record($0.id) != nil ? [$0.id]:nil } ?? [],
                                    wholeBook:linked?.wholeBook ?? (source == .wholeBook && !refs.isEmpty))
         pinnedReadingID = nil
         journal.beginNote(record)
@@ -144,6 +136,7 @@ extension WorkspaceStore {
         guard readingMode, let path = workspace.readingJournalPath, let id = journal.state.lastNotes[path],
               let record = journal.record(id), record.removed == nil, record.hasContent,
               ReadingLibraryItem.record(record).isFromBook(path) else { return }
+        if showReadingDesk && readingDeskSection == .excerpts { return }
         if showReadingDesk, readingDeskSection == .notes,
            let current = journal.record(pinnedReadingID ?? readingRecordID),
            current.kind == .note, current.removed == nil { return }

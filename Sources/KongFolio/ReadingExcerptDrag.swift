@@ -61,8 +61,8 @@ extension WorkspaceStore {
         pendingPDFExcerptDrag = nil
         guard acceptsPDFExcerptDrop,
               let workspace = tabs.compactMap(\.workspace).first(where:{ $0.id == drag.workspaceID }) else { return false }
-        saveReadingExcerpt(drag.record)
-        workspace.status = "已拖入摘录，保留原文出处"
+        guard saveReadingExcerpt(drag.record) else { return false }
+        workspace.status = readingExcerptFeedback?.message ?? "已拖入摘录"
         return true
     }
 

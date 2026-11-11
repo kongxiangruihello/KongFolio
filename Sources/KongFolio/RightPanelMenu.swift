@@ -34,6 +34,8 @@ struct ReadingExcerptActions: View {
             store.showReadingPanel(.excerpts)
             store.commandWorkspace?.excerptSelection()
         }.disabled(!store.canSearchPDF)
+        Button("追加选中文字到上一条摘录") { store.commandWorkspace?.appendSelectionToLastExcerpt() }
+            .disabled(!store.canSearchPDF || store.lastTextExcerpt == nil)
         Button("框选图片摘录") { store.startReadingRegionCapture() }.disabled(!store.canSearchPDF)
         Menu("框选并识别文字") {
             ForEach(ReadingImageOCRMode.allCases) { mode in

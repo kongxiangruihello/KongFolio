@@ -4,6 +4,8 @@ struct ReadingImageOCRComparisonSheet: View {
     @ObservedObject var controller: ReadingImageOCRController
     let record: ReadingRecord
     let journal: ReadingJournal
+    let store: WorkspaceStore
+    @State private var context: ReadingContextRequest?
     let onApply: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -27,9 +29,13 @@ struct ReadingImageOCRComparisonSheet: View {
             }
             HStack {
                 Button("返回") { dismiss() }.keyboardShortcut(.cancelAction)
+                if let source = record.citations.first?.source {
+                    Button("原文上下文…") { context = ReadingContextRequest(source:source) }.disabled(source.path.isEmpty)
+                }
                 Spacer()
                 Button("采用校订文字") { onApply();dismiss() }.keyboardShortcut(.defaultAction)
             }
         }.padding(18).adaptiveSheet(width:840,height:570,minimumWidth:480,flexibleHeight:true)
+        .sheet(item:$context) { request in ReadingContextView(store:store,source:request.source) }
     }
 }

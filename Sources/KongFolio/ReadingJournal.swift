@@ -29,9 +29,11 @@ struct ReadingRecord: Codable, Identifiable, Equatable {
     var wholeBook = false
     var pdfOrigin:ReadingPDFOrigin? = nil
     var extras:ReadingRecordExtras053? = nil
+    var excerptRemark: String? = nil
+    var excerptSegments: [ReadingExcerptSegment]? = nil
     var hasContent: Bool {
         let heading = wholeBook && title == "整本书心得" ? "" : title
-        return pdfOrigin != nil || extras?.hasContent == true || [heading, quote, note].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || imageAsset != nil || !linkedRecords.isEmpty || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return pdfOrigin != nil || extras?.hasContent == true || [heading, quote, note, excerptRemark ?? ""].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || imageAsset != nil || !linkedRecords.isEmpty || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
     var displayTitle: String {
         if !title.isEmpty { return title }
@@ -54,7 +56,7 @@ struct ReadingRecord: Codable, Identifiable, Equatable {
         if !tag.isEmpty && !tags.contains(tag) { return false }
         if let after, modified < after { return false }
         let sourceText = citations.map { [$0.title,$0.author,$0.source.pageDescription].joined(separator:" ") }.joined(separator:"\n")
-        let haystack = [pdfOrigin?.contents ?? "",title,quote,note,tags.joined(separator:" "),sourceText].joined(separator:"\n")
+        let haystack = [pdfOrigin?.contents ?? "",title,quote,note,excerptRemark ?? "",tags.joined(separator:" "),sourceText].joined(separator:"\n")
         return query.isEmpty || AnnotationFilter.folded(haystack).contains(AnnotationFilter.folded(query))
     }
 }

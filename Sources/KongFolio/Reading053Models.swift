@@ -89,7 +89,7 @@ extension ReadingLibraryItem {
         return result
     }
     var extras053:ReadingRecordExtras053 { switch self {case .record(let r):return r.extras ?? ReadingRecordExtras053();case .essay(let e):return e.extras ?? ReadingRecordExtras053()} }
-    var text053:String { switch self {case .record(let r):return [r.quote,r.pdfOrigin?.contents ?? "",r.note].filter{!$0.isEmpty}.joined(separator:"\n\n");case .essay(let e):return e.blocks.map{[$0.record?.quote ?? "",$0.text].filter{!$0.isEmpty}.joined(separator:"\n\n")}.joined(separator:"\n\n")} }
+    var text053:String { switch self {case .record(let r):return [r.quote,r.pdfOrigin?.contents ?? "",r.note,r.excerptRemark ?? ""].filter{!$0.isEmpty}.joined(separator:"\n\n");case .essay(let e):return e.blocks.map{[$0.record?.quote ?? "",$0.text].filter{!$0.isEmpty}.joined(separator:"\n\n")}.joined(separator:"\n\n")} }
     var chapter053:String { extras053.chapter ?? citations053.first?.publication?.chapter ?? "未分章节" }
 }
 @MainActor extension ReadingJournal {

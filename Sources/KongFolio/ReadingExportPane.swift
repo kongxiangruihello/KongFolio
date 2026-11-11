@@ -9,12 +9,12 @@ struct ReadingExportPane: View {
     @State private var scope = Scope.selected
     @State private var preferences = ReadingExportPreferences.load()
     @State private var profiles = ReadingExportProfile.load()
-    @State private var useManualOrder = false
-    private var sort: ReadingExportOrdering.Sort { useManualOrder ? .manual : (preferences.sort ?? .date) }
+    @State private var temporarySort: ReadingExportOrdering.Sort?
+    private var sort: ReadingExportOrdering.Sort { temporarySort ?? preferences.sort ?? .date }
     private var sortSelection: Binding<ReadingExportOrdering.Sort> {
         Binding(get:{sort},set:{ value in
-            useManualOrder = value == .manual
-            if !useManualOrder { preferences.sort = value }
+            if value == .manual || value == .selection { temporarySort = value }
+            else { temporarySort = nil; preferences.sort = value }
             page = 0
         })
     }
@@ -30,7 +30,9 @@ struct ReadingExportPane: View {
         let ids = store.readingRecordSelection.isEmpty ? Set(store.readingRecordID.map{[$0]} ?? []) : store.readingRecordSelection
         let records = journal.state.records.filter { r in r.hasContent && r.removed == nil && (scope == .library || (scope == .selected ? (ids.contains(r.id) || store.readingLibraryExportSelection.contains(.record(r.id))) : (store.commandWorkspace?.readingJournalPath.map { ReadingLibraryItem.record(r).isFromBook($0) } ?? false))) }.map(ReadingExportItem.record)
         let essays = journal.state.essays.filter { e in e.hasContent && e.removed == nil && (scope == .library || (scope == .selected && store.readingLibraryExportSelection.contains(.essay(e.id))) || (scope == .book && (store.commandWorkspace?.readingJournalPath.map { ReadingLibraryItem.essay(e).isFromBook($0) } ?? false))) }.map(ReadingExportItem.essay)
-        var items = ReadingExportOrdering.sorted(records+essays,by:sort)
+        let selectedOrder = (store.readingLibraryExportOrder.isEmpty ?
+            store.readingRecordSelectionOrder.map(ReadingLibraryID.record) : store.readingLibraryExportOrder).map(\.exportOrderKey)
+        var items = ReadingExportOrdering.sorted(records+essays,by:sort,selection:selectedOrder)
         if sort == .manual { let positions = Dictionary(order.enumerated().map{($0.element,$0.offset)},uniquingKeysWith:min);items = items.enumerated().sorted{(positions[$0.element.id] ?? Int.max,$0.offset)<(positions[$1.element.id] ?? Int.max,$1.offset)}.map(\.element) }
         return items
     }
@@ -68,9 +70,15 @@ struct ReadingExportPane: View {
             if controller.previewURL != nil && !previewCurrent { Text("内容、顺序或格式已变化，请刷新预览。Word 导出前需要当前预览。").font(.caption).foregroundStyle(.orange) }
             HStack { Text(controller.message).font(.caption).lineLimit(2).textSelection(.enabled);if let file = controller.lastExportURL { Button("打开刚导出的文件") { NSWorkspace.shared.open(file) }.font(.caption) } }
         }.frame(width:proxy.size.width,height:proxy.size.height,alignment:.topLeading)
-        }.onAppear { scope = store.readingExportEssay ? .essay : ((!store.readingLibraryExportSelection.isEmpty || store.readingRecordID != nil || !store.readingRecordSelection.isEmpty) ? .selected : .book) }
+        }.onAppear {
+            scope = store.readingExportEssay ? .essay : ((!store.readingLibraryExportSelection.isEmpty || store.readingRecordID != nil || !store.readingRecordSelection.isEmpty) ? .selected : .book)
+            if scope == .selected { temporarySort = .selection }
+        }
         .onDisappear { controller.close() }.onChange(of:preferences) { _,value in value.save() }
-        .onChange(of:scope) { _,_ in page = 0;excluded = [];order = [] }.onChange(of:candidates.count) { _,_ in page = pagination.index }
+         .onChange(of:scope) { _,value in
+            page = 0; excluded = []; order = []
+            temporarySort = value == .selected ? .selection : nil
+        }.onChange(of:candidates.count) { _,_ in page = pagination.index }
         .sheet(isPresented:$showReview) { ReadingOutputReviewView(store:store,snapshot:snapshot,assets:assets) }
         .sheet(isPresented:$showIncremental) { ReadingIncrementalExportView(journal:journal,controller:store.incrementalExport,options:preferences.options) }
         .sheet(isPresented:$showBatch) { ReadingExportBatchView(store:store,journal:journal,snapshot:snapshot) }
@@ -85,7 +93,7 @@ struct ReadingExportPane: View {
                 Button("保存模板…") { if let name = TextPrompt.ask("保存导出模板",detail:"保存格式、字体、版式、内容顺序与出处选项",button:"保存"),!name.isEmpty { do { var updated = profiles;updated.append(ReadingExportProfile(name:name,format:preferences.format,options:preferences.options));try ReadingExportProfile.save(updated);profiles = updated } catch { controller.message = error.localizedDescription } } }
             }
             Picker("排列",selection:sortSelection) {
-                ForEach(ReadingExportOrdering.Sort.allCases,id:\.self) { Text($0.rawValue).tag($0) }
+                ForEach(ReadingExportOrdering.Sort.allCases.filter { $0 != .selection || scope == .selected },id:\.self) { Text($0.rawValue).tag($0) }
             }
             Picker("导出格式",selection:$preferences.format) { ForEach(ReadingRecordExport.Format.allCases,id:\.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
             HStack {
@@ -108,7 +116,7 @@ struct ReadingExportPane: View {
             HStack { Text("第 \(pagination.index+1)/\(pagination.last+1) 页");Spacer();Button("上一页") { page = max(0,page-1) }.disabled(pagination.index == 0);Button("下一页") { page += 1 }.disabled(pagination.index>=pagination.last) }.font(.caption)
         }
     }
-    private func move(_ id:String,_ delta:Int) { var ids = candidates.map(\.id);guard let i = ids.firstIndex(of:id),ids.indices.contains(i+delta) else { return };ids.swapAt(i,i+delta);order = ids;useManualOrder = true }
+    private func move(_ id:String,_ delta:Int) { var ids = candidates.map(\.id);guard let i = ids.firstIndex(of:id),ids.indices.contains(i+delta) else { return };ids.swapAt(i,i+delta);order = ids;temporarySort = .manual }
     private func export() {
         let panel = NSSavePanel();panel.allowedContentTypes = [UTType(filenameExtension:format.ext) ?? .data];panel.directoryURL = preferences.directoryURL;panel.nameFieldStringValue = ReadingExportJobs.filename(snapshot.title)+"."+format.ext
         guard panel.runModal() == .OK,let url = panel.url else { return }

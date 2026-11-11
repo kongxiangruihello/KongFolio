@@ -39,6 +39,10 @@ import UniformTypeIdentifiers
     var lastRightPanelNoteID: UUID?
     @Published var readingImageOCRRequest: ReadingImageOCRRequest?
     var pendingPDFExcerptDrag: PDFExcerptDrag?
+    @Published var readingExcerptFeedback: ReadingExcerptFeedback?
+    var readingExcerptUndo: ReadingExcerptUndo?
+    var lastTextExcerptID: UUID?
+
     var readingDeskWindowSection = ReadingDeskSection.search
     @Published var readingDeskSection = ReadingDeskSection.excerpts
     @Published var showQuickReadingNote = false
@@ -51,7 +55,19 @@ import UniformTypeIdentifiers
     @Published var pinnedReadingID:UUID?
     @Published var readingRecordID:UUID?
     @Published var multiRegionTarget053:UUID?
-    @Published var readingRecordSelection = Set<UUID>()
+    @Published var readingRecordSelection = Set<UUID>() {
+        didSet {
+            readingRecordSelectionOrder.removeAll { !readingRecordSelection.contains($0) }
+            let additions = readingRecordSelection.subtracting(oldValue)
+            if additions.count == 1 { readingRecordSelectionOrder.append(contentsOf:additions) }
+            else if !additions.isEmpty {
+                let known = journal.state.records.map(\.id).filter { additions.contains($0) }
+                readingRecordSelectionOrder.append(contentsOf:known+additions.subtracting(known).sorted { $0.uuidString < $1.uuidString })
+            }
+        }
+    }
+    private(set) var readingRecordSelectionOrder: [UUID] = []
+    var readingLibraryExportOrder: [ReadingLibraryID] = []
     @Published var readingExportEssay = false
     @Published var readingDeskWindowRequest:UUID?
     lazy var journal = ReadingJournal(storage:storage)
