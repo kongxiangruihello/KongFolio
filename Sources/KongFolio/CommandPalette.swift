@@ -111,11 +111,11 @@ extension WorkspaceStore {
         } catch { commandWorkspace?.status = "无法记忆最近命令：\(error.localizedDescription)" }
         let w = commandWorkspace
         switch command {
-        case .bookshelf: libraryTab = 0; showReadingHistory = true
-        case .shortcutManager: libraryTab = 1; showReadingHistory = true
+        case .bookshelf: openReadingHistory(.bookshelf)
+        case .shortcutManager: openReadingHistory(.shortcuts)
         case .bookNotebook: openCurrentBookNotebook()
         case .historySettings: showHistorySettings = true
-        case .readingHistory: showReadingHistory = true
+        case .readingHistory: openReadingHistory(.history)
         case .readingShortcut: w?.showReadingShortcut = true
         case .exportCheck: if let workspace = activeWorkspace { workspace.startWordExport() } else { activeNote?.exportWord() }
         case .recoveryCenter: showRecoveryCenter = true

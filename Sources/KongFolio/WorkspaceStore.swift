@@ -91,7 +91,7 @@ import UniformTypeIdentifiers
     let storage: URL
     let readingDefaults: UserDefaults
     @Published var showReadingHistory = false
-    @Published var libraryTab = 0
+    @Published var libraryTab = ReadingHistoryPage.bookshelf.rawValue
     @Published var showHistorySettings = false
     @Published var notebookBook: LibraryBook?
     let library: BookLibrary

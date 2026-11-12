@@ -165,7 +165,7 @@ struct FunctionToolbar: View {
         case .note: store.newReadingNote()
         case .annotate: workspace?.showAnnotationBar.toggle()
         case .save: store.saveActive()
-        case .books: store.showReadingHistory = true
+        case .books: store.openReadingHistory(.bookshelf)
         case .jobs: store.showBackgroundJobs = true
         case .sidebar: store.toggleRightReadingPanel()
         default: break

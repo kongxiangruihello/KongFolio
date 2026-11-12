@@ -217,6 +217,8 @@ final class Release037Tests: XCTestCase {
         let store = WorkspaceStore(storage: try root(), readingDefaults: suite())
         XCTAssertNil(store.unavailableReason(.bookshelf)); XCTAssertNil(store.unavailableReason(.shortcutManager)); XCTAssertNil(store.unavailableReason(.historySettings)); XCTAssertNotNil(store.unavailableReason(.bookNotebook))
         store.performCommand(.shortcutManager); XCTAssertTrue(store.showReadingHistory); XCTAssertEqual(store.libraryTab, 1)
+        store.performCommand(.readingHistory); XCTAssertEqual(store.libraryTab, ReadingHistoryPage.history.rawValue)
+        store.performCommand(.bookshelf); XCTAssertEqual(store.libraryTab, ReadingHistoryPage.bookshelf.rawValue)
     }
     func raster() throws -> Data {
         let ctx = CGContext(data: nil, width: 1200, height: 400, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!

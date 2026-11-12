@@ -448,7 +448,7 @@ struct ContentView: View {
                 Text("PDF 与文本文档的阅读、批注、整理工作台").foregroundStyle(.secondary)
                 Button("打开文档…") { workspace.open() }.buttonStyle(.borderedProminent).controlSize(.large)
                 if let store = workspace.store {
-                    Button { store.showReadingHistory = true } label:{ Label("个人书架",systemImage:"books.vertical") }
+                    Button { store.openReadingHistory(.bookshelf) } label:{ Label("个人书架",systemImage:"books.vertical") }
                 }
                 Text("PDF · 图片 · Markdown · HTML · TXT · 可直接拖入窗口").font(.caption).foregroundStyle(.tertiary)
             }

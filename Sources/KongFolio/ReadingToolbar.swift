@@ -18,7 +18,7 @@ struct ReadingToolbar: View {
                 Button { workspace.showTools = true } label:{Image(systemName:"square.grid.2x2")}.help("快捷工具：OCR、页面整理与转换")
                 Button { store.toggleRightReadingPanel() } label:{Image(systemName:"sidebar.right")}.help("右侧面板")
                 Menu {
-                    Button("个人书架（手动维护）") { store.showReadingHistory = true }
+                    Button("个人书架（手动维护）") { store.openReadingHistory(.bookshelf) }
                     Button("阅读资料库：管理摘录、标注、评论与笔记") { store.openReadingDesk(.search,window:true) }
                     Button("阅读组、备份与史料辅助工具（独立窗口）") { store.showResearch = true }
                     Button("完整 PDF 工具界面") { store.readingMode = false }
