@@ -44,7 +44,8 @@ final class ShelfCatalogToolsTests: XCTestCase {
         let file = try Release037Tests().pdf(root)
         let library = BookLibrary(storage:root)
         try library.add([file])
-        let progress = ReadingProgress(visited:[0,2],last:2,date:Date(),pages:4,x:20,y:60)
+        let savedDate = Date(timeIntervalSinceReferenceDate:815_000_000)
+        let progress = ReadingProgress(visited:[0,2],last:2,date:savedDate,pages:4,x:20,y:60)
         progress.save(path:file.path,defaults:defaults)
         for i in 0..<25 {
             ReadingProgress(last:1,date:Date(),pages:3).save(path:"/test-history-\(i).pdf",defaults:defaults)
