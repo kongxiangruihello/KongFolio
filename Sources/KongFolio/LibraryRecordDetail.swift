@@ -7,6 +7,7 @@ struct LibraryRecordDetail: View {
     var onNewLinkedNote: ((ReadingRecord) -> Void)?
     var topPadding: CGFloat = 8
     @State private var contextSource:ReadingContextRequest?
+    @State private var focusedWriting = false
     @State private var editQuote = false
     @State private var showQuoteCorrection = false
     @State private var showLinkPicker = false
@@ -19,9 +20,21 @@ struct LibraryRecordDetail: View {
     @State private var focusedSegment: String?
     private var current:ReadingRecord { journal.record(record.id) ?? record }
     var body:some View {
+        GeometryReader { viewport in
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment:.leading,spacing:10) {
+                HStack {
+                    Spacer()
+                    Button(focusedWriting ? "退出专注写作" : "专注写作",
+                           systemImage:focusedWriting ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") {
+                        focusedWriting.toggle()
+                        if focusedWriting {
+                            DispatchQueue.main.async { proxy.scrollTo("focus-writing-header",anchor:.top) }
+                        }
+                    }.buttonStyle(.borderless)
+                }.id("focus-writing-header")
+                if !focusedWriting {
                 StableTextField("记录标题（可留空）",text:binding(\.title),fontSize:20)
                 if current.kind == .note { noteSourceControls }
                 ReadingRecordMetadataView(record:current)
@@ -83,9 +96,11 @@ struct LibraryRecordDetail: View {
                     DisclosureGroup("校订前文字",isExpanded:$showOriginal) { Text(original).textSelection(.enabled) }
                         .id("original:"+record.id.uuidString)
                 }
+                }
                 Text(current.kind == .note || current.pdfOrigin != nil ? "我的笔记" : "我的理解与评论").font(.caption)
                 LibraryWritingEditor(text:binding(\.note),label:"阅读笔记正文",identity:"note:"+record.id.uuidString,
-                    onEscape:store.quickExcerptNoteID == record.id ? { store.returnFromExcerptNote(record.id) } : nil).id("note:"+record.id.uuidString).frame(height:380)
+                    onEscape:store.quickExcerptNoteID == record.id ? { store.returnFromExcerptNote(record.id) } : nil).id("note:"+record.id.uuidString).frame(height:focusedWriting ? max(380,viewport.size.height-72) : 380)
+                if !focusedWriting {
                 if current.kind == .note {
                     ReadingFollowUpButton(journal:journal,item:.record(record.id),identity:"note:"+record.id.uuidString)
                 }
@@ -110,6 +125,7 @@ struct LibraryRecordDetail: View {
                     Button("加入笔记") { let id = journal.currentEssayID ?? journal.newEssay(); store.insertReadingRecord(current,in:id); store.openReadingDesk(.essays,window:true) }
                     Button("导出这条记录") { store.exportCheckedReadingRecords(only:record.id) }
                 }.disabled(journal.draftRecord?.id == record.id || !current.hasContent)
+                }
             }.padding(.horizontal,12).padding(.top,topPadding).padding(.bottom,8)
 
         }.task(id:store.quickExcerptNoteID) {
@@ -124,6 +140,7 @@ struct LibraryRecordDetail: View {
             guard let hit = store.writingSearchHit else { return }
             let fields = hit.identity.split(separator:":")
             guard fields.count >= 2,fields[1] == record.id.uuidString else { return }
+            if !hit.identity.hasPrefix("note:") { focusedWriting = false }
             if hit.identity.hasPrefix("quote:") {
                 if current.kind == .note { showLinkedQuote = true }
                 else if current.pdfOrigin == nil { editQuote = true }
@@ -137,6 +154,7 @@ struct LibraryRecordDetail: View {
             DispatchQueue.main.asyncAfter(deadline:.now()+0.25) { if store.writingSearchRequest == token { WritingRegistry.jumpIfCurrent(hit) } }
         }.onChange(of:store.readingDetailRequest,initial:true) { _,request in
             guard let request, request.item == .record(record.id) else { return }
+            focusedWriting = false
             switch request.target {
             case .quotation(let quoteID): DispatchQueue.main.async { proxy.scrollTo(quoteID,anchor:.center) }
             case .linkedQuote:
@@ -144,6 +162,7 @@ struct LibraryRecordDetail: View {
                 DispatchQueue.main.async { proxy.scrollTo("quote:"+record.id.uuidString,anchor:.center) }
             case .block: break
             }
+        }
         }
         }.sheet(isPresented:$showQuoteCorrection) { ReadingQuoteCorrectionView(journal:journal,record:current) }.sheet(item:$contextSource) { request in ReadingContextView(store:store,source:request.source) }.onAppear { if journal.draftRecord?.id == record.id && record.kind != .note { editQuote = true } } .onChange(of:store.readingImageOCRRequest) { _,_ in startRequestedOCR() }
         .onDisappear { imageOCR.cancel(); sourceNavigator.cancel() }

@@ -87,6 +87,29 @@ struct ReadingEssay: Codable, Identifiable, Equatable {
         let text = ([title,tags.joined(separator:" ")]+paragraphs).joined(separator:"\n")
         return AnnotationFilter.folded(text).contains(AnnotationFilter.folded(query))
     }
+    mutating func split(_ id:UUID, at offset:Int) -> UUID? {
+        guard let index = blocks.firstIndex(where:{$0.id == id}) else { return nil }
+        let text = blocks[index].text
+        guard offset > 0, offset < text.utf16.count,
+              let position = Range(NSRange(location:offset,length:0),in:text)?.lowerBound else { return nil }
+        let continuation = Block(text:String(text[position...]))
+        blocks[index].text = String(text[..<position])
+        blocks.insert(continuation,at:index+1)
+        return continuation.id
+    }
+
+    mutating func mergeWithNext(_ id:UUID) -> Bool {
+        guard let index = blocks.firstIndex(where:{$0.id == id}), blocks.indices.contains(index+1) else { return false }
+        let next = blocks[index+1]
+        if let a = blocks[index].record, let b = next.record, a != b { return false }
+        if blocks[index].record == nil { blocks[index].record = next.record }
+        if !next.text.isEmpty {
+            blocks[index].text += (blocks[index].text.isEmpty ? "" : "\n\n")+next.text
+        }
+        blocks.remove(at:index+1)
+        return true
+    }
+
     mutating func move(_ id:UUID,delta:Int) {
         guard let i = blocks.firstIndex(where:{$0.id == id}), blocks.indices.contains(i+delta) else { return }
         blocks.swapAt(i,i+delta); modified = Date()

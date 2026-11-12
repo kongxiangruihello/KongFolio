@@ -6,6 +6,7 @@ struct LibraryWritingEditor: View {
     let identity:String
     var onFocus:(()->Void)? = nil
     var onEscape:(()->Void)? = nil
+    var onParagraph:((WritingEdit.ParagraphAction, NSRange) -> Bool)? = nil
     @StateObject private var session = WritingSession()
     @State private var display = LibraryWritingPreferences.load()
     @State private var showDisplay = false
@@ -19,7 +20,7 @@ struct LibraryWritingEditor: View {
             HStack { WritingCharacterCount(session:session);Spacer();Text("⌘Z 撤销") }.font(.system(size:12)).foregroundStyle(.secondary).padding(.horizontal,12).padding(.bottom,8)
         }.background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:10))
         .overlay { RoundedRectangle(cornerRadius:10).stroke(.quaternary) }
-        .onAppear { session.analyze(text) }.onChange(of:text) { _,value in session.analyze(value) }
+        .onAppear { session.analyze(text);session.paragraphHandler = onParagraph }.onChange(of:text) { _,value in session.analyze(value) }
         .sheet(isPresented:$showDisplay) { ReadingWritingDisplaySheet(options:$display) }
     }
 }
@@ -46,10 +47,6 @@ struct LibraryWritingToolbar: View {
     @State private var showFind = false
     @State private var showCleanup = false
     @State private var showReplacePreview = false
-    @State private var query = ""
-    @State private var replacement = ""
-    @State private var confirmReplace = false
-    @FocusState private var queryFocused:Bool
     var body:some View {
         VStack(alignment:.leading,spacing:5) {
             ScrollView(.horizontal,showsIndicators:false) {
@@ -64,29 +61,21 @@ struct LibraryWritingToolbar: View {
                         Button("插入链接") { session.wrap("[","](https://)",placeholder:"链接文字") }
                         Button("清除格式") { session.clearFormatting() }
                         Divider()
-                        Button("查找替换") { showFind = true;queryFocused = true }
+                        Button("查找替换") { session.beginFind();showFind = true }
                         Button("逐项替换…") { showReplacePreview = true }
                         Button("整理粘贴…") { showCleanup = true }
                     }.fixedSize()
+                    WritingParagraphMenu(session:session)
                     Menu("大纲") { if session.analysis.headings.isEmpty { Text("设置标题后可在这里跳转") };ForEach(session.analysis.headings) { h in Button(h.title) { session.go(h.range) } } }.fixedSize()
                 }.buttonStyle(.borderless).font(.system(size:14)).controlSize(.regular).padding(.vertical,4)
 
             }
-            if showFind {
-                VStack(spacing:4) {
-                    HStack { TextField("查找文字",text:$query).focused($queryFocused).onSubmit { session.find(query) };Button("上一处") { session.find(query,backward:true) };Button("下一处") { session.find(query) } }
-                    HStack { TextField("替换为",text:$replacement);Button("替换") { session.replace(query,with:replacement,all:false) };Button("全部替换…") { confirmReplace = true }.disabled(query.isEmpty) }
-                }.font(.caption)
-            }
+            if showFind { WritingFindBar(session:session) { session.endFind();showFind = false } }
             if !session.message.isEmpty { Text(session.message).font(.caption).foregroundStyle(.secondary) }
         }
-        .onChange(of:session.findRequest) { _,_ in showFind = true;queryFocused = true }
+        .onChange(of:session.findRequest) { _,_ in session.beginFind();showFind = true }
         .onChange(of:session.cleanupRequest) { _,_ in showCleanup = true }
         .sheet(isPresented:$showReplacePreview) { EditorReplaceView(session:session) }
         .sheet(isPresented:$showCleanup) { WritingCleanupView(session:session) }
-        .alert("替换全部匹配文字？",isPresented:$confirmReplace) {
-            Button("取消",role:.cancel) {};Button("替换全部") { session.replace(query,with:replacement,all:true) }
-        } message:{Text("匹配 \(matches) 处。执行后可一次撤销；原文引用不参与其他编辑框的替换。")}
     }
-    private var matches:Int { guard !query.isEmpty,let text = session.view?.string else { return 0 };return (try? NSRegularExpression(pattern:NSRegularExpression.escapedPattern(for:query),options:.caseInsensitive).numberOfMatches(in:text,range:NSRange(location:0,length:text.utf16.count))) ?? 0 }
 }

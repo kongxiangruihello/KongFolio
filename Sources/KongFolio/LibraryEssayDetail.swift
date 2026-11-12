@@ -7,21 +7,34 @@ struct LibraryEssayDetail: View {
     @ObservedObject var journal:ReadingJournal
     let id:UUID
     var onExport:(()->Void)? = nil
+    @State private var focusedWriting = false
     @State private var showUpdates = false
     @State private var headings:[LibraryEssayHeading] = []
     private var current:ReadingEssay? { journal.essay(id) }
     var body:some View {
         if let essay = current {
+            GeometryReader { viewport in
             VStack(alignment:.leading,spacing:10) {
+                HStack {
+                    Spacer()
+                    Button(focusedWriting ? "退出专注写作" : "专注写作") {
+                        if !focusedWriting, !essay.blocks.contains(where:{$0.id == store.readingEssayBlockID}) {
+                            store.readingEssayBlockID = essay.blocks.first?.id
+                        }
+                        focusedWriting.toggle()
+                    }.buttonStyle(.borderless)
+                }
+                if !focusedWriting {
                 if journal.draftEssay?.id == essay.id { HStack { Text("空白笔记草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary);Spacer();Button("关闭空白草稿") { journal.discardEssayDraft() } } }
                 Text(ReadingRecordMetadata.essayLines(essay).joined(separator:" · ")).font(.caption).foregroundStyle(.secondary)
                 ReadingRecordExtrasView053(store:store,journal:journal,item:.essay(essay))
                 Button("核对引用更新（\(journal.citationUpdates(id).count)）") { showUpdates = true }.disabled(journal.citationUpdates(id).isEmpty)
                 StableTextField("笔记标题",text:Binding(get:{current?.title ?? ""},set:{text in journal.editEssay(id) { $0.title = text } }),fontSize:20)
                 DisclosureGroup("标签") { ReadingTagField(journal:journal,label:"笔记标签，以逗号分隔",text:Binding(get:{current?.tags.joined(separator:", ") ?? ""},set:{text in journal.editEssay(id) { $0.tags = ReadingRecordDetail.tags(text) } })) }
+                }
                 ScrollViewReader { proxy in
                     VStack(alignment:.leading,spacing:8) {
-                        controls(essay)
+                        if !focusedWriting { controls(essay) }
                         HStack {
                             Menu("笔记大纲") { ForEach(headings) { h in Button(String(repeating:"　",count:max(0,h.level-1))+h.title) {
                                 store.readingEssayBlockID = h.block;proxy.scrollTo(h.block,anchor:.top)
@@ -34,7 +47,14 @@ struct LibraryEssayDetail: View {
                             if let block = store.readingEssayBlockID,let index = essay.blocks.firstIndex(where:{$0.id == block}) { Text("第 \(index+1) 段").font(.caption).lineLimit(1) }
                         }.font(.caption)
                         ScrollView { LazyVStack(alignment:.leading,spacing:14) { ForEach(essay.blocks) { block in
-                            LibraryEssayBlockView(store:store,journal:journal,essayID:id,block:block).id(block.id)
+                            LibraryEssayBlockView(store:store,journal:journal,essayID:id,block:block,
+                                focusMode:focusedWriting,
+                                editorHeight:focusedWriting && store.readingEssayBlockID == block.id ? max(340,viewport.size.height-120) : 340,
+                                navigate:{ destination in
+                                    store.readingEssayBlockID = destination
+                                    proxy.scrollTo(destination,anchor:.center)
+                                    DispatchQueue.main.async { _ = WritingRegistry.focus("essay:"+id.uuidString+":"+destination.uuidString) }
+                                }).id(block.id)
                         } } }
                     }.onChange(of:store.writingSearchRequest,initial:true) { _,token in
                         guard let hit = store.writingSearchHit,!hit.identity.hasPrefix("quotation:") else { return }
@@ -49,7 +69,8 @@ struct LibraryEssayDetail: View {
                         DispatchQueue.main.async { proxy.scrollTo(block,anchor:.center) }
                     }
                 }
-            }.padding(.horizontal,12).sheet(isPresented:$showUpdates) { ReadingCitationUpdatesView(journal:journal,essay:id) }.task(id:essay.modified) {
+            }.padding(.horizontal,12)
+            }.sheet(isPresented:$showUpdates) { ReadingCitationUpdatesView(journal:journal,essay:id) }.task(id:essay.modified) {
                 do { try await Task.sleep(nanoseconds:400_000_000) } catch { return }
                 var values:[LibraryEssayHeading] = []
                 for block in essay.blocks { let result = await WritingAnalysisWorker.shared.analyze(block.text);values += result.headings.map{LibraryEssayHeading(block:block.id,title:$0.title,level:$0.level,range:$0.range)} }
@@ -71,6 +92,10 @@ struct LibraryEssayBlockView: View {
     @ObservedObject var journal:ReadingJournal
     let essayID:UUID
     let block:ReadingEssay.Block
+    var focusMode = false
+    var editorHeight: CGFloat = 340
+    var navigate: ((UUID) -> Void)? = nil
+    @State private var paragraphStatus = ""
     @State private var showQuote = false
     @State private var showOriginal = false
 
@@ -81,7 +106,7 @@ struct LibraryEssayBlockView: View {
                 Spacer()
                 Menu { Button("上移") { journal.editEssay(essayID) { $0.move(block.id,delta:-1) } };Button("下移") { journal.editEssay(essayID) { $0.move(block.id,delta:1) } };Button("移除段落",role:.destructive) { journal.editEssay(essayID) { $0.blocks.removeAll{$0.id == block.id} } } } label:{Image(systemName:"ellipsis.circle")}.help("段落操作")
             }
-            if let record = block.record {
+            if !focusMode, let record = block.record {
                 VStack(alignment:.leading,spacing:6) {
                     Text(record.wholeBook && record.quote.isEmpty ? "关联书籍" : "原文引用（插入时的副本）").font(.caption).foregroundStyle(.secondary)
                     if !record.quote.isEmpty {
@@ -98,8 +123,9 @@ struct LibraryEssayBlockView: View {
                     ForEach(Array(record.citations.enumerated()),id:\.offset) { _,citation in Button(citation.display) { _ = store.reveal(citation.source,beside:false) }.buttonStyle(.link).help(citation.display) }
                 }.padding(8).background(.quaternary,in:RoundedRectangle(cornerRadius:6))
             }
-            LibraryWritingEditor(text:Binding(get:{journal.essay(essayID)?.blocks.first{$0.id == block.id}?.text ?? ""},set:{text in journal.editEssay(essayID) { value in if let i = value.blocks.firstIndex(where:{$0.id == block.id}) { value.blocks[i].text = text } } }),label:"笔记论述正文",identity:"essay:"+essayID.uuidString+":"+block.id.uuidString,onFocus:{store.readingEssayBlockID = block.id}).frame(height:340)
-            ReadingFollowUpButton(journal:journal,item:.essay(essayID),identity:"essay:"+essayID.uuidString+":"+block.id.uuidString,block:block.id)
+            LibraryWritingEditor(text:Binding(get:{journal.essay(essayID)?.blocks.first{$0.id == block.id}?.text ?? ""},set:{text in journal.editEssay(essayID) { value in if let i = value.blocks.firstIndex(where:{$0.id == block.id}) { value.blocks[i].text = text } } }),label:"笔记论述正文",identity:"essay:"+essayID.uuidString+":"+block.id.uuidString,onFocus:{store.readingEssayBlockID = block.id},onParagraph:paragraph).frame(height:editorHeight)
+            if !paragraphStatus.isEmpty { Text(paragraphStatus).font(.caption).foregroundStyle(.secondary) }
+            if !focusMode { ReadingFollowUpButton(journal:journal,item:.essay(essayID),identity:"essay:"+essayID.uuidString+":"+block.id.uuidString,block:block.id) }
         }.padding(10).background(.quaternary.opacity(0.35),in:RoundedRectangle(cornerRadius:8))
         .onChange(of:store.writingSearchRequest,initial:true) { _,_ in
             guard let hit = store.writingSearchHit, hit.identity.hasSuffix(":"+essayID.uuidString+":"+block.id.uuidString) else { return }
@@ -117,4 +143,22 @@ struct LibraryEssayBlockView: View {
             };return true
         }
     }
+    private func paragraph(_ action:WritingEdit.ParagraphAction, _ selection:NSRange) -> Bool {
+        paragraphStatus = ""
+        var destination:UUID?
+        switch action {
+        case .up, .down:
+            journal.editEssay(essayID) { $0.move(block.id,delta:action == .up ? -1 : 1) }
+            destination = block.id
+        case .split:
+            journal.editEssay(essayID) { destination = $0.split(block.id,at:selection.location) }
+        case .merge:
+            var merged = false
+            journal.editEssay(essayID) { merged = $0.mergeWithNext(block.id) }
+            if !merged { paragraphStatus = "下一段不存在，或两段各有不同的引用。可分别编辑正文。" }
+        }
+        if let destination { navigate?(destination) }
+        return true
+    }
+
 }

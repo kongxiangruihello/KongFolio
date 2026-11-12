@@ -11,17 +11,21 @@ import AppKit
         self.defaults = defaults;values = defaults.data(forKey:"KongFolio.writingPositions").flatMap{try? JSONDecoder().decode([String:Position].self,from:$0)} ?? [:]
     }
     func capture(_ view:NSTextView,key:String) {
-        guard !restoring,!key.isEmpty,!view.hasMarkedText() else { return }
+        guard !restoring,!key.isEmpty,!view.hasMarkedText(),(view as? ComposingTextView)?.pendingPosition == nil else { return }
         let origin = view.enclosingScrollView?.contentView.bounds.origin ?? .zero
         values[key] = Position(selection:view.selectedRange(),x:origin.x,y:origin.y,date:Date())
         if values.count>500 { for key in values.sorted(by:{$0.value.date>$1.value.date}).dropFirst(500).map(\.key) { values[key] = nil } }
         timer?.cancel();timer = Task { [weak self] in do { try await Task.sleep(nanoseconds:400_000_000) } catch { return };self?.flush() }
     }
+    func position(for key:String) -> Position? { values[key] }
     func restore(_ view:NSTextView,key:String) {
-        guard let p = values[key],!view.hasMarkedText(),p.x.isFinite,p.y.isFinite else { return }
+        if let position = values[key] { restore(view,position:position) }
+    }
+    func restore(_ view:NSTextView,position p:Position) {
+        guard !view.hasMarkedText(),p.x.isFinite,p.y.isFinite else { return }
         restoring = true;defer { restoring = false }
         view.setSelectedRange(MarkdownNote.clamp(p.selection,to:view.string.utf16.count))
-        if let scroll = view.enclosingScrollView { scroll.layoutSubtreeIfNeeded();scroll.contentView.scroll(to:CGPoint(x:max(0,p.x),y:max(0,p.y)));scroll.reflectScrolledClipView(scroll.contentView) }
+        if let scroll = view.enclosingScrollView { scroll.layoutSubtreeIfNeeded();if let container = view.textContainer { view.layoutManager?.ensureLayout(for:container) };scroll.contentView.scroll(to:CGPoint(x:max(0,p.x),y:max(0,p.y)));scroll.reflectScrolledClipView(scroll.contentView) }
     }
     func flush() { timer?.cancel();timer = nil;if let data = try? JSONEncoder().encode(values) { defaults.set(data,forKey:"KongFolio.writingPositions") } }
 }

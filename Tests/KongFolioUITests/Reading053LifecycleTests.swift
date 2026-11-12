@@ -118,7 +118,9 @@ final class Reading053LifecycleTests: XCTestCase {
             }),label:"资料库笔记",identity:id.uuidString,session:session,markdown:true).id(id))
         }
         let host = NSHostingView(rootView:editor(note.id))
-        host.frame = NSRect(x:0,y:0,width:500,height:270)
+        let window = NSWindow(contentRect:NSRect(x:0,y:0,width:500,height:270),
+                              styleMask:[.borderless],backing:.buffered,defer:false)
+        window.contentView = host
         host.layoutSubtreeIfNeeded()
         try await wait { session.view != nil }
         let view = try XCTUnwrap(session.view as? ComposingTextView)
@@ -140,9 +142,14 @@ final class Reading053LifecycleTests: XCTestCase {
         view.undoManager?.undo()
         XCTAssertFalse(view.string.contains(inserted))
         let expected = view.string
+        let finalSelection = NSRange(location:1,length:2)
+        view.setSelectedRange(finalSelection)
         host.rootView = editor(other.id)
         host.layoutSubtreeIfNeeded()
         try await wait { session.view?.string == other.note }
+        host.rootView = editor(note.id)
+        host.layoutSubtreeIfNeeded()
+        try await wait { session.view?.string == expected && session.view?.selectedRange() == finalSelection }
         try await journal.flush()
         XCTAssertEqual(ReadingJournal(storage:root).record(note.id)?.note,expected)
         XCTAssertEqual(journal.record(other.id)?.note,other.note)

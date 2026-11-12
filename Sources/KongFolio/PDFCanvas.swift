@@ -338,44 +338,46 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
               !(selected.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let page = selected.pages.last else { return }
         let area = convert(selected.bounds(for: page), from: page)
-        var buttons: [NSView] = (workspace.readingLocked ? []:Array(MarkupColor.allCases.prefix(2))).map { color in
-            ActionButton(image: Self.dot(color.nsColor), tip: "高亮（\(color.rawValue)）") { [weak self] in
-                workspace.markupColor = color
-                workspace.mark(style: .highlight, color: color); self?.hideSelectionToolbar()
+        let toolbar = PDFSelectionActions(
+            editable: !workspace.readingLocked, compact: bounds.width < 340,
+            excerpt: { [weak self, weak workspace] in
+                if let self {
+                    if self.currentSelection == nil { self.setCurrentSelection(selected,animate:false) }
+                    workspace?.excerptSelection()
+                    self.hideSelectionToolbar()
+                }
+            },
+            note: { [weak self, weak workspace] in
+                if let workspace, let record = workspace.readingExcerpt(from: selected) {
+                    workspace.store?.startNoteFromExcerpt(record)
+                }
+                self?.hideSelectionToolbar()
+            },
+            copy: { [weak self, weak workspace] in
+                var record = workspace?.readingExcerpt(from: selected)
+                if let original = selected.string { record?.quote = original }
+                let text = record.map { ReadingCitationClipboardOptions.load().text([$0]) } ?? selected.string ?? ""
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                self?.hideSelectionToolbar()
+            },
+            mark: { [weak self, weak workspace] style, color, annotate in
+                guard let workspace, !workspace.readingLocked else { return }
+                if let color { workspace.markupColor = color }
+                if self?.currentSelection == nil { self?.setCurrentSelection(selected,animate:false) }
+                workspace.mark(style: style, color: workspace.markupColor, annotate: annotate)
+                self?.hideSelectionToolbar()
             }
-        }
-        if !workspace.readingLocked { buttons += [
-            ActionButton(symbol: "underline", tip: "下划线") { [weak self] in workspace.mark(style: .underline, color: workspace.markupColor); self?.hideSelectionToolbar() },
-            ActionButton(symbol: "strikethrough", tip: "删除线") { [weak self] in workspace.mark(style: .strikeOut, color: workspace.markupColor); self?.hideSelectionToolbar() },
-            ActionButton(symbol: "text.bubble", tip: "高亮并加批注") { [weak self] in workspace.mark(style: .highlight, color: workspace.markupColor, annotate: true); self?.hideSelectionToolbar() },
-        ] }
-        buttons += [
-            ActionButton(symbol:"text.quote",tip:"保存为摘录") { [weak self] in workspace.excerptSelection();self?.hideSelectionToolbar() },
-            ActionButton(symbol:"note.text.badge.plus",tip:"针对所选原文写笔记") { [weak self] in workspace.store?.newReadingNote(linked:ReadingRecord(kind:.excerpt,quote:selected.string ?? "",citations:[workspace.readingCitation()]));self?.hideSelectionToolbar() },
-            ActionButton(symbol:"doc.on.doc",tip:"复制原文和出处") { [weak self] in NSPasteboard.general.clearContents();NSPasteboard.general.setString((selected.string ?? "")+"\n\n"+ReadingExportOrdering.citation(workspace.readingCitation()),forType:.string);self?.hideSelectionToolbar() }
-        ]
-        let stack = NSStackView(views: buttons)
-        stack.spacing = 4
-        stack.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
-        stack.wantsLayer = true
-        stack.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor
-        stack.layer?.cornerRadius = 8
-        stack.layer?.borderWidth = 0.5
-        stack.layer?.borderColor = NSColor.separatorColor.cgColor
-        stack.frame.size = stack.fittingSize
-        var origin = CGPoint(x: area.midX - stack.frame.width / 2, y: area.maxY + 6)
-        if origin.y + stack.frame.height > bounds.maxY { origin.y = area.minY - stack.frame.height - 6 }
-        origin.x = min(max(4, origin.x), max(4, bounds.maxX - stack.frame.width - 4))
-        origin.y = min(max(4, origin.y), max(4, bounds.maxY - stack.frame.height - 4))
-        stack.frame.origin = origin
-        addSubview(stack)
-        selectionBar = stack
-    }
-
-    private static func dot(_ color: NSColor) -> NSImage {
-        NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
-            color.setFill(); NSBezierPath(ovalIn: rect.insetBy(dx: 2, dy: 2)).fill(); return true
-        }
+        )
+        let host = NSHostingView(rootView: toolbar)
+        host.frame.size = host.fittingSize
+        var origin = CGPoint(x: area.midX - host.frame.width / 2, y: area.maxY + 5)
+        if origin.y + host.frame.height > bounds.maxY { origin.y = area.minY - host.frame.height - 5 }
+        origin.x = min(max(bounds.minX, origin.x), max(bounds.minX, bounds.maxX - host.frame.width))
+        origin.y = min(max(bounds.minY, origin.y), max(bounds.minY, bounds.maxY - host.frame.height))
+        host.frame.origin = origin
+        addSubview(host)
+        selectionBar = host
     }
 
     /// Captures what is on screen inside the dragged rectangle and sends it to the workspace.
@@ -757,30 +759,6 @@ private final class ReadingSourceOverlay: NSView {
             path.stroke()
         }
     }
-}
-
-/// A small borderless button that runs a closure; used by the floating selection toolbar.
-final class ActionButton: NSButton {
-    private let handler: () -> Void
-
-    init(image: NSImage, tip: String, handler: @escaping () -> Void) {
-        self.handler = handler
-        super.init(frame: NSRect(x: 0, y: 0, width: 26, height: 24))
-        self.image = image
-        toolTip = tip
-        isBordered = false
-        imagePosition = .imageOnly
-        target = self
-        action = #selector(run)
-    }
-
-    convenience init(symbol: String, tip: String, handler: @escaping () -> Void) {
-        self.init(image: NSImage(systemSymbolName: symbol, accessibilityDescription: tip) ?? NSImage(), tip: tip, handler: handler)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    @objc private func run() { handler() }
 }
 
 /// A live stroke is painted above PDFKit. PDF page contents change once, on mouse-up.

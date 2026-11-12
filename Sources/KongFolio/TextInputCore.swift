@@ -16,6 +16,22 @@ class ComposingTextView: NSTextView {
             if key == "f" { session.findRequest = UUID();return true }
             if key == "g" { session.find(session.lastQuery);return true }
         }
+        if modifiers == [.command,.shift], key == "v" {
+            session.cleanupFromClipboard = true
+            session.cleanupRequest = UUID()
+            return true
+        }
+        if modifiers == [.command,.option] {
+            let action: WritingEdit.ParagraphAction?
+            switch key {
+            case "\u{F700}": action = .up
+            case "\u{F701}": action = .down
+            case "\r", "\u{3}": action = .split
+            case "j": action = .merge
+            default: action = nil
+            }
+            if let action { session.paragraph(action);return true }
+        }
         if modifiers == [.command,.shift],key == "g" { session.find(session.lastQuery,backward:true);return true }
         return super.performKeyEquivalent(with:event)
     }
@@ -25,12 +41,38 @@ class ComposingTextView: NSTextView {
         if !hasMarkedText(), let onEscape { onEscape() }
         else { super.cancelOperation(sender) }
     }
-    override func becomeFirstResponder() -> Bool { let result = super.becomeFirstResponder();if result { focused?();WritingRegistry.attach(self,key:positionKey) };return result }
+    override func becomeFirstResponder() -> Bool { restorePosition();let result = super.becomeFirstResponder();if result { focused?();WritingRegistry.attach(self,key:positionKey) };return result }
     var positionKey = ""
+    var pendingPosition: WritingPositions.Position?
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil, pendingPosition != nil else { return }
+        DispatchQueue.main.async { [weak self] in self?.restorePosition() }
+    }
+    func restorePosition() {
+        guard window != nil, let pendingPosition, !hasMarkedText() else { return }
+        WritingPositions.shared.restore(self,position:pendingPosition)
+        self.pendingPosition = nil
+    }
+    override func paste(_ sender:Any?) {
+        guard !hasMarkedText() else { super.paste(sender);return }
+        breakUndoCoalescing()
+        undoManager?.beginUndoGrouping()
+        super.paste(sender)
+        undoManager?.endUndoGrouping()
+        breakUndoCoalescing()
+    }
     var supportsMarkdownLists = false
     private let editingHistory = UndoManager()
     override func insertNewline(_ sender:Any?) {
-        if supportsMarkdownLists,!hasMarkedText(),let edit = WritingEdit.newline(string,selection:selectedRange()) { WritingEdit.apply(edit,to:self) } else { super.insertNewline(sender) }
+        guard !hasMarkedText() else { super.insertNewline(sender);return }
+        if supportsMarkdownLists, let edit = WritingEdit.newline(string,selection:selectedRange()) {
+            WritingEdit.apply(edit,to:self)
+        } else {
+            breakUndoCoalescing()
+            super.insertNewline(sender)
+            breakUndoCoalescing()
+        }
     }
     override func insertTab(_ sender:Any?) {
         if supportsMarkdownLists,!hasMarkedText(),let edit = WritingEdit.indent(string,selection:selectedRange(),outdent:false) { WritingEdit.apply(edit,to:self) } else { super.insertTab(sender) }
