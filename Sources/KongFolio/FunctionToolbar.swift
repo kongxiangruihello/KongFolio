@@ -94,6 +94,8 @@ struct FunctionToolbar: View {
             }
         }
         Section("阅读") {
+            Button("上次批阅…") { store.showReadingBatch = true }
+                .disabled(store.readingBatch == nil)
             Menu("搜索") {
                 if overflow.contains(.search) { control(.search,menu:true) }
                 Button("跨文件全文搜索…") { store.showFolderSearch = true }

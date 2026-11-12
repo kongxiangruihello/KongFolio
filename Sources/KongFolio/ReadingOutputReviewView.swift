@@ -2,27 +2,68 @@ import SwiftUI
 import Combine
 
 struct ReadingOutputReviewView: View {
-    @ObservedObject var store:WorkspaceStore
-    let snapshot:ReadingExportSnapshot
-    let assets:URL
+    @ObservedObject var journal: ReadingJournal
+    let snapshot: ReadingExportSnapshot
+    let assets: URL
     @Environment(\.dismiss) private var dismiss
-    @State private var issues:[ReadingOutputIssue] = []
+    @State private var issues: [ReadingOutputIssue] = []
     @State private var busy = true
-    @State private var message = "正在核对图片、出处与原文页码…"
+    @State private var message = ""
     @State private var page = 0
-    private var pagination:ReadingPagination { ReadingPagination(total:issues.count,page:page,size:10) }
-    var body:some View {
-        VStack(alignment:.leading,spacing:14) {
-            HStack { Text("导出前完整性检查").font(.headline);Spacer();Button("关闭") { dismiss() } }
-            Text("检查当前勾选的 \(snapshot.orderedItems.count) 项。版本和印刷页码缺失是提醒，可按研究需要补充；不会自动改写记录。").font(.caption)
-            if busy { ProgressView() }
-            Text(message).font(.caption)
-            List(Array(issues.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { issue in
-                HStack { VStack(alignment:.leading) { Text(issue.title).lineLimit(1).help(issue.title);Text(issue.message).font(.caption).foregroundStyle(.orange) };Spacer();Button("定位修正") { dismiss();DispatchQueue.main.asyncAfter(deadline:.now()+0.2) { store.openReadingItem(issue.item) } } }
+    @State private var editing: ReadingOutputIssue?
+    private var pagination: ReadingPagination { ReadingPagination(total:issues.count,page:page,size:10) }
+
+    var body: some View {
+        VStack(alignment:.leading,spacing:12) {
+            HStack {
+                Text("导出前完整性检查").font(.headline)
+                Spacer()
+                Button("返回导出") { dismiss() }.keyboardShortcut(.cancelAction)
             }
-            HStack { Text(pagination.label);Button("上一页") { page = max(0,page-1) }.disabled(pagination.index == 0);Button("下一页") { page += 1 }.disabled(pagination.index>=pagination.last) }
-        }.padding(20).adaptiveSheet(width:720,height:500)
-        .task { do { let result = try await ReadingOutputReview.shared.inspect(snapshot,assets:assets);try Task.checkCancellation();issues = result;message = result.isEmpty ? "本次检查未发现问题；请继续核对正文与出处内容" : "发现 \(result.count) 条需要核对的信息" } catch { message = FolioCancellation.matches(error) ? "检查已取消" : error.localizedDescription };busy = false }
+            Text("正在核对当前勾选的 \(snapshot.orderedItems.count) 项。保存出处后会刷新检查结果。")
+                .font(.caption).foregroundStyle(.secondary)
+            if busy { ProgressView().controlSize(.small) }
+            Text(message).font(.caption)
+            List(Array(issues[pagination.range])) { issue in issueRow(issue) }
+            HStack {
+                Text(pagination.label)
+                Button("上一页") { page -= 1 }.disabled(pagination.index == 0)
+                Button("下一页") { page += 1 }.disabled(pagination.index >= pagination.last)
+            }
+        }.padding(20).adaptiveSheet(width:720,height:500,minimumWidth:360)
+            .task(id:journal.revisionID) { await refresh() }
+            .sheet(item:$editing) { issue in
+                if let target = issue.source {
+                    ReadingExportSourceEditor(journal:journal,target:target) { editing = nil }
+                }
+            }
+    }
+
+    private func issueRow(_ issue:ReadingOutputIssue) -> some View {
+        HStack {
+            VStack(alignment:.leading,spacing:4) {
+                Text(issue.title).lineLimit(1).help(issue.title)
+                Text(issue.message).font(.caption).foregroundStyle(.orange)
+            }
+            Spacer()
+            if issue.source != nil {
+                Button("修正出处…") { editing = issue }.disabled(journal.unreadable)
+            }
+        }
+    }
+
+    private func refresh() async {
+        busy = true
+        let current = snapshot.refreshed(in:journal)
+        do {
+            let result = try await ReadingOutputReview.shared.inspect(current,assets:assets)
+            try Task.checkCancellation()
+            issues = result
+            page = pagination.index
+            message = result.isEmpty ? "本次检查未发现问题" : "还有 \(result.count) 条需要核对"
+        } catch where FolioCancellation.matches(error) { return }
+        catch { message = error.localizedDescription }
+        busy = false
     }
 }
 struct ReadingIncrementalExportView: View {

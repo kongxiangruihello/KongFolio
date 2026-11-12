@@ -6,6 +6,7 @@ struct ReadingOutputIssue:Identifiable {
     var item:ReadingLibraryID
     var title:String
     var message:String
+    var source: ReadingExportSourceTarget? = nil
 }
 actor ReadingOutputReview {
     static let shared = ReadingOutputReview()
@@ -15,30 +16,40 @@ actor ReadingOutputReview {
             try Task.checkCancellation()
             let target:ReadingLibraryID
             switch item { case .record(let r):target = .record(r.id);case .essay(let e):target = .essay(e.id) }
-            func append(_ message:String) { result.append(ReadingOutputIssue(id:item.id+":"+String(result.count),item:target,title:item.title,message:message)) }
-            for record in item.records {
+            let targets: [(ReadingRecord,UUID?)]
+            switch item {
+            case .record(let record): targets = [(record,nil)]
+            case .essay(let essay): targets = essay.blocks.compactMap { block in block.record.map{($0,block.id)} }
+            }
+            for (record,block) in targets {
+                func append(_ message:String,index:Int? = nil) {
+                    let source = index.map{ReadingExportSourceTarget(item:target,block:block,index:$0)}
+                    result.append(ReadingOutputIssue(id:item.id+":"+String(result.count),item:target,title:item.title,message:message,source:source))
+                }
                 if snapshot.options?.includeQuote != false,let name = record.imageAsset {
                     let file = assets.appendingPathComponent(name)
                     if name != file.lastPathComponent || name.contains("..") { append("摘录图片路径无效") }
                     else if let data = try? Data(contentsOf:file), (try? SignatureImage.loadData(data)) != nil {} else { append("摘录图片缺失或无法读取") }
                 }
-                if record.citations.isEmpty { append("未填写出处") }
-                for citation in record.citations {
-                    if citation.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { append("出处缺少书名") }
-                    if (citation.edition ?? "").trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { append("《"+citation.title+"》尚未填写版本") }
-                    if citation.source.pageLabel?.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty != false { append("《"+citation.title+"》尚未核对印刷页码") }
+                if record.citations.isEmpty { append("未填写出处",index:0) }
+                for (index,citation) in record.citations.enumerated() {
+                    if citation.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { append("出处缺少书名",index:index) }
+                    if (citation.edition ?? "").trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { append("《"+citation.title+"》尚未填写版本",index:index) }
+                    if citation.source.pageLabel?.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty != false { append("《"+citation.title+"》尚未核对印刷页码",index:index) }
                     let path = citation.source.path
-                    guard !path.isEmpty,FileManager.default.fileExists(atPath:path) else { append("《"+citation.title+"》原文链接失效");continue }
+                    guard !path.isEmpty,FileManager.default.fileExists(atPath:path) else { append("《"+citation.title+"》原文链接失效",index:index);continue }
                     // Never cause an iCloud download in an advisory check.
                     let file = URL(fileURLWithPath:path),resource = try? file.resourceValues(forKeys:[.isUbiquitousItemKey,.ubiquitousItemDownloadingStatusKey])
-                    if resource?.isUbiquitousItem == true,resource?.ubiquitousItemDownloadingStatus == .notDownloaded { append("《"+citation.title+"》尚未下载，页码暂未检查");continue }
+                    if resource?.isUbiquitousItem == true,resource?.ubiquitousItemDownloadingStatus == .notDownloaded { append("《"+citation.title+"》尚未下载，页码暂未检查",index:index);continue }
                     if let expected = citation.source.fingerprint {
-                        if digests[path] == nil { digests[path] = try FileBaseline.capture(file).digest }
-                        if digests[path] != expected { append("《"+citation.title+"》原文内容已变化，请核对版本与定位") }
+                        if digests[path] == nil { digests[path] = try? FileBaseline.capture(file).digest }
+                        if digests[path] == nil { append("《"+citation.title+"》原文暂不可读取",index:index);continue }
+                        if digests[path] != expected { append("《"+citation.title+"》原文内容已变化，请核对版本与定位",index:index) }
                     }
+                    if TextImport.handles(file) { continue }
                     if pages[path] == nil { pages[path] = autoreleasepool { PDFDocument(url:file)?.pageCount ?? 0 } }
-                    if pages[path] == 0 { append("《"+citation.title+"》原文暂不可读取") }
-                    else if citation.source.page >= pages[path]! { append("《"+citation.title+"》来源页码超出文献范围") }
+                    if pages[path] == 0 { append("《"+citation.title+"》原文暂不可读取",index:index) }
+                    else if citation.source.page >= pages[path]! { append("《"+citation.title+"》来源页码超出文献范围",index:index) }
                 }
             }
         }

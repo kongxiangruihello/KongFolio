@@ -28,13 +28,14 @@ struct ReadingExportPane: View {
     @State private var page = 0
     @State private var showBatch = false
     @State private var showReview = false
+    @State private var checkedCandidateIDs: Set<String>?
     @State private var showIncremental = false
     @State private var preparation: Task<Void,Never>?
     private var preparing: Bool { preparation != nil }
     private var format:ReadingRecordExport.Format { preferences.format }
     private var bookPath: String? { bookSource?.source.path ?? store.commandWorkspace?.readingJournalPath }
     private var candidates:[ReadingExportItem] {
-        if shelfScope == nil, scope == .essay { guard let essay = journal.essay(journal.currentEssayID),journal.draftEssay?.id != essay.id,essay.hasContent else { return [] };return [.essay(essay)] }
+        if checkedCandidateIDs == nil, shelfScope == nil, scope == .essay { guard let essay = journal.essay(journal.currentEssayID),journal.draftEssay?.id != essay.id,essay.hasContent else { return [] };return [.essay(essay)] }
         let ids = store.readingRecordSelection.isEmpty ? Set(store.readingRecordID.map{[$0]} ?? []) : store.readingRecordSelection
         func withinShelfBook(_ item:ReadingLibraryItem) -> Bool {
             if let shelfScope {
@@ -42,8 +43,17 @@ struct ReadingExportPane: View {
             }
             return bookSource.map { item.isFromBook($0.source.path) } ?? true
         }
-        let records = journal.state.records.filter { r in withinShelfBook(.record(r)) && r.hasContent && r.removed == nil && (shelfScope != nil || scope == .library || (scope == .selected ? (ids.contains(r.id) || store.readingLibraryExportSelection.contains(.record(r.id))) : (bookPath.map { ReadingLibraryItem.record(r).isFromBook($0) } ?? false))) }.map(ReadingExportItem.record)
-        let essays = journal.state.essays.filter { e in withinShelfBook(.essay(e)) && e.hasContent && e.removed == nil && (shelfScope != nil || scope == .library || (scope == .selected && store.readingLibraryExportSelection.contains(.essay(e.id))) || (scope == .book && (bookPath.map { ReadingLibraryItem.essay(e).isFromBook($0) } ?? false))) }.map(ReadingExportItem.essay)
+        func included(_ item:ReadingLibraryItem) -> Bool {
+            if let checkedCandidateIDs { return checkedCandidateIDs.contains(item.id.exportOrderKey) }
+            guard withinShelfBook(item) else { return false }
+            if shelfScope != nil || scope == .library { return true }
+            if scope == .book { return bookPath.map{item.isFromBook($0)} ?? false }
+            if store.readingLibraryExportSelection.contains(item.id) { return true }
+            if case .record(let id) = item.id { return ids.contains(id) }
+            return false
+        }
+        let records = journal.state.records.filter { $0.hasContent && $0.removed == nil && included(.record($0)) }.map(ReadingExportItem.record)
+        let essays = journal.state.essays.filter { $0.hasContent && $0.removed == nil && included(.essay($0)) }.map(ReadingExportItem.essay)
         let selectedOrder = (store.readingLibraryExportOrder.isEmpty ?
             store.readingRecordSelectionOrder.map(ReadingLibraryID.record) : store.readingLibraryExportOrder).map(\.exportOrderKey)
         var items = ReadingExportOrdering.sorted(records+essays,by:sort,selection:selectedOrder)
@@ -90,11 +100,11 @@ struct ReadingExportPane: View {
         }
         .onDisappear { preparation?.cancel(); controller.close() }.onChange(of:preferences) { _,value in value.save() }
          .onChange(of:scope) { _,value in
-            page = 0; excluded = []; order = []
+            page = 0; excluded = []; order = []; checkedCandidateIDs = nil
             temporarySort = value == .selected ? .selection : nil
             if let pendingSort { sortSelection.wrappedValue = pendingSort; self.pendingSort = nil }
         }.onChange(of:candidates.count) { _,_ in page = pagination.index }
-        .sheet(isPresented:$showReview) { ReadingOutputReviewView(store:store,snapshot:snapshot,assets:assets) }
+        .sheet(isPresented:$showReview) { ReadingOutputReviewView(journal:journal,snapshot:snapshot,assets:assets) }
         .sheet(isPresented:$showIncremental) { ReadingIncrementalExportView(journal:journal,controller:store.incrementalExport,options:preferences.options) }
         .sheet(isPresented:$showBatch) { ReadingExportBatchView(store:store,journal:journal,snapshot:snapshot) }
     }
@@ -131,7 +141,10 @@ struct ReadingExportPane: View {
 
     private var reviewActions: some View {
         HStack {
-            Button("检查图片与出处…") { showReview = true }
+            Button("检查图片与出处…") {
+                checkedCandidateIDs = Set(candidates.map(\.id))
+                showReview = true
+            }
             Button(previewCurrent ? "刷新预览" : "生成预览",action:preview)
                 .disabled(!preferences.options.valid)
         }.disabled(empty || controller.busy || preparing)
@@ -210,6 +223,10 @@ struct ReadingExportPane: View {
     }
     private var selectionList:some View {
         VStack(alignment:.leading,spacing:6) {
+            if checkedCandidateIDs != nil {
+                Button("按当前范围重新取数") { checkedCandidateIDs = nil }
+                    .help("保留现有勾选，并纳入当前范围的新记录")
+            }
             ForEach(Array(candidates.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { item in
                 HStack { Toggle(item.title,isOn:Binding(get:{!excluded.contains(item.id)},set:{if $0 { excluded.remove(item.id) } else { excluded.insert(item.id) }})).lineLimit(1).help(item.title);Spacer();Button("上移") { move(item.id,-1) };Button("下移") { move(item.id,1) } }.font(.caption)
             }

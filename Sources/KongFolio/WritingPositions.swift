@@ -44,5 +44,16 @@ import AppKit
         return (view.string,view.selectedRange())
     }
     static func selection(_ key:String) -> NSRange? { entries[key]?.view?.selectedRange() }
+    static func insertAtCursor(_ text:String,key:String,expected:String,window:NSWindow?) -> Bool {
+        guard let view = entries[key]?.view,let editorWindow = view.window,
+              window == nil || window === editorWindow,view.isEditable,!view.hasMarkedText(),view.string == expected else { return false }
+        let cursor = MarkdownNote.clamp(view.selectedRange(),to:view.string.utf16.count).location
+        let before = view.string
+        view.insertText(text,replacementRange:NSRange(location:cursor,length:0))
+        guard view.string != before else { return false }
+        view.scrollRangeToVisible(view.selectedRange())
+        editorWindow.makeFirstResponder(view)
+        return true
+    }
     static func jump(_ key:String,range:NSRange) { guard let view = entries[key]?.view,!view.hasMarkedText() else { return };let r = MarkdownNote.clamp(range,to:view.string.utf16.count);view.setSelectedRange(r);view.scrollRangeToVisible(r);view.window?.makeFirstResponder(view) }
 }

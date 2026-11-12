@@ -61,7 +61,13 @@ extension Workspace {
         let root = storage
         let prepare = prepareImportFiles
         let worker = Task.detached { () async throws -> (ImportPayload,PreparedReading?) in
-            try await prepare(urls) { phase in Task { @MainActor [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = phase } }
+            for url in urls where ShelfFileStatus.read(url) == .missing { throw ReadingOpenFailure.missing }
+            let fromCloud = urls.contains { ShelfFileStatus.read($0) == .cloud }
+            do {
+                try await prepare(urls) { phase in Task { @MainActor [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = phase } }
+            } catch where fromCloud && !FolioCancellation.matches(error) {
+                throw ReadingOpenFailure.cloud(error.localizedDescription)
+            }
             await MainActor.run { [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = "等候文件解析…" }
             try await ImportLimiter.shared.acquire();defer { Task { await ImportLimiter.shared.release() } }
             await MainActor.run { [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = "正在解析文件…" }
@@ -77,10 +83,14 @@ extension Workspace {
                 guard importGeneration == generation,!worker.isCancelled else { return }
                 isImporting = false;busy = false;cancelAuxiliary = nil
                 load(urls,insert:insert,prepared:payload,reading:reading)
+                if !insert {
+                    let failure = count == 0 ? error.map{FolioError(message:$0)} : nil
+                    store?.recordBatchLoad(self,error:failure)
+                }
             } catch {
                 guard importGeneration == generation else { return }
                 isImporting = false;busy = false;cancelAuxiliary = nil
-                if FolioCancellation.matches(error) { status = "已取消导入" } else { recordError(error) }
+                if FolioCancellation.matches(error) { status = "已取消导入" } else { recordError(error); if !insert { store?.recordBatchLoad(self,error:error) } }
             }
         }
     }

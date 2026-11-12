@@ -353,6 +353,10 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
                 }
                 self?.hideSelectionToolbar()
             },
+            insertInNote: workspace.store?.canInsertPDFSelectionInNote == true ? { [weak self, weak workspace] in
+                guard let workspace else { return }
+                if workspace.store?.insertPDFSelectionInNote(from:workspace,selection:selected) == true { self?.hideSelectionToolbar() }
+            } : nil,
             copy: { [weak self, weak workspace] in
                 var record = workspace?.readingExcerpt(from: selected)
                 if let original = selected.string { record?.quote = original }

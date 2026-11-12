@@ -115,6 +115,8 @@ import UniformTypeIdentifiers
     @Published var showFolderSearch = false
     @Published var showDocumentComparison = false
     var showOCRTasksAfterSearch = false
+    @Published var showReadingBatch = false
+    @Published var readingBatch: ReadingOpenBatch?
     @Published var openBatchIDs:Set<UUID> = []
     private var forwarding: AnyCancellable?
 
@@ -123,6 +125,7 @@ import UniformTypeIdentifiers
         self.storage = folder
         self.library = BookLibrary(storage: folder)
         self.readingDefaults = readingDefaults ?? (AppEnvironment.isTestRun ? UserDefaults(suiteName: "KongFolio.ReadingTests." + UUID().uuidString)! : .standard)
+        self.readingBatch = ReadingOpenBatch.load(self.readingDefaults)
         self.readingMode = self.readingDefaults.object(forKey:Self.readingModeKey) as? Bool ?? !AppEnvironment.isTestRun
         self.documentTasks = DocumentTaskQueue(storage: folder)
         self.board = Board(storage: folder)
@@ -281,10 +284,15 @@ import UniformTypeIdentifiers
         (tabs.contains { $0.workspace?.slot == "" } || startupEntries.contains { $0.slot == "" } || (startupSafetyEnabled && StartupProtection(storage:storage).read().excludedSlots.contains(""))) ? String(UUID().uuidString.prefix(8)).lowercased() : ""
     }
 
-    @discardableResult func addWorkspace(selectImmediately:Bool = true) -> Workspace {
-        let workspace = Workspace(storage: storage, slot: freshSlot(), readingDefaults: readingDefaults)
+    private func makeWorkspace(slot:String,bootstrapNow:Bool = true) -> Workspace {
+        let workspace = Workspace(storage:storage,slot:slot,readingDefaults:readingDefaults)
         workspace.store = self
-        workspace.bootstrap(restoreRecovery:false)
+        if bootstrapNow { workspace.bootstrap(restoreRecovery:false) }
+        return workspace
+    }
+
+    @discardableResult func addWorkspace(selectImmediately:Bool = true) -> Workspace {
+        let workspace = makeWorkspace(slot:freshSlot())
         tabs.append(.document(workspace))
         if selectImmediately { select(workspace.id) }
         return workspace
@@ -292,10 +300,14 @@ import UniformTypeIdentifiers
 
     func select(_ id: UUID) {
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
-        if selectedID != id { activeWorkspace?.saveReadingRecord() }
+        if selectedID != id, let previous = activeWorkspace {
+            previous.saveReadingRecord()
+        }
         selectedID = id
+        trackBatchSelection(tab.workspace)
         focusedID = id
         if pdfSearchWorkspaceID != nil { pdfSearchWorkspaceID = id }
+        tab.workspace?.bootstrap(restoreRecovery:false)
         tab.workspace?.refreshSignatureLibrary()
         forwarding = tab.changes.sink { [weak self] _ in self?.objectWillChange.send() }
         recordActivity("切换标签页")
@@ -371,37 +383,61 @@ import UniformTypeIdentifiers
 
     /// Opens every file in its own tab. The tabs appear at once with their file names; the first one is read and brought
     /// to the front, the others are read when selected, so opening dozens of files is instant and uses no extra memory.
-    func openEach(_ urls: [URL]) {
+    func openEach(_ urls: [URL], startBatch:Bool = true) {
+        if startBatch { startReadingBatch(urls) }
         ReadingProgress.setHistoryRemoved(Set(urls.filter(\.isFileURL).map(\.path)),removed:false,defaults:readingDefaults)
         var first: UUID?
         var batch = Set<UUID>()
+        var pendingTabs:[OpenTab] = []
+        func commitPendingTabs() {
+            guard !pendingTabs.isEmpty else { return }
+            tabs.append(contentsOf:pendingTabs)
+            pendingTabs.removeAll()
+        }
+        var existingDocuments: [String:Workspace] = [:]
+        for workspace in tabs.compactMap(\.workspace) {
+            if let path = workspace.displayPath { existingDocuments[ReadingBookIdentity.key(path)] = workspace }
+        }
         var blank = activeWorkspace.flatMap { workspace in
             workspace.count == 0 && !workspace.needsLoad && !workspace.busy && !workspace.isImporting &&
                 workspace.sourceURL == nil && workspace.projectURL == nil ? workspace : nil
         } ?? emptyFileChooserWorkspace
         for url in urls {
             if ReadingShortcut.handles(url) {
+                commitPendingTabs()
                 do { try openReadingShortcut(url); if first == nil { first = selectedID } } catch { present(error) }
                 continue
             }
             if TextImport.handles(url) {
+                commitPendingTabs()
                 openNote(url)
                 if first == nil { first = selectedID }
                 continue
             }
-            if let existing = tabs.compactMap(\.workspace).first(where: { $0.displayPath == url.path || $0.sourceURL?.standardizedFileURL == url.standardizedFileURL || $0.projectURL?.standardizedFileURL == url.standardizedFileURL }) {
+            let path = ReadingBookIdentity.key(url.path)
+            if let existing = existingDocuments[path] {
                 batch.insert(existing.id)
-                if existing.count == 0,!existing.busy { existing.error = nil;existing.needsLoad = true }
+                if existing.count == 0,!existing.busy {
+                    existing.error = nil;existing.needsLoad = true
+                    if existing.pendingView == nil { existing.pendingView = readingBatch?.entry(url.path)?.position }
+                }
                 if first == nil { first = existing.id }; continue
             }
             let target: Workspace
             if let available = blank { target = available; blank = nil }
-            else { target = addWorkspace(selectImmediately:false) }
+            else {
+                let slot = pendingTabs.isEmpty ? freshSlot() : String(UUID().uuidString.prefix(8)).lowercased()
+                target = makeWorkspace(slot:slot,bootstrapNow:false)
+                pendingTabs.append(.document(target))
+            }
             target.needsLoad = true
             target.sourceURL = url
+            target.pendingView = readingBatch?.entry(url.path)?.position
+            existingDocuments[path] = target
             batch.insert(target.id)
             if first == nil { first = target.id }
         }
+        commitPendingTabs()
         openBatchIDs = batch
         if let first { select(first) }
     }
@@ -509,7 +545,18 @@ import UniformTypeIdentifiers
                 }
                 return
             }
-            if workspace.count > 0 { if !workspace.closeDocument() { return } } else { workspace.forgetSource() }
+            if workspace.count > 0 {
+                let position = workspace.currentViewPosition()
+                let entry = readingBatch?.entry(workspace.displayPath)
+                let isReading = !workspace.browsingReadingReference
+                if !workspace.closeDocument() { return }
+                if let entry,isReading {
+                    updateBatchEntry(entry.id) {
+                        $0.position = position
+                        if $0.status == .pending { $0.status = .finished }
+                    }
+                }
+            } else { workspace.forgetSource() }
             if tabs.count == 1 { return }
         case .note(let note):
             guard note.confirmClose() else { return }

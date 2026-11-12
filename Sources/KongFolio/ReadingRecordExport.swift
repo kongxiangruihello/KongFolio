@@ -25,6 +25,7 @@ enum ReadingRecordExport {
             for line in text.components(separatedBy:"\n") where !line.isEmpty { blocks.append(.paragraph(RichTextDocument.styled(line,options:options,heading:heading,markdown:false),heading:heading)) }
         }
         func writingParagraph(_ text:String) throws { guard !text.isEmpty else { return };let rich = try RichTextDocument(text,format:.markdown,options:options);blocks += rich.blocks }
+        let sourceIndex = ReadingSourceIndex(snapshot)
         var citationFormat053=ReadingCitationFormat053()
         func extraContent053(_ extras:ReadingRecordExtras053?) throws {
             guard let extras else { return }
@@ -34,25 +35,33 @@ enum ReadingRecordExport {
             }
             if preferences.includeQuote,preferences.includeRegionImages==true,let name=extras.visualAsset { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(name)),alt:"标注快照")) }
         }
+        func indexLabel(_ citation:ReadingCitation) -> String {
+            sourceIndex.label(citation).map{"["+$0+"] "} ?? ""
+        }
+        func linkedParagraph(_ text:String,citation:ReadingCitation) {
+            let value = NSMutableAttributedString(attributedString:RichTextDocument.styled(text,options:options,markdown:false))
+            if let address = ReadingSourceIndex.link(citation,options:preferences), let link = URL(string:address) {
+                let suffix = RichTextDocument.styled("　返回原文",options:options,markdown:false)
+                let start = value.length
+                value.append(suffix)
+                value.addAttribute(.link,value:link,range:NSRange(location:start,length:suffix.length))
+            }
+            blocks.append(.paragraph(value,heading:0))
+        }
         func sourceParagraphs(_ citations: [ReadingCitation]) {
             for (index,citation) in citations.enumerated() {
                 if preferences.footnotes == true, wordFootnotes {
                     let key = ReadingExportOrdering.citationKey(citation)
                     let marker = NSMutableAttributedString(attributedString:RichTextDocument.styled("\(index+1). [注]",options:options,markdown:false))
                     marker.addAttribute(NSAttributedString.Key("KongFolioFootnote"),value:key,range:NSRange(location:0,length:marker.length))
+                    let label = indexLabel(citation)
+                    if !label.isEmpty { marker.append(RichTextDocument.styled(" "+label,options:options,markdown:false)) }
                     blocks.append(.paragraph(marker,heading:0))
                     continue
                 }
                 let formatted = citationFormat053.render(citation,shorten:preferences.shortenedCitations053==true)
-                let text = ReadingExportOrdering.sourceLine(citation,index:index,rendered:formatted)
-                let value = NSMutableAttributedString(attributedString:RichTextDocument.styled(text,options:options,markdown:false))
-                if citation.source.invalidPage053 != true, let link = SourceLink.url(citation.source) {
-                    let suffix = RichTextDocument.styled("　返回原文",options:options,markdown:false)
-                    let start = value.length
-                    value.append(suffix)
-                    value.addAttribute(.link,value:link,range:NSRange(location:start,length:suffix.length))
-                }
-                blocks.append(.paragraph(value,heading:0))
+                let text = indexLabel(citation)+ReadingExportOrdering.sourceLine(citation,index:index,rendered:formatted)
+                linkedParagraph(text,citation:citation)
             }
         }
 
@@ -117,7 +126,7 @@ enum ReadingRecordExport {
                     let sources = (extras.regions ?? []).map(\.citation)+(extras.quotations ?? []).flatMap(\.citations)
                     if !sources.isEmpty { paragraph(preferences.sourcesHeading ?? "出处",heading:3) }
                     for (index,citation) in sources.enumerated() {
-                        paragraph(ReadingExportOrdering.sourceLine(citation,index:index,rendered:ReadingExportOrdering.citation(citation)))
+                        linkedParagraph(indexLabel(citation)+ReadingExportOrdering.sourceLine(citation,index:index,rendered:ReadingExportOrdering.citation(citation)),citation:citation)
                     }
                 }
                 for line in ReadingRecordMetadata.essayLines(essay) { paragraph(line) }
@@ -125,9 +134,13 @@ enum ReadingRecordExport {
             }
         }
         if preferences.bibliography053==true { paragraph("参考文献",heading:1);for line in ReadingWorkflow053.bibliography(snapshot.orderedItems.map { value in switch value {case .record(let r):return ReadingLibraryItem.record(r);case .essay(let e):return ReadingLibraryItem.essay(e)} }) { paragraph(line) } }
+        if !sourceIndex.entries.isEmpty {
+            paragraph("出处索引",heading:1)
+            for entry in sourceIndex.entries { linkedParagraph(entry.label+"　"+entry.detail,citation:entry.citation) }
+        }
         document.blocks = blocks; return document
     }
-    private static func literal(_ text:String) -> String {
+    static func literal(_ text:String) -> String {
         var value = text.replacingOccurrences(of:"\\",with:"\\\\")
         for token in ["*","_","[","]","`","#","<",">","|"] { value = value.replacingOccurrences(of:token,with:"\\"+token) }
         return value
@@ -135,6 +148,7 @@ enum ReadingRecordExport {
     static func markdown(_ snapshot:ReadingExportSnapshot,imageFolder:String) -> String {
         let preferences = snapshot.options ?? ReadingExportOptions()
         var lines = ["# "+literal(snapshot.title),""]
+        let sourceIndex = ReadingSourceIndex(snapshot)
         var citationFormat053=ReadingCitationFormat053()
         func extras053(_ extras:ReadingRecordExtras053?) {
             guard let extras,preferences.includeQuote else { return }
@@ -145,7 +159,8 @@ enum ReadingRecordExport {
         func sourceLines(_ citations: [ReadingCitation]) {
             for (index,citation) in citations.enumerated() {
                 let rendered = citationFormat053.render(citation,shorten:preferences.shortenedCitations053==true)
-                lines.append(literal(ReadingExportOrdering.sourceLine(citation,index:index,rendered:rendered)))
+                let label = sourceIndex.label(citation).map{"["+$0+"] "} ?? ""
+                lines.append(literal(label+ReadingExportOrdering.sourceLine(citation,index:index,rendered:rendered)))
                 if citation.source.invalidPage053 != true {
                     if let relative = preferences.sourceLinks?[citation.source.path] {
                         lines.append("[返回原文](<"+relative+"#page="+String(citation.source.page+1)+">)")
@@ -214,9 +229,7 @@ enum ReadingRecordExport {
                 if preferences.includeSources, let extras = essay.extras {
                     let sources = (extras.regions ?? []).map(\.citation)+(extras.quotations ?? []).flatMap(\.citations)
                     if !sources.isEmpty { lines += ["### "+literal(preferences.sourcesHeading ?? "出处"),""] }
-                    for (index,citation) in sources.enumerated() {
-                        lines += [literal(ReadingExportOrdering.sourceLine(citation,index:index,rendered:ReadingExportOrdering.citation(citation))),""]
-                    }
+                    sourceLines(sources)
                 }
                 lines += ReadingRecordMetadata.essayLines(essay).map(literal)
                 for block in essay.blocks {
@@ -226,6 +239,14 @@ enum ReadingRecordExport {
             }
         }
         if preferences.bibliography053==true { lines += ["## 参考文献",""]+ReadingWorkflow053.bibliography(snapshot.orderedItems.map { value in switch value {case .record(let r):return ReadingLibraryItem.record(r);case .essay(let e):return ReadingLibraryItem.essay(e)} }) }
+        if !sourceIndex.entries.isEmpty {
+            lines += ["","## 出处索引",""]
+            for entry in sourceIndex.entries {
+                lines += [literal(entry.label+"　"+entry.detail)]
+                if let link = ReadingSourceIndex.link(entry.citation,options:preferences) { lines.append("[返回原文](<"+link+">)") }
+                lines.append("")
+            }
+        }
         return lines.joined(separator:"\n")
     }
     static func write(_ snapshot:ReadingExportSnapshot,format:Format,assets:URL,to destination:URL,expected:FileBaseline) throws {

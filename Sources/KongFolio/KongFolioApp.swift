@@ -23,7 +23,7 @@ import KongFolioUpdateKit
                 .frame(minWidth: 380, minHeight: 300)
                 .background(WindowAccessor { window in delegate.attach(window) })
                 .onAppear { delegate.store = store; store.bootstrap(); AppUpdateInstaller.acknowledgeLaunch() }
-                .onOpenURL { url in delegate.externalDocuments.receive([url]) }
+                .onOpenURL { url in delegate.externalDocuments.enqueue(url) }
         }
         .handlesExternalEvents(matching: ["*"])
         // The window can be dragged to any size, from a narrow reading strip to a full screen.
@@ -50,6 +50,8 @@ import KongFolioUpdateKit
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
             CommandMenu("阅读") {
+                Button("上次批阅…") { store.showReadingBatch = true }
+                    .disabled(store.readingBatch == nil)
                 Button("搜索当前 PDF 正文") { store.openPDFSearch() }
                     .keyboardShortcut("f",modifiers:.control).disabled(!store.canSearchPDF)
                 Button("阅读与史料研究…") { store.showResearch = true }

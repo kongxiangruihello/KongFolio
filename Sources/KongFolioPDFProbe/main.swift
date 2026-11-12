@@ -8,7 +8,9 @@ struct Result:Codable { var pages:Int;var digest:String }
 struct Region:Codable { var page:Int;var rects:[CGRect];var fingerprint:String? = nil }
 func document(_ source:String)throws->(Data,PDFDocument) {
     let data=try Data(contentsOf:URL(fileURLWithPath:source),options:.mappedIfSafe)
-    guard let doc=PDFDocument(data:data),!doc.isLocked,doc.pageCount>0 else { throw NSError(domain:"PDFProbe",code:1) }
+    guard let doc=PDFDocument(data:data) else { throw NSError(domain:"PDFProbe",code:1) }
+    if doc.isLocked { exit(67) }
+    guard doc.pageCount>0 else { throw NSError(domain:"PDFProbe",code:1) }
     return (data,doc)
 }
 do {

@@ -6,6 +6,7 @@ struct ReadingExportOptions: Codable, Equatable {
     var includeQuote = true
     var includeNote = true
     var includeSources = true
+    var includeSourceIndex:Bool? = nil
     var lineHeight:Double? = nil
     var margin:Double? = nil
     var footnotes:Bool? = nil

@@ -35,6 +35,7 @@ struct RootView: View {
         .modifier(ShelfQueueProblemAlert(store:store,inShelf:false))
         .sheet(item: $store.notebookBook) { BookNotebookView(store: store, library: store.library, book: $0) }
         .sheet(item: $store.exportReview) { request in ExportReviewSheet(store: store, request: request) }
+        .sheet(isPresented:$store.showReadingBatch) { ReadingOpenBatchView(store:store) }
         .sheet(isPresented: $store.showBackgroundJobs) { DocumentTasksView(queue: store.documentTasks, store: store) }
         .sheet(isPresented: $store.showRecoveryCenter) { RecoveryCenterView(store: store) }
         .sheet(isPresented: $store.showDocumentComparison) { DocumentComparisonPanel() }

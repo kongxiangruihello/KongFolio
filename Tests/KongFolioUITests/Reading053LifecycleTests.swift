@@ -73,7 +73,15 @@ final class Reading053LifecycleTests: XCTestCase {
         }
 
         for round in 1...3 {
-            store.openEach(files)
+            switch round {
+            case 1: store.openEach(files)
+            case 2:
+                let finder = ExternalDocumentRouter()
+                finder.attach(store)
+                finder.receive(files)
+            default: store.activeWorkspace?.openDropped(files)
+            }
+            XCTAssertEqual(store.readingBatch?.entries.count,20)
             let cloud = try XCTUnwrap(store.tabs.compactMap(\.workspace).first{$0.sourceURL == files.last})
             let waitingURL = cloud.sourceURL
             cloud.prepareImportFiles = { urls, progress in

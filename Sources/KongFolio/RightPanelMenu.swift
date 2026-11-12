@@ -49,6 +49,9 @@ struct RightReadingPanelLayout<Content: View>: View {
     @ObservedObject var store: WorkspaceStore
     @ViewBuilder var content: () -> Content
     @State private var excerptDropTargeted = false
+    @State private var reviewing = false
+    @State private var reviewBook: String?
+    @State private var reviewBatch = Set<String>()
 
 
     var body: some View {
@@ -95,7 +98,9 @@ struct RightReadingPanelLayout<Content: View>: View {
             Divider()
             if store.showReadingDesk {
                 if store.readingDeskSection == .excerpts {
-                    excerptDropArea
+                    if reviewing {
+                        ReadingExcerptReviewPane(store:store,journal:store.journal,initialPath:reviewBook,batchPaths:reviewBatch) { reviewing = false }
+                    } else { excerptDropArea }
                 } else {
                     ReadingDeskView(store:store,journal:store.journal,section:$store.readingDeskSection,compact:true)
                 }
@@ -106,6 +111,14 @@ struct RightReadingPanelLayout<Content: View>: View {
     }
     private var excerptDropArea: some View {
         VStack(spacing:0) {
+            HStack {
+                Button("连续核对摘录") {
+                    reviewBook = store.commandWorkspace?.readingJournalPath
+                    reviewBatch = Set(store.readingBatch?.entries.map{ReadingBookIdentity.key($0.path)} ?? [])
+                    reviewing = true
+                }.disabled(store.commandWorkspace?.readingJournalPath == nil && store.readingBatch == nil)
+                Spacer()
+            }.padding(.horizontal,10).padding(.top,8)
             if store.acceptsPDFExcerptDrop && store.canSearchPDF {
                 Label(excerptDropTargeted ? "松手保存摘录" : "把 PDF 选中的文字拖到这里",systemImage:"text.quote")
                     .font(.caption)

@@ -5,6 +5,7 @@ struct PDFSelectionActions: View {
     let compact: Bool
     let excerpt: () -> Void
     let note: () -> Void
+    var insertInNote: (() -> Void)? = nil
     let copy: () -> Void
     let mark: (MarkupStyle, MarkupColor?, Bool) -> Void
 
@@ -14,6 +15,9 @@ struct PDFSelectionActions: View {
         HStack(spacing: 4) {
             action("摘录", icon: "text.quote", help: "保存为摘录", primary: true, perform: excerpt)
             action("写笔记", icon: "square.and.pencil", help: "针对所选原文写笔记", perform: note)
+            if let insertInNote {
+                action("插入笔记",icon:"text.append",help:"把原文和出处插入右侧固定笔记的光标处",perform:insertInNote)
+            }
             action("复制", icon: "doc.on.doc", help: "复制原文和出处", perform: copy)
             if editable {
                 Divider().frame(height: 19).padding(.horizontal, 3)

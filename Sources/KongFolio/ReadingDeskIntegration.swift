@@ -18,6 +18,15 @@ extension Workspace {
         let label = store?.research.displayLabel(path:displayPath ?? "",page:i,fallback:ReadingServices.pageLabel(document.page(at:i) ?? PDFPage(),index:i) ?? String(i+1))
         var citation=ReadingCitation(source:SourceRef(path:readingJournalPath ?? "",fileName:displayName,page:max(0,i),pageLabel:label,fingerprint:fileBaseline?.digest,rects:rects,anchor:anchor),title:bibliography.title.isEmpty ? title : bibliography.title,author:bibliography.author,edition:bibliography.edition.isEmpty ? nil : bibliography.edition)
         if let path = readingJournalPath {
+            let researched = store?.research.state.periodicals[path] ?? displayPath.flatMap { store?.research.state.periodicals[$0] }
+            if let periodical = researched, !periodical.journal.isEmpty {
+                citation.publication = ReadingPublication053(periodical:periodical.journal,
+                    issue:[periodical.volume,periodical.issue].filter{!$0.isEmpty}.joined(separator:" · "),
+                    published:periodical.date.isEmpty ? periodical.year : periodical.date)
+            } else if let metadata = store?.library.books.first(where:{ $0.path == path })?.issueMetadata, !metadata.periodical.isEmpty {
+                citation.publication = ReadingPublication053(periodical:metadata.periodical,
+                    issue:[metadata.volume,metadata.issue].filter{!$0.isEmpty}.joined(separator:" · "),published:metadata.year)
+            }
             let identity = ReadingDocumentRegistry053.shared(storage).identity(path,digest:fileBaseline?.digest)
             citation.tracking = ReadingSourceIdentity053(documentID:identity.id,capturedPage:max(0,i),
                 pageFingerprint:pageIdentity053(max(0,i)),capturedPageLabel:label,

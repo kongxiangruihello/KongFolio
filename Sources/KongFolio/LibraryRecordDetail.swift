@@ -97,6 +97,12 @@ struct LibraryRecordDetail: View {
                         .id("original:"+record.id.uuidString)
                 }
                 }
+                if current.kind == .note, store.showReadingDesk, store.readingDeskSection == .notes,
+                   store.readingRecordID == record.id || store.pinnedReadingID == record.id {
+                    Button(store.pinnedReadingID == record.id ? "取消固定笔记" : "固定笔记，切换文献时继续写") {
+                        store.pinnedReadingID = store.pinnedReadingID == record.id ? nil : record.id
+                    }.buttonStyle(.borderless)
+                }
                 Text(current.kind == .note || current.pdfOrigin != nil ? "我的笔记" : "我的理解与评论").font(.caption)
                 LibraryWritingEditor(text:binding(\.note),label:"阅读笔记正文",identity:"note:"+record.id.uuidString,
                     onEscape:store.quickExcerptNoteID == record.id ? { store.returnFromExcerptNote(record.id) } : nil).id("note:"+record.id.uuidString).frame(height:focusedWriting ? max(380,viewport.size.height-72) : 380)

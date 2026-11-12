@@ -44,6 +44,8 @@ enum PDFImportProbe053 {
             if Date()>=deadline { child.terminate();throw FolioError(message:"这份 PDF 解析超过时限，已跳过；可以继续阅读其他文件") }
             Thread.sleep(forTimeInterval:0.025)
         }
-        guard child.terminationStatus==0 else { throw FolioError(message:"PDF 无法安全解析，可能损坏或需要密码；其他文献不受影响") }
+        if child.terminationStatus == 67 { throw ReadingOpenFailure.encrypted }
+        if child.terminationStatus == 65, arguments.count == 2 { throw ReadingOpenFailure.malformed }
+        guard child.terminationStatus==0 else { throw FolioError(message:"PDF 无法安全解析，可跳过并继续阅读其他文献") }
     }
 }
