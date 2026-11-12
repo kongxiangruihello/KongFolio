@@ -142,8 +142,8 @@ struct FunctionToolbar: View {
     private var rightPanelTitle: String { store.rightReadingPanelVisible ? "收起右侧面板" : "打开右侧面板" }
 
     @ViewBuilder private func label(_ action: FileToolbarAction, menu: Bool) -> some View {
-        if menu { Label(action == .sidebar ? rightPanelTitle : action.menuTitle,systemImage:action.symbol) }
-        else { Image(systemName:action.symbol).frame(width:28,height:28) }
+        if menu { action.label(action == .sidebar ? rightPanelTitle : action.menuTitle) }
+        else { action.icon.frame(width:28,height:28) }
     }
 
     private func unavailable(_ action: FileToolbarAction) -> Bool {

@@ -32,7 +32,7 @@ struct ReadingToolbar: View {
     }
     private var actions:some View {
         HStack(spacing:10) {
-            Button { store.openReadingDesk(.search,window:true) } label:{Label("资料库",systemImage:"rectangle.stack")}.buttonStyle(.borderless).help("统一新增、编辑、查找和删除摘录、标注、评论与笔记")
+            Button { store.openReadingDesk(.search,window:true) } label:{FileToolbarAction.library.label("资料库")}.buttonStyle(.borderless).help("统一新增、编辑、查找和删除摘录、标注、评论与笔记")
             Menu {
                 Button("摘录选中文字") { workspace.excerptSelection() }
                 Button("框选图片摘录") { workspace.tool = .region; workspace.showAnnotationBar = true }
