@@ -260,18 +260,22 @@ extension WorkspaceStore {
                 let body = TextSearchBody.make(note.text, format: note.format)
                 if let found = ReadingServices.matches(in: body.text, query: anchor, cache: &cache, limit: 1).first { note.revealSearch(TextSearchBody.sourceRange(found, spans: body.spans)) }
             }
+            if activeNote != nil { NotificationCenter.default.post(name:.shelfReadingSourceOpened,object:self) }
             return activeNote != nil
         }
         let wantsBeside = beside ?? (UserDefaults.standard.object(forKey: LayoutKeys.cardsBeside) as? Bool ?? true)
         let position = source.position
         if let workspace = tabs.compactMap(\.workspace).first(where: { $0.matches(path: source.path) }) {
+            workspace.beginReadingReference()
             if wantsBeside, let front = activeWorkspace, front.count > 0, front.id != workspace.id {
                 showBeside(workspace, source: source, in: front)
+                NotificationCenter.default.post(name:.shelfReadingSourceOpened,object:self)
                 return true
             }
             if workspace.count == 0 { workspace.pendingView = position; workspace.pendingReveal = source }
             select(workspace.id)
             if workspace.count > 0 { workspace.go(to: position, highlighting: source.rects, anchor: source.anchor, keep: source.keep == true) }
+            NotificationCenter.default.post(name:.shelfReadingSourceOpened,object:self)
             return true
         }
         guard FileManager.default.fileExists(atPath: source.path) else {
@@ -284,6 +288,7 @@ extension WorkspaceStore {
         if !besideFront, let current = front, current.count == 0, !current.busy, current.sourceURL == nil, current.projectURL == nil { target = current } else { target = addWorkspace() }
         let url = URL(fileURLWithPath: source.path)
         if url.pathExtension.lowercased() == "kongfolio" { target.projectURL = url } else { target.sourceURL = url }
+        target.beginReadingReference()
         target.pendingView = position
         target.pendingReveal = source
         if besideFront, let front {
@@ -295,6 +300,7 @@ extension WorkspaceStore {
             select(target.id)
             target.load([url])
         }
+        NotificationCenter.default.post(name:.shelfReadingSourceOpened,object:self)
         return true
     }
 

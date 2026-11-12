@@ -78,6 +78,7 @@ extension WorkspaceStore {
             select(id); note.revealSearch(hit.hit.range)
         } else if let workspace = tab.workspace {
             guard !workspace.busy, workspace.revision == hit.revision else { throw FolioError(message: "文档已变化，请重新搜索") }
+            workspace.beginReadingReference()
             select(id)
             if let page = workspace.document.page(at: hit.hit.page) {
                 let rects = hit.sourceRect.map { [$0] } ?? hit.hit.strips?.map { OrderedText.pageRect(forFraction: $0, cropBox: page.bounds(for: .cropBox), rotation: page.rotation) } ?? page.selection(for: hit.hit.range)?.selectionsByLine().map { $0.bounds(for: page) } ?? []

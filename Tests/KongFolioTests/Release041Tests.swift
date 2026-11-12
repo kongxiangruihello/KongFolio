@@ -17,7 +17,14 @@ final class Release041Tests: XCTestCase {
     }
     @MainActor func testManualBulkAdditionKeepsTheReaderResponsive() async throws {
         let root = try root(), original = try Release038Tests().pdf(root), library = BookLibrary(storage:root)
-        let files = try (1...1083).map { i -> URL in let file = root.appendingPathComponent("手动加入-\(i).pdf"); try FileManager.default.linkItem(at:original,to:file); return file }
+        let originalBytes = try Data(contentsOf:original)
+        let files = try (1...1083).map { i -> URL in
+            let file = root.appendingPathComponent("手动加入-\(i).pdf")
+            var bytes = originalBytes
+            bytes.append(contentsOf:"\n% Shelf test document \(i)\n".utf8)
+            try bytes.write(to:file)
+            return file
+        }
         var beats = 0
         let ticker = Task { @MainActor in while !Task.isCancelled { beats += 1; do { try await Task.sleep(nanoseconds:2_000_000) } catch { return } } }
         defer { ticker.cancel() }

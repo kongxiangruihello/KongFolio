@@ -186,11 +186,12 @@ extension WorkspaceStore {
             guard !existing.dirty else { throw FolioError(message:"这个文件有未保存编辑，请保存并重新搜索后定位；当前编辑已保留") }
             if existing.count>0 {
                 guard try existing.pdfData()==verified.data else { throw FolioError(message:"已打开的文档与搜索版本不同，请关闭该标签页后重新打开结果；未替换当前内容") }
-                select(existing.id);existing.go(to:verified.source.position,highlighting:verified.source.rects);return
+                existing.beginReadingReference();select(existing.id);existing.go(to:verified.source.position,highlighting:verified.source.rects);return
             }
             target=existing
         } else if let empty=activeWorkspace,empty.count==0,!empty.needsLoad,!empty.busy,empty.sourceURL==nil,empty.projectURL==nil { target=empty }
         else { target=addWorkspace() }
+        target.beginReadingReference()
         target.needsLoad=false;target.pendingView=verified.source.position;target.pendingReveal=verified.source
         target.load([result.url],prepared:verified.project.map { .project($0) } ?? .documents([verified.data]))
         guard target.count>0 else { throw FolioError(message:target.error ?? "无法打开搜索结果") }

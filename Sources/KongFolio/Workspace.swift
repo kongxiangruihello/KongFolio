@@ -48,6 +48,7 @@ import UniformTypeIdentifiers
     @Published var readingProgress = ReadingProgress()
     var progressLoadedFor: String?
     var progressTask: Task<Void, Never>?
+    var browsingReadingReference = false
     var readingSaveTask: Task<Void, Never>?
     var readingBookmarkTask: Task<Void,Never>?
     let readingDefaults: UserDefaults
@@ -773,7 +774,7 @@ import UniformTypeIdentifiers
         hiddenKinds = []; outlineDraft = nil; selectedAnnotation = nil; comparison = nil; recognizedText = ""
         showOCRReview = false; reviewSelection = -1; exportEstimate = nil
         history.removeAll(); future.removeAll(); annotationResourceDocuments.removeAll(); lastJob = nil
-        if !keepingSource { projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil }
+        if !keepingSource { projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil; browsingReadingReference = false }
         dirty = false; discarded = false; closePrepared = false
         thumbnails.clear(); pageVersions = [:]
         layoutRevision = UUID(); navigationToken = UUID(); revision = UUID()
@@ -799,7 +800,7 @@ import UniformTypeIdentifiers
     /// Drops what a waiting tab was going to load (closing it, or giving up on a file that cannot be read).
     func forgetSource() {
         if let spilledSession { try? FileManager.default.removeItem(at: spilledSession); self.spilledSession = nil; writer.discard(recoveryURL) }
-        projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil
+        projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil; browsingReadingReference = false
     }
 
     private func applyPendingView() {
@@ -822,6 +823,10 @@ import UniformTypeIdentifiers
     var sessionEntry: SessionEntry? {
         if count > 0 {
             guard canRestoreFromFile else { return SessionEntry(slot: slot, kind: .recovery) }
+            if browsingReadingReference, let path = progressPath {
+                let saved = ReadingProgress.load(path:path,defaults:readingDefaults)
+                return fileEntry(position:saved.resumePosition(pageCount:count) ?? ViewPosition(selection:0))
+            }
             return fileEntry(position: currentViewPosition())
         }
         if needsLoad, spilledSession != nil { return SessionEntry(slot: slot, kind: .recovery) }
@@ -1089,8 +1094,10 @@ import UniformTypeIdentifiers
 
     // MARK: Pages
 
-    func selectPage(_ index: Int, modifiers: NSEvent.ModifierFlags = []) {
+    func selectPage(_ index: Int, modifiers: NSEvent.ModifierFlags = [], readingReference: Bool = false) {
         guard index >= 0, index < count else { return }
+        if readingReference { beginReadingReference() }
+        else { browsingReadingReference = false }
         if modifiers.contains(.shift) {
             selectedPages = Set(min(selection, index)...max(selection, index))
         } else if modifiers.contains(.command) {

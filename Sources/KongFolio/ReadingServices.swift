@@ -365,7 +365,7 @@ extension Workspace {
     func cancelSearch053() { searchTask?.cancel();searchTask=nil;searchMessage="已停止搜索" }
     func goToSearch(_ hit: SearchHit) {
         searchCursor = searchResults.firstIndex { $0.id == hit.id }
-        selectPage(hit.page)
+        selectPage(hit.page, readingReference:true)
         guard let selection = searchSelection(for: hit) else { return }
         if let page { let bounds = selection.bounds(for: page); readingPoint = CGPoint(x: bounds.minX, y: bounds.maxY + 20) }
         pdfView?.setCurrentSelection(selection, animate: true); pdfView?.go(to: selection)

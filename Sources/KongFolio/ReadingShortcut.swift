@@ -113,10 +113,10 @@ extension Workspace {
 }
 
 extension WorkspaceStore {
-    @discardableResult func openReadingShortcut(_ shortcut: ReadingShortcut) throws -> Workspace {
+    @discardableResult func openReadingShortcut(_ shortcut: ReadingShortcut, resolvedFile:URL? = nil) throws -> Workspace {
         if tabs.isEmpty { bootstrap() }
         let shortcut = library.resolve(shortcut)
-        let url = try shortcut.resolvedURL(), path = url.path
+        let url = try resolvedFile ?? shortcut.resolvedURL(), path = url.path
         let existing = tabs.compactMap(\.workspace).first { $0.matches(path: path) }
         guard existing?.busy != true || (existing?.isImporting == true && existing?.count == 0) else { throw FolioError(message: "这本书正在处理任务，请完成后再打开快捷方式") }
         existing?.saveReadingRecord()
@@ -131,6 +131,7 @@ extension WorkspaceStore {
         else { target = addWorkspace() }
         let position = shortcut.destination(progress: progress, pageCount: target.count > 0 ? target.count : max(progress.pages, shortcut.position.selection + 1))
         let layout = shortcut.mode == .resume ? progress.layout ?? shortcut.layout : shortcut.layout
+        target.browsingReadingReference = shortcut.mode == .fixed
         if target.count > 0 {
             select(target.id)
             if let layout { target.readingLayout = layout }

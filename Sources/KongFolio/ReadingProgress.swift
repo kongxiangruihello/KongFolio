@@ -1,5 +1,10 @@
 import Foundation
 
+extension Notification.Name {
+    static let shelfReadingProgressChanged = Notification.Name("KongFolio.shelfReadingProgressChanged")
+    static let shelfReadingSourceOpened = Notification.Name("KongFolio.shelfReadingSourceOpened")
+}
+
 /// Which pages of a book have been read, kept per file, so the reader can see how far they are and where to go on.
 struct ReadingProgress: Equatable, Codable {
     var visited: Set<Int> = []
@@ -152,9 +157,16 @@ struct ReadingProgress: Equatable, Codable {
 extension Workspace {
     var progressPath: String? { (projectURL ?? sourceURL)?.path }
 
+    func beginReadingReference() {
+        if !browsingReadingReference { saveReadingRecord(updateDate:false) }
+        readingSaveTask?.cancel()
+        progressTask?.cancel()
+        browsingReadingReference = true
+    }
+
     /// Location is saved immediately; only the visited-page count waits for a deliberate pause.
     func noteVisit(_ index: Int) {
-        guard index == selection, (0..<count).contains(index), let path = progressPath else { return }
+        guard !browsingReadingReference, index == selection, (0..<count).contains(index), let path = progressPath else { return }
         saveReadingRecord()
         progressTask?.cancel()
         progressTask = Task { [weak self] in
@@ -172,11 +184,11 @@ extension Workspace {
             self.saveReadingRecord()
         }
     }
-    func saveReadingRecord(capture: Bool = true, markVisited: Bool = false) {
-        guard let path = progressPath, count > 0, (0..<count).contains(selection) else { return }
+    func saveReadingRecord(capture: Bool = true, markVisited: Bool = false, updateDate:Bool = true) {
+        guard !browsingReadingReference, let path = progressPath, count > 0, (0..<count).contains(selection) else { return }
         if capture { captureReadingPosition(scheduleSave: false) }
         var record = ReadingProgress.load(path: path, defaults: readingDefaults)
-        record.last = selection; record.pages = count; record.date = Date(); record.title = displayName
+        record.last = selection; record.pages = count; if updateDate { record.date = Date() }; record.title = displayName
         record.x = readingPoint.map { Double($0.x) }; record.y = readingPoint.map { Double($0.y) }
         record.scale = readingScale; record.layout = readingLayout
         if record.bookmark == nil, readingBookmarkTask == nil {
@@ -191,6 +203,7 @@ extension Workspace {
         if markVisited { record.visited.insert(selection) }
         readingProgress = record; progressLoadedFor = path
         record.save(path: path, defaults: readingDefaults)
+        NotificationCenter.default.post(name:.shelfReadingProgressChanged,object:self,userInfo:["path":path,"progress":record])
     }
     func refreshProgress() {
         guard let path = progressPath else { readingProgress = ReadingProgress(); return }

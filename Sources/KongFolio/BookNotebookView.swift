@@ -6,6 +6,7 @@ struct BookNotebookView: View {
     @ObservedObject var store: WorkspaceStore
     @ObservedObject var library: BookLibrary
     let book: LibraryBook
+    var opensExport = false
     @Environment(\.dismiss) private var dismiss
     @State private var snapshot: BookNotebook.Snapshot?
     @State private var reflection = ""
@@ -16,6 +17,7 @@ struct BookNotebookView: View {
     @State private var initialized = false
     @State private var mode = 0
     @State private var recordSection = ReadingDeskSection.search
+    @State private var bookExportAll = true
     @State private var annotationPage = 0
     @State private var annotationSize = 10
     private var source:ReadingCitation { ReadingCitation(source:SourceRef(path:ReadingProgress.canonicalPath(book.path),fileName:URL(fileURLWithPath:book.path).lastPathComponent,page:0),title:book.title) }
@@ -33,14 +35,21 @@ struct BookNotebookView: View {
             HStack {
                 VStack(alignment:.leading,spacing:3) { Text(book.title).font(.system(size:20,weight:.semibold)).lineLimit(1).help(book.title);Text("这本书的阅读记录").font(.system(size:13)).foregroundStyle(.secondary) }
                 Spacer()
+                if mode == 0 && recordSection != .exports { Button("导出本书记录…") { bookExportAll = true;recordSection = .exports } }
                 Button("关闭") { NSApp.keyWindow?.makeFirstResponder(nil);if saveReflection() { dismiss() } }.keyboardShortcut(.cancelAction)
             }
             Picker("阅读记录内容",selection:$mode) { Text("阅读记录").tag(0);Text("整本书心得").tag(1);Text("PDF 批注").tag(2) }.pickerStyle(.segmented)
             if mode == 0 {
                 if recordSection == .exports {
                     Button("返回这本书的记录") { recordSection = .search }
-                    ReadingExportPane(store:store,journal:store.journal)
-                } else { ReadingLibraryView(store:store,journal:store.journal,section:$recordSection,bookSource:source) }
+                    ReadingExportPane(store:store,journal:store.journal,bookSource:source,bookExportAll:bookExportAll)
+                } else {
+                    let section = Binding(get:{recordSection},set:{ value in
+                        if value == .exports { bookExportAll = false }
+                        recordSection = value
+                    })
+                    ReadingLibraryView(store:store,journal:store.journal,section:section,bookSource:source)
+                }
                 ReadingSaveRecoveryFooter(journal:store.journal)
             } else if mode == 1 {
                 Text("整本书的想法和阅读心得").font(.headline)
@@ -64,7 +73,11 @@ struct BookNotebookView: View {
             if !message.isEmpty { Text(message).font(.system(size:13)).foregroundStyle(.orange).textSelection(.enabled) }
         }.padding(20).adaptiveSheet(width:1100,height:760,minimumWidth:360)
         .interactiveDismissDisabled(reflection != savedReflection)
-        .onAppear { if !initialized { initialized = true;reflection = library.books.first{$0.id == book.id}?.reflection ?? book.reflection;savedReflection = reflection } }
+        .onAppear { if !initialized { initialized = true;if opensExport { recordSection = .exports };reflection = library.books.first{$0.id == book.id}?.reflection ?? book.reflection;savedReflection = reflection } }
+        .onReceive(NotificationCenter.default.publisher(for:.shelfReadingSourceOpened)) { note in
+            guard note.object as? WorkspaceStore === store else { return }
+            if saveReflection() { dismiss();store.showReadingHistory = false }
+        }
         .onChange(of:library.error) { _,error in if let error { message = error } }
         .task(id:mode) { if mode == 2 && snapshot == nil { await load() } }
         .onChange(of:query) { _,_ in annotationPage = 0 }.onChange(of:annotationSize) { _,_ in annotationPage = 0 }
