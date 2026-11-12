@@ -11,6 +11,8 @@ struct ShelfBookEditor: View {
     @State private var author = ""
     @State private var periodical = ""
     @State private var year = ""
+    @State private var volume = ""
+    @State private var issue = ""
     @State private var tags = ""
     @State private var reflection = ""
     @State private var favorite = false
@@ -20,6 +22,7 @@ struct ShelfBookEditor: View {
             Text("编辑书架记录").font(.headline)
             TextField("书名",text:$title)
             HStack { TextField("作者",text:$author);TextField("刊名",text:$periodical);TextField("年代",text:$year) }
+            HStack { TextField("卷册",text:$volume);TextField("期次",text:$issue) }
             TextField("专题，用逗号分隔",text:$topics)
             TextField("标签，用逗号分隔",text:$tags)
             Toggle("收藏",isOn:$favorite)
@@ -27,11 +30,12 @@ struct ShelfBookEditor: View {
             Text(book.path).font(.caption).textSelection(.enabled)
             Text(message).foregroundStyle(.red)
             HStack { Button("取消") { dismiss() }; Spacer(); Button("保存") { save() }.keyboardShortcut(.defaultAction) }
-        }.padding(20).adaptiveSheet(width:700,height:665,minimumWidth:360)
+        }.padding(20).adaptiveSheet(width:700,height:690,minimumWidth:360)
         .onAppear {
             title = book.title;reflection = book.reflection;favorite = book.favorite
             topics = book.shelfTopics.joined(separator:"，")
-            author = book.shelfAuthor ?? "";periodical = book.shelfPeriodical ?? "";year = book.shelfYear ?? ""
+            author = book.shelfAuthor ?? "";periodical = book.issueMetadata.periodical;year = book.issueMetadata.year
+            volume = book.issueMetadata.volume;issue = book.issueMetadata.issue
             tags = (book.shelfTags ?? []).joined(separator:"，")
         }
     }
@@ -42,6 +46,8 @@ struct ShelfBookEditor: View {
                 value.title = title.trimmingCharacters(in:.whitespacesAndNewlines)
                 value.topics = ReadingRecordDetail.tags(topics);value.category = ""
                 value.shelfAuthor = author;value.shelfPeriodical = periodical;value.shelfYear = year
+                value.shelfVolume = volume.trimmingCharacters(in:.whitespacesAndNewlines)
+                value.shelfIssue = issue.trimmingCharacters(in:.whitespacesAndNewlines)
                 value.shelfTags = ReadingRecordDetail.tags(tags)
                 value.reflection = reflection;value.favorite = favorite
             }

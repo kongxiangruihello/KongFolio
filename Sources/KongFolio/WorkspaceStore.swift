@@ -72,6 +72,9 @@ import UniformTypeIdentifiers
     var readingLibraryExportOrder: [ReadingLibraryID] = []
     @Published var readingExportEssay = false
     @Published var readingDeskWindowRequest:UUID?
+    var shelfQueueTab: UUID?
+    @Published var shelfQueueOpening = false
+    @Published var shelfQueueReadingTab: UUID?
     lazy var journal = ReadingJournal(storage:storage)
     lazy var readingExportBatch = ReadingExportBatch()
     lazy var readingPackage = ReadingPackageController()
@@ -367,6 +370,7 @@ import UniformTypeIdentifiers
     /// Opens every file in its own tab. The tabs appear at once with their file names; the first one is read and brought
     /// to the front, the others are read when selected, so opening dozens of files is instant and uses no extra memory.
     func openEach(_ urls: [URL]) {
+        ReadingProgress.setHistoryRemoved(Set(urls.filter(\.isFileURL).map(\.path)),removed:false,defaults:readingDefaults)
         var first: UUID?
         var batch = Set<UUID>()
         var blank = activeWorkspace.flatMap { workspace in

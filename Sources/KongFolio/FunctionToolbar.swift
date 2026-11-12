@@ -15,13 +15,25 @@ struct FunctionToolbar: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let visible = profile.visible(width:proxy.size.width,context:context)
-            let overflow = profile.hidden(width:proxy.size.width,context:context)
+            let showsQueue = context == .pdf && workspace?.id == store.shelfQueueReadingTab
+            let availableWidth = max(0,proxy.size.width-(showsQueue ? 40 : 0))
+            let visible = profile.visible(width:availableWidth,context:context)
+            let overflow = profile.hidden(width:availableWidth,context:context)
             HStack(spacing:0) {
                 ForEach(visible) { action in
                     ToolbarControlSurface(selected:isSelected(action)) {
                         control(action,menu:false)
                     }.frame(maxWidth:.infinity)
+                }
+                if showsQueue {
+                    ToolbarControlSurface {
+                        Button { store.continueShelfQueue() } label:{
+                            Image(systemName:"forward.end").frame(width:28,height:28)
+                        }
+                        .disabled(store.shelfQueueOpening || store.library.nextShelfQueueBook() == nil)
+                        .help(store.library.nextShelfQueueBook() == nil ? "已到待读队列末尾" : "打开待读队列的下一份")
+                        .accessibilityLabel("下一份待读文献")
+                    }.frame(width:40)
                 }
                 ToolbarControlSurface {
                     Menu {
@@ -36,7 +48,7 @@ struct FunctionToolbar: View {
             .font(.system(size:16,weight:.medium))
             .foregroundStyle(Color(nsColor:.secondaryLabelColor))
             .padding(.horizontal,12)
-            .frame(maxWidth:CGFloat(visible.count+1)*128)
+            .frame(maxWidth:CGFloat(visible.count+1)*128+(showsQueue ? 40 : 0))
             .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:visible.isEmpty ? .trailing : .center)
             .onAppear { toolbarWidth = proxy.size.width }
             .onChange(of:proxy.size.width) { _,width in toolbarWidth = width }

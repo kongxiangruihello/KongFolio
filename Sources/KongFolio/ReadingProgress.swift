@@ -130,14 +130,26 @@ struct ReadingProgress: Equatable, Codable {
         var title: String { progress.title ?? URL(fileURLWithPath: path).lastPathComponent }
     }
     static func history(defaults: UserDefaults = .standard) -> [HistoryItem] { history(snapshot:defaults.dictionaryRepresentation()) }
-    static func history(snapshot: [String:Any]) -> [HistoryItem] {
+    private static let removedHistoryKey = "KongFolio.removedReadingHistory"
+
+    static func setHistoryRemoved(_ paths:Set<String>, removed:Bool, defaults:UserDefaults) {
+        var hidden = Set(defaults.stringArray(forKey:removedHistoryKey) ?? [])
+        guard removed || !hidden.isEmpty else { return }
+        let keys = Set(paths.map(canonicalPath))
+        if removed { hidden.formUnion(keys) } else { hidden.subtract(keys) }
+        defaults.set(hidden.sorted(),forKey:removedHistoryKey)
+    }
+
+    static func history(snapshot: [String:Any], includingRemoved:Bool = false) -> [HistoryItem] {
         let prefix = "KongFolio.progress."
+        let hidden = includingRemoved ? [] : Set(snapshot[removedHistoryKey] as? [String] ?? [])
         var unique: [String:HistoryItem] = [:]
         for key in snapshot.keys.sorted() where key.hasPrefix(prefix + "/") {
             guard let stored = snapshot[key] as? [String:Any] else { continue }
             let path = String(key.dropFirst(prefix.count)), progress = decodeStored(stored)
             guard progress.last >= 0, progress.date != nil || !progress.visited.isEmpty else { continue }
             let identity = canonicalPath(path), record = HistoryItem(path:path,progress:progress)
+            guard !hidden.contains(identity) else { continue }
             if let old = unique[identity], (old.progress.date ?? .distantPast) >= (record.progress.date ?? .distantPast) { continue }
             unique[identity] = record
         }

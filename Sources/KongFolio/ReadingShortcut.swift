@@ -117,6 +117,7 @@ extension WorkspaceStore {
         if tabs.isEmpty { bootstrap() }
         let shortcut = library.resolve(shortcut)
         let url = try resolvedFile ?? shortcut.resolvedURL(), path = url.path
+        if shortcut.mode == .resume { ReadingProgress.setHistoryRemoved([path],removed:false,defaults:readingDefaults) }
         let existing = tabs.compactMap(\.workspace).first { $0.matches(path: path) }
         guard existing?.busy != true || (existing?.isImporting == true && existing?.count == 0) else { throw FolioError(message: "这本书正在处理任务，请完成后再打开快捷方式") }
         existing?.saveReadingRecord()

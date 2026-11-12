@@ -11,10 +11,33 @@ struct BookLibraryView: View {
     @AppStorage("KongFolio.shelf.pageSize") private var pageSize = 20
     @AppStorage("KongFolio.shelf.page") private var page = 0
     @AppStorage("KongFolio.shelf.scope") private var scope = "all"
-    @State private var query = ""
+    @AppStorage("KongFolio.shelf.query") private var query = ""
+    @AppStorage("KongFolio.shelf.focused") private var focusedKey = ""
+    @AppStorage("KongFolio.shelf.year") private var filterYear = ""
+    @AppStorage("KongFolio.shelf.periodical") private var filterPeriodical = ""
+    @AppStorage("KongFolio.shelf.status") private var filterStatus = ""
+    @AppStorage("KongFolio.shelf.withExcerpts") private var filterExcerpts = false
+    @ObservedObject private var journal:ReadingJournal
+    @StateObject private var sourceNavigator = ReadingSourceNavigator()
+    @State private var summaries: [String:ShelfRecordSummary] = [:]
+    @State private var importRequest: ShelfImportRequest?
+    @State private var showFiles = false
+    @State private var showFilters = false
+    @State private var saveFilter = false
+    @State private var filterTitle = ""
+    @State private var periodicalsExpanded = false
     @State private var matchedQuery = ""
     @State private var selected = Set<UUID>()
-    @State private var focused: UUID?
+    private var focused: UUID? {
+        get { UUID(uuidString:focusedKey) }
+        nonmutating set { focusedKey = newValue?.uuidString ?? "" }
+    }
+
+    init(store:WorkspaceStore,library:BookLibrary) {
+        self.store = store
+        self.library = library
+        _journal = ObservedObject(wrappedValue:store.journal)
+    }
     @State private var progress: [String:ReadingProgress] = [:]
     @State private var fileStatus: [String:ShelfFileStatus] = [:]
     @State private var message = ""
@@ -40,17 +63,28 @@ struct BookLibraryView: View {
     }
     private let builtIn = [("all","全部书籍","books.vertical"),("reading","在读","book"),
                            ("unread","待读","bookmark"),("finished","已读","checkmark.circle"),
-                           ("favorite","收藏","star")]
+                           ("favorite","收藏","star"),("queue","待读队列","list.number")]
     private var size: Int { pageSize == 50 ? 50 : 20 }
     private var topic: String? { scope.hasPrefix("topic:") ? String(scope.dropFirst(6)) : nil }
-    private var heading: String { topic ?? builtIn.first(where:{$0.0 == scope})?.1 ?? "全部书籍" }
+    private var periodical: String? { scope.hasPrefix("periodical:") ? String(scope.dropFirst(11)) : nil }
+    private var heading: String { topic ?? periodical ?? builtIn.first(where:{$0.0 == scope})?.1 ?? "全部书籍" }
+    private var periodicals: [String] {
+        var known = Set<String>()
+        return library.books.map{$0.issueMetadata.periodical}.filter { !$0.isEmpty && known.insert(ShelfText.key($0)).inserted }
+            .sorted{$0.localizedStandardCompare($1) == .orderedAscending}
+    }
+    private var filtering: Bool { !filterYear.isEmpty || !filterPeriodical.isEmpty || !filterStatus.isEmpty || filterExcerpts }
 
     private var filtered: [LibraryBook] {
         let query = matchedQuery.trimmingCharacters(in:.whitespacesAndNewlines)
-        let values = library.books.filter { book in
+        let source = scope == "queue" ? library.readingQueue : library.books
+        let titleKey = ShelfText.key(periodical ?? "")
+        let filterKey = ShelfText.key(filterPeriodical)
+        let values = source.filter { book in
             let status = book.shelfStatus(progress[book.path])
             let included: Bool
             if let topic { included = book.shelfTopics.contains { AnnotationFilter.folded($0) == AnnotationFilter.folded(topic) } }
+            else if periodical != nil { included = ShelfText.key(book.issueMetadata.periodical) == titleKey }
             else {
                 switch scope {
                 case "reading": included = status == .reading
@@ -60,8 +94,15 @@ struct BookLibraryView: View {
                 default: included = true
                 }
             }
-            return included && (query.isEmpty || book.matchingShelfField(query) != nil)
+            guard included,
+                  filterYear.isEmpty || book.issueMetadata.year.localizedCaseInsensitiveContains(filterYear),
+                  filterKey.isEmpty || ShelfText.key(book.issueMetadata.periodical).contains(filterKey),
+                  filterStatus.isEmpty || status.rawValue == filterStatus,
+                  !filterExcerpts || summaries[ReadingBookIdentity.key(book.path)]?.hasExcerpts == true else { return false }
+            return query.isEmpty || book.matchingShelfField(query) != nil
         }
+        if scope == "queue" { return values }
+        if periodical != nil { return ShelfText.issueOrder(values) }
         return ShelfBrowse.ordered(values,sort:sort,progress:progress)
     }
 
@@ -69,7 +110,7 @@ struct BookLibraryView: View {
         let books = filtered
         let pagination = ReadingPagination(total:books.count,page:page,size:size)
         let visible = Array(books.dropFirst(pagination.range.lowerBound).prefix(size))
-        let recent = scope == "all" && matchedQuery.isEmpty ? ShelfBrowse.recent(library.books,progress:progress) : []
+        let recent = scope == "all" && matchedQuery.isEmpty && !filtering ? ShelfBrowse.recent(library.books,progress:progress) : []
         let checkPaths = Array(Set((visible + recent).map(\.path))).sorted()
         let allPaths = library.books.map(\.path)
         return GeometryReader { geometry in
@@ -80,14 +121,15 @@ struct BookLibraryView: View {
                     if !recent.isEmpty { continueReading(recent) }
                     if geometry.size.width < 720 { scopeMenu }
                     if let detail = focused.flatMap({ id in visible.first { $0.id == id } }) { details(detail) }
-                    collection(visible)
+                    browserCollection(visible)
                     paginationBar(pagination)
                     feedback
                 }
                 .padding(16)
             }
         }
-        .onAppear { progress = library.cachedShelfProgress }
+        .onAppear { progress = library.cachedShelfProgress;matchedQuery = query;periodicalsExpanded = periodical != nil }
+        .task(id:journal.revisionID) { await updateSummaries() }
         .task(id:query) {
             do { try await Task.sleep(for:.milliseconds(150)) } catch { return }
             if matchedQuery != query { page = 0;matchedQuery = query }
@@ -104,9 +146,16 @@ struct BookLibraryView: View {
                 }
             }
         }
-        .onChange(of:scope) { _,_ in page = 0;focused = nil }
+        .onChange(of:scope) { _,_ in page = 0;focused = nil;if periodical != nil { periodicalsExpanded = true } }
         .onChange(of:sort) { _,_ in page = 0 }
         .onChange(of:size) { _,_ in page = 0 }
+        .onChange(of:filterYear) { _,_ in page = 0 }
+        .onChange(of:filterPeriodical) { _,_ in page = 0 }
+        .onChange(of:filterStatus) { _,_ in page = 0 }
+        .onChange(of:filterExcerpts) { _,_ in page = 0 }
+        .onReceive(NotificationCenter.default.publisher(for:.shelfReadingSourceOpened)) { note in
+            if note.object as? WorkspaceStore === store { store.showReadingHistory = false }
+        }
         .onChange(of:pagination.last) { _,last in if page > last { page = last } }
         .sheet(item:$editing) { ShelfBookEditor(library:library,book:$0) }
         .sheet(item:$notebook) { BookNotebookView(store:store,library:library,book:$0.book,opensExport:$0.export) }
@@ -126,14 +175,29 @@ struct BookLibraryView: View {
             Button("取消",role:.cancel) {}
             Button("保存…") { if let book = fixedBook { saveFixed(book) } }
         } message: { Text("输入从 1 开始的 PDF 页码。") }
-        .alert("核对替换文件",isPresented:Binding(get:{relinkReview != nil},set:{if !$0 { relinkReview = nil }}),presenting:relinkReview) { review in
-            Button("取消",role:.cancel) { relinkReview = nil }
-            Button("确认关联") { finishRelink(review) }
-        } message: { review in Text(review.url.lastPathComponent+"\n"+review.message) }
+        .sheet(item:$relinkReview) { review in
+            ShelfCompareFiles(original:review.book,candidate:review.url,knownPages:progress[review.book.path]?.pages,
+                              detail:review.verified ? "已确认是同一份文件。" : review.message,
+                              confirm:{ finishRelink(review) })
+        }
+        .sheet(item:$importRequest) { request in
+            ShelfImportReview(request:request) { drafts in add(drafts.map(\.url),drafts:drafts) }
+        }
+        .sheet(isPresented:$showFiles) {
+            ShelfFileIssues(books:library.books,progress:progress) { book in relink(book) }
+        }
+        .sheet(item:$sourceNavigator.review,onDismiss:{sourceNavigator.cancel()}) {
+            ReadingSourceReviewSheet(request:$0,navigator:sourceNavigator,store:store).id($0.id)
+        }
+        .alert("保存常用筛选",isPresented:$saveFilter) {
+            TextField("筛选名称",text:$filterTitle)
+            Button("取消",role:.cancel) {}
+            Button("保存") { storeFilter() }
+        }
         .dropDestination(for:URL.self) { urls,_ in
             let supported = urls.filter { $0.isFileURL && BookLibrary.supports($0) }
             guard !supported.isEmpty, !addition.busy else { return false }
-            add(supported)
+            previewImport(supported)
             return true
         }
     }
@@ -145,6 +209,19 @@ struct BookLibraryView: View {
                 ForEach(builtIn.indices,id:\.self) { index in
                     let item = builtIn[index]
                     scopeButton(item.0,item.1,item.2)
+                }
+                if !periodicals.isEmpty {
+                    DisclosureGroup("按刊物",isExpanded:$periodicalsExpanded) {
+                        ForEach(periodicals,id:\.self) { name in scopeButton("periodical:"+name,name,"newspaper") }
+                    }.padding(.vertical,5)
+                }
+                if !library.shelfFilters.isEmpty {
+                    Text("常用筛选").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top,8)
+                    ForEach(library.shelfFilters) { filter in
+                        Button { applyFilter(filter) } label: { Label(filter.title,systemImage:"line.3.horizontal.decrease").lineLimit(1) }
+                            .buttonStyle(.plain).padding(6).help(filter.title)
+                            .contextMenu { Button("删除常用筛选",role:.destructive) { perform { try library.removeShelfFilter(filter.id) } } }
+                    }
                 }
                 HStack {
                     Text("专题").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -183,6 +260,12 @@ struct BookLibraryView: View {
             }
             Divider()
             ForEach(library.shelfTopics,id:\.self) { topic in Button(topic) { scope = "topic:"+topic } }
+            if !periodicals.isEmpty {
+                Menu("按刊物") { ForEach(periodicals,id:\.self) { name in Button(name) { scope = "periodical:"+name } } }
+            }
+            if !library.shelfFilters.isEmpty {
+                Menu("常用筛选") { ForEach(library.shelfFilters) { filter in Button(filter.title) { applyFilter(filter) } } }
+            }
             Button("新建专题…") { promptTopic() }
         } label: { Label(heading,systemImage:"line.3.horizontal.decrease") }
     }
@@ -190,9 +273,9 @@ struct BookLibraryView: View {
     private func toolbar(_ books:[LibraryBook]) -> some View {
         VStack(alignment:.leading,spacing:8) {
             PanelRow {
-                TextField("搜索书名、作者、刊名、年代或标签",text:$query).textFieldStyle(.roundedBorder)
+                TextField("搜索书名、刊名、期次或标签",text:$query).textFieldStyle(.roundedBorder)
                 Menu {
-                    Button("添加书籍…") { ShelfChooser.open(title:"添加到个人书架",multiple:true,action:{ add($0) }) }
+                    Button("添加书籍…") { ShelfChooser.open(title:"添加到个人书架",multiple:true,action:previewImport) }
                     Button("添加当前 PDF") {
                         guard let url = store.currentPDFForShelf else { return }
                         store.commandWorkspace?.saveReadingRecord()
@@ -207,9 +290,17 @@ struct BookLibraryView: View {
                 }.labelsHidden().pickerStyle(.segmented).fixedSize()
             }
             PanelRow {
-                Picker("排序",selection:$sort) {
-                    ForEach(ShelfSort.allCases,id:\.self) { Text($0.rawValue).tag($0) }
-                }.fixedSize()
+                if scope == "queue" {
+                    Button("下一份") { store.continueShelfQueue() }.disabled(library.nextShelfQueueBook() == nil)
+                } else if periodical != nil {
+                    Text("按年、卷、期排序").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Picker("排序",selection:$sort) {
+                        ForEach(ShelfSort.allCases,id:\.self) { Text($0.rawValue).tag($0) }
+                    }.fixedSize()
+                }
+                Button(filtering ? "筛选已启用" : "筛选") { showFilters.toggle() }.popover(isPresented:$showFilters) { filtersPopover }
+                Button("需要处理的文件…") { showFiles = true }.disabled(library.books.isEmpty)
                 Spacer(minLength:0)
                 if !selected.isEmpty {
                     Menu("已选 \(selected.count) 本") {
@@ -248,6 +339,128 @@ struct BookLibraryView: View {
         }
     }
 
+    private func browserCollection(_ books:[LibraryBook]) -> some View {
+        ScrollViewReader { proxy in
+            collection(books)
+                .task(id:"\(grid)-\(scope)-\(page)") {
+                    guard let focused, books.contains(where:{$0.id == focused}) else { return }
+                    await Task.yield()
+                    if !Task.isCancelled { proxy.scrollTo(focused,anchor:.center) }
+                }
+        }
+    }
+
+    private func queueRows(_ books:[LibraryBook]) -> some View {
+        let queue = library.readingQueue
+        return List(books) { book in
+            HStack(spacing:10) {
+                Image(systemName:"line.3.horizontal").foregroundStyle(.secondary)
+                    .onDrag { NSItemProvider(object:book.id.uuidString as NSString) }
+                    .help("拖动调整待读顺序")
+                VStack(alignment:.leading,spacing:4) {
+                    bookLabel(book,lines:1)
+                    if library.catalog.queueCursor == book.id { Text("当前读到这里").font(.caption).foregroundStyle(Color.accentColor) }
+                }
+                Spacer()
+                if let index = queue.firstIndex(where:{$0.id == book.id}) {
+                    Button { perform { try library.moveShelfQueue(book.id,before:queue[index-1].id) } } label:{Image(systemName:"arrow.up")}
+                        .buttonStyle(.borderless).disabled(index == 0).help("上移").accessibilityLabel("上移")
+                    Button { perform { try library.moveShelfQueue(queue[index+1].id,before:book.id) } } label:{Image(systemName:"arrow.down")}
+                        .buttonStyle(.borderless).disabled(index+1 >= queue.count).help("下移").accessibilityLabel("下移")
+                }
+                Button("阅读") { openQueued(book) }.buttonStyle(.borderless)
+            }
+            .padding(.vertical,5)
+            .modifier(ShelfRowGestures(single:{focused = book.id},double:{openQueued(book)}))
+            .contextMenu { bookActions(book) }
+            .dropDestination(for:String.self) { values,_ in
+                guard let id = values.first.flatMap(UUID.init(uuidString:)), queue.contains(where:{$0.id == id}), id != book.id else { return false }
+                perform { try library.moveShelfQueue(id,before:book.id) }
+                return true
+            }
+            .id(book.id)
+        }
+    }
+
+    private var filtersPopover: some View {
+        VStack(alignment:.leading,spacing:10) {
+            Text("书架筛选").font(.headline)
+            TextField("年代",text:$filterYear)
+            TextField("刊名",text:$filterPeriodical)
+            Picker("阅读状态",selection:$filterStatus) {
+                Text("不限").tag("")
+                ForEach(ShelfReadingStatus.allCases) { status in Text(status.rawValue).tag(status.rawValue) }
+            }
+            Toggle("仅显示已有摘录的书",isOn:$filterExcerpts)
+            HStack {
+                Button("清空") { filterYear = "";filterPeriodical = "";filterStatus = "";filterExcerpts = false }
+                Button("保存为常用筛选…") { showFilters = false;filterTitle = "";saveFilter = true }
+            }
+        }.padding(16).frame(width:295)
+    }
+
+    private func applyFilter(_ filter:ShelfSavedFilter) {
+        scope = filter.scope
+        query = filter.query
+        matchedQuery = filter.query
+        filterYear = filter.year
+        filterPeriodical = filter.periodical
+        filterStatus = filter.status?.rawValue ?? ""
+        filterExcerpts = filter.withExcerpts
+        page = 0
+        focused = nil
+    }
+
+    private func storeFilter() {
+        let title = filterTitle.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !title.isEmpty else { message = "请输入筛选名称";return }
+        var filter = ShelfSavedFilter(title:title,scope:scope,query:query,year:filterYear,
+                                      periodical:filterPeriodical,status:ShelfReadingStatus(rawValue:filterStatus),withExcerpts:filterExcerpts)
+        if let saved = library.shelfFilters.first(where:{$0.title == title}) { filter.id = saved.id }
+        perform { try library.saveShelfFilter(filter);message = "已保存常用筛选" }
+    }
+
+    private func updateSummaries() async {
+        let state = journal.state
+        let work = Task.detached(priority:.utility) { ShelfRecordSummary.index(state) }
+        let result = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
+        if !Task.isCancelled { summaries = result }
+    }
+
+    private func recordOverview(_ book:LibraryBook,_ summary:ShelfRecordSummary) -> some View {
+        VStack(alignment:.leading,spacing:4) {
+            Text(["摘录","笔记","标注","PDF 评论"].map{"\($0) \(summary.counts[$0,default:0])"}.joined(separator:" · "))
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(summary.recent) { item in
+                let citation = item.citations053.first{ReadingBookIdentity.key($0.source.path) == ReadingBookIdentity.key(book.path)}
+                Button { revealRecord(item,citation:citation) } label: {
+                    HStack(spacing:6) {
+                        Text(item.kind).foregroundStyle(.secondary)
+                        Text(item.title).lineLimit(1)
+                        if let citation { Text(citation.display).foregroundStyle(.secondary).lineLimit(1) }
+                    }.font(.caption)
+                }.buttonStyle(.plain)
+                 .disabled(citation == nil)
+                 .help("返回这条记录的原文")
+            }
+        }
+    }
+
+    private func revealRecord(_ item:ReadingLibraryItem,citation:ReadingCitation?) {
+        guard let citation else { return }
+        if case .record(let record) = item { sourceNavigator.open(citation,record:record,store:store) }
+        else { _ = store.reveal(citation.source,beside:false) }
+    }
+
+    private func openQueued(_ book:LibraryBook) {
+        focused = book.id
+        Task {
+            do { try await store.openShelfQueueBook(book) }
+            catch where FolioCancellation.matches(error) {}
+            catch { message = error.localizedDescription }
+        }
+    }
+
     @ViewBuilder private func collection(_ books:[LibraryBook]) -> some View {
         if books.isEmpty {
             VStack(spacing:8) {
@@ -255,6 +468,8 @@ struct BookLibraryView: View {
                 Text(library.books.isEmpty ? "书架为空" : "没有匹配的书籍").font(.headline)
                 if library.books.isEmpty { Text("通过「添加」或从访达拖入文献。").foregroundStyle(.secondary) }
             }.frame(maxWidth:.infinity,maxHeight:.infinity)
+        } else if scope == "queue" {
+            queueRows(books)
         } else if grid {
             ScrollView {
                 LazyVGrid(columns:[GridItem(.adaptive(minimum:125),spacing:12)],spacing:12) {
@@ -268,6 +483,7 @@ struct BookLibraryView: View {
                          .background(focused == book.id ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.035),in:RoundedRectangle(cornerRadius:8))
                          .modifier(ShelfRowGestures(single:{focused = book.id},double:{open(book)}))
                          .contextMenu { bookActions(book) }
+                         .id(book.id)
                     }
                 }.padding(.vertical,3)
             }
@@ -285,6 +501,7 @@ struct BookLibraryView: View {
                  .modifier(ShelfRowGestures(single:{focused = book.id},double:{open(book)}))
                  .listRowBackground(focused == book.id ? Color.accentColor.opacity(0.10) : Color.clear)
                  .contextMenu { bookActions(book) }
+                 .id(book.id)
             }.listStyle(.inset)
         }
     }
@@ -296,7 +513,10 @@ struct BookLibraryView: View {
     }
 
     private func bookLabel(_ book:LibraryBook,lines:Int) -> some View {
-        let metadata = [book.shelfAuthor,book.shelfPeriodical,book.shelfYear].compactMap{$0}.filter{!$0.isEmpty}
+        let issue = book.issueMetadata
+        let metadata = [book.shelfAuthor ?? "",issue.periodical,issue.year,
+                        issue.volume.isEmpty ? "" : "卷 "+issue.volume,
+                        issue.issue.isEmpty ? "" : "第 "+issue.issue+" 期"].filter{!$0.isEmpty}
         return VStack(alignment:.leading,spacing:4) {
             Text(book.title).font(.callout.weight(.semibold)).lineLimit(lines).help(book.title)
             if !metadata.isEmpty { Text(metadata.joined(separator:" · ")).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
@@ -316,12 +536,13 @@ struct BookLibraryView: View {
                     .buttonStyle(.borderless).help("收起书籍详情")
             }
             PanelRow {
-                Button("续读") { open(book) }.buttonStyle(.borderedProminent)
+                Button("续读") { if scope == "queue" { openQueued(book) } else { open(book) } }.buttonStyle(.borderedProminent)
                 Button("本书记录") { showNotebook(book) }
                 Button("导出记录…") { showNotebook(book,export:true) }
                 if fileStatus[book.path] == .missing { Button("重新定位…") { relink(book) } }
                 Spacer(minLength:0)
             }
+            recordOverview(book,summaries[ReadingBookIdentity.key(book.path)] ?? ShelfRecordSummary())
             Text(book.path).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 .truncationMode(.middle).help(book.path).textSelection(.enabled)
         }.padding(10).background(.quaternary.opacity(0.42),in:RoundedRectangle(cornerRadius:8))
@@ -352,7 +573,12 @@ struct BookLibraryView: View {
     }
 
     @ViewBuilder private func bookActions(_ book:LibraryBook) -> some View {
-        Button("继续阅读") { open(book) }
+        Button("继续阅读") { if scope == "queue" { openQueued(book) } else { open(book) } }
+        if book.canQueueReading {
+            if library.catalog.readingQueue?.contains(book.id) == true {
+                Button("从待读队列移出") { perform { try library.dequeueShelfBook(book.id) } }
+            } else { Button("加入待读队列") { perform { try library.enqueueShelfBooks([book.id]);message = "已加入待读队列" } } }
+        }
         Button("本书记录") { showNotebook(book) }
         Button("导出本书记录…") { showNotebook(book,export:true) }
         Divider()
@@ -373,6 +599,11 @@ struct BookLibraryView: View {
     }
 
     @ViewBuilder private func bulkActions(_ ids:Set<UUID>) -> some View {
+        if ids.count > 1 {
+            Button("加入待读队列") {
+                perform { try library.enqueueShelfBooks(ShelfBrowse.ordered(library.books.filter{ids.contains($0.id) && $0.canQueueReading},sort:sort,progress:progress).map(\.id)) }
+            }
+        }
         Menu("阅读状态") {
             ForEach(ShelfReadingStatus.allCases) { status in
                 Button("标为"+status.rawValue) { change(ids,"更改阅读状态") { $0.readingStatus = status } }
@@ -432,12 +663,19 @@ struct BookLibraryView: View {
     private func change(_ ids:Set<UUID>,_ name:String,_ edit:(inout LibraryBook)->Void) {
         perform { try library.editShelfBooks(ids,name:name,edit:edit);message = "已"+name }
     }
-    private func add(_ urls:[URL],bibliography:Bibliography? = nil) {
+    private func previewImport(_ urls:[URL]) {
+        var known = Set<URL>()
+        let items = urls.filter{known.insert($0.standardizedFileURL).inserted}.map(ShelfImportDraft.init)
+        if !items.isEmpty { importRequest = ShelfImportRequest(drafts:items) }
+    }
+    private func add(_ urls:[URL],bibliography:Bibliography? = nil,drafts:[ShelfImportDraft] = []) {
         message = "";query = "";matchedQuery = "";scope = "all";page = 0
-        addition.add(urls,to:library,bibliography:bibliography)
+        filterYear = "";filterPeriodical = "";filterStatus = "";filterExcerpts = false
+        addition.add(urls,to:library,bibliography:bibliography,drafts:drafts)
     }
     private func open(_ book:LibraryBook) {
         guard !opening else { return }
+        focused = book.id
         let shortcut = library.resolve(ReadingShortcut(path:book.path,title:book.title,position:ViewPosition(selection:0),bookmark:book.bookmark))
         opening = true
         Task {
@@ -483,19 +721,25 @@ struct BookLibraryView: View {
                 defer { relinking = false }
                 do {
                     let review = try await Task.detached(priority:.utility) { try ShelfRelinkReview.inspect(book,url:url) }.value
-                    if review.verified { finishRelink(review) } else { relinkReview = review }
+                    relinkReview = review
                 } catch { message = error.localizedDescription }
             }
         }
     }
     private func finishRelink(_ review:ShelfRelinkReview) {
         relinkReview = nil
-        perform {
-            guard library.books.contains(where:{$0.id == review.book.id && $0.path == review.book.path}) else {
-                throw FolioError(message:"书架记录已变化，请重新定位")
-            }
-            try library.relink(path:review.book.path,to:review.url,defaults:store.readingDefaults,validated:true,verifiedDigest:review.digest)
-            refresh = UUID();message = "已重新定位"
+        relinking = true
+        Task {
+            defer { relinking = false }
+            do {
+                let digest = try await Task.detached(priority:.utility) { try ShelfFileStatus.digest(review.url) }.value
+                guard digest != nil, digest == review.digest,
+                      library.books.contains(where:{$0.id == review.book.id && $0.path == review.book.path}) else {
+                    throw FolioError(message:"文件或书架记录已变化，请重新核对")
+                }
+                try library.relink(path:review.book.path,to:review.url,defaults:store.readingDefaults,validated:true,verifiedDigest:digest)
+                refresh = UUID();message = "已重新定位"
+            } catch { message = error.localizedDescription }
         }
     }
     private func saveFixed(_ book:LibraryBook) {

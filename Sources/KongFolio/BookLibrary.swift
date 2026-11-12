@@ -15,6 +15,8 @@ struct LibraryBook: Codable, Identifiable, Equatable {
     var shelfAuthor: String? = nil
     var shelfPeriodical: String? = nil
     var shelfYear: String? = nil
+    var shelfVolume: String? = nil
+    var shelfIssue: String? = nil
     var shelfTags: [String]? = nil
     var shelfDigest: String? = nil
 }
@@ -37,6 +39,9 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         var manualOnly: Bool? = true
         var pendingBooks: [LibraryBook]? = nil
         var shelfTopics: [String]? = nil
+        var readingQueue: [UUID]? = nil
+        var queueCursor: UUID? = nil
+        var savedShelfFilters: [ShelfSavedFilter]? = nil
     }
     private let catalogWriter = DispatchQueue(label: "com.kongfolio.library", qos: .utility)
     private var reflectionTask: Task<Void, Never>?
@@ -57,6 +62,12 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
     var cachedShelfProgress: [String:ReadingProgress] = [:]
     private var shelfUndo: (before:Catalog,after:Catalog)?
     @Published private(set) var shelfUndoName: String?
+
+    var readingQueue: [LibraryBook] {
+        let indexed = Dictionary(books.map{($0.id,$0)},uniquingKeysWith:{first,_ in first})
+        return (catalog.readingQueue ?? []).compactMap { indexed[$0] }
+    }
+    var shelfFilters: [ShelfSavedFilter] { catalog.savedShelfFilters ?? [] }
 
     var shortcuts: [ManagedReadingShortcut] { catalog.shortcuts }
     init(storage: URL) {
@@ -128,8 +139,30 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
 
     func importRestoredCatalog(_ value: Catalog) throws {
         var next = catalog
-        for var book in value.books where !next.books.contains(where: { $0.path == book.path }) {
-            if next.books.contains(where: { $0.id == book.id }) { book.id = UUID() }; next.books.append(book)
+        var restoredIDs: [UUID:UUID] = [:]
+        var byPath = Dictionary(next.books.map{($0.path,$0.id)},uniquingKeysWith:{first,_ in first})
+        var bookIDs = Set(next.books.map(\.id))
+        for var book in value.books {
+            let original = book.id
+            if let existing = byPath[book.path] { restoredIDs[original] = existing;continue }
+            if bookIDs.contains(book.id) { book.id = UUID() }
+            bookIDs.insert(book.id)
+            byPath[book.path] = book.id
+            restoredIDs[original] = book.id
+            next.books.append(book)
+        }
+        if let incomingQueue = value.readingQueue {
+            var queue = next.readingQueue ?? []
+            var known = Set(queue)
+            queue += incomingQueue.compactMap{restoredIDs[$0]}.filter{known.insert($0).inserted}
+            next.readingQueue = queue
+            if next.queueCursor == nil { next.queueCursor = value.queueCursor.flatMap{restoredIDs[$0]} }
+        }
+        if let incomingFilters = value.savedShelfFilters {
+            var filters = next.savedShelfFilters ?? []
+            var known = Set(filters.map(\.id))
+            filters += incomingFilters.filter{known.insert($0.id).inserted}
+            next.savedShelfFilters = filters
         }
         var known = Set(next.books.map(\.id) + (next.pendingBooks ?? []).map(\.id))
         let pending = (value.pendingBooks ?? []).filter { known.insert($0.id).inserted }
@@ -170,12 +203,12 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         let snapshot = defaults.dictionaryRepresentation(), paths = books.map(\.path)
         let worker = Task.detached(priority:.utility) { () throws -> ([ReadingProgress.HistoryItem],[String:String]) in
             try Task.checkCancellation()
-            let history = ReadingProgress.history(snapshot:snapshot)
+            let history = ReadingProgress.history(snapshot:snapshot,includingRemoved:true)
             let identities = Self.historyIdentities(paths + history.map(\.path))
             try Task.checkCancellation(); return (history,identities)
         }
         let (history,identities) = try await withTaskCancellationHandler(operation:{ try await worker.value },onCancel:{ worker.cancel() })
-        try Task.checkCancellation(); if importNew { try applyHistory(history,identities:identities) }
+        try Task.checkCancellation(); if importNew { try applyHistory(ReadingProgress.history(snapshot:snapshot),identities:identities) }
         var byIdentity: [String:ReadingProgress] = [:]
         for item in history { byIdentity[identities[item.path] ?? item.path] = item.progress }
         return books.reduce(into:[:]) { result,book in result[book.path] = byIdentity[identities[book.path] ?? book.path] ?? ReadingProgress() }
@@ -229,7 +262,7 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         }
         return PreparedManualBooks(books:books,identities:identities,existing:Set(catalog.books.map(\.id)))
     }
-    private func applyManualBooks(_ prepared:PreparedManualBooks) throws {
+    private func applyManualBooks(_ prepared:PreparedManualBooks, drafts:[String:ShelfImportDraft] = [:]) throws {
         var next = catalog, known = Set(catalog.books.map{prepared.identities[$0.path] ?? $0.path})
         var digests = Set(catalog.books.filter{!prepared.existing.contains($0.id)}.compactMap(\.shelfDigest))
         for candidate in prepared.books where known.insert(candidate.path).inserted {
@@ -238,13 +271,15 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
             if book.shelfAuthor == nil { book.shelfAuthor = candidate.shelfAuthor }
             if book.shelfYear == nil { book.shelfYear = candidate.shelfYear }
             book.shelfDigest = candidate.shelfDigest ?? book.shelfDigest
-            book.path = candidate.path; book.bookmark = candidate.bookmark; next.books.append(book)
+            book.path = candidate.path; book.bookmark = candidate.bookmark
+            drafts[book.path]?.apply(to:&book)
+            next.books.append(book)
             next.pendingBooks?.removeAll{$0.id == book.id}
         }
         if next != catalog { try applyShelfEdit(next,name:"添加书籍") }
     }
     func add(_ urls:[URL]) throws { try applyManualBooks(Self.prepareManualBooks(urls,catalog:catalog)) }
-    func addInBackground(_ urls:[URL],bibliography:Bibliography? = nil) async throws {
+    func addInBackground(_ urls:[URL],bibliography:Bibliography? = nil,drafts:[ShelfImportDraft] = []) async throws {
         let snapshot = catalog
         let worker = Task.detached(priority:.utility) { try Self.prepareManualBooks(urls,catalog:snapshot) }
         var prepared = try await withTaskCancellationHandler(operation:{try await worker.value},onCancel:{worker.cancel()})
@@ -253,7 +288,8 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
             if !bibliography.author.isEmpty { prepared.books[0].shelfAuthor = bibliography.author }
             if !bibliography.year.isEmpty { prepared.books[0].shelfYear = bibliography.year }
         }
-        try Task.checkCancellation(); try applyManualBooks(prepared)
+        let annotations = Dictionary(drafts.map{(prepared.identities[$0.url.path] ?? $0.url.path,$0)},uniquingKeysWith:{first,_ in first})
+        try Task.checkCancellation(); try applyManualBooks(prepared,drafts:annotations)
     }
     func update(_ book: LibraryBook) throws {
         var next = catalog
@@ -345,6 +381,55 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         shelfUndo = nil
         shelfUndoName = nil
     }
+    func enqueueShelfBooks(_ ids:[UUID]) throws {
+        var next = catalog
+        var queue = next.readingQueue ?? []
+        var known = Set(queue)
+        let available = Set(books.filter(\.canQueueReading).map(\.id))
+        queue += ids.filter { available.contains($0) && known.insert($0).inserted }
+        guard queue != (next.readingQueue ?? []) else { return }
+        next.readingQueue = queue
+        try commit(next)
+    }
+    func dequeueShelfBook(_ id:UUID) throws {
+        var next = catalog
+        next.readingQueue?.removeAll{$0 == id}
+        if next.queueCursor == id { next.queueCursor = nil }
+        if next != catalog { try commit(next) }
+    }
+    func moveShelfQueue(_ id:UUID, before target:UUID) throws {
+        var next = catalog
+        guard id != target, var queue = next.readingQueue, queue.contains(id), queue.contains(target) else { return }
+        queue.removeAll{$0 == id}
+        guard let destination = queue.firstIndex(of:target) else { return }
+        queue.insert(id,at:destination)
+        next.readingQueue = queue
+        if next != catalog { try commit(next) }
+    }
+    func markShelfQueuePosition(_ id:UUID) throws {
+        guard catalog.queueCursor != id, readingQueue.contains(where:{$0.id == id}) else { return }
+        var next = catalog
+        next.queueCursor = id
+        try commit(next)
+    }
+    func nextShelfQueueBook() -> LibraryBook? {
+        let queue = readingQueue
+        guard let cursor = catalog.queueCursor, let index = queue.firstIndex(where:{$0.id == cursor}) else { return queue.first }
+        return queue.dropFirst(index+1).first
+    }
+    func saveShelfFilter(_ filter:ShelfSavedFilter) throws {
+        var next = catalog
+        var filters = shelfFilters
+        if let index = filters.firstIndex(where:{$0.id == filter.id}) { filters[index] = filter }
+        else { filters.append(filter) }
+        next.savedShelfFilters = filters
+        try commit(next)
+    }
+    func removeShelfFilter(_ id:UUID) throws {
+        var next = catalog
+        next.savedShelfFilters?.removeAll{$0.id == id}
+        if next != catalog { try commit(next) }
+    }
     func register(_ shortcut: ReadingShortcut, file: URL? = nil) throws {
         try shortcut.validate()
         var next = catalog
@@ -386,6 +471,13 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
                 next.books[index].shelfAuthor = next.books[index].shelfAuthor ?? other.shelfAuthor
                 next.books[index].shelfPeriodical = next.books[index].shelfPeriodical ?? other.shelfPeriodical
                 next.books[index].shelfYear = next.books[index].shelfYear ?? other.shelfYear
+                next.books[index].shelfVolume = next.books[index].shelfVolume ?? other.shelfVolume
+                next.books[index].shelfIssue = next.books[index].shelfIssue ?? other.shelfIssue
+                if let queue = next.readingQueue {
+                    var known = Set<UUID>()
+                    next.readingQueue = queue.map{$0 == other.id ? id : $0}.filter{known.insert($0).inserted}
+                }
+                if next.queueCursor == other.id { next.queueCursor = id }
                 next.books[index].shelfDigest = next.books[index].shelfDigest ?? other.shelfDigest
                 if next.books[index].category.isEmpty { next.books[index].category = other.category }
                 if !other.reflection.isEmpty { next.books[index].reflection += (next.books[index].reflection.isEmpty ? "" : "\n\n") + other.reflection }
@@ -453,10 +545,10 @@ extension WorkspaceStore {
     @Published private(set) var message = ""
     private var task:Task<Void,Never>?
     private var token = UUID()
-    func add(_ urls:[URL],to library:BookLibrary,bibliography:Bibliography? = nil) {
+    func add(_ urls:[URL],to library:BookLibrary,bibliography:Bibliography? = nil,drafts:[ShelfImportDraft] = []) {
         cancel(); let current = UUID(); token = current; busy = true; message = "";let previous=library.books.count
         task = Task { [weak self] in
-            do { try await library.addInBackground(urls,bibliography:bibliography); guard let self,self.token == current else { return }; self.busy = false;let added=library.books.count-previous;let skipped = max(0,urls.count-added);self.message = added == 0 ? "所选文献已在书架中" : "已添加 \(added) 本书籍" + (skipped == 0 ? "" : "，跳过 \(skipped) 份重复文件") }
+            do { try await library.addInBackground(urls,bibliography:bibliography,drafts:drafts); guard let self,self.token == current else { return }; self.busy = false;let added=library.books.count-previous;let skipped = max(0,urls.count-added);self.message = added == 0 ? "所选文献已在书架中" : "已添加 \(added) 本书籍" + (skipped == 0 ? "" : "，跳过 \(skipped) 份重复文件") }
             catch { guard let self,self.token == current else { return }; self.busy = false; self.message = FolioCancellation.matches(error) ? "已停止添加" : error.localizedDescription }
         }
     }

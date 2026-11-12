@@ -14,16 +14,38 @@ enum ShelfSort: String, CaseIterable {
 extension LibraryBook {
     var shelfTopics: [String] { ShelfBrowse.topics((topics ?? []) + [category]) }
     var isPDF: Bool { URL(fileURLWithPath:path).pathExtension.lowercased() == "pdf" }
+    var canQueueReading: Bool { isPDF || URL(fileURLWithPath:path).pathExtension.lowercased() == "kongfolio" }
     func shelfStatus(_ progress: ReadingProgress?) -> ShelfReadingStatus {
         readingStatus ?? (progress?.visited.isEmpty == false ? .reading : .unread)
     }
+    var issueMetadata: (periodical:String,year:String,volume:String,issue:String) {
+        if let shelfPeriodical, let shelfYear, let shelfVolume, let shelfIssue {
+            return (shelfPeriodical,shelfYear,shelfVolume,shelfIssue)
+        }
+        let inferred = ShelfText.infer(title)
+        let filename = URL(fileURLWithPath:path).deletingPathExtension().lastPathComponent
+        let alternative = filename == title ? inferred : ShelfText.infer(filename)
+        return (shelfPeriodical ?? (inferred.periodical.isEmpty ? alternative.periodical : inferred.periodical),
+                shelfYear ?? (inferred.year.isEmpty ? alternative.year : inferred.year),
+                shelfVolume ?? (inferred.volume.isEmpty ? alternative.volume : inferred.volume),
+                shelfIssue ?? (inferred.issue.isEmpty ? alternative.issue : inferred.issue))
+    }
+
     func matchingShelfField(_ query: String) -> String? {
         let query = query.trimmingCharacters(in:.whitespacesAndNewlines)
         guard !query.isEmpty else { return nil }
-        let fields = [("书名",title),("作者",shelfAuthor ?? ""),("刊名",shelfPeriodical ?? ""),
-                      ("年代",shelfYear ?? ""),("专题",shelfTopics.joined(separator:" ")),
+        let target = ShelfText.key(query)
+        guard !target.isEmpty else { return nil }
+        let metadata = issueMetadata
+        let issue = metadata.issue.isEmpty ? "" : ShelfText.key(metadata.issue+"期")
+        let volume = metadata.volume.isEmpty ? "" : ShelfText.key(metadata.volume+"卷")
+        if target.range(of:#"^[0-9]+期$"#,options:.regularExpression) != nil { return target == issue ? "期次" : nil }
+        if target.range(of:#"^[0-9]+卷$"#,options:.regularExpression) != nil { return target == volume ? "卷册" : nil }
+        if !issue.isEmpty, target == String(issue.dropLast()) { return "期次" }
+        let fields = [("书名",title),("作者",shelfAuthor ?? ""),("刊名",metadata.periodical),
+                      ("年代",metadata.year),("专题",shelfTopics.joined(separator:" ")),
                       ("标签",(shelfTags ?? []).joined(separator:" ")),("文件名",path)]
-        return fields.first { AnnotationFilter.folded($0.1).contains(AnnotationFilter.folded(query)) }?.0
+        return fields.first { ShelfText.key($0.1).contains(target) }?.0
     }
 }
 
@@ -48,7 +70,7 @@ enum ShelfBrowse {
             case .added:
                 if a.added != b.added { return a.added > b.added }
             case .author, .year:
-                let cmp = sort == .author ? text(a.shelfAuthor,b.shelfAuthor) : text(a.shelfYear,b.shelfYear)
+                let cmp = sort == .author ? text(a.shelfAuthor,b.shelfAuthor) : text(a.issueMetadata.year,b.issueMetadata.year)
                 if cmp != .orderedSame { return cmp == .orderedAscending }
             case .title: break
             }
