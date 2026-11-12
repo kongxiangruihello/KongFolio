@@ -56,6 +56,7 @@ struct ReadingHistorySheet: View {
             pageContent
                 .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
         }.padding(20).adaptiveSheet(width:980,height:680,minimumWidth:360)
+            .modifier(ShelfQueueProblemAlert(store:store,inShelf:true))
     }
 
     private func navigationButton(_ destination:ReadingHistoryPage) -> some View {

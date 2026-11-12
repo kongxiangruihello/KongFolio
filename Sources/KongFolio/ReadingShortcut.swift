@@ -113,7 +113,7 @@ extension Workspace {
 }
 
 extension WorkspaceStore {
-    @discardableResult func openReadingShortcut(_ shortcut: ReadingShortcut, resolvedFile:URL? = nil) throws -> Workspace {
+    @discardableResult func openReadingShortcut(_ shortcut: ReadingShortcut, resolvedFile:URL? = nil, selectImmediately:Bool = true) throws -> Workspace {
         if tabs.isEmpty { bootstrap() }
         let shortcut = library.resolve(shortcut)
         let url = try resolvedFile ?? shortcut.resolvedURL(), path = url.path
@@ -128,13 +128,15 @@ extension WorkspaceStore {
         }
         let target: Workspace
         if let existing { target = existing }
-        else if let empty = activeWorkspace, empty.count == 0, !empty.needsLoad, !empty.busy { target = empty }
-        else { target = addWorkspace() }
+        else if selectImmediately, let empty = activeWorkspace, empty.count == 0, !empty.needsLoad, !empty.busy,
+                empty.displayPath == nil { target = empty }
+        else { target = addWorkspace(selectImmediately:selectImmediately) }
+        if !selectImmediately { stagedShelfTab = target.id }
         let position = shortcut.destination(progress: progress, pageCount: target.count > 0 ? target.count : max(progress.pages, shortcut.position.selection + 1))
         let layout = shortcut.mode == .resume ? progress.layout ?? shortcut.layout : shortcut.layout
         target.browsingReadingReference = shortcut.mode == .fixed
         if target.count > 0 {
-            select(target.id)
+            if selectImmediately { select(target.id) }
             if let layout { target.readingLayout = layout }
             target.readingScale = position.scale
             target.go(to: position)
@@ -142,7 +144,7 @@ extension WorkspaceStore {
         } else {
             if url.pathExtension.lowercased() == "kongfolio" { target.projectURL = url } else { target.sourceURL = url }
             target.pendingView = position; target.pendingReadingLayout = layout
-            select(target.id)
+            if selectImmediately { select(target.id) }
             if !target.busy, target.count == 0 { target.needsLoad = false; target.load([url]) }
         }
         return target

@@ -133,7 +133,8 @@ extension WorkspaceStore {
         await journal.importLegacy(cards:board.cards,books:library.books+(library.catalog.pendingBooks ?? []),topics:research.state.topics ?? [],annotations:research.state.annotations)
     }
     func restoreReadingRecord(for workspace:Workspace) {
-        guard readingMode, let path = workspace.readingJournalPath, let id = journal.state.lastNotes[path],
+        guard workspace.id != stagedShelfTab || workspace.id == selectedID,
+              readingMode, let path = workspace.readingJournalPath, let id = journal.state.lastNotes[path],
               let record = journal.record(id), record.removed == nil, record.hasContent,
               ReadingLibraryItem.record(record).isFromBook(path) else { return }
         if showReadingDesk && readingDeskSection == .excerpts { return }

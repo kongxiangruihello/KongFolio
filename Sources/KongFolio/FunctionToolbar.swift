@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FunctionToolbar: View {
     @ObservedObject var store: WorkspaceStore
+    @State private var issueInfo: ReaderShelfIssue?
     @AppStorage(ReaderToolbarProfile.key) private var profileData = Data()
     @State private var showToolbarSettings = false
     @State private var toolbarWidth: CGFloat = 800
@@ -16,7 +17,8 @@ struct FunctionToolbar: View {
     var body: some View {
         GeometryReader { proxy in
             let showsQueue = context == .pdf && workspace?.id == store.shelfQueueReadingTab
-            let availableWidth = max(0,proxy.size.width-(showsQueue ? 40 : 0))
+            let issueWidth: CGFloat = issueInfo == nil ? 0 : 40
+            let availableWidth = max(0,proxy.size.width-(showsQueue ? 40 : 0)-issueWidth)
             let visible = profile.visible(width:availableWidth,context:context)
             let overflow = profile.hidden(width:availableWidth,context:context)
             HStack(spacing:0) {
@@ -24,6 +26,15 @@ struct FunctionToolbar: View {
                     ToolbarControlSurface(selected:isSelected(action)) {
                         control(action,menu:false)
                     }.frame(maxWidth:.infinity)
+                }
+                if let issueInfo {
+                    ToolbarControlSurface {
+                        Menu {
+                            ShelfIssueActions(info:issueInfo,store:store)
+                        } label: { Image(systemName:"newspaper").frame(width:28,height:28) }
+                            .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                            .help(issueInfo.heading).accessibilityLabel("刊物期次")
+                    }.frame(width:40)
                 }
                 if showsQueue {
                     ToolbarControlSurface {
@@ -48,12 +59,16 @@ struct FunctionToolbar: View {
             .font(.system(size:16,weight:.medium))
             .foregroundStyle(Color(nsColor:.secondaryLabelColor))
             .padding(.horizontal,12)
-            .frame(maxWidth:CGFloat(visible.count+1)*128+(showsQueue ? 40 : 0))
+            .frame(maxWidth:CGFloat(visible.count+1)*128+(showsQueue ? 40 : 0)+issueWidth)
             .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:visible.isEmpty ? .trailing : .center)
             .onAppear { toolbarWidth = proxy.size.width }
             .onChange(of:proxy.size.width) { _,width in toolbarWidth = width }
         }.frame(height:44)
         .background(.bar)
+        .task(id: context == .pdf ? workspace?.displayPath : nil) { refreshIssue() }
+        .onReceive(store.library.$catalog.dropFirst()) { _ in
+            Task { @MainActor in refreshIssue() }
+        }
         .sheet(isPresented:$showToolbarSettings) {
             ReaderToolbarSettings(
                 profile:Binding(get:{profile},set:{profileData = (try? JSONEncoder().encode($0)) ?? Data()}),
@@ -61,6 +76,11 @@ struct FunctionToolbar: View {
             )
         }
         .popover(isPresented:$store.showQuickReadingNote) { QuickReadingNote(store:store) }
+    }
+
+    private func refreshIssue() {
+        guard context == .pdf,let path = workspace?.displayPath else { issueInfo = nil;return }
+        issueInfo = ReaderShelfIssue(books:store.library.books,path:path)
     }
 
     @ViewBuilder private func moreActions(_ overflow: [FileToolbarAction]) -> some View {
@@ -205,6 +225,7 @@ private struct ToolbarControlSurface<Content: View>: View {
 private struct PDFToolbarToolsMenu: View {
     @ObservedObject var workspace: Workspace
     @ObservedObject var store: WorkspaceStore
+    @State private var issueInfo: ReaderShelfIssue?
     let showTitle: Bool
     let showPages: Bool
     let showSignature: Bool

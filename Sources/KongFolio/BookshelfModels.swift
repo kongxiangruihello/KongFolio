@@ -22,13 +22,14 @@ extension LibraryBook {
         if let shelfPeriodical, let shelfYear, let shelfVolume, let shelfIssue {
             return (shelfPeriodical,shelfYear,shelfVolume,shelfIssue)
         }
-        let inferred = ShelfText.infer(title)
         let filename = URL(fileURLWithPath:path).deletingPathExtension().lastPathComponent
-        let alternative = filename == title ? inferred : ShelfText.infer(filename)
-        return (shelfPeriodical ?? (inferred.periodical.isEmpty ? alternative.periodical : inferred.periodical),
-                shelfYear ?? (inferred.year.isEmpty ? alternative.year : inferred.year),
-                shelfVolume ?? (inferred.volume.isEmpty ? alternative.volume : inferred.volume),
-                shelfIssue ?? (inferred.issue.isEmpty ? alternative.issue : inferred.issue))
+        let fromFile = ShelfText.infer(filename)
+        let fromTitle = filename == title ? fromFile : ShelfText.infer(title)
+        let detected = fromFile.periodical.isEmpty ? fromTitle : fromFile
+        return (shelfPeriodical ?? detected.periodical,
+                shelfYear ?? (detected.year.isEmpty ? fromFile.year : detected.year),
+                shelfVolume ?? detected.volume,
+                shelfIssue ?? detected.issue)
     }
 
     func matchingShelfField(_ query: String) -> String? {

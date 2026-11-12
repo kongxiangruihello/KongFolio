@@ -73,6 +73,8 @@ import UniformTypeIdentifiers
     @Published var readingExportEssay = false
     @Published var readingDeskWindowRequest:UUID?
     var shelfQueueTab: UUID?
+    var stagedShelfTab: UUID?
+    @Published var shelfQueueProblem: ShelfQueueProblem?
     @Published var shelfQueueOpening = false
     @Published var shelfQueueReadingTab: UUID?
     lazy var journal = ReadingJournal(storage:storage)
@@ -351,7 +353,7 @@ import UniformTypeIdentifiers
         var bytes = loaded.reduce(0) { $0 + $1.estimatedResidentBytes }
         let budget = max(64, memoryBudgetMB) * 1024 * 1024
         let partners = Set(tabs.compactMap(\.workspace).compactMap { $0.splitPartner?.id })
-        for workspace in loaded.filter({ $0.id != selectedID && !partners.contains($0.id) && $0.canUnload }).sorted(by: { $0.lastActive < $1.lastActive }) {
+        for workspace in loaded.filter({ $0.id != selectedID && $0.id != stagedShelfTab && !partners.contains($0.id) && $0.canUnload }).sorted(by: { $0.lastActive < $1.lastActive }) {
             guard excess > 0 || bytes > budget else { break }
             bytes -= workspace.estimatedResidentBytes; workspace.unload(); excess -= 1
         }

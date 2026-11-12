@@ -32,6 +32,7 @@ struct RootView: View {
         .sheet(isPresented: $store.showStartupReview) { StartupReviewView(store:store) }
         .sheet(isPresented: $store.showReadingHistory) { ReadingHistorySheet(store: store) }
         .sheet(isPresented: $store.showHistorySettings) { HistorySettingsView(storage: store.storage) }
+        .modifier(ShelfQueueProblemAlert(store:store,inShelf:false))
         .sheet(item: $store.notebookBook) { BookNotebookView(store: store, library: store.library, book: $0) }
         .sheet(item: $store.exportReview) { request in ExportReviewSheet(store: store, request: request) }
         .sheet(isPresented: $store.showBackgroundJobs) { DocumentTasksView(queue: store.documentTasks, store: store) }

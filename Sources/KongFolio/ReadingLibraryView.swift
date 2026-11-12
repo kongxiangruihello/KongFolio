@@ -6,6 +6,8 @@ struct ReadingLibraryView: View {
     @Binding var section:ReadingDeskSection
     var compact = false
     var bookSource:ReadingCitation? = nil
+    var initialItem:ReadingLibraryID? = nil
+    @State private var openedInitialItem = false
     var showsDeskHeader = false
     @State private var restoredSession = false
     @State private var query = ""
@@ -88,6 +90,12 @@ struct ReadingLibraryView: View {
         }
         .sheet(isPresented:$showBackups) { ReadingBackupView(journal:journal) }
         .sheet(isPresented:$showTools053) { ReadingTools053(store:store,journal:journal,ids:selection.isEmpty ? Set(editing.map{[$0]} ?? []):selection) }
+        .onAppear {
+            if let initialItem, !openedInitialItem {
+                openedInitialItem = true
+                navigate(initialItem)
+            }
+        }
         .onAppear { options053=ReadingLibraryOptions053.load(store.readingDefaults) }
         .onChange(of:options053) { _,value in page=0;value.save(store.readingDefaults) }
     }

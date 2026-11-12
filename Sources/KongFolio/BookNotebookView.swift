@@ -7,6 +7,7 @@ struct BookNotebookView: View {
     @ObservedObject var library: BookLibrary
     let book: LibraryBook
     var opensExport = false
+    var initialRecord: ReadingLibraryID? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var snapshot: BookNotebook.Snapshot?
     @State private var reflection = ""
@@ -48,7 +49,7 @@ struct BookNotebookView: View {
                         if value == .exports { bookExportAll = false }
                         recordSection = value
                     })
-                    ReadingLibraryView(store:store,journal:store.journal,section:section,bookSource:source)
+                    ReadingLibraryView(store:store,journal:store.journal,section:section,bookSource:source,initialItem:initialRecord)
                 }
                 ReadingSaveRecoveryFooter(journal:store.journal)
             } else if mode == 1 {

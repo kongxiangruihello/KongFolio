@@ -7,6 +7,7 @@ struct ReadingExportPane: View {
     @ObservedObject var journal:ReadingJournal
     var bookSource: ReadingCitation? = nil
     var bookExportAll = true
+    var shelfScope: ShelfScopeExport? = nil
     @StateObject private var controller = ReadingExportController()
     @State private var scope = Scope.selected
     @State private var preferences = ReadingExportPreferences.load()
@@ -33,13 +34,16 @@ struct ReadingExportPane: View {
     private var format:ReadingRecordExport.Format { preferences.format }
     private var bookPath: String? { bookSource?.source.path ?? store.commandWorkspace?.readingJournalPath }
     private var candidates:[ReadingExportItem] {
-        if scope == .essay { guard let essay = journal.essay(journal.currentEssayID),journal.draftEssay?.id != essay.id,essay.hasContent else { return [] };return [.essay(essay)] }
+        if shelfScope == nil, scope == .essay { guard let essay = journal.essay(journal.currentEssayID),journal.draftEssay?.id != essay.id,essay.hasContent else { return [] };return [.essay(essay)] }
         let ids = store.readingRecordSelection.isEmpty ? Set(store.readingRecordID.map{[$0]} ?? []) : store.readingRecordSelection
         func withinShelfBook(_ item:ReadingLibraryItem) -> Bool {
-            bookSource.map { item.isFromBook($0.source.path) } ?? true
+            if let shelfScope {
+                return item.citations053.contains{ shelfScope.paths.contains(ReadingBookIdentity.key($0.source.path)) }
+            }
+            return bookSource.map { item.isFromBook($0.source.path) } ?? true
         }
-        let records = journal.state.records.filter { r in withinShelfBook(.record(r)) && r.hasContent && r.removed == nil && (scope == .library || (scope == .selected ? (ids.contains(r.id) || store.readingLibraryExportSelection.contains(.record(r.id))) : (bookPath.map { ReadingLibraryItem.record(r).isFromBook($0) } ?? false))) }.map(ReadingExportItem.record)
-        let essays = journal.state.essays.filter { e in withinShelfBook(.essay(e)) && e.hasContent && e.removed == nil && (scope == .library || (scope == .selected && store.readingLibraryExportSelection.contains(.essay(e.id))) || (scope == .book && (bookPath.map { ReadingLibraryItem.essay(e).isFromBook($0) } ?? false))) }.map(ReadingExportItem.essay)
+        let records = journal.state.records.filter { r in withinShelfBook(.record(r)) && r.hasContent && r.removed == nil && (shelfScope != nil || scope == .library || (scope == .selected ? (ids.contains(r.id) || store.readingLibraryExportSelection.contains(.record(r.id))) : (bookPath.map { ReadingLibraryItem.record(r).isFromBook($0) } ?? false))) }.map(ReadingExportItem.record)
+        let essays = journal.state.essays.filter { e in withinShelfBook(.essay(e)) && e.hasContent && e.removed == nil && (shelfScope != nil || scope == .library || (scope == .selected && store.readingLibraryExportSelection.contains(.essay(e.id))) || (scope == .book && (bookPath.map { ReadingLibraryItem.essay(e).isFromBook($0) } ?? false))) }.map(ReadingExportItem.essay)
         let selectedOrder = (store.readingLibraryExportOrder.isEmpty ?
             store.readingRecordSelectionOrder.map(ReadingLibraryID.record) : store.readingLibraryExportOrder).map(\.exportOrderKey)
         var items = ReadingExportOrdering.sorted(records+essays,by:sort,selection:selectedOrder)
@@ -50,7 +54,7 @@ struct ReadingExportPane: View {
         let items = candidates.filter{!excluded.contains($0.id)}
         let records = items.compactMap { if case .record(let r) = $0 { return r };return nil }
         let essays = items.compactMap { if case .essay(let e) = $0 { return e };return nil }
-        let title = scope == .essay ? (essays.first?.title ?? "笔记") : (scope == .book ? (bookSource?.title ?? store.commandWorkspace?.title ?? "文献")+" · 阅读笔记" : "阅读资料")
+        let title = shelfScope.map{$0.title+" · 阅读记录"} ?? (scope == .essay ? (essays.first?.title ?? "笔记") : (scope == .book ? (bookSource?.title ?? store.commandWorkspace?.title ?? "文献")+" · 阅读笔记" : "阅读资料"))
         return ReadingExportSnapshot(title:title,records:records,essays:essays.isEmpty ? nil : essays,order:items.map(\.id),options:preferences.options)
     }
     private var empty:Bool { snapshot.orderedItems.isEmpty }
@@ -81,7 +85,7 @@ struct ReadingExportPane: View {
             Divider()
             footer
         }.onAppear {
-            scope = bookSource != nil ? (bookExportAll ? .book : .selected) : store.readingExportEssay ? .essay : ((!store.readingLibraryExportSelection.isEmpty || store.readingRecordID != nil || !store.readingRecordSelection.isEmpty) ? .selected : (store.commandWorkspace?.readingJournalPath == nil ? .library : .book))
+            scope = shelfScope != nil ? .library : bookSource != nil ? (bookExportAll ? .book : .selected) : store.readingExportEssay ? .essay : ((!store.readingLibraryExportSelection.isEmpty || store.readingRecordID != nil || !store.readingRecordSelection.isEmpty) ? .selected : (store.commandWorkspace?.readingJournalPath == nil ? .library : .book))
             if scope == .selected { temporarySort = .selection }
         }
         .onDisappear { preparation?.cancel(); controller.close() }.onChange(of:preferences) { _,value in value.save() }
@@ -154,7 +158,7 @@ struct ReadingExportPane: View {
             if controller.busy { Button("取消") { controller.cancel() } }
             Menu("更多导出") {
                 Button("批量导出或资料包…") { showBatch = true }.disabled(empty || !preferences.options.valid)
-                Button("仅导出新增与修改…") { showIncremental = true }
+                if shelfScope == nil { Button("仅导出新增与修改…") { showIncremental = true } }
                 if let file = controller.lastExportURL {
                     Divider()
                     Button("打开刚导出的文件") { NSWorkspace.shared.open(file) }
@@ -168,8 +172,12 @@ struct ReadingExportPane: View {
 
     private var settings:some View {
         VStack(alignment:.leading,spacing:8) {
-            Picker("导出范围",selection:$scope) {
-                ForEach(bookSource == nil ? Scope.allCases : [.book,.selected],id:\.self) { Text($0.rawValue).tag($0) }
+            if let shelfScope {
+                Text("当前书架范围 · \(shelfScope.title) · \(shelfScope.paths.count) 份文献").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Picker("导出范围",selection:$scope) {
+                    ForEach(bookSource == nil ? Scope.allCases : [.book,.selected],id:\.self) { Text($0.rawValue).tag($0) }
+                }
             }
             Picker("导出格式",selection:$preferences.format) {
                 ForEach(ReadingRecordExport.Format.allCases,id:\.self) { Text($0.rawValue).tag($0) }
@@ -216,13 +224,13 @@ struct ReadingExportPane: View {
         if let format = profile.format { preferences.format = format }
         let available = profile.scope != .book || store.commandWorkspace?.readingJournalPath != nil
         let hasEssay = profile.scope != .essay || journal.essay(journal.currentEssayID)?.hasContent == true
-        if let target = profile.scope, (bookSource == nil || target == .book || target == .selected) && available && hasEssay && target != scope {
+        if shelfScope == nil, let target = profile.scope, (bookSource == nil || target == .book || target == .selected) && available && hasEssay && target != scope {
             pendingSort = profile.sort
             scope = target
         } else if let sort = profile.sort, sort != .selection || scope == .selected {
             sortSelection.wrappedValue = sort
         }
-        if !available { controller.message = "打开要导出的 PDF 后，可切换到当前书的全部记录。" }
+        if shelfScope == nil, !available { controller.message = "打开要导出的 PDF 后，可切换到当前书的全部记录。" }
     }
 
     private func preview() {

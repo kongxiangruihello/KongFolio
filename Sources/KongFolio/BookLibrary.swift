@@ -19,6 +19,8 @@ struct LibraryBook: Codable, Identifiable, Equatable {
     var shelfIssue: String? = nil
     var shelfTags: [String]? = nil
     var shelfDigest: String? = nil
+    var shelfEdition: ShelfEdition? = nil
+    var shelfPreferredEdition: Bool? = nil
 }
 
 struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
@@ -41,6 +43,7 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         var shelfTopics: [String]? = nil
         var readingQueue: [UUID]? = nil
         var queueCursor: UUID? = nil
+        var deferredQueueBooks: Set<UUID>? = nil
         var savedShelfFilters: [ShelfSavedFilter]? = nil
     }
     private let catalogWriter = DispatchQueue(label: "com.kongfolio.library", qos: .utility)
@@ -157,6 +160,9 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
             queue += incomingQueue.compactMap{restoredIDs[$0]}.filter{known.insert($0).inserted}
             next.readingQueue = queue
             if next.queueCursor == nil { next.queueCursor = value.queueCursor.flatMap{restoredIDs[$0]} }
+            if let deferred = value.deferredQueueBooks {
+                next.deferredQueueBooks = (next.deferredQueueBooks ?? []).union(deferred.compactMap{restoredIDs[$0]})
+            }
         }
         if let incomingFilters = value.savedShelfFilters {
             var filters = next.savedShelfFilters ?? []
@@ -394,6 +400,7 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
     func dequeueShelfBook(_ id:UUID) throws {
         var next = catalog
         next.readingQueue?.removeAll{$0 == id}
+        next.deferredQueueBooks?.remove(id)
         if next.queueCursor == id { next.queueCursor = nil }
         if next != catalog { try commit(next) }
     }
@@ -407,15 +414,42 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
         if next != catalog { try commit(next) }
     }
     func markShelfQueuePosition(_ id:UUID) throws {
-        guard catalog.queueCursor != id, readingQueue.contains(where:{$0.id == id}) else { return }
+        guard readingQueue.contains(where:{$0.id == id}) else { return }
         var next = catalog
         next.queueCursor = id
-        try commit(next)
+        next.deferredQueueBooks?.remove(id)
+        if next != catalog { try commit(next) }
+    }
+    func isShelfQueueDeferred(_ id:UUID) -> Bool { catalog.deferredQueueBooks?.contains(id) == true }
+    func setShelfQueueDeferred(_ id:UUID,_ deferred:Bool) throws {
+        guard readingQueue.contains(where:{$0.id == id}) else { return }
+        var next = catalog
+        var values = next.deferredQueueBooks ?? []
+        if deferred { values.insert(id) } else { values.remove(id) }
+        next.deferredQueueBooks = values.isEmpty ? nil : values
+        if next != catalog { try commit(next) }
+    }
+    func resumeShelfQueueBook() -> LibraryBook? {
+        readingQueue.first{$0.id == catalog.queueCursor && !isShelfQueueDeferred($0.id)} ?? nextShelfQueueBook()
     }
     func nextShelfQueueBook() -> LibraryBook? {
         let queue = readingQueue
-        guard let cursor = catalog.queueCursor, let index = queue.firstIndex(where:{$0.id == cursor}) else { return queue.first }
-        return queue.dropFirst(index+1).first
+        let start = queue.firstIndex(where:{$0.id == catalog.queueCursor}).map{$0+1} ?? 0
+        return queue.dropFirst(start).first{!isShelfQueueDeferred($0.id)}
+    }
+    func updateShelfEdition(_ id:UUID,edition:ShelfEdition?,preferred:Bool) throws {
+        guard let index = books.firstIndex(where:{$0.id == id}) else { return }
+        var next = catalog
+        if preferred, let key = ShelfIssueKey(next.books[index].issueMetadata) {
+            for i in next.books.indices where ShelfIssueKey(next.books[i].issueMetadata) == key {
+                next.books[i].shelfPreferredEdition = nil
+            }
+            next.books[index].shelfPreferredEdition = true
+        } else {
+            next.books[index].shelfPreferredEdition = nil
+        }
+        next.books[index].shelfEdition = edition
+        if next != catalog { try applyShelfEdit(next,name:"更改期刊版本") }
     }
     func saveShelfFilter(_ filter:ShelfSavedFilter) throws {
         var next = catalog
@@ -478,6 +512,9 @@ struct ManagedReadingShortcut: Codable, Identifiable, Equatable {
                     next.readingQueue = queue.map{$0 == other.id ? id : $0}.filter{known.insert($0).inserted}
                 }
                 if next.queueCursor == other.id { next.queueCursor = id }
+                if next.deferredQueueBooks?.remove(other.id) != nil { next.deferredQueueBooks?.insert(id) }
+                next.books[index].shelfEdition = next.books[index].shelfEdition ?? other.shelfEdition
+                next.books[index].shelfPreferredEdition = next.books[index].shelfPreferredEdition ?? other.shelfPreferredEdition
                 next.books[index].shelfDigest = next.books[index].shelfDigest ?? other.shelfDigest
                 if next.books[index].category.isEmpty { next.books[index].category = other.category }
                 if !other.reflection.isEmpty { next.books[index].reflection += (next.books[index].reflection.isEmpty ? "" : "\n\n") + other.reflection }

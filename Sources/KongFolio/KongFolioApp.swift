@@ -58,7 +58,10 @@ import KongFolioUpdateKit
                 Button("阅读尺后移") { store.commandWorkspace?.readingRuler.move(0.04) }.keyboardShortcut(.downArrow,modifiers:[.command,.option])
                 Button("复制当前选文的史料引文") { do { _ = try store.commandWorkspace?.copyResearchCitation() } catch { store.commandWorkspace?.error = error.localizedDescription } }
                 Button("个人书架与阅读记录…") { store.showReadingHistory = true }
-                Button("待读队列的下一份") { store.continueShelfQueue() }.disabled(store.shelfQueueOpening)
+                Button("继续上次待读队列") { store.continueShelfQueue(resume:true) }
+                    .disabled(store.shelfQueueOpening || store.library.resumeShelfQueueBook() == nil)
+                Button("待读队列的下一份") { store.continueShelfQueue() }
+                    .disabled(store.shelfQueueOpening || store.library.nextShelfQueueBook() == nil)
                 Button("当前书籍的阅读笔记…") { store.openCurrentBookNotebook() }.disabled(store.commandWorkspace?.canCreateReadingShortcut != true)
                 Button("当前书籍的阅读进度…") { store.commandWorkspace?.refreshProgress(); store.commandWorkspace?.showProgress = true }.disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Button("保存阅读快捷方式…") { store.commandWorkspace?.showReadingShortcut = true }.disabled(store.commandWorkspace?.canCreateReadingShortcut != true)

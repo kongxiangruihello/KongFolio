@@ -13,23 +13,35 @@ struct ShelfImportReview: View {
     @State private var batchPeriodical = ""
     @State private var batchTopic = ""
     @State private var page = 0
+    let existing: [LibraryBook]
     let onImport: ([ShelfImportDraft]) -> Void
 
-    init(request:ShelfImportRequest,onImport:@escaping ([ShelfImportDraft])->Void) {
+    init(request:ShelfImportRequest,existing:[LibraryBook] = [],onImport:@escaping ([ShelfImportDraft])->Void) {
         _drafts = State(initialValue:request.drafts)
         _chosen = State(initialValue:Set(request.drafts.map(\.id)))
+        self.existing = existing
         self.onImport = onImport
     }
 
     var body:some View {
         let pagination = ReadingPagination(total:drafts.count,page:page,size:20)
+        let warnings = ShelfImportAudit.warnings(drafts,chosen:chosen,existing:existing)
+        let knownNames = Array(Set(existing.map{$0.issueMetadata.periodical}.filter{!$0.isEmpty})).sorted()
         VStack(alignment:.leading,spacing:12) {
             Text("核对要加入书架的文献").font(.headline)
             Text("书名、刊名、年代和期次来自文件名，可在添加前修改。").font(.caption).foregroundStyle(.secondary)
             PanelRow {
-                TextField("批量填写刊名",text:$batchPeriodical).frame(width:165)
+                TextField("统一刊名",text:$batchPeriodical).frame(width:165)
+                if !knownNames.isEmpty {
+                    Menu("沿用书架刊名") {
+                        ForEach(knownNames,id:\.self) { name in Button(name) { batchPeriodical = name } }
+                    }
+                }
                 TextField("批量加入专题",text:$batchTopic).frame(width:165)
                 Button("应用到所选") { applyBatch() }.disabled(chosen.isEmpty || (batchPeriodical.isEmpty && batchTopic.isEmpty))
+            }
+            if !warnings.isEmpty {
+                Label("\(warnings.count) 份需要核对",systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
             }
             List(Array(pagination.range),id:\.self) { index in
                 let id = drafts[index].id
@@ -46,6 +58,9 @@ struct ShelfImportReview: View {
                         StableTextField("卷",text:$drafts[index].volume).frame(width:60)
                         StableTextField("期",text:$drafts[index].issue).frame(width:60)
                         StableTextField("专题",text:$drafts[index].topic).frame(width:110)
+                    }
+                    if let issues = warnings[id] {
+                        Text(issues.joined(separator:" · ")).font(.caption).foregroundStyle(.orange)
                     }
                     Text(id.lastPathComponent).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(id.path)
                 }.padding(.vertical,4)
