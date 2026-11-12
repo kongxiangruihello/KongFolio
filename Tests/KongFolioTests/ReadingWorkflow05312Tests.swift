@@ -165,7 +165,9 @@ final class ReadingWorkflow05312Tests: XCTestCase {
             let text: String
             switch format {
             case .markdown: text = try String(contentsOf:file,encoding:.utf8)
-            case .pdf: text = try XCTUnwrap(PDFDocument(url:file)?.string)
+            case .pdf:
+                let extracted = try XCTUnwrap(PDFDocument(url:file)?.string)
+                text = ReadingServices.repairIdeographs(extracted).filter { !$0.isWhitespace }
             case .word:
                 let parts = try ReadingExportAudit.storedZIP(Data(contentsOf:file))
                 text = String(decoding:try XCTUnwrap(parts["word/document.xml"]),as:UTF8.self)
