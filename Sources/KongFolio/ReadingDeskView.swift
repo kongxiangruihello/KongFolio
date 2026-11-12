@@ -44,14 +44,11 @@ struct ReadingDeskView: View {
     var body:some View {
         VStack(alignment:.leading,spacing:8) {
             if section == .excerpts, let feedback = store.readingExcerptFeedback { excerptFeedback(feedback) }
-            if !compact {
-                Text(section == .search ? "阅读资料库" : "阅读记录").font(.headline)
-                Picker("记录类型",selection:Binding(get:{section == .essays ? .notes : section},set:{section = $0})) {
-                    ForEach(ReadingDeskSection.allCases.filter{$0 != .essays},id:\.self) { Text($0.rawValue).tag($0) }
-                }.pickerStyle(.menu)
+            if !compact && section != .search {
+                ReadingDeskHeader(title:"阅读记录",section:$section)
             }
             if section == .exports { ReadingExportPane(store:store,journal:journal) }
-            else if section == .search { ReadingLibraryView(store:store,journal:journal,section:$section,compact:compact) }
+            else if section == .search { ReadingLibraryView(store:store,journal:journal,section:$section,compact:compact,showsDeskHeader:!compact) }
             else if section == .essays { ReadingEssayPane(store:store,journal:journal) }
             else { records }
             Divider()
@@ -403,6 +400,20 @@ struct ReadingRecordImage: View {
     var body:some View {
         Group { if let image { Image(nsImage:image).resizable().scaledToFit() } else { Text(failed ? "图片暂不可用，可返回原文查看" : "正在载入图片摘录…").font(.caption) } }
             .task(id:url.path+(pending == nil ? ":disk" : ":pending")) { let file = url; let data:Data?; if let pending { data = pending } else { data = await Task.detached(priority:.utility) { try? Data(contentsOf:file) }.value }; guard !Task.isCancelled else { return }; image = data.flatMap(NSImage.init(data:)); failed = image == nil }
+    }
+}
+
+struct ReadingDeskHeader: View {
+    let title: String
+    @Binding var section: ReadingDeskSection
+
+    var body: some View {
+        VStack(alignment:.leading,spacing:8) {
+            Text(title).font(.headline)
+            Picker("记录类型",selection:Binding(get:{section == .essays ? .notes : section},set:{section = $0})) {
+                ForEach(ReadingDeskSection.allCases.filter{$0 != .essays},id:\.self) { Text($0.rawValue).tag($0) }
+            }.pickerStyle(.menu)
+        }
     }
 }
 

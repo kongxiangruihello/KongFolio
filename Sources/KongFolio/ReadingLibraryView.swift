@@ -6,6 +6,7 @@ struct ReadingLibraryView: View {
     @Binding var section:ReadingDeskSection
     var compact = false
     var bookSource:ReadingCitation? = nil
+    var showsDeskHeader = false
     @State private var restoredSession = false
     @State private var query = ""
     @State private var recent = false
@@ -72,7 +73,7 @@ struct ReadingLibraryView: View {
     }
 
     private var layout:some View {
-        ReadingBrowserLayout(hasEditor:editing != nil,compact:compact,onBack:{ editing = nil;selection = [] }) {
+        ReadingBrowserLayout(hasEditor:editing != nil,compact:compact,deskSection:showsDeskHeader ? $section : nil,onBack:{ editing = nil;selection = [] }) {
             browser
         } editor: {
             editor
@@ -173,7 +174,7 @@ struct ReadingLibraryView: View {
             if let editing {
                 switch editing {
                 case .record(let id):
-                    if let record = journal.record(id) { ReadingSearchMatches(store:store,item:.record(record),query:query);LibraryRecordDetail(store:store,journal:journal,record:record,onNewLinkedNote:newLinkedNote).id(id).disabled(journal.unreadable || removed) }
+                    if let record = journal.record(id) { ReadingSearchMatches(store:store,item:.record(record),query:query);LibraryRecordDetail(store:store,journal:journal,record:record,onNewLinkedNote:newLinkedNote,topPadding:showsDeskHeader ? 2 : 8).id(id).disabled(journal.unreadable || removed) }
                 case .essay(let id):
                     if let essay = journal.essay(id) { ReadingSearchMatches(store:store,item:.essay(essay),query:query) }
                     LibraryEssayDetail(store:store,journal:journal,id:id,onExport:{section = .exports}).id(id).disabled(journal.unreadable || removed)

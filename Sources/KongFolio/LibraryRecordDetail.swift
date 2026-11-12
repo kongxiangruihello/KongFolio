@@ -5,6 +5,7 @@ struct LibraryRecordDetail: View {
     @ObservedObject var journal:ReadingJournal
     let record:ReadingRecord
     var onNewLinkedNote: ((ReadingRecord) -> Void)?
+    var topPadding: CGFloat = 8
     @State private var contextSource:ReadingContextRequest?
     @State private var editQuote = false
     @State private var showQuoteCorrection = false
@@ -90,7 +91,7 @@ struct LibraryRecordDetail: View {
                     Button("加入笔记") { let id = journal.currentEssayID ?? journal.newEssay(); store.insertReadingRecord(current,in:id); store.openReadingDesk(.essays,window:true) }
                     Button("导出这条记录") { store.exportCheckedReadingRecords(only:record.id) }
                 }.disabled(journal.draftRecord?.id == record.id || !current.hasContent)
-            }.padding(.horizontal,12).padding(.vertical,8)
+            }.padding(.horizontal,12).padding(.top,topPadding).padding(.bottom,8)
 
         }.onChange(of:store.writingSearchRequest) { _,token in
             guard let hit = store.writingSearchHit,hit.identity.hasSuffix(record.id.uuidString) else { return }
