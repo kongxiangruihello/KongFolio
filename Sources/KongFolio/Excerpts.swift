@@ -86,8 +86,9 @@ extension Workspace {
             }
             let record = ReadingRecord(kind:.image,citations:[readingCitation(page:index == NSNotFound ? selection : index,rects:[pageRect])])
             store.journal.add(record,image:imageData)
-            store.readingRecordID = record.id
-            store.openReadingDesk(.excerpts)
+            if let saved = store.journal.record(record.id) {
+                store.revealCapturedExcerpt(saved,message:"已保存图片摘录")
+            }
             if let ocrMode { store.readingImageOCRRequest = ReadingImageOCRRequest(recordID:record.id,mode:ocrMode) }
             status = ocrMode == nil ? "图片摘录已保存到阅读记录" : "图片摘录已保存，正在准备文字识别"
             return

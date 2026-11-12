@@ -14,6 +14,9 @@ struct LibraryRecordDetail: View {
     @StateObject private var imageOCR = ReadingImageOCRController()
     @StateObject private var sourceNavigator = ReadingSourceNavigator()
     @State private var showOCRComparison = false
+    @State private var showOriginal = false
+    @State private var showLinkedQuote = false
+    @State private var focusedSegment: String?
     private var current:ReadingRecord { journal.record(record.id) ?? record }
     var body:some View {
         ScrollViewReader { proxy in
@@ -51,25 +54,41 @@ struct LibraryRecordDetail: View {
                     }.fixedSize()
                 }
                 if current.kind == .excerpt || current.kind == .image {
-                    ReadingExcerptRemarkField(journal:journal,recordID:record.id)
+                    ReadingExcerptRemarkField(journal:journal,recordID:record.id).id("remark:"+record.id.uuidString)
                 }
                 if current.excerptSegments != nil {
-                    segmentedExcerpt
+                    segmentedExcerpt.id("quote:"+record.id.uuidString)
                 } else if current.kind != .note && current.pdfOrigin == nil {
                     HStack { Text("摘录原文").font(.caption); Spacer(); Button("原文与校订对照…") { showQuoteCorrection = true }; Button(editQuote ? "完成文字校正" : "校正摘录文字") { editQuote.toggle() } }
                     if editQuote { LibraryWritingEditor(text:binding(\.quote),label:"摘录校订文字",identity:"quote:"+record.id.uuidString).id("quote:"+record.id.uuidString).frame(height:300) }
                     else if current.quote.count>400 { DisclosureGroup("展开原文（\(current.quote.count) 字）") { Text(current.quote).textSelection(.enabled) } }
                     else if !current.quote.isEmpty { Text(current.quote).textSelection(.enabled) }
                 }
-                if current.pdfOrigin != nil && !current.quote.isEmpty { Text(current.quote).font(.system(size:16)).textSelection(.enabled) }
-                if current.kind == .note && !current.quote.isEmpty { DisclosureGroup("关联原文（展开查看）") { Text(current.quote).font(.system(size:16)).textSelection(.enabled) } }
+                if let origin = current.pdfOrigin {
+                    if !origin.contents.isEmpty { Text(origin.contents).textSelection(.enabled).id("comment:"+record.id.uuidString) }
+                    if !current.quote.isEmpty,current.quote != origin.contents {
+                        Text(current.quote).font(.system(size:16)).textSelection(.enabled).id("quote:"+record.id.uuidString)
+                    }
+                }
+                if current.kind == .note && !current.quote.isEmpty {
+                    DisclosureGroup("关联原文",isExpanded:$showLinkedQuote) {
+                        Text(current.quote).font(.system(size:16)).textSelection(.enabled)
+                    }.id("quote:"+record.id.uuidString)
+                }
                 if let image = current.imageAsset, imageOCR.text.isEmpty { ReadingRecordImage(url:journal.assetURL(image),pending:journal.pendingImage(image)).frame(maxHeight:220) }
                 if current.kind == .image {
                     imageRecognition.onAppear { imageOCR.restoreSegments(current); startRequestedOCR() }
                 }
-                if let original = current.originalQuote ?? current.originalOCR { DisclosureGroup("校订前文字（保留）") { Text(original).textSelection(.enabled) } }
+                if let original = current.originalQuote ?? current.originalOCR {
+                    DisclosureGroup("校订前文字",isExpanded:$showOriginal) { Text(original).textSelection(.enabled) }
+                        .id("original:"+record.id.uuidString)
+                }
                 Text(current.kind == .note || current.pdfOrigin != nil ? "我的笔记" : "我的理解与评论").font(.caption)
-                LibraryWritingEditor(text:binding(\.note),label:"阅读笔记正文",identity:"note:"+record.id.uuidString).id("note:"+record.id.uuidString).frame(height:380)
+                LibraryWritingEditor(text:binding(\.note),label:"阅读笔记正文",identity:"note:"+record.id.uuidString,
+                    onEscape:store.quickExcerptNoteID == record.id ? { store.returnFromExcerptNote(record.id) } : nil).id("note:"+record.id.uuidString).frame(height:380)
+                if current.kind == .note {
+                    ReadingFollowUpButton(journal:journal,item:.record(record.id),identity:"note:"+record.id.uuidString)
+                }
                 DisclosureGroup("标签与出处（\(current.citations.count)）") {
                     VStack(alignment:.leading,spacing:12) {
                 ReadingTagField(journal:journal,label:"标签，以逗号分隔",text:Binding(get:{current.tags.joined(separator:", ")},set:{ text in journal.editRecord(record.id) { $0.tags = Self.tags(text) } }))
@@ -93,11 +112,38 @@ struct LibraryRecordDetail: View {
                 }.disabled(journal.draftRecord?.id == record.id || !current.hasContent)
             }.padding(.horizontal,12).padding(.top,topPadding).padding(.bottom,8)
 
-        }.onChange(of:store.writingSearchRequest) { _,token in
-            guard let hit = store.writingSearchHit,hit.identity.hasSuffix(record.id.uuidString) else { return }
-            if hit.identity.hasPrefix("quote:") { editQuote = true }
-            DispatchQueue.main.async { proxy.scrollTo(hit.identity,anchor:.center) }
+        }.task(id:store.quickExcerptNoteID) {
+            guard store.quickExcerptNoteID == record.id else { return }
+            let identity = "note:"+record.id.uuidString
+            proxy.scrollTo(identity,anchor:.center)
+            for _ in 0..<15 {
+                if WritingRegistry.focus(identity) { return }
+                do { try await Task.sleep(nanoseconds:40_000_000) } catch { return }
+            }
+        }.onChange(of:store.writingSearchRequest,initial:true) { _,token in
+            guard let hit = store.writingSearchHit else { return }
+            let fields = hit.identity.split(separator:":")
+            guard fields.count >= 2,fields[1] == record.id.uuidString else { return }
+            if hit.identity.hasPrefix("quote:") {
+                if current.kind == .note { showLinkedQuote = true }
+                else if current.pdfOrigin == nil { editQuote = true }
+            }
+            if hit.identity.hasPrefix("segment:") { editQuote = true }
+            if hit.identity.hasPrefix("original:") { showOriginal = true }
+            focusedSegment = hit.identity.hasPrefix("segment-original:") ? hit.identity : nil
+            if hit.identity.hasPrefix("quotation:"), fields.count == 3, let id = UUID(uuidString:String(fields[2])) {
+                DispatchQueue.main.async { proxy.scrollTo(id,anchor:.center) }
+            } else { DispatchQueue.main.async { proxy.scrollTo(hit.identity,anchor:.center) } }
             DispatchQueue.main.asyncAfter(deadline:.now()+0.25) { if store.writingSearchRequest == token { WritingRegistry.jumpIfCurrent(hit) } }
+        }.onChange(of:store.readingDetailRequest,initial:true) { _,request in
+            guard let request, request.item == .record(record.id) else { return }
+            switch request.target {
+            case .quotation(let quoteID): DispatchQueue.main.async { proxy.scrollTo(quoteID,anchor:.center) }
+            case .linkedQuote:
+                showLinkedQuote = true
+                DispatchQueue.main.async { proxy.scrollTo("quote:"+record.id.uuidString,anchor:.center) }
+            case .block: break
+            }
         }
         }.sheet(isPresented:$showQuoteCorrection) { ReadingQuoteCorrectionView(journal:journal,record:current) }.sheet(item:$contextSource) { request in ReadingContextView(store:store,source:request.source) }.onAppear { if journal.draftRecord?.id == record.id && record.kind != .note { editQuote = true } } .onChange(of:store.readingImageOCRRequest) { _,_ in startRequestedOCR() }
         .onDisappear { imageOCR.cancel(); sourceNavigator.cancel() }
@@ -159,7 +205,7 @@ struct LibraryRecordDetail: View {
             Button(editQuote ? "完成分段校订" : "校订各段") { editQuote.toggle() }
             ReadingExcerptSegmentsView(journal:journal,record:current,editing:editQuote,
                 openSource:{ sourceNavigator.open($0,record:current,store:store) },
-                showContext:{ contextSource = ReadingContextRequest(source:$0) })
+                showContext:{ contextSource = ReadingContextRequest(source:$0) },focusedIdentity:focusedSegment)
         }
     }
 

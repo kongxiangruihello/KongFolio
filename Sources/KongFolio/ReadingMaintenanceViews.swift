@@ -27,7 +27,7 @@ struct ReadingOrganizationSheet: View {
 struct ReadingReferencesView: View {
     @ObservedObject var journal:ReadingJournal
     let id:ReadingLibraryID
-    var open:((ReadingLibraryID)->Void)? = nil
+    var openReference:((ReadingReference)->Void)? = nil
     @Environment(\.dismiss) private var dismiss
     var body:some View {
         let links = journal.references(to:id)
@@ -49,7 +49,22 @@ struct ReadingReferencesView: View {
     private func reference(_ entry:ReadingReference) -> some View {
         VStack(alignment:.leading,spacing:6) {
             Text(entry.kind+" · "+entry.title).font(.headline)
-            if let item = entry.item,let open,!entry.removed { Button("打开这条"+entry.kind) { dismiss();open(item) } }
+            if entry.item != nil,let openReference,!entry.removed {
+                let targets = [entry.target].compactMap{$0}+entry.additionalTargets
+                if targets.count > 1 {
+                    Menu("定位引用（\(targets.count) 处）") {
+                        ForEach(Array(targets.enumerated()),id:\.offset) { index,target in
+                            Button("第 \(index+1) 处引用") {
+                                var reference = entry
+                                reference.target = target
+                                dismiss(); openReference(reference)
+                            }
+                        }
+                    }
+                } else {
+                    Button(entry.target == nil ? "打开这条"+entry.kind : "定位引用段落") { dismiss();openReference(entry) }
+                }
+            }
             if entry.removed { Text("当前已删除或原条目不在资料库，引用内容仍保留").font(.caption).foregroundStyle(.secondary) }
             if !entry.text.isEmpty { Text(entry.text).textSelection(.enabled) }
         }.frame(maxWidth:.infinity,alignment:.leading).padding(10).background(.quaternary,in:RoundedRectangle(cornerRadius:8))

@@ -9,15 +9,16 @@ struct StableTextEditor: NSViewRepresentable {
     var markdown = false
     var onFocus:(()->Void)? = nil
     var display:EditorDisplayOptions? = nil
+    var onEscape: (() -> Void)? = nil
     func makeCoordinator() -> StableInputCoordinator { StableInputCoordinator(read:{text},write:{text = $0}) }
     func makeNSView(context:Context) -> NSScrollView {
         let scroll = NSScrollView(frame:NSRect(x:0,y:0,width:400,height:150)); scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
         let view = DisplayTextView(frame:scroll.bounds); view.string = text;view.positionKey = identity;view.focused = onFocus;view.writingSession = session;WritingRegistry.attach(view,key:identity);view.supportsMarkdownLists = markdown;session?.view = view; view.isRichText = false; view.allowsUndo = true; view.font = .systemFont(ofSize:14); view.textContainerInset = NSSize(width:8,height:8)
         view.isVerticallyResizable = true; view.isHorizontallyResizable = false; view.autoresizingMask = [.width]; view.textContainer?.widthTracksTextView = true; view.textContainer?.containerSize = NSSize(width:400,height:CGFloat.greatestFiniteMagnitude)
         view.isAutomaticQuoteSubstitutionEnabled = false; view.isAutomaticDashSubstitutionEnabled = false; view.isAutomaticTextReplacementEnabled = false; view.isAutomaticSpellingCorrectionEnabled = false
-        view.isEditable = enabled; view.setAccessibilityLabel(label); view.delegate = context.coordinator; view.committed = { [weak coordinator = context.coordinator] in coordinator?.publish($0) }; scroll.documentView = view;view.displayOptions = display;WritingPositions.shared.restore(view,key:identity); context.coordinator.observeScroll(scroll,view:view); return scroll
+        view.isEditable = enabled; view.onEscape = onEscape; view.setAccessibilityLabel(label); view.delegate = context.coordinator; view.committed = { [weak coordinator = context.coordinator] in coordinator?.publish($0) }; scroll.documentView = view;view.displayOptions = display;WritingPositions.shared.restore(view,key:identity); context.coordinator.observeScroll(scroll,view:view); return scroll
     }
-    func updateNSView(_ scroll:NSScrollView,context:Context) { context.coordinator.read = { text }; context.coordinator.write = { text = $0 }; if let view = scroll.documentView as? NSTextView { view.isEditable = enabled;(view as? DisplayTextView)?.displayOptions = display;session?.view = view; context.coordinator.synchronize(view) } }
+    func updateNSView(_ scroll:NSScrollView,context:Context) { context.coordinator.read = { text }; context.coordinator.write = { text = $0 }; if let view = scroll.documentView as? NSTextView { view.isEditable = enabled;(view as? ComposingTextView)?.onEscape = onEscape;(view as? DisplayTextView)?.displayOptions = display;session?.view = view; context.coordinator.synchronize(view) } }
     static func dismantleNSView(_ scroll:NSScrollView,coordinator:StableInputCoordinator) { if let view = scroll.documentView as? ComposingTextView { view.finishEditingSession() }; scroll.documentView = nil }
 }
 

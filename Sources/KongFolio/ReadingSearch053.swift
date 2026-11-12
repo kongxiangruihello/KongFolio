@@ -14,6 +14,7 @@ struct ReadingLibraryOptions053:Codable,Hashable {
     var before:Date? = nil
     var dateIsModified=false
     var review:ReadingRecordExtras053.Review? = nil
+    var triage: ReadingTriage? = nil
     var meaning=""
     var chapter=""
     var groupChapters=false
@@ -82,12 +83,13 @@ extension ReadingLibraryItem {
     func searchText053(_ scope:ReadingLibraryOptions053.Scope)->String {
         switch self {
         case .record(let r):
+            let originals = [r.originalQuote ?? "",r.originalOCR ?? ""]+(r.excerptSegments ?? []).compactMap(\.originalText)
             switch scope {
             case .mine:return [r.note,r.excerptRemark ?? ""].joined(separator:"\n")
-            case .quote:return r.quote
+            case .quote:return ([r.quote]+originals+(r.extras?.quotations ?? []).map(\.text)).joined(separator:"\n")
             case .comment:return r.pdfOrigin?.contents ?? ""
             case .all:
-                var parts:[String]=[r.title,r.quote,r.note,r.excerptRemark ?? "",r.pdfOrigin?.contents ?? "",r.tags.joined(separator:" ")]
+                var parts:[String]=[r.title,r.quote,r.note,r.excerptRemark ?? "",r.pdfOrigin?.contents ?? "",r.tags.joined(separator:" ")]+originals
                 var sources:[String]=[]
                 for citation in r.citations053 {
                     let fields:[String]=[citation.title,citation.author,citation.edition ?? "",citation.publication?.summary ?? "",citation.source.pageDescription]
@@ -101,7 +103,9 @@ extension ReadingLibraryItem {
         case .essay(let e):
             switch scope {
             case .mine:return e.blocks.map(\.text).joined(separator:"\n")
-            case .quote:return e.blocks.compactMap{$0.record?.quote}.joined(separator:"\n")
+            case .quote:
+                let paragraphs = e.blocks.compactMap(\.record).map { ReadingLibraryItem.record($0).searchText053(.quote) }
+                return (paragraphs+(e.extras?.quotations ?? []).map(\.text)).joined(separator:"\n")
             case .comment:return e.blocks.compactMap{$0.record?.pdfOrigin?.contents}.joined(separator:"\n")
             case .all:
                 var parts:[String]=[e.title,e.tags.joined(separator:" ")]
@@ -120,6 +124,7 @@ extension ReadingLibraryItem {
         }
     }
     func filtered053(_ o:ReadingLibraryOptions053)->Bool {
+        if let triage = o.triage, extras053.triage != triage { return false }
         let date=o.dateIsModified ? modified053:created
         if let after=o.after,date<after { return false };if let before=o.before,date>=Calendar.current.date(byAdding:.day,value:1,to:Calendar.current.startOfDay(for:before))! { return false }
         if let review=o.review,(extras053.review ?? .unreviewed) != review { return false }

@@ -93,7 +93,7 @@ struct ReadingDeskView: View {
         ReadingBrowserLayout(hasEditor:selectedRecord != nil,compact:compact,onBack:{
             if section == .notes { store.lastRightPanelNoteID = nil }
             if section == .excerpts { excerptInList = store.readingRecordID }
-            store.pinnedReadingID = nil
+            if section == .notes || store.pinnedExcerptNote == nil { store.pinnedReadingID = nil }
             store.readingRecordID = nil
         }) {
             recordList
@@ -176,18 +176,36 @@ struct ReadingDeskView: View {
         }
     }
     private func excerptFeedback(_ feedback: ReadingExcerptFeedback) -> some View {
-        HStack(spacing:8) {
-            Text(feedback.message).lineLimit(1).help(feedback.message)
-            Spacer(minLength:0)
-            Button("写备注") {
-                excerptInList = nil
-                store.readingRecordID = feedback.recordID
-            }.disabled(journal.record(feedback.recordID) == nil)
-            if store.readingExcerptUndo?.saved.id == feedback.recordID,
-               journal.record(feedback.recordID) == store.readingExcerptUndo?.saved {
-                Button("撤销") { _ = store.undoCapturedExcerpt(feedback.recordID) }
+        VStack(alignment:.leading,spacing:5) {
+            HStack {
+                Text(feedback.message).lineLimit(1).help(feedback.message)
+                Spacer(minLength:0)
+                Button { store.readingExcerptFeedback = nil } label: { Image(systemName:"xmark") }.help("关闭摘录提示")
             }
-            Button { store.readingExcerptFeedback = nil } label: { Image(systemName:"xmark") }.help("关闭摘录提示")
+            HStack(spacing:10) {
+                if let excerpt = journal.record(feedback.recordID) {
+                    Button("写笔记") { store.startNoteFromExcerpt(excerpt) }.disabled(journal.unreadable)
+                    if let note = store.pinnedExcerptNote {
+                        Button("加入固定笔记") {
+                            let added = journal.appendExcerpt(excerpt.id,toNote:note.id)
+                            let message = added > 0 ? "已加入固定笔记" : "固定笔记已包含此摘录"
+                            store.readingExcerptFeedback = ReadingExcerptFeedback(recordID:excerpt.id,message:message)
+                        }.help(note.displayTitle).disabled(journal.unreadable)
+                    }
+                }
+                Menu("更多") {
+                    Button("写摘录备注") { excerptInList = nil; store.readingRecordID = feedback.recordID }
+                        .disabled(journal.record(feedback.recordID) == nil)
+                    ForEach(ReadingTriage.allCases,id:\.self) { status in
+                        Button("标为"+status.rawValue) { journal.updateExtras053([.record(feedback.recordID)]) { $0.triage = status } }
+                            .disabled(journal.unreadable || journal.record(feedback.recordID) == nil)
+                    }
+                    if store.readingExcerptUndo?.saved.id == feedback.recordID,
+                       journal.record(feedback.recordID) == store.readingExcerptUndo?.saved {
+                        Button("撤销这次摘录") { _ = store.undoCapturedExcerpt(feedback.recordID) }
+                    }
+                }
+            }
         }.font(.caption).buttonStyle(.borderless).padding(6)
             .background(Color.accentColor.opacity(0.10),in:RoundedRectangle(cornerRadius:6))
     }
@@ -226,7 +244,11 @@ struct ReadingDeskView: View {
                 Text("\(index+1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     .accessibilityLabel("第 \(index+1) 个选中")
             }
-            Button { excerptInList = nil; store.pinnedReadingID = nil; store.readingRecordID = record.id } label: {
+            Button {
+                excerptInList = nil
+                if section == .notes || store.pinnedExcerptNote == nil { store.pinnedReadingID = nil }
+                store.readingRecordID = record.id
+            } label: {
                 VStack(alignment:.leading,spacing:3) {
                     Text(record.displayTitle).lineLimit(2).help(record.displayTitle)
                     if record.kind == .note {
@@ -395,10 +417,27 @@ struct ReadingRecordDetail: View {
 struct ReadingRecordImage: View {
     var url:URL
     var pending:Data? = nil
+    var region:CGRect? = nil
     @State private var image:NSImage?
     @State private var failed = false
     var body:some View {
-        Group { if let image { Image(nsImage:image).resizable().scaledToFit() } else { Text(failed ? "图片暂不可用，可返回原文查看" : "正在载入图片摘录…").font(.caption) } }
+        Group {
+            if let image {
+                Image(nsImage:image).resizable().scaledToFit()
+                    .overlay {
+                        if let region {
+                            GeometryReader { proxy in
+                                if let box = ReadingOCRSegments.previewRegion(region,in:proxy.size) {
+                                    Rectangle().fill(Color.orange.opacity(0.20))
+                                        .overlay { Rectangle().strokeBorder(.orange,lineWidth:2) }
+                                        .frame(width:box.width,height:box.height)
+                                        .position(x:box.midX,y:box.midY)
+                                }
+                            }.allowsHitTesting(false)
+                        }
+                    }
+            } else { Text(failed ? "图片暂不可用，可返回原文查看" : "正在载入图片摘录…").font(.caption) }
+        }
             .task(id:url.path+(pending == nil ? ":disk" : ":pending")) { let file = url; let data:Data?; if let pending { data = pending } else { data = await Task.detached(priority:.utility) { try? Data(contentsOf:file) }.value }; guard !Task.isCancelled else { return }; image = data.flatMap(NSImage.init(data:)); failed = image == nil }
     }
 }

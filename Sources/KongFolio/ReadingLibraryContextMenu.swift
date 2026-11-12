@@ -22,6 +22,22 @@ struct ReadingLibraryContextMenu: View {
                 Button("查看引用关系…") { perform(.references) }
             }
             Button(context.items.count == 1 ? "复制正文与出处" : "复制 \(context.items.count) 条正文与出处") { perform(.copy) }
+            if !context.excerpts.isEmpty && context.excerpts.count == context.items.count {
+                Menu("复制引文") {
+                    Button("按上次格式复制") { perform(.copyCitation) }
+                    Button("选择页码与链接…") { perform(.citationFormat) }
+                }
+                if !context.removed {
+                    Button("生成专题笔记…") { perform(.topicNote) }.disabled(readOnly)
+                    if context.excerpts.count == 2 { Button("并排比较两个版本…") { perform(.compareVersions) } }
+                    Menu("标记待整理") {
+                        ForEach(ReadingTriage.allCases,id:\.self) { status in
+                            Button(status.rawValue) { perform(.triage(status)) }
+                        }
+                        Button("清除标记") { perform(.triage(nil)) }
+                    }.disabled(readOnly)
+                }
+            }
             Button("导出"+countLabel+"…") { perform(.export) }.disabled(context.removed)
             Button("整理标签与专题…") { perform(.organize) }.disabled(context.removed || readOnly)
             if context.canAppend { Button("加入笔记…") { perform(.append) }.disabled(readOnly) }

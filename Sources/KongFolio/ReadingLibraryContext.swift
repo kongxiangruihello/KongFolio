@@ -7,6 +7,7 @@ struct ReadingLibraryContext {
     var ids:Set<ReadingLibraryID> { Set(items.map(\.id)) }
     var single:ReadingLibraryItem? { items.count == 1 ? items.first : nil }
     var records:[ReadingRecord] { items.compactMap { if case .record(let record) = $0 { return record };return nil } }
+    var excerpts:[ReadingRecord] { records.filter(\.isExcerpt) }
     var canAppend:Bool { !removed && !items.isEmpty && records.count == items.count }
     static func resolve(_ targets:Set<ReadingLibraryID>,state:ReadingJournalState,removed:Bool) -> Self {
         let records = state.records.filter{targets.contains(.record($0.id)) && ($0.removed != nil) == removed && $0.hasContent}.map(ReadingLibraryItem.record)
@@ -41,7 +42,10 @@ struct ReadingLibraryContext {
         }.joined(separator:"\n\n——\n\n")
     }
 }
-enum ReadingLibraryContextAction { case edit,copy,export,organize,references,remove,append,source(SourceRef),newExcerpt,newNote,newEssay }
+enum ReadingLibraryContextAction {
+    case edit, copy, copyCitation, citationFormat, export, organize, references, remove, append
+    case topicNote, compareVersions, triage(ReadingTriage?), source(SourceRef), newExcerpt, newNote, newEssay
+}
 struct ReadingLibraryContextRequest:Identifiable {
     enum Kind { case organize,references,remove }
     let id = UUID()

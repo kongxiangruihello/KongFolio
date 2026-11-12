@@ -20,6 +20,11 @@ class ComposingTextView: NSTextView {
         return super.performKeyEquivalent(with:event)
     }
     var focused:(()->Void)?
+    var onEscape: (() -> Void)?
+    override func cancelOperation(_ sender: Any?) {
+        if !hasMarkedText(), let onEscape { onEscape() }
+        else { super.cancelOperation(sender) }
+    }
     override func becomeFirstResponder() -> Bool { let result = super.becomeFirstResponder();if result { focused?();WritingRegistry.attach(self,key:positionKey) };return result }
     var positionKey = ""
     var supportsMarkdownLists = false

@@ -31,6 +31,12 @@ struct ReadingLibraryView: View {
     @State private var showOrganization = false
     @State private var showReferences = false
     @State private var showBackups = false
+    @State private var showFollowUps = false
+    @State private var topicExcerpts: [ReadingRecord] = []
+    @State private var showTopicNote = false
+    @State private var versionPair: ReadingExcerptVersionPair?
+    @State private var citationRecords: [ReadingRecord] = []
+    @State private var showCitationFormat = false
     @State private var selection:Set<ReadingLibraryID> = []
     @State private var selectionOrder: [ReadingLibraryID] = []
     @State private var editing:ReadingLibraryID?
@@ -51,7 +57,7 @@ struct ReadingLibraryView: View {
         .sheet(item:$contextRequest) { request in
             switch request.kind {
             case .organize:ReadingOrganizationSheet(journal:journal,ids:request.ids)
-            case .references:if let id = request.ids.first { ReadingReferencesView(journal:journal,id:id,open:{ target in contextRequest = nil;store.openReadingItem(target) }) }
+            case .references:if let id = request.ids.first { ReadingReferencesView(journal:journal,id:id,openReference:{ entry in contextRequest = nil;store.openReadingReference(entry) }) }
             case .remove:ReadingBulkConfirmation(journal:journal,ids:request.ids,removed:request.removed) {
                 selection.subtract(request.ids)
                 if let id = editing,request.ids.contains(id) { editing = nil }
@@ -63,9 +69,23 @@ struct ReadingLibraryView: View {
             ReadingSourceReviewSheet(request:request,navigator:sourceNavigator,store:store).id(request.id)
         }
         .sheet(isPresented:$showOrganization) { ReadingOrganizationSheet(journal:journal,ids:selection) }
-        .sheet(isPresented:$showReferences) { if let editing { ReadingReferencesView(journal:journal,id:editing,open:{ target in showReferences = false;store.openReadingItem(target) }) } }
+        .sheet(isPresented:$showReferences) { if let editing { ReadingReferencesView(journal:journal,id:editing,openReference:{ entry in showReferences = false;store.openReadingReference(entry) }) } }
         .sheet(isPresented:$showTags) { ReadingTagManager(journal:journal) }
         .sheet(isPresented:$showRelink) { ReadingBatchRelinkView(store:store,journal:journal) }
+        .sheet(isPresented:$showTopicNote) {
+            ReadingTopicNoteSheet(journal:journal,excerpts:topicExcerpts) { id in
+                store.openReadingItem(.essay(id))
+            }
+        }
+        .sheet(item:$versionPair) { ReadingExcerptVersionsSheet(journal:journal,pair:$0) }
+        .sheet(isPresented:$showCitationFormat) {
+            ReadingCitationClipboardSheet(records:citationRecords) { filterMessage = "已复制引文" }
+        }
+        .sheet(isPresented:$showFollowUps) {
+            ReadingFollowUpsView(journal:journal) { item,question in
+                if !store.openFollowUp(item,question:question) { filterMessage = "原句已改动，已打开对应笔记。" }
+            }
+        }
         .sheet(isPresented:$showBackups) { ReadingBackupView(journal:journal) }
         .sheet(isPresented:$showTools053) { ReadingTools053(store:store,journal:journal,ids:selection.isEmpty ? Set(editing.map{[$0]} ?? []):selection) }
         .onAppear { options053=ReadingLibraryOptions053.load(store.readingDefaults) }
@@ -109,7 +129,24 @@ struct ReadingLibraryView: View {
         VStack(alignment:.leading,spacing:10) {
             searchField
             if searching053 { HStack { ProgressView().controlSize(.small);Text("正在检索阅读资料…").font(.caption).foregroundStyle(.secondary) } }
-            HStack { newMenu;Spacer();Menu { libraryActions;Divider();organizationMenu } label:{Label("操作",systemImage:"ellipsis.circle")} }
+            HStack {
+                newMenu
+                Menu("待整理") {
+                    Button("全部资料") { options053.triage = nil }
+                    ForEach(ReadingTriage.allCases,id:\.self) { status in Button(status.rawValue) { options053.triage = status } }
+                    Divider()
+                    Button("待查问题…") { showFollowUps = true }
+                }
+                Spacer(minLength:0)
+                Menu { libraryActions;Divider();organizationMenu } label:{Label("操作",systemImage:"ellipsis.circle")}
+            }
+            if let status = options053.triage {
+                HStack {
+                    Text(status.rawValue).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("完成这条，查看下一条",action:finishTriage).disabled(editing == nil || journal.unreadable)
+                }
+            }
             DisclosureGroup("筛选与整理") {
                 ScrollView {
                 VStack(alignment:.leading,spacing:8) {
@@ -167,16 +204,28 @@ struct ReadingLibraryView: View {
             if options053.groupChapters { Text(item.chapter053).font(.caption).foregroundStyle(.secondary) }
             if options053.showCreated { Text("收录 "+item.created.formatted(date:.abbreviated,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
             if options053.showModified { Text("修改 "+item.modified053.formatted(date:.abbreviated,time:.shortened)).font(.caption2).foregroundStyle(.secondary) }
-            if let context=item.matchingContext(query) { Text(SearchResultHighlight.text(context,query:query)).font(.caption).lineLimit(2) }
+            if let status = item.extras053.triage { Text(status.rawValue).font(.caption2).foregroundStyle(.orange) }
+            if !query.isEmpty, let hit = ReadingTextSearch.fields(item,query:query,scope:options053.scope,exact:options053.exact,limit:1).first {
+                Button {
+                    selection = [item.id]
+                    editing = item.id
+                    store.writingSearchHit = hit
+                    store.writingSearchRequest = UUID()
+                } label: {
+                    Text(hit.field.rawValue+" · ")+Text(SearchResultHighlight.text(hit.context,query:hit.matchedText))
+                }.font(.caption).lineLimit(2).buttonStyle(.plain).foregroundStyle(.blue)
+            } else if let context=item.matchingContext(query) {
+                Text(SearchResultHighlight.text(context,query:query)).font(.caption).lineLimit(2)
+            }
         }.onDrag { NSItemProvider(object:ReadingDrag053.text(item,assets:journal.folder.appendingPathComponent("Assets")) as NSString) }
     }
     @ViewBuilder private var editor:some View {
             if let editing {
                 switch editing {
                 case .record(let id):
-                    if let record = journal.record(id) { ReadingSearchMatches(store:store,item:.record(record),query:query);LibraryRecordDetail(store:store,journal:journal,record:record,onNewLinkedNote:newLinkedNote,topPadding:showsDeskHeader ? 2 : 8).id(id).disabled(journal.unreadable || removed) }
+                    if let record = journal.record(id) { ReadingSearchMatches(store:store,item:.record(record),query:query,scope:options053.scope,exact:options053.exact);LibraryRecordDetail(store:store,journal:journal,record:record,onNewLinkedNote:newLinkedNote,topPadding:showsDeskHeader ? 2 : 8).id(id).disabled(journal.unreadable || removed) }
                 case .essay(let id):
-                    if let essay = journal.essay(id) { ReadingSearchMatches(store:store,item:.essay(essay),query:query) }
+                    if let essay = journal.essay(id) { ReadingSearchMatches(store:store,item:.essay(essay),query:query,scope:options053.scope,exact:options053.exact) }
                     LibraryEssayDetail(store:store,journal:journal,id:id,onExport:{section = .exports}).id(id).disabled(journal.unreadable || removed)
                 }
             } else { Text("选择一条记录编辑；可统一新增、查找、导出或删除。删除后可以恢复。").font(.caption).foregroundStyle(.secondary) }
@@ -213,6 +262,7 @@ struct ReadingLibraryView: View {
     @ViewBuilder private var libraryActions:some View {
                 Button("阅读整理与输出…") { showTools053=true }
                 Button("批量整理") { showOrganization = true }.disabled(selection.isEmpty || removed || journal.unreadable)
+                Button("生成专题笔记…") { performContext(.topicNote,ids:selection) }.disabled(selection.isEmpty || removed || journal.unreadable)
                 Button("引用关系") { showReferences = true }.disabled(editing == nil)
                 Button("导出所选…") { store.prepareCheckedReadingExport(orderedSelection(selection));section = .exports }.disabled(selection.isEmpty || removed)
                 Button("重新收录当前 PDF 标注与评论") { store.commandWorkspace?.scheduleReadingAnnotationImport() }.disabled(store.commandWorkspace == nil)
@@ -267,6 +317,28 @@ struct ReadingLibraryView: View {
         case .copy:
             let token = UUID();copyGeneration = token;filterMessage = "正在准备复制 \(scope.items.count) 条资料…"
             Task { let text = await Task.detached(priority:.userInitiated) { scope.clipboardText() }.value;guard copyGeneration == token else { return };NSPasteboard.general.clearContents();if NSPasteboard.general.setString(text,forType:.string) { filterMessage = "已复制 \(scope.items.count) 条正文与出处" } else { filterMessage = "复制未完成，请重试" } }
+        case .copyCitation:
+            let text = ReadingCitationClipboardOptions.load().text(orderedExcerpts(scope))
+            guard !text.isEmpty else { return }
+            NSPasteboard.general.clearContents()
+            filterMessage = NSPasteboard.general.setString(text,forType:.string) ? "已复制引文" : "复制未完成，请重试"
+        case .citationFormat:
+            citationRecords = orderedExcerpts(scope)
+            if !citationRecords.isEmpty { showCitationFormat = true }
+        case .topicNote:
+            guard !scope.removed,!journal.unreadable,scope.excerpts.count == scope.items.count else {
+                filterMessage = "请先勾选要编入专题笔记的摘录。"; return
+            }
+            topicExcerpts = orderedExcerpts(scope)
+            showTopicNote = !topicExcerpts.isEmpty
+        case .compareVersions:
+            let excerpts = orderedExcerpts(scope)
+            guard excerpts.count == 2,!scope.removed else { return }
+            versionPair = ReadingExcerptVersionPair(left:excerpts[0].id,right:excerpts[1].id)
+        case .triage(let status):
+            guard !scope.removed,!journal.unreadable,scope.excerpts.count == scope.items.count else { return }
+            journal.updateExtras053(scope.ids) { $0.triage = status }
+            filterMessage = status.map{"已标记为"+$0.rawValue} ?? "已清除待整理标记"
         case .export:
             guard !scope.removed else { return };store.prepareCheckedReadingExport(orderedSelection(scope.ids));section = .exports
         case .organize:
@@ -283,6 +355,27 @@ struct ReadingLibraryView: View {
             guard scope.canAppend,!journal.unreadable else { return };let id = journal.currentEssayID ?? journal.newEssay();for record in scope.records { store.insertReadingRecord(record,in:id) };store.openReadingDesk(.essays,window:true)
         case .newExcerpt,.newNote,.newEssay:break
         }
+    }
+
+    private func orderedExcerpts(_ context:ReadingLibraryContext) -> [ReadingRecord] {
+        let byID = Dictionary(uniqueKeysWithValues:context.excerpts.map{($0.id,$0)})
+        return orderedSelection(context.ids).compactMap { id in
+            guard case .record(let recordID) = id else { return nil }
+            return byID[recordID]
+        }
+    }
+
+    private func finishTriage() {
+        guard let editing, let index = items.firstIndex(where:{$0.id == editing}),
+              items[index].extras053.triage == options053.triage else { return }
+        let next = items.dropFirst(index+1).first ?? items.first(where:{$0.id != editing})
+        journal.updateExtras053([editing]) {
+            if $0.triage == .verify { $0.review = .verified }
+            $0.triage = nil
+        }
+        self.editing = next?.id
+        pendingNavigation = next?.id
+        updateSelection(Set(next.map{[$0.id]} ?? []))
     }
 
     private func applyFilter(_ value:SavedReadingFilter) {
@@ -307,7 +400,7 @@ struct ReadingLibraryView: View {
     }
     private func navigate(_ target:ReadingLibraryID) {
         let previous = request
-        resetForNew();pendingNavigation = target;editing = target;selection = []
+        resetForNew();options053.triage = nil;pendingNavigation = target;editing = target;selection = []
         if case .record(let id) = target { store.readingRecordID = id }
         // A new window has no search rows yet. Keep the target until the asynchronous result installs it.
         if previous == request,let i = items.firstIndex(where:{$0.id == target}) {

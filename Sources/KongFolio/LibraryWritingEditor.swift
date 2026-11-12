@@ -5,6 +5,7 @@ struct LibraryWritingEditor: View {
     let label:String
     let identity:String
     var onFocus:(()->Void)? = nil
+    var onEscape:(()->Void)? = nil
     @StateObject private var session = WritingSession()
     @State private var display = LibraryWritingPreferences.load()
     @State private var showDisplay = false
@@ -14,7 +15,7 @@ struct LibraryWritingEditor: View {
                 LibraryWritingToolbar(session:session)
                 Button { showDisplay = true } label:{Image(systemName:"textformat.size")}.buttonStyle(.borderless).help("正文字号、行距与行宽").accessibilityLabel("正文显示设置")
             }.padding(.horizontal,10).padding(.top,6)
-            StableTextEditor(text:$text,label:label,identity:identity,session:session,markdown:true,onFocus:onFocus,display:display).frame(minHeight:220)
+            StableTextEditor(text:$text,label:label,identity:identity,session:session,markdown:true,onFocus:onFocus,display:display,onEscape:onEscape).frame(minHeight:220)
             HStack { WritingCharacterCount(session:session);Spacer();Text("⌘Z 撤销") }.font(.system(size:12)).foregroundStyle(.secondary).padding(.horizontal,12).padding(.bottom,8)
         }.background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:10))
         .overlay { RoundedRectangle(cornerRadius:10).stroke(.quaternary) }

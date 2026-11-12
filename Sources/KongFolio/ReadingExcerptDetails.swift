@@ -21,9 +21,12 @@ struct ReadingExcerptSegmentsView: View {
     let editing: Bool
     let openSource: (ReadingCitation) -> Void
     let showContext: (SourceRef) -> Void
+    var focusedIdentity: String? = nil
 
     var body: some View {
         ForEach(Array(record.textExcerptSegments.enumerated()),id:\.element.id) { index,segment in
+            let identity = "segment:"+record.id.uuidString+":"+segment.id.uuidString
+            let originalIdentity = "segment-original:"+record.id.uuidString+":"+segment.id.uuidString
             VStack(alignment:.leading,spacing:6) {
                 Text("第 \(index+1) 段 · "+ReadingRecordMetadata.date(segment.captured))
                     .font(.caption).foregroundStyle(.secondary)
@@ -31,11 +34,16 @@ struct ReadingExcerptSegmentsView: View {
                     ReadingWritingEditor(text:Binding(
                         get:{ journal.record(record.id)?.textExcerptSegments.first(where:{$0.id == segment.id})?.text ?? segment.text },
                         set:{ value in journal.editRecord(record.id) { $0.reviseExcerptSegment(segment.id,text:value) } }
-                    ),label:"第 \(index+1) 段摘录",identity:"quote:"+segment.id.uuidString)
+                    ),label:"第 \(index+1) 段摘录",identity:identity)
                     .frame(height:110).border(.quaternary)
                 } else { Text(segment.text).textSelection(.enabled) }
                 if let original = segment.originalText,original != segment.text {
-                    DisclosureGroup("校订前原文") { Text(original).textSelection(.enabled) }
+                    if focusedIdentity == originalIdentity {
+                        Text("校订前原文").font(.caption).foregroundStyle(.secondary)
+                        Text(original).textSelection(.enabled).id(originalIdentity)
+                    } else {
+                        DisclosureGroup("校订前原文") { Text(original).textSelection(.enabled) }
+                    }
                 }
                 ForEach(Array(segment.sources(in:record).enumerated()),id:\.offset) { _,citation in
                     VStack(alignment:.leading,spacing:4) {
@@ -46,7 +54,7 @@ struct ReadingExcerptSegmentsView: View {
                         }.font(.caption)
                     }
                 }
-            }.frame(maxWidth:.infinity,alignment:.leading).padding(8)
+            }.frame(maxWidth:.infinity,alignment:.leading).padding(8).id(identity)
                 .background(.quaternary.opacity(0.4),in:RoundedRectangle(cornerRadius:6))
         }
     }

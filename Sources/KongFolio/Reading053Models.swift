@@ -34,6 +34,8 @@ struct ReadingQuotation053:Codable,Equatable,Identifiable {
     var assets:[String]? = nil
     var pdfOrigin:ReadingPDFOrigin? = nil
     var targetKind:String? = nil
+    var excerptSegmentID:UUID? = nil
+    var excerptOnly:Bool? = nil
 }
 struct ReadingRecordExtras053:Codable,Equatable {
     enum Review:String,Codable,CaseIterable { case unreviewed="待核对",verified="已核对",uncertain="存疑" }
@@ -43,7 +45,10 @@ struct ReadingRecordExtras053:Codable,Equatable {
     var visualAsset:String? = nil
     var regions:[ReadingRegion053]? = nil
     var quotations:[ReadingQuotation053]? = nil
-    var hasContent:Bool { !(regions ?? []).isEmpty || !(quotations ?? []).isEmpty }
+    var triage:ReadingTriage? = nil
+    var versionExcerpts:[UUID]? = nil
+    var followUps:[ReadingFollowUp]? = nil
+    var hasContent:Bool { !(regions ?? []).isEmpty || !(quotations ?? []).isEmpty || !(followUps ?? []).isEmpty }
     var assets:[String] {
         var result:[String]=[]
         if let visualAsset { result.append(visualAsset) }

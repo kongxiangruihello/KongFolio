@@ -142,7 +142,7 @@ extension WorkspaceStore {
         return true
     }
 
-    private func revealCapturedExcerpt(_ record: ReadingRecord, message: String) {
+    func revealCapturedExcerpt(_ record: ReadingRecord, message: String) {
         rememberRightPanelNote()
         if let pinned = journal.record(pinnedReadingID), pinned.kind != .note { pinnedReadingID = nil }
         readingRecordID = record.id

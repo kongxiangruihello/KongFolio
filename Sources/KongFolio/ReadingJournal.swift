@@ -76,7 +76,7 @@ struct ReadingEssay: Codable, Identifiable, Equatable {
     var removed: Date?
     var extras:ReadingRecordExtras053? = nil
     var hasContent: Bool {
-        (!title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !["未命名札记","未命名笔记"].contains(title)) || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || blocks.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.record?.hasContent == true }
+        extras?.hasContent == true || (!title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !["未命名札记","未命名笔记"].contains(title)) || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || blocks.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.record?.hasContent == true }
     }
     func matches(_ query:String) -> Bool {
         if query.isEmpty { return true }

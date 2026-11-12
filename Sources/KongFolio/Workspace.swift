@@ -81,7 +81,6 @@ import UniformTypeIdentifiers
     @Published var taskLabel = ""
     @Published var dirty = false
     @Published var showTools = false
-    var openPanel: NSOpenPanel?
     var importGeneration = UUID()
     @Published var comparison: PDFDocument?
     @Published var recognizedText = ""
@@ -868,29 +867,13 @@ import UniformTypeIdentifiers
     // MARK: Opening
 
     func open(insert: Bool = false, merge: Bool = false, imagesOnly: Bool = false) {
-        if DocumentOpenPanel.coordinator.revealExisting() { return }
-        guard !busy, openPanel == nil else { return }
-        let panel = NSOpenPanel()
-        var types: [UTType] = [ReadingShortcut.fileType,.pdf,.image,.html,.plainText,UTType(exportedAs:"com.kongfolio.project")]
-        types += TextImport.markdownExtensions.compactMap { UTType(filenameExtension:$0) }
-        panel.allowedContentTypes = imagesOnly ? [.image] : types
-        panel.allowsMultipleSelection = true
-        DocumentOpenPanel.configure(panel)
-        if imagesOnly { panel.message = "所选图片将作为新页面插入当前页之后，可多选并调整顺序。" }
-        openPanel = panel
-        let completion: (NSApplication.ModalResponse) -> Void = { [weak self,weak panel] response in
-            // Retain the chosen URLs before releasing our last reference to the chooser.
-            let urls = response == .OK ? (panel?.urls ?? []) : []
-            guard let self else { return }
-            self.openPanel = nil
-            guard !urls.isEmpty else { return }
-            // Return to AppKit so its sheet can dismiss before installing a batch of native PDF views.
-            DispatchQueue.main.async { [weak self] in
-                guard let self, !imagesOnly || (self.count > 0 && !self.readingLocked) else { return }
-                self.openSelected(urls,insert:insert,merge:merge)
-            }
+        if !insert,!merge,!imagesOnly,let store { store.open(); return }
+        guard !DocumentOpenPanel.coordinator.revealExisting(),!busy else { return }
+        let panel = DocumentOpenPanel.files(imagesOnly:imagesOnly)
+        DocumentOpenPanel.coordinator.present(panel,preferred:pdfView?.window,presentation:insert || merge ? .sheet : .separate) { [weak self] _,urls in
+            guard let self,!urls.isEmpty,!imagesOnly || (self.count > 0 && !self.readingLocked) else { return }
+            self.openSelected(urls,insert:insert,merge:merge)
         }
-        DocumentOpenPanel.coordinator.present(panel,preferred:pdfView?.window,completion:completion)
     }
 
     /// Several files are opened side by side, one tab each. Only an explicit merge (or inserting pages into the

@@ -94,9 +94,9 @@ extension Workspace {
         DocumentOpenPanel.configure(panel)
         panel.allowedContentTypes = [.image]
         panel.message = "选取一张图片，在当前 PDF 页面中调整位置和大小。"
-        DocumentOpenPanel.coordinator.present(panel,preferred:view.window) { [weak self,weak page] response in
-            guard response == .OK, let url = panel.url, let page else { return }
-            DispatchQueue.main.async { [weak self] in self?.preparePageImage(url,on:page) }
+        DocumentOpenPanel.coordinator.present(panel,preferred:view.window) { [weak self,weak page] _,urls in
+            guard let url = urls.first, let page else { return }
+            self?.preparePageImage(url,on:page)
         }
     }
 

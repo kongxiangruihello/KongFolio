@@ -14,12 +14,19 @@ import Combine
     func stopAndWait() async { task?.cancel();await task?.value }
 }
 extension WorkspaceStore {
+    func openReadingReference(_ reference:ReadingReference) {
+        guard let item = reference.item, !reference.removed else { return }
+        openReadingItem(item)
+        if let target = reference.target { readingDetailRequest = ReadingDetailRequest(item:item,target:target) }
+    }
+
     func openReadingItem(_ item:ReadingLibraryID) {
+        readingDetailRequest = nil
         readingLibraryNavigation = item;readingLibraryNavigationRequest = UUID()
         switch item { case .record(let id):readingRecordID = id;case .essay(let id):journal.selectEssay(id) }
         openReadingDesk(.search,window:true)
     }
 }
 extension ReadingReference {
-    var item:ReadingLibraryID? { let parts = id.split(separator:":",maxSplits:1);guard parts.count == 2,let uuid = UUID(uuidString:String(parts[1])) else { return nil };return parts[0] == "essay" ? .essay(uuid) : .record(uuid) }
+    var item:ReadingLibraryID? { if let destination { return destination };let parts = id.split(separator:":",maxSplits:1);guard parts.count == 2,let uuid = UUID(uuidString:String(parts[1])) else { return nil };return parts[0] == "essay" ? .essay(uuid) : .record(uuid) }
 }

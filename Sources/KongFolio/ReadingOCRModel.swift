@@ -29,5 +29,13 @@ enum ReadingOCRSegments {
             return order == .leftToRight ? x<y : x>y
         }.map(\.element)
     }
+    static func previewRegion(_ region:CGRect,in size:CGSize) -> CGRect? {
+        guard region.minX.isFinite,region.minY.isFinite,region.width.isFinite,region.height.isFinite,
+              size.width > 0,size.height > 0 else { return nil }
+        let box = region.intersection(CGRect(x:0,y:0,width:1,height:1))
+        guard !box.isEmpty else { return nil }
+        return CGRect(x:box.minX*size.width,y:(1-box.maxY)*size.height,width:box.width*size.width,height:box.height*size.height)
+    }
+
     static func text(_ segments:[ReadingOCRSegment]) -> String { segments.map(\.text).joined(separator:"\n") }
 }

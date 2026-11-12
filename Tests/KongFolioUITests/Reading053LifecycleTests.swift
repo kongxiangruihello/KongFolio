@@ -186,6 +186,86 @@ final class Reading053LifecycleTests: XCTestCase {
         XCTAssertTrue(page.annotations.isEmpty)
     }
 
+    @MainActor func testQuickExcerptNoteFocusAndEscapeReturnToPDF() async throws {
+        _ = NSApplication.shared
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("KongFolio-quick-note-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:folder) }
+        let store = WorkspaceStore(storage:folder)
+        let workspace = store.newPDF()
+        let excerpt = ReadingRecord(kind:.excerpt,quote:"读到的一段原文")
+        store.journal.add(excerpt)
+        let window = NSWindow(contentRect:CGRect(x:0,y:0,width:1100,height:700),
+                              styleMask:[.titled],backing:.buffered,defer:false)
+        let host = NSHostingView(rootView:RootView(store:store))
+        window.contentView = host
+        host.frame = NSRect(x:0,y:0,width:1100,height:700)
+        host.layoutSubtreeIfNeeded()
+        try await wait("准备测试 PDF") { workspace.pdfView != nil }
+        store.startNoteFromExcerpt(excerpt)
+        let id = try XCTUnwrap(store.quickExcerptNoteID)
+        try await wait("摘录笔记正文取得焦点") {
+            host.layoutSubtreeIfNeeded()
+            return (window.firstResponder as? ComposingTextView)?.positionKey == "note:"+id.uuidString
+        }
+        let view = try XCTUnwrap(window.firstResponder as? ComposingTextView)
+        XCTAssertTrue(view.string.isEmpty)
+        view.cancelOperation(nil)
+        XCTAssertTrue(window.firstResponder === workspace.pdfView)
+        XCTAssertNil(store.journal.draftRecord)
+        XCTAssertFalse(store.journal.state.records.contains{$0.id == id})
+    }
+
+    @MainActor func testModelessFileChooserHandsOffOnceAndCanReopenAfterCancel() async throws {
+        _ = NSApplication.shared
+        let chooser = DocumentChooserCoordinator()
+        let first = TestDocumentPanel()
+        let url = URL(fileURLWithPath:"/tmp/generated-test-document.pdf")
+        first.selected = [url]
+        var deliveries: [[URL]] = []
+        chooser.present(first,presentation:.separate) { response, urls in
+            XCTAssertEqual(response,.OK)
+            deliveries.append(urls)
+        }
+        XCTAssertTrue(chooser.panel === first)
+        XCTAssertEqual(first.separateStarts,1)
+        XCTAssertEqual(first.sheetStarts,0)
+        let old = try XCTUnwrap(first.completion)
+        old(.OK)
+        old(.OK)
+        XCTAssertNil(chooser.panel)
+        XCTAssertTrue(deliveries.isEmpty)
+        try await wait("交接文件选择结果") { deliveries.count == 1 }
+        XCTAssertEqual(deliveries,[[url]])
+
+        let next = TestDocumentPanel()
+        next.selected = [url]
+        chooser.present(next,presentation:.separate) { response, urls in
+            XCTAssertEqual(response,.cancel)
+            deliveries.append(urls)
+        }
+        next.completion?(.cancel)
+        try await wait("取消后的回调") { deliveries.count == 2 }
+        XCTAssertEqual(deliveries.last,[])
+        XCTAssertNil(chooser.panel)
+    }
+
+    @MainActor private final class TestDocumentPanel: NSOpenPanel {
+        var selected: [URL] = []
+        var completion: ((NSApplication.ModalResponse) -> Void)?
+        var separateStarts = 0
+        var sheetStarts = 0
+
+        override var urls: [URL] { selected }
+        override func begin(completionHandler handler: @escaping (NSApplication.ModalResponse) -> Void) {
+            separateStarts += 1
+            completion = handler
+        }
+        override func beginSheetModal(for sheetWindow:NSWindow,completionHandler handler:@escaping(NSApplication.ModalResponse)->Void) {
+            sheetStarts += 1
+            completion = handler
+        }
+    }
+
     @MainActor func testTwoNativeEditorsRetainConcurrentTextWithoutResettingComposition() {
         var text="甲乙丙丁"
         let a=StableInputCoordinator(read:{text},write:{text=$0}),b=StableInputCoordinator(read:{text},write:{text=$0}),va=ComposingTextView(),vb=ComposingTextView()

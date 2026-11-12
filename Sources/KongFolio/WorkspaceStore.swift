@@ -53,6 +53,8 @@ import UniformTypeIdentifiers
     @Published var writingSearchHit:ReadingTextHit?
     @Published var writingSearchRequest = UUID()
     @Published var pinnedReadingID:UUID?
+    @Published var quickExcerptNoteID:UUID?
+    @Published var readingDetailRequest: ReadingDetailRequest?
     @Published var readingRecordID:UUID?
     @Published var multiRegionTarget053:UUID?
     @Published var readingRecordSelection = Set<UUID>() {
@@ -274,12 +276,12 @@ import UniformTypeIdentifiers
         (tabs.contains { $0.workspace?.slot == "" } || startupEntries.contains { $0.slot == "" } || (startupSafetyEnabled && StartupProtection(storage:storage).read().excludedSlots.contains(""))) ? String(UUID().uuidString.prefix(8)).lowercased() : ""
     }
 
-    @discardableResult func addWorkspace() -> Workspace {
+    @discardableResult func addWorkspace(selectImmediately:Bool = true) -> Workspace {
         let workspace = Workspace(storage: storage, slot: freshSlot(), readingDefaults: readingDefaults)
         workspace.store = self
         workspace.bootstrap(restoreRecovery:false)
         tabs.append(.document(workspace))
-        select(workspace.id)
+        if selectImmediately { select(workspace.id) }
         return workspace
     }
 
@@ -367,6 +369,10 @@ import UniformTypeIdentifiers
     func openEach(_ urls: [URL]) {
         var first: UUID?
         var batch = Set<UUID>()
+        var blank = activeWorkspace.flatMap { workspace in
+            workspace.count == 0 && !workspace.needsLoad && !workspace.busy && !workspace.isImporting &&
+                workspace.sourceURL == nil && workspace.projectURL == nil ? workspace : nil
+        } ?? emptyFileChooserWorkspace
         for url in urls {
             if ReadingShortcut.handles(url) {
                 do { try openReadingShortcut(url); if first == nil { first = selectedID } } catch { present(error) }
@@ -383,8 +389,8 @@ import UniformTypeIdentifiers
                 if first == nil { first = existing.id }; continue
             }
             let target: Workspace
-            if let current = activeWorkspace, current.count == 0, !current.needsLoad, !current.busy { target = current }
-            else { target = addWorkspace() }
+            if let available = blank { target = available; blank = nil }
+            else { target = addWorkspace(selectImmediately:false) }
             target.needsLoad = true
             target.sourceURL = url
             batch.insert(target.id)
@@ -394,18 +400,23 @@ import UniformTypeIdentifiers
         if let first { select(first) }
     }
 
-    /// The "open" command: shows the file panel for an empty document tab, creating one when a note is in front.
+    /// An idle blank tab is safe to reuse once the user has selected a document.
     var emptyFileChooserWorkspace:Workspace? {
         tabs.compactMap(\.workspace).first { $0.count == 0 && !$0.needsLoad && !$0.busy && !$0.isImporting && $0.sourceURL == nil && $0.projectURL == nil }
     }
     func open() {
-        if DocumentOpenPanel.coordinator.revealExisting() { return }
-        let target: Workspace
-        if let current = activeWorkspace { target = current }
-        else if let empty = emptyFileChooserWorkspace { target = empty }
-        else { target = addWorkspace() }
-        select(target.id)
-        target.open()
+        guard !DocumentOpenPanel.coordinator.revealExisting() else { return }
+        recordActivity("显示文件选择器")
+        DocumentOpenPanel.coordinator.present(DocumentOpenPanel.files(),presentation:.separate) { [weak self] response,urls in
+            guard let self else { return }
+            if response == .abort {
+                self.recordActivity("文件选择器未能显示")
+                self.present(FolioError(message:"系统文件选择器未能显示。可重试，或从访达打开文档。"))
+            } else if !urls.isEmpty {
+                self.recordActivity("文件选择器已返回文件")
+                self.openEach(urls)
+            } else { self.recordActivity("关闭文件选择器") }
+        }
     }
 
     // MARK: Notes

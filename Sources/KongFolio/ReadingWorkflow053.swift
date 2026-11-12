@@ -63,13 +63,30 @@ extension ReadingJournal {
         let quote=ReadingWorkflow053.frozen(source)
         updateExtras053([destination]) { value in value.quotations=(value.quotations ?? [])+[quote] }
     }
-    func refreshQuotation053(_ id:ReadingLibraryID,quotation:UUID,expected:ReadingQuotation053)throws {
-        guard let target=libraryItem053(id),let q=target.extras053.quotations?.first(where:{$0.id==quotation}),q==expected else { throw FolioError(message:"引用已变化，请重新比较") }
-        let source=ReadingWorkflow053.items(state).first{$0.id.uuid053==q.recordID && (q.targetKind==nil || $0.id.isEssay053==(q.targetKind=="essay"))}
-        guard let source else { throw FolioError(message:"原记录已移除，已保留引用副本") }
+    func currentQuotation(_ quote:ReadingQuotation053) -> ReadingQuotation053? {
+        let id: ReadingLibraryID = quote.targetKind == "essay" ? .essay(quote.recordID) : .record(quote.recordID)
+        guard let source = libraryItem053(id) else { return nil }
+        if quote.excerptOnly == true, case .record(let record) = source {
+            return record.frozenExcerptParts.first { $0.excerptSegmentID == quote.excerptSegmentID }
+        }
+        return ReadingWorkflow053.frozen(source)
+    }
+
+    func refreshQuotation053(_ id:ReadingLibraryID,quotation:UUID,expected:ReadingQuotation053,reviewed:ReadingQuotation053? = nil)throws {
+        guard !unreadable,let target=libraryItem053(id),
+              let quote=target.extras053.quotations?.first(where:{$0.id==quotation}),quote==expected else {
+            throw FolioError(message:"引用已变化，请重新比较")
+        }
+        guard var updated = currentQuotation(quote) else { throw FolioError(message:"原记录或摘录段落已移除，已保留引用副本") }
+        if let reviewed, updated.originalModified != reviewed.originalModified || updated.text != reviewed.text ||
+            updated.citations != reviewed.citations || updated.assets != reviewed.assets {
+            throw FolioError(message:"原摘录又有变化，请重新核对")
+        }
+        updated.id = quote.id
+        updated.captured = quote.captured
         updateExtras053([id]) { extras in
-            guard let i=extras.quotations?.firstIndex(where:{$0.id==quotation}) else { return }
-            var new=ReadingWorkflow053.frozen(source);new.id=q.id;extras.quotations?[i]=new
+            guard let index = extras.quotations?.firstIndex(where:{$0.id==quotation}) else { return }
+            extras.quotations?[index] = updated
         }
     }
     func updateBookMetadata053(path:String,publication:ReadingPublication053,author:String,title:String,expected:ReadingJournalState)throws {
