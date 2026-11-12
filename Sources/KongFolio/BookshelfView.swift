@@ -122,7 +122,16 @@ struct BookLibraryView: View {
         let recent = scope == "all" && matchedQuery.isEmpty && !filtering ? ShelfBrowse.recent(library.books,progress:progress) : []
         let checkPaths = Array(Set((visible + recent).map(\.path))).sorted()
         let allPaths = library.books.map(\.path)
-        return GeometryReader { geometry in
+        let layout = shelfLayout(books,visible:visible,recent:recent,pagination:pagination)
+        let observed = observeShelf(layout,allPaths:allPaths,checkPaths:checkPaths)
+            .onChange(of:pagination.last) { _,last in if page > last { page = last } }
+        return fileDialogs(recordDialogs(observed))
+            .dropDestination(for:URL.self) { urls,_ in acceptDrop(urls) }
+    }
+
+    private func shelfLayout(_ books:[LibraryBook],visible:[LibraryBook],recent:[LibraryBook],
+                             pagination:ReadingPagination) -> some View {
+        GeometryReader { geometry in
             HStack(spacing:0) {
                 if geometry.size.width >= 720 { sidebar;Divider() }
                 VStack(alignment:.leading,spacing:12) {
@@ -137,7 +146,10 @@ struct BookLibraryView: View {
                 .padding(16)
             }
         }
-        .onAppear { progress = library.cachedShelfProgress;matchedQuery = query;periodicalsExpanded = periodical != nil }
+    }
+
+    private func observeShelf(_ content:some View,allPaths:[String],checkPaths:[String]) -> some View {
+        content.onAppear { progress = library.cachedShelfProgress;matchedQuery = query;periodicalsExpanded = periodical != nil }
         .task(id:journal.revisionID) { await updateSummaries() }
         .task(id:query) {
             do { try await Task.sleep(for:.milliseconds(150)) } catch { return }
@@ -165,8 +177,10 @@ struct BookLibraryView: View {
         .onReceive(NotificationCenter.default.publisher(for:.shelfReadingSourceOpened)) { note in
             if note.object as? WorkspaceStore === store { store.showReadingHistory = false }
         }
-        .onChange(of:pagination.last) { _,last in if page > last { page = last } }
-        .sheet(item:$editing) { ShelfBookEditor(library:library,book:$0) }
+    }
+
+    private func recordDialogs(_ content:some View) -> some View {
+        content.sheet(item:$editing) { ShelfBookEditor(library:library,book:$0) }
         .sheet(item:$notebook) { BookNotebookView(store:store,library:library,book:$0.book,opensExport:$0.export,initialRecord:$0.item) }
         .sheet(item:$overview) { request in
             ShelfPeriodicalOverview(publication:request.publication,
@@ -193,7 +207,10 @@ struct BookLibraryView: View {
             Button("取消",role:.cancel) {}
             Button("保存…") { if let book = fixedBook { saveFixed(book) } }
         } message: { Text("输入从 1 开始的 PDF 页码。") }
-        .sheet(item:$relinkReview) { review in
+    }
+
+    private func fileDialogs(_ content:some View) -> some View {
+        content.sheet(item:$relinkReview) { review in
             ShelfCompareFiles(original:review.book,candidate:review.url,knownPages:progress[review.book.path]?.pages,
                               detail:review.verified ? "已确认是同一份文件。" : review.message,
                               confirm:{ finishRelink(review) })
@@ -212,12 +229,13 @@ struct BookLibraryView: View {
             Button("取消",role:.cancel) {}
             Button("保存") { storeFilter() }
         }
-        .dropDestination(for:URL.self) { urls,_ in
-            let supported = urls.filter { $0.isFileURL && BookLibrary.supports($0) }
-            guard !supported.isEmpty, !addition.busy else { return false }
-            previewImport(supported)
-            return true
-        }
+    }
+
+    private func acceptDrop(_ urls:[URL]) -> Bool {
+        let supported = urls.filter { $0.isFileURL && BookLibrary.supports($0) }
+        guard !supported.isEmpty, !addition.busy else { return false }
+        previewImport(supported)
+        return true
     }
 
     private var sidebar: some View {
