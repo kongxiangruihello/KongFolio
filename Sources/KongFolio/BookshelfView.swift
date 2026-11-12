@@ -149,34 +149,42 @@ struct BookLibraryView: View {
     }
 
     private func observeShelf(_ content:some View,allPaths:[String],checkPaths:[String]) -> some View {
-        content.onAppear { progress = library.cachedShelfProgress;matchedQuery = query;periodicalsExpanded = periodical != nil }
-        .task(id:journal.revisionID) { await updateSummaries() }
-        .task(id:query) {
-            do { try await Task.sleep(for:.milliseconds(150)) } catch { return }
-            if matchedQuery != query { page = 0;matchedQuery = query }
-        }
-        .task(id:allPaths+[refresh.uuidString]) { await updateProgress() }
-        .task(id:checkPaths+[refresh.uuidString]) { await updateFileStatus(checkPaths) }
-        .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in refresh = UUID() }
-        .onReceive(NotificationCenter.default.publisher(for:.shelfReadingProgressChanged)) { note in
-            guard (note.object as? Workspace)?.store === store else { return }
-            if let path = note.userInfo?["path"] as? String, let value = note.userInfo?["progress"] as? ReadingProgress {
-                if allPaths.contains(path), progress[path] != value {
-                    progress[path] = value
-                    library.cachedShelfProgress[path] = value
-                }
+        let search = content
+            .onAppear { progress = library.cachedShelfProgress;matchedQuery = query;periodicalsExpanded = periodical != nil }
+            .task(id:journal.revisionID) { await updateSummaries() }
+            .task(id:query) {
+                do { try await Task.sleep(for:.milliseconds(150)) } catch { return }
+                if matchedQuery != query { page = 0;matchedQuery = query }
             }
-        }
-        .onChange(of:scope) { _,_ in page = 0;focused = nil;if periodical != nil { periodicalsExpanded = true } }
-        .onChange(of:sort) { _,_ in page = 0 }
-        .onChange(of:size) { _,_ in page = 0 }
-        .onChange(of:filterYear) { _,_ in page = 0 }
-        .onChange(of:filterPeriodical) { _,_ in page = 0 }
-        .onChange(of:filterStatus) { _,_ in page = 0 }
-        .onChange(of:filterExcerpts) { _,_ in page = 0 }
-        .onReceive(NotificationCenter.default.publisher(for:.shelfReadingSourceOpened)) { note in
-            if note.object as? WorkspaceStore === store { store.showReadingHistory = false }
-        }
+        let paths = search
+            .task(id:allPaths+[refresh.uuidString]) { await updateProgress() }
+            .task(id:checkPaths+[refresh.uuidString]) { await updateFileStatus(checkPaths) }
+        let notifications = paths
+            .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in refresh = UUID() }
+            .onReceive(NotificationCenter.default.publisher(for:.shelfReadingProgressChanged)) { note in
+                refreshProgress(from:note,allPaths:allPaths)
+            }
+            .onReceive(NotificationCenter.default.publisher(for:.shelfReadingSourceOpened)) { note in
+                if note.object as? WorkspaceStore === store { store.showReadingHistory = false }
+            }
+        let paging = notifications
+            .onChange(of:scope) { _,_ in page = 0;focused = nil;if periodical != nil { periodicalsExpanded = true } }
+            .onChange(of:sort) { _,_ in page = 0 }
+            .onChange(of:size) { _,_ in page = 0 }
+        return paging
+            .onChange(of:filterYear) { _,_ in page = 0 }
+            .onChange(of:filterPeriodical) { _,_ in page = 0 }
+            .onChange(of:filterStatus) { _,_ in page = 0 }
+            .onChange(of:filterExcerpts) { _,_ in page = 0 }
+    }
+
+    private func refreshProgress(from note:Notification,allPaths:[String]) {
+        guard (note.object as? Workspace)?.store === store,
+              let path = note.userInfo?["path"] as? String,
+              let value = note.userInfo?["progress"] as? ReadingProgress,
+              allPaths.contains(path), progress[path] != value else { return }
+        progress[path] = value
+        library.cachedShelfProgress[path] = value
     }
 
     private func recordDialogs(_ content:some View) -> some View {
