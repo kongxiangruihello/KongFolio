@@ -31,22 +31,13 @@ struct WritingToolbar: View {
         VStack(alignment:.leading,spacing:5) {
             if let documentControls, let markdownFile {
                 HStack(spacing:8) {
-                    documentControls
+                    documentControls.fixedSize(horizontal:true,vertical:false)
                     if showsControls {
                         Divider().frame(height:18)
                         ViewThatFits(in:.horizontal) {
-                            markdownControls(markdownFile)
-                            HStack(spacing:8) {
-                                compactMarkdownMenu(markdownFile,includesAllTools:false)
-                                listMenu
-                                insertionMenu(markdownFile)
-                                findButton
-                                outlineMenu
-                            }.fixedSize(horizontal:true,vertical:false)
-                            HStack(spacing:8) {
-                                compactMarkdownMenu(markdownFile)
-                                findButton
-                            }.fixedSize(horizontal:true,vertical:false)
+                            ForEach((0...MarkdownTool.allCases.count).reversed(),id:\.self) { count in
+                                markdownControls(markdownFile,visibleCount:count)
+                            }
                         }
                     }
                 }.buttonStyle(.borderless).font(.system(size:14)).controlSize(.regular)
@@ -92,45 +83,70 @@ struct WritingToolbar: View {
         showFind.toggle()
     }
 
-    private func markdownControls(_ note:MarkdownNote) -> some View {
-        HStack(spacing:8) {
-            headingMenu
-            tool("粗体","bold") { session.wrap("**","**",placeholder:"粗体") }
-            tool("斜体","italic") { session.wrap("*","*",placeholder:"斜体") }
-            tool("引用","text.quote") { session.prefix("> ") }
-            listMenu
-            insertionMenu(note)
-            findButton
-            outlineMenu
-            Menu { editingCommands } label: { Image(systemName:"ellipsis.circle") }
+    // Keep frequently used commands visible first. Every remaining command stays in the menu.
+    private enum MarkdownTool: CaseIterable, Hashable {
+        case find, headings, list, insert, bold, italic, quote, outline, link, image, table, taskList, code
+    }
+
+    private func markdownControls(_ note:MarkdownNote,visibleCount:Int) -> some View {
+        let visible = MarkdownTool.allCases.prefix(visibleCount)
+        return HStack(spacing:8) {
+            ForEach(visible,id:\.self) { command in
+                markdownTool(command,note:note)
+            }
+            Menu {
+                ForEach(MarkdownTool.allCases.dropFirst(visibleCount),id:\.self) { command in
+                    markdownMenuItem(command,note:note)
+                }
+                if visibleCount < MarkdownTool.allCases.count { Divider() }
+                editingCommands
+            } label: { Image(systemName:"ellipsis.circle") }
                 .help("更多编辑").accessibilityLabel("更多编辑")
         }.fixedSize(horizontal:true,vertical:false)
     }
 
-    private func compactMarkdownMenu(_ note:MarkdownNote,includesAllTools:Bool = true) -> some View {
-        Menu {
-            headingMenu
-            Button("粗体") { session.wrap("**","**",placeholder:"粗体") }
-            Button("斜体") { session.wrap("*","*",placeholder:"斜体") }
-            Button("引用") { session.prefix("> ") }
-            if includesAllTools {
-                Menu("列表") { listCommands }
-                Menu("插入") { insertionCommands(note) }
-                Menu("文章大纲") { outlineCommands }
-            }
-            Divider()
-            editingCommands
-        } label: { Image(systemName:"textformat") }
-            .help("Markdown 格式工具").accessibilityLabel("Markdown 格式工具")
+    @ViewBuilder private func markdownTool(_ command:MarkdownTool,note:MarkdownNote) -> some View {
+        switch command {
+        case .find: tool("查找替换（⌘F）","magnifyingglass",action:toggleFind)
+        case .headings: headingMenu
+        case .list: listMenu
+        case .insert: insertionMenu(note)
+        case .bold: tool("粗体","bold") { session.wrap("**","**",placeholder:"粗体") }
+        case .italic: tool("斜体","italic") { session.wrap("*","*",placeholder:"斜体") }
+        case .quote: tool("引用","text.quote") { session.prefix("> ") }
+        case .outline: outlineMenu
+        case .link: tool("链接","link") { insertLink() }
+        case .image: tool("图片","photo") { note.chooseImage() }
+        case .table: tool("表格","tablecells") { note.insertTable() }
+        case .taskList: tool("任务列表","checklist") { session.prefix("- [ ] ") }
+        case .code: tool("行内代码","chevron.left.forwardslash.chevron.right") { insertCode() }
+        }
     }
+
+    @ViewBuilder private func markdownMenuItem(_ command:MarkdownTool,note:MarkdownNote) -> some View {
+        switch command {
+        case .find: Button("查找替换",action:toggleFind)
+        case .headings: headingMenu
+        case .list: Menu("列表") { listCommands }
+        case .insert: Menu("插入") { insertionCommands(note) }
+        case .bold: Button("粗体") { session.wrap("**","**",placeholder:"粗体") }
+        case .italic: Button("斜体") { session.wrap("*","*",placeholder:"斜体") }
+        case .quote: Button("引用") { session.prefix("> ") }
+        case .outline: Menu("文章大纲") { outlineCommands }
+        case .link: Button("链接",action:insertLink)
+        case .image: Button("图片…") { note.chooseImage() }
+        case .table: Button("表格") { note.insertTable() }
+        case .taskList: Button("任务列表") { session.prefix("- [ ] ") }
+        case .code: Button("行内代码",action:insertCode)
+        }
+    }
+
+    private func insertLink() { session.wrap("[","](https://)",placeholder:"链接文字") }
+    private func insertCode() { session.wrap("`","`",placeholder:"代码") }
 
     private func insertionMenu(_ note:MarkdownNote) -> some View {
         Menu { insertionCommands(note) } label: { Image(systemName:"plus") }
             .help("插入").accessibilityLabel("插入")
-    }
-
-    private var findButton: some View {
-        tool("查找替换（⌘F）","magnifyingglass",action:toggleFind)
     }
 
     private var headingMenu: some View {
@@ -153,10 +169,10 @@ struct WritingToolbar: View {
     }
 
     @ViewBuilder private func insertionCommands(_ note:MarkdownNote) -> some View {
-        Button("链接") { session.wrap("[","](https://)",placeholder:"链接文字") }
+        Button("链接",action:insertLink)
         Button("图片…") { note.chooseImage() }
         Button("表格") { note.insertTable() }
-        Button("行内代码") { session.wrap("`","`",placeholder:"代码") }
+        Button("行内代码",action:insertCode)
         Button("代码块") { session.wrap("```\n","\n```",placeholder:"代码") }
         Button("分隔线") { note.insertSource("\n---\n") }
     }
