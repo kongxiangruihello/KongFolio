@@ -36,16 +36,15 @@ struct WritingToolbar: View {
                         Divider().frame(height:18)
                         ViewThatFits(in:.horizontal) {
                             if textFile.format == .plain {
-                                plainTextControls(visibleCount:PlainTextTool.allCases.count,showsLabels:true)
                                 ForEach((0...PlainTextTool.allCases.count).reversed(),id:\.self) { count in
-                                    plainTextControls(visibleCount:count)
+                                    plainTextControls(textFile,visibleCount:count)
                                 }
                             } else {
                                 ForEach((0...MarkdownTool.allCases.count).reversed(),id:\.self) { count in
                                     markdownControls(textFile,visibleCount:count)
                                 }
                             }
-                        }.frame(maxWidth:.infinity,alignment:textFile.format == .plain ? .center : .leading)
+                        }.frame(maxWidth:.infinity,alignment:.leading)
                     }
                 }.buttonStyle(.borderless).font(.system(size:14)).controlSize(.regular)
             } else if showsControls {
@@ -92,6 +91,7 @@ struct WritingToolbar: View {
 
     private enum PlainTextTool: String, CaseIterable {
         case find = "查找替换", paragraphs = "段落", cleanup = "整理粘贴…", replace = "逐项替换…"
+        case undo = "撤销", redo = "重做", pdf = "导出 PDF…", word = "导出 Word…"
 
         var symbol: String {
             switch self {
@@ -99,41 +99,36 @@ struct WritingToolbar: View {
             case .paragraphs: return "text.alignleft"
             case .cleanup: return "doc.on.clipboard"
             case .replace: return "arrow.left.arrow.right"
+            case .undo: return "arrow.uturn.backward"
+            case .redo: return "arrow.uturn.forward"
+            case .pdf: return "doc.richtext"
+            case .word: return "doc.text"
             }
         }
     }
 
-    private func plainTextControls(visibleCount:Int,showsLabels:Bool = false) -> some View {
-        HStack(spacing:showsLabels ? 24 : 8) {
+    private func plainTextControls(_ note:MarkdownNote,visibleCount:Int) -> some View {
+        MarkdownToolbarRow {
             ForEach(PlainTextTool.allCases.prefix(visibleCount),id:\.self) { command in
                 if command == .paragraphs {
-                    Menu { paragraphCommands } label: { plainTextToolLabel(command,showsLabel:showsLabels) }
+                    Menu { paragraphCommands } label: { Text(command.rawValue) }
                         .help(command.rawValue).accessibilityLabel(command.rawValue)
                 } else {
-                    Button { runPlainTextTool(command) } label: { plainTextToolLabel(command,showsLabel:showsLabels) }
-                        .help(command.rawValue).accessibilityLabel(command.rawValue)
+                    tool(command.rawValue,command.symbol) { runPlainTextTool(command,note:note) }
                 }
             }
-            if visibleCount < PlainTextTool.allCases.count {
-                Menu {
-                    ForEach(PlainTextTool.allCases.dropFirst(visibleCount),id:\.self) { command in
-                        if command == .paragraphs {
-                            Menu(command.rawValue) { paragraphCommands }
-                        } else {
-                            Button(command.rawValue) { runPlainTextTool(command) }
-                        }
+            Menu {
+                ForEach(PlainTextTool.allCases.dropFirst(visibleCount),id:\.self) { command in
+                    if command == .paragraphs {
+                        Menu(command.rawValue) { paragraphCommands }
+                    } else {
+                        Button(command.rawValue) { runPlainTextTool(command,note:note) }
                     }
-                } label: { Image(systemName:"ellipsis.circle") }
-                    .help("更多文本编辑").accessibilityLabel("更多文本编辑")
-            }
-        }.fixedSize(horizontal:true,vertical:false)
-    }
-
-    @ViewBuilder private func plainTextToolLabel(_ command:PlainTextTool,showsLabel:Bool) -> some View {
-        if showsLabel {
-            Label(command.rawValue,systemImage:command.symbol)
-        } else {
-            Image(systemName:command.symbol)
+                }
+                if visibleCount < PlainTextTool.allCases.count { Divider() }
+                Button("不可见字符检查") { note.editingTool = .characters }
+            } label: { Image(systemName:"ellipsis.circle") }
+                .help("更多编辑").accessibilityLabel("更多编辑")
         }
     }
 
@@ -143,11 +138,15 @@ struct WritingToolbar: View {
         }
     }
 
-    private func runPlainTextTool(_ command:PlainTextTool) {
+    private func runPlainTextTool(_ command:PlainTextTool,note:MarkdownNote) {
         switch command {
         case .find: toggleFind()
         case .cleanup: showCleanup = true
         case .replace: showReplacePreview = true
+        case .undo: session.replayUndo()
+        case .redo: session.replayUndo(redo:true)
+        case .pdf: note.exportPDF()
+        case .word: note.exportWord()
         case .paragraphs: break
         }
     }

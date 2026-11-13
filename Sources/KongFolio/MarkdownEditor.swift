@@ -87,7 +87,7 @@ struct MarkdownEditorView: View {
     }
 
     private func editorHeader(width:CGFloat)->some View {
-        let fullControls = note.format != .markdown || note.readOnly || note.cleanEditing
+        let fullControls = note.format == .html || note.readOnly || (note.format == .markdown && note.cleanEditing)
         return HStack(spacing:note.format != .html || width < 500 ? 8 : 12) {
             VStack(alignment:.leading,spacing:3) {
                 DraftNoteTitle(note:note)
@@ -121,10 +121,7 @@ struct MarkdownEditorView: View {
                 .help("查看排版预览").accessibilityLabel("排版预览")
             }
             if !showsPrimaryToolbar {
-                Button { note.save() } label: {
-                    if note.format == .plain && width >= 1000 { Label("保存",systemImage:"square.and.arrow.down") }
-                    else { Image(systemName:"square.and.arrow.down") }
-                }
+                Button { note.save() } label:{ Image(systemName:"square.and.arrow.down") }
                     .help("保存当前文件（⌘S）").accessibilityLabel("保存当前文件")
             }
             if !focusedWriting {
