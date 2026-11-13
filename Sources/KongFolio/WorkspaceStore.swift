@@ -475,7 +475,8 @@ import UniformTypeIdentifiers
 
     @discardableResult func newNote(format: TextDocumentFormat = .markdown) -> MarkdownNote {
         let note = MarkdownNote(storage: storage, format: format)
-        note.focusNewEditor = format != .html
+        note.focusNewEditor = true
+        note.showPreview = false
         note.store = self; tabs.append(.note(note))
         select(note.id)
         return note

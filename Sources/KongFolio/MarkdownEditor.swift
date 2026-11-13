@@ -16,29 +16,20 @@ struct MarkdownEditorView: View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
                 if showsPrimaryToolbar { toolbar }
-                if note.format != .html {
-                    if !note.readOnly && (note.format == .plain || !note.cleanEditing) {
-                        WritingToolbar(session:note.writingSession,prominent:true,textFile:note,
-                                       showsControls:!focusedWriting,
-                                       documentControls:AnyView(editorHeader(width:proxy.size.width,showsOptions:false)),
-                                       documentOptions:AnyView(editorOptions),
-                                       saveDocument:showsPrimaryToolbar ? nil : { note.save() },
-                                       showDocumentDisplay:{ showDisplay = true })
-                            .frame(maxWidth:.infinity,alignment:.leading)
-                            .padding(.horizontal,12)
-                            .padding(.vertical,8).background(.bar)
-                    } else {
-                        editorHeader(width:proxy.size.width)
-                            .frame(maxWidth:.infinity,alignment:.leading)
-                            .padding(.horizontal,16).padding(.vertical,8).background(.bar)
-                    }
+                if !note.readOnly && (note.format != .markdown || !note.cleanEditing) {
+                    WritingToolbar(session:note.writingSession,prominent:true,textFile:note,
+                                   showsControls:!focusedWriting,
+                                   documentControls:AnyView(editorHeader(width:proxy.size.width,showsOptions:false)),
+                                   documentOptions:AnyView(editorOptions),
+                                   saveDocument:showsPrimaryToolbar ? nil : { note.save() },
+                                   showDocumentDisplay:{ showDisplay = true })
+                        .frame(maxWidth:.infinity,alignment:.leading)
+                        .padding(.horizontal,12)
+                        .padding(.vertical,8).background(.bar)
                 } else {
                     editorHeader(width:proxy.size.width)
+                        .frame(maxWidth:.infinity,alignment:.leading)
                         .padding(.horizontal,16).padding(.vertical,8).background(.bar)
-                    if !note.readOnly {
-                        WritingToolbar(session:note.writingSession,prominent:true,formatting:note.format != .plain)
-                            .padding(.horizontal,16).padding(.vertical,4)
-                    }
                 }
                 if note.saveConflict { SaveConflictBanner(copy: { note.save(asNew: true) }, reload: note.reloadAfterConflict,compare:{ note.editingTool = .merge }) }
                 Divider()
@@ -49,10 +40,8 @@ struct MarkdownEditorView: View {
                     Text(note.status.isEmpty ? (note.fileURL?.path ?? "尚未保存到文件") : note.status).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                     if let store { DocumentTaskButton(queue:store.documentTasks,store:store,onlyWhileRunning:true) }
-                    if note.format != .html {
-                        Text(note.readOnly ? "只读" : "."+note.format.fileExtension)
-                            .fixedSize().accessibilityLabel(note.readOnly ? "只读" : note.format.rawValue+"文件")
-                    }
+                    Text(note.readOnly ? "只读" : "."+note.format.fileExtension)
+                        .fixedSize().accessibilityLabel(note.readOnly ? "只读" : note.format.rawValue+"文件")
                     WritingCharacterCount(session:note.writingSession).lineLimit(1).fixedSize()
                 }
                 .font(.system(size:12)).foregroundStyle(.secondary)
@@ -90,27 +79,26 @@ struct MarkdownEditorView: View {
     }
 
     private func editorHeader(width:CGFloat,showsOptions:Bool = true)->some View {
-        let fullControls = note.format == .html || note.readOnly || (note.format == .markdown && note.cleanEditing)
-        return HStack(spacing:note.format != .html || width < 500 ? 8 : 12) {
+        let fullControls = note.readOnly || (note.format == .markdown && note.cleanEditing)
+        return HStack(spacing:8) {
             VStack(alignment:.leading,spacing:3) {
                 DraftNoteTitle(note:note)
                 if width >= 650 {
                     Text(note.format.rawValue + (note.readOnly ? " · 只读" : ""))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
-            }.frame(width:note.format != .html ? titleWidth(available:width) : nil,alignment:.leading)
-                .frame(maxWidth:note.format != .html ? nil : .infinity,alignment:.leading)
+            }.frame(width:titleWidth(available:width),alignment:.leading)
                 .layoutPriority(-1)
-            if note.format != .html, note.readOnly, !focusedWriting {
+            if note.readOnly, !focusedWriting {
                 Button { note.toggleReadOnly() } label: {
                     if width >= 540 { Label("编辑",systemImage:"pencil") }
                     else { Image(systemName:"pencil") }
                 }.help("退出只读并编辑文件").accessibilityLabel("切换为编辑模式")
             }
-            if note.format == .markdown, !focusedWriting {
-                editorMode(width:width)
+            if note.format != .plain, !focusedWriting {
+                if note.format == .markdown { editorMode(width:width) }
                 Button {
-                    let separate = width < LayoutMetrics.previewMinimum || note.cleanEditing
+                    let separate = width < LayoutMetrics.previewMinimum || (note.format == .markdown && note.cleanEditing)
                     if separate {
                         restoreSplitPreview = note.showPreview
                         note.showPreview = true
@@ -143,21 +131,20 @@ struct MarkdownEditorView: View {
     }
 
     @ViewBuilder private var editorOptions: some View {
-        if !note.readOnly && (note.format == .plain || (note.format == .markdown && !note.cleanEditing)) {
+        if !note.readOnly && (note.format != .markdown || !note.cleanEditing) {
             Button("专注写作") { focusedWriting = true }
             Divider()
         }
         Button(note.readOnly ? "切换为编辑模式" : "切换为阅读模式") { note.toggleReadOnly() }
+        if note.format != .markdown { Button("另存为…") { note.save(asNew:true) } }
+        if note.format != .markdown && note.readOnly {
+            Button("导出 PDF…") { note.exportPDF() }
+            Button("导出 Word…") { note.exportWord() }
+        }
         if note.format == .plain {
-            Button("另存为…") { note.save(asNew:true) }
-            if note.readOnly {
-                Button("导出 PDF…") { note.exportPDF() }
-                Button("导出 Word…") { note.exportWord() }
-            }
             Button("导出版式…") { showLayout = true }
         } else {
             Button("插入图片…") { note.chooseImage() }.disabled(note.readOnly)
-            if note.format != .markdown { Toggle("显示右侧导出预览",isOn:$note.showPreview) }
             Toggle("预览跟随正文段落",isOn:$note.followPreview)
             Button("导出版式与预览设置…") { showLayout = true }
         }
@@ -267,7 +254,7 @@ struct MarkdownTextView: NSViewRepresentable {
         view.delegate = context.coordinator
         view.committed = { [weak coordinator = context.coordinator] in coordinator?.commit($0) }
         view.isEditable = !note.readOnly
-        view.allowsMarkdownFormatting = note.format != .plain
+        view.allowsMarkdownFormatting = note.format == .markdown
         view.isRichText = false
         view.allowsUndo = true
         view.displayOptions = note.editorDisplay
@@ -286,7 +273,7 @@ struct MarkdownTextView: NSViewRepresentable {
         note.textView = view
         view.displayOptions = note.editorDisplay
         view.isEditable = !note.readOnly
-        view.allowsMarkdownFormatting = note.format != .plain
+        view.allowsMarkdownFormatting = note.format == .markdown
         view.supportsMarkdownLists = note.format == .markdown
         view.continuesMarkdownQuotes = note.format == .markdown
         let nextKey = note.fileURL.map{"text-file:"+ReadingProgress.canonicalPath($0.path)} ?? "markdown:"+note.id.uuidString

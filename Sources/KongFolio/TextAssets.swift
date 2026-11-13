@@ -100,7 +100,7 @@ final class NoteTextView: DisplayTextView {
 
     override func draw(_ dirtyRect:NSRect) {
         super.draw(dirtyRect)
-        guard let note,note.format != .html,isEditable,string.isEmpty,!hasMarkedText() else { return }
+        guard note != nil,isEditable,string.isEmpty,!hasMarkedText() else { return }
         let inset = textContainerOrigin
         let origin = NSPoint(x:inset.x+(textContainer?.lineFragmentPadding ?? 0),y:inset.y)
         ("开始写作…" as NSString).draw(at:origin,withAttributes:[
@@ -111,7 +111,7 @@ final class NoteTextView: DisplayTextView {
 
     override func didChangeText() {
         super.didChangeText()
-        if let note,note.format != .html { needsDisplay = true }
+        if note != nil { needsDisplay = true }
     }
 
     override func paste(_ sender: Any?) {

@@ -6,7 +6,7 @@ struct RootView: View {
 
     static func showsFunctionToolbar(for tab: OpenTab?) -> Bool {
         guard let note = tab?.note else { return true }
-        return note.format == .html || note.readOnly
+        return note.readOnly
     }
 
     var body: some View {

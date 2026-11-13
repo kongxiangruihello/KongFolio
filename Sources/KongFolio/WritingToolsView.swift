@@ -37,9 +37,10 @@ struct WritingToolbar: View {
                     documentControls.fixedSize(horizontal:true,vertical:false)
                     if showsControls {
                         ViewThatFits(in:.horizontal) {
-                            if textFile.format == .plain {
-                                ForEach((0...PlainTextTool.allCases.count).reversed(),id:\.self) { count in
-                                    plainTextControls(textFile,visibleCount:count)
+                            if textFile.format != .markdown {
+                                let commands = textTools(for:textFile.format)
+                                ForEach((0...commands.count).reversed(),id:\.self) { count in
+                                    textControls(textFile,commands:commands,visibleCount:count)
                                 }
                             } else {
                                 ForEach((0...MarkdownTool.allCases.count).reversed(),id:\.self) { count in
@@ -83,7 +84,7 @@ struct WritingToolbar: View {
         .onChange(of:session.findRequest) { _,_ in session.beginFind();showFind = true }
         .onChange(of:session.cleanupRequest) { _,_ in showCleanup = true }
         .sheet(isPresented:$showReplacePreview) { EditorReplaceView(session:session) }
-        .sheet(isPresented:$showCleanup) { WritingCleanupView(session:session,allowsMarkdownQuote:textFile?.format != .plain) }
+        .sheet(isPresented:$showCleanup) { WritingCleanupView(session:session,allowsMarkdownQuote:textFile == nil || textFile?.format == .markdown) }
     }
 
     @ViewBuilder private var documentActions: some View {
@@ -100,11 +101,12 @@ struct WritingToolbar: View {
         showFind.toggle()
     }
 
-    private enum PlainTextTool: String, CaseIterable {
+    private enum TextFileTool: String {
         case find = "查找替换", replace = "逐项替换…"
         case undo = "撤销", redo = "重做"
         case paragraphs = "段落", cleanup = "整理粘贴…"
         case pdf = "导出 PDF…", word = "导出 Word…"
+        case image = "插入图片…", table = "插入表格"
 
         var symbol: String {
             switch self {
@@ -116,30 +118,37 @@ struct WritingToolbar: View {
             case .redo: return "arrow.uturn.forward"
             case .pdf: return "doc.richtext"
             case .word: return "doc.text"
+            case .image: return "photo"
+            case .table: return "tablecells"
             }
         }
     }
 
-    private func plainTextControls(_ note:MarkdownNote,visibleCount:Int) -> some View {
+    private func textTools(for format:TextDocumentFormat) -> [TextFileTool] {
+        let common: [TextFileTool] = [.find,.replace,.undo,.redo,.paragraphs,.cleanup]
+        return common + (format == .html ? [.image,.table] : []) + [.pdf,.word]
+    }
+
+    private func textControls(_ note:MarkdownNote,commands:[TextFileTool],visibleCount:Int) -> some View {
         MarkdownToolbarRow {
             documentActions
-            ForEach(PlainTextTool.allCases.prefix(visibleCount),id:\.self) { command in
+            ForEach(commands.prefix(visibleCount),id:\.self) { command in
                 if command == .paragraphs {
                     Menu { paragraphCommands } label: { Text(command.rawValue) }
                         .help(command.rawValue).accessibilityLabel(command.rawValue)
                 } else {
-                    tool(command.rawValue,command.symbol) { runPlainTextTool(command,note:note) }
+                    tool(command.rawValue,command.symbol) { runTextFileTool(command,note:note) }
                 }
             }
             Menu {
-                ForEach(PlainTextTool.allCases.dropFirst(visibleCount),id:\.self) { command in
+                ForEach(commands.dropFirst(visibleCount),id:\.self) { command in
                     if command == .paragraphs {
                         Menu(command.rawValue) { paragraphCommands }
                     } else {
-                        Button(command.rawValue) { runPlainTextTool(command,note:note) }
+                        Button(command.rawValue) { runTextFileTool(command,note:note) }
                     }
                 }
-                if visibleCount < PlainTextTool.allCases.count { Divider() }
+                if visibleCount < commands.count { Divider() }
                 documentOptions
             } label: { Image(systemName:"ellipsis.circle") }
                 .help("更多编辑").accessibilityLabel("更多编辑")
@@ -152,7 +161,7 @@ struct WritingToolbar: View {
         }
     }
 
-    private func runPlainTextTool(_ command:PlainTextTool,note:MarkdownNote) {
+    private func runTextFileTool(_ command:TextFileTool,note:MarkdownNote) {
         switch command {
         case .find: toggleFind()
         case .cleanup: showCleanup = true
@@ -161,6 +170,8 @@ struct WritingToolbar: View {
         case .redo: session.replayUndo(redo:true)
         case .pdf: note.exportPDF()
         case .word: note.exportWord()
+        case .image: note.chooseImage()
+        case .table: note.insertTable()
         case .paragraphs: break
         }
     }
