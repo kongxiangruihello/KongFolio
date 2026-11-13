@@ -103,7 +103,7 @@ struct ReadingDeskView: View {
                     if journal.draftRecord?.id == record.id {
                         Text("空白草稿 · 输入内容后才加入记录").font(.caption).foregroundStyle(.secondary)
                     }
-                    LibraryRecordDetail(store:store,journal:journal,record:record).id(record.id).disabled(journal.unreadable)
+                    LibraryRecordDetail(store:store,journal:journal,record:record,inReadingSidebar:compact).id(record.id).disabled(journal.unreadable)
                 } else {
                     ReadingRecordDetail(store:store,journal:journal,record:record,onNewLinkedNote:{ createNote(linked:$0) })
                         .id(record.id).disabled(journal.unreadable)

@@ -48,6 +48,25 @@ enum WritingEdit {
         view.setSelectedRange(MarkdownNote.clamp(edit.selection,to:view.string.utf16.count))
         view.undoManager?.endUndoGrouping();view.breakUndoCoalescing(); view.window?.makeFirstResponder(view)
     }
+    static func quoteNewline(_ text:String,selection:NSRange) -> TextEdit? {
+        let ns = text as NSString
+        let range = MarkdownNote.clamp(selection,to:ns.length)
+        let line = ns.lineRange(for:NSRange(location:range.location,length:0))
+        guard NSMaxRange(range) <= NSMaxRange(line) else { return nil }
+        let prefixText = ns.substring(with:NSRange(location:line.location,length:range.location-line.location))
+        guard let marker = prefixText.range(of:#"^[ \t]*(?:>[ \t]?)+[ \t]*"#,options:.regularExpression) else { return nil }
+        let prefix = String(prefixText[marker])
+        let contentStart = line.location+prefix.utf16.count
+        let rest = ns.substring(with:NSRange(location:contentStart,length:NSMaxRange(line)-contentStart))
+        if rest.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
+            return TextEdit(range:NSRange(location:line.location,length:NSMaxRange(range)-line.location),
+                            replacement:"",selection:NSRange(location:line.location,length:0))
+        }
+        let replacement = "\n"+prefix
+        return TextEdit(range:range,replacement:replacement,
+                        selection:NSRange(location:range.location+replacement.utf16.count,length:0))
+    }
+
     static func newline(_ text:String,selection:NSRange) -> TextEdit? {
         let ns = text as NSString,r = MarkdownNote.clamp(selection,to:ns.length),line = ns.lineRange(for:NSRange(location:r.location,length:0))
         let before = ns.substring(with:NSRange(location:line.location,length:r.location-line.location))
@@ -176,6 +195,14 @@ enum WritingEdit {
     }
     func wrap(_ prefix:String,_ suffix:String,placeholder:String) { guard let view else { return };WritingEdit.apply(MarkdownNote.wrapEdit(in:view.string,selection:view.selectedRange(),prefix:prefix,suffix:suffix,placeholder:placeholder),to:view) }
     func prefix(_ prefix:String) { guard let view else { return };WritingEdit.apply(MarkdownNote.lineEdit(in:view.string,selection:view.selectedRange(),prefix:prefix),to:view) }
+    func replayUndo(redo:Bool = false) {
+        guard let view,view.isEditable,!view.hasMarkedText(),let undo = view.undoManager else { return }
+        if redo ? undo.canRedo : undo.canUndo {
+            if redo { undo.redo() } else { undo.undo() }
+            (view as? ComposingTextView)?.committed?(view)
+            view.window?.makeFirstResponder(view)
+        } else { message = redo ? "没有可重做的编辑" : "没有可撤销的编辑" }
+    }
     func clearFormatting() {
         guard let view else { return };let ns = view.string as NSString,r = MarkdownNote.clamp(view.selectedRange(),to:ns.length);guard r.length>0 else { message = "先选择需要清除格式的文字";return }
         let value = ns.substring(with:r).replacingOccurrences(of:#"(?m)^\s{0,3}(?:#{1,6}\s+|>\s?)"#,with:"",options:.regularExpression).replacingOccurrences(of:#"(\*\*|__|`|\*)"#,with:"",options:.regularExpression)

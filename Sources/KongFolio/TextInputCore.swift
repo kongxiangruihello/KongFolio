@@ -63,10 +63,13 @@ class ComposingTextView: NSTextView {
         breakUndoCoalescing()
     }
     var supportsMarkdownLists = false
+    var continuesMarkdownQuotes = false
     private let editingHistory = UndoManager()
     override func insertNewline(_ sender:Any?) {
         guard !hasMarkedText() else { super.insertNewline(sender);return }
-        if supportsMarkdownLists, let edit = WritingEdit.newline(string,selection:selectedRange()) {
+        if continuesMarkdownQuotes, let edit = WritingEdit.quoteNewline(string,selection:selectedRange()) {
+            WritingEdit.apply(edit,to:self)
+        } else if supportsMarkdownLists, let edit = WritingEdit.newline(string,selection:selectedRange()) {
             WritingEdit.apply(edit,to:self)
         } else {
             breakUndoCoalescing()

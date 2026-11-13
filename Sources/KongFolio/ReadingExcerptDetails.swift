@@ -22,20 +22,26 @@ struct ReadingExcerptSegmentsView: View {
     let openSource: (ReadingCitation) -> Void
     let showContext: (SourceRef) -> Void
     var focusedIdentity: String? = nil
+    @State private var comparing:ReadingExcerptSegment?
 
     var body: some View {
         ForEach(Array(record.textExcerptSegments.enumerated()),id:\.element.id) { index,segment in
             let identity = "segment:"+record.id.uuidString+":"+segment.id.uuidString
             let originalIdentity = "segment-original:"+record.id.uuidString+":"+segment.id.uuidString
             VStack(alignment:.leading,spacing:6) {
-                Text("第 \(index+1) 段 · "+ReadingRecordMetadata.date(segment.captured))
-                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text("第 \(index+1) 段 · "+ReadingRecordMetadata.date(segment.captured))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("校订对照…") { comparing = segment }.buttonStyle(.borderless)
+                        .disabled(journal.unreadable || record.removed != nil)
+                }
                 if editing {
                     ReadingWritingEditor(text:Binding(
                         get:{ journal.record(record.id)?.textExcerptSegments.first(where:{$0.id == segment.id})?.text ?? segment.text },
                         set:{ value in journal.editRecord(record.id) { $0.reviseExcerptSegment(segment.id,text:value) } }
                     ),label:"第 \(index+1) 段摘录",identity:identity)
-                    .frame(height:110).border(.quaternary)
+                    .frame(height:160).border(.quaternary)
                 } else { Text(segment.text).textSelection(.enabled) }
                 if let original = segment.originalText,original != segment.text {
                     if focusedIdentity == originalIdentity {
@@ -56,6 +62,8 @@ struct ReadingExcerptSegmentsView: View {
                 }
             }.frame(maxWidth:.infinity,alignment:.leading).padding(8).id(identity)
                 .background(.quaternary.opacity(0.4),in:RoundedRectangle(cornerRadius:6))
+        }.sheet(item:$comparing) { segment in
+            ReadingQuoteCorrectionView(journal:journal,record:record,segmentID:segment.id)
         }
     }
 }

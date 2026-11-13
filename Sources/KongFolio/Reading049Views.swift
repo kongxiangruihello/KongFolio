@@ -36,6 +36,7 @@ struct DocumentSaveDetails: View {
 struct ReadingQuoteCorrectionView: View {
     @ObservedObject var journal:ReadingJournal
     let record:ReadingRecord
+    var segmentID:UUID? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var session = WritingSession()
     @State private var text = ""
@@ -52,7 +53,19 @@ struct ReadingQuoteCorrectionView: View {
     @State private var checked = Set<Int>()
     @State private var preparing = false
     @State private var cleanupTask:Task<Void,Never>?
-    private var original:String { record.originalQuote ?? record.originalOCR ?? record.quote }
+    private var segment:ReadingExcerptSegment? {
+        (expected ?? record).excerptSegments?.first{$0.id == segmentID}
+    }
+    private var original:String {
+        let baseline = expected ?? record
+        if let segment { return segment.originalText ?? segment.text }
+        return baseline.originalQuote ?? baseline.originalOCR ?? baseline.quote
+    }
+    private var startingText:String { segment?.text ?? expected?.quote ?? record.quote }
+    private var hasChanges:Bool { expected != nil && text != startingText }
+    private var correctionIdentity:String { "correction:"+record.id.uuidString+(segmentID.map{":"+$0.uuidString} ?? "") }
+    @State private var confirmDiscard = false
+    @State private var display = LibraryWritingPreferences.load()
     private var change:QuoteProofreading.Change? {
         guard let differences, differences.revised == text, differences.changes.indices.contains(active) else { return nil }
         return differences.changes[active]
@@ -60,7 +73,11 @@ struct ReadingQuoteCorrectionView: View {
 
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
-            Text("摘录原文与校订对照").font(.headline)
+            HStack {
+                Text("摘录原文与校订对照").font(.headline)
+                Spacer()
+                if hasChanges { Text("有未采用的校订").font(.caption).foregroundStyle(.secondary) }
+            }
             HStack {
                 Button("上一处",systemImage:"chevron.left") { active -= 1 }.disabled(change == nil || active == 0)
                 Text(change == nil ? (text == original ? "与原文一致" : "正在对照…") : "第 \(active+1) / \(differences?.changes.count ?? 0) 处")
@@ -78,7 +95,7 @@ struct ReadingQuoteCorrectionView: View {
                 VStack(alignment:.leading,spacing:6) {
                     Text("校订文字").font(.caption.weight(.semibold))
                     if let change { differenceText(change.revised,empty:"此处文字已删除",color:.blue) }
-                    StableTextEditor(text:$text,label:"摘录校订对照正文",identity:"correction:"+record.id.uuidString,session:session)
+                    StableTextEditor(text:$text,label:"摘录校订对照正文",identity:correctionIdentity,session:session,display:display)
                 }.frame(minWidth:220)
             }.frame(minHeight:250)
             Divider()
@@ -96,16 +113,28 @@ struct ReadingQuoteCorrectionView: View {
             }
             if !message.isEmpty { Text(message).font(.caption).foregroundStyle(.orange) }
             HStack {
-                Button("取消") { dismiss() }
+                Button("取消",action:close).keyboardShortcut(.cancelAction)
                 Spacer()
                 Button("采用校订") {
                     guard let expected else { return }
-                    do { try journal.applyQuoteCorrection(expected,text:text);dismiss() }
+                    guard session.view?.hasMarkedText() != true else {
+                        message = "请先完成正在输入的文字";return
+                    }
+                    do { try journal.applyQuoteCorrection(expected,text:text,segmentID:segmentID);dismiss() }
                     catch { message = error.localizedDescription }
-                }.disabled(expected == nil)
+                }.buttonStyle(.borderedProminent).disabled(!hasChanges)
             }
         }.padding(20).adaptiveSheet(width:860,height:630,minimumWidth:540)
-        .onAppear { expected = journal.record(record.id);text = expected?.quote ?? record.quote }
+        .onAppear {
+            guard expected == nil else { return }
+            expected = journal.record(record.id)
+            text = startingText
+        }
+        .interactiveDismissDisabled(hasChanges)
+        .alert("放弃未采用的校订？",isPresented:$confirmDiscard) {
+            Button("继续校订",role:.cancel) {}
+            Button("放弃更改",role:.destructive) { dismiss() }
+        }
         .onDisappear { cleanupTask?.cancel() }
         .task(id:text) {
             do { try await Task.sleep(for:.milliseconds(180)) } catch { return }
@@ -119,6 +148,11 @@ struct ReadingQuoteCorrectionView: View {
         .sheet(isPresented:Binding(get:{cleanup != nil},set:{if !$0 { cleanup = nil }})) {
             if let cleanup { cleanupSheet(cleanup) }
         }
+    }
+
+    private func close() {
+        if hasChanges || session.view?.hasMarkedText() == true { confirmDiscard = true }
+        else { dismiss() }
     }
 
     private func differenceText(_ value:String,empty:String,color:Color) -> some View {

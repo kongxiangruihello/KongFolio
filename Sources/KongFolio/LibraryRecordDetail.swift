@@ -6,8 +6,10 @@ struct LibraryRecordDetail: View {
     let record:ReadingRecord
     var onNewLinkedNote: ((ReadingRecord) -> Void)?
     var topPadding: CGFloat = 8
+    var inReadingSidebar = false
     @State private var contextSource:ReadingContextRequest?
     @State private var focusedWriting = false
+    @State private var writingFocusRequest = UUID()
     @State private var editQuote = false
     @State private var showQuoteCorrection = false
     @State private var showLinkPicker = false
@@ -31,6 +33,7 @@ struct LibraryRecordDetail: View {
                         focusedWriting.toggle()
                         if focusedWriting {
                             DispatchQueue.main.async { proxy.scrollTo("focus-writing-header",anchor:.top) }
+                            writingFocusRequest = UUID()
                         }
                     }.buttonStyle(.borderless)
                 }.id("focus-writing-header")
@@ -97,7 +100,7 @@ struct LibraryRecordDetail: View {
                         .id("original:"+record.id.uuidString)
                 }
                 }
-                if current.kind == .note, store.showReadingDesk, store.readingDeskSection == .notes,
+                if current.kind == .note, inReadingSidebar,
                    store.readingRecordID == record.id || store.pinnedReadingID == record.id {
                     Button(store.pinnedReadingID == record.id ? "取消固定笔记" : "固定笔记，切换文献时继续写") {
                         store.pinnedReadingID = store.pinnedReadingID == record.id ? nil : record.id
@@ -105,7 +108,8 @@ struct LibraryRecordDetail: View {
                 }
                 Text(current.kind == .note || current.pdfOrigin != nil ? "我的笔记" : "我的理解与评论").font(.caption)
                 LibraryWritingEditor(text:binding(\.note),label:"阅读笔记正文",identity:"note:"+record.id.uuidString,
-                    onEscape:store.quickExcerptNoteID == record.id ? { store.returnFromExcerptNote(record.id) } : nil).id("note:"+record.id.uuidString).frame(height:focusedWriting ? max(380,viewport.size.height-72) : 380)
+                    onEscape:store.quickExcerptNoteID == record.id ? { store.returnFromExcerptNote(record.id) } : nil,
+                    continuesQuotes:current.kind == .note).id("note:"+record.id.uuidString).frame(height:focusedWriting ? max(380,viewport.size.height-72) : 380)
                 if !focusedWriting {
                 if current.kind == .note {
                     ReadingFollowUpButton(journal:journal,item:.record(record.id),identity:"note:"+record.id.uuidString)
@@ -134,14 +138,14 @@ struct LibraryRecordDetail: View {
                 }
             }.padding(.horizontal,12).padding(.top,topPadding).padding(.bottom,8)
 
+        }.task(id:writingFocusRequest) {
+            guard focusedWriting else { return }
+            await focusWritingBody()
         }.task(id:store.quickExcerptNoteID) {
             guard store.quickExcerptNoteID == record.id else { return }
             let identity = "note:"+record.id.uuidString
             proxy.scrollTo(identity,anchor:.center)
-            for _ in 0..<15 {
-                if WritingRegistry.focus(identity) { return }
-                do { try await Task.sleep(nanoseconds:40_000_000) } catch { return }
-            }
+            await focusWritingBody()
         }.onChange(of:store.writingSearchRequest,initial:true) { _,token in
             guard let hit = store.writingSearchHit else { return }
             let fields = hit.identity.split(separator:":")
@@ -189,6 +193,14 @@ struct LibraryRecordDetail: View {
             }
         }
     }
+    private func focusWritingBody() async {
+        let identity = "note:"+record.id.uuidString
+        for _ in 0..<15 {
+            if WritingRegistry.focus(identity) { return }
+            do { try await Task.sleep(for:.milliseconds(40)) } catch { return }
+        }
+    }
+
     private var noteSourceControls: some View {
         let canSwitch = current.canChangeNoteSource
         let canAdd = store.currentNoteSourceWorkspace != nil && current.removed == nil

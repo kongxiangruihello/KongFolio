@@ -49,10 +49,11 @@ import AppKit
               window == nil || window === editorWindow,view.isEditable,!view.hasMarkedText(),view.string == expected else { return false }
         let cursor = MarkdownNote.clamp(view.selectedRange(),to:view.string.utf16.count).location
         let before = view.string
-        view.insertText(text,replacementRange:NSRange(location:cursor,length:0))
+        let insertion = NSRange(location:cursor,length:0)
+        let caret = NSRange(location:cursor+text.utf16.count,length:0)
+        WritingEdit.apply(TextEdit(range:insertion,replacement:text,selection:caret),to:view)
         guard view.string != before else { return false }
         view.scrollRangeToVisible(view.selectedRange())
-        editorWindow.makeFirstResponder(view)
         return true
     }
     static func jump(_ key:String,range:NSRange) { guard let view = entries[key]?.view,!view.hasMarkedText() else { return };let r = MarkdownNote.clamp(range,to:view.string.utf16.count);view.setSelectedRange(r);view.scrollRangeToVisible(r);view.window?.makeFirstResponder(view) }

@@ -6,6 +6,7 @@ struct LibraryWritingEditor: View {
     let identity:String
     var onFocus:(()->Void)? = nil
     var onEscape:(()->Void)? = nil
+    var continuesQuotes = false
     var onParagraph:((WritingEdit.ParagraphAction, NSRange) -> Bool)? = nil
     @StateObject private var session = WritingSession()
     @State private var display = LibraryWritingPreferences.load()
@@ -16,8 +17,15 @@ struct LibraryWritingEditor: View {
                 LibraryWritingToolbar(session:session)
                 Button { showDisplay = true } label:{Image(systemName:"textformat.size")}.buttonStyle(.borderless).help("正文字号、行距与行宽").accessibilityLabel("正文显示设置")
             }.padding(.horizontal,10).padding(.top,6)
-            StableTextEditor(text:$text,label:label,identity:identity,session:session,markdown:true,onFocus:onFocus,display:display,onEscape:onEscape).frame(minHeight:220)
-            HStack { WritingCharacterCount(session:session);Spacer();Text("⌘Z 撤销") }.font(.system(size:12)).foregroundStyle(.secondary).padding(.horizontal,12).padding(.bottom,8)
+            StableTextEditor(text:$text,label:label,identity:identity,session:session,markdown:true,onFocus:onFocus,display:display,onEscape:onEscape,continuesQuotes:continuesQuotes).frame(minHeight:220)
+            HStack {
+                WritingCharacterCount(session:session)
+                Spacer()
+                Button { session.replayUndo() } label:{Image(systemName:"arrow.uturn.backward")}
+                    .help("撤销本次编辑（⌘Z）").accessibilityLabel("撤销正文编辑")
+                Button { session.replayUndo(redo:true) } label:{Image(systemName:"arrow.uturn.forward")}
+                    .help("重做本次编辑（⇧⌘Z）").accessibilityLabel("重做正文编辑")
+            }.buttonStyle(.borderless).font(.system(size:12)).foregroundStyle(.secondary).padding(.horizontal,12).padding(.bottom,8)
         }.background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:10))
         .overlay { RoundedRectangle(cornerRadius:10).stroke(.quaternary) }
         .onAppear { session.analyze(text);session.paragraphHandler = onParagraph }.onChange(of:text) { _,value in session.analyze(value) }
@@ -58,6 +66,7 @@ struct LibraryWritingToolbar: View {
                     Menu("编辑") {
                         ForEach(1...3,id:\.self) { level in Button("\(level) 级标题") { session.prefix(String(repeating:"#",count:level)+" ") } }
                         Button("有序列表") { session.prefix("1. ") }
+                        Button("待办清单") { session.prefix("- [ ] ") }
                         Button("插入链接") { session.wrap("[","](https://)",placeholder:"链接文字") }
                         Button("清除格式") { session.clearFormatting() }
                         Divider()

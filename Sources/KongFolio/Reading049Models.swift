@@ -56,10 +56,39 @@ enum ReadingQuoteTools {
     }
 }
 extension ReadingJournal {
-    func applyQuoteCorrection(_ expected:ReadingRecord,text:String) throws {
-        guard !unreadable,let current = record(expected.id),current == expected else { throw FolioError(message:"这条记录已经变化，请关闭并重新打开对照，避免覆盖新内容") }
-        editRecord(expected.id) { if $0.originalQuote == nil { $0.originalQuote = $0.quote };$0.quote = text }
+    func applyQuoteCorrection(_ expected:ReadingRecord,text:String,segmentID:UUID? = nil) throws {
+        let message = "摘录正文已变化，请重新打开对照，避免覆盖新内容"
+        guard !unreadable,let current = record(expected.id),current.removed == nil else { throw FolioError(message:message) }
+        if let segmentID {
+            guard let baseline = expected.excerptSegments?.first(where:{$0.id == segmentID}),
+                  let live = current.excerptSegments?.first(where:{$0.id == segmentID}),
+                  live.text == baseline.text,live.originalText == baseline.originalText else {
+                throw FolioError(message:message)
+            }
+            guard live.text != text else { return }
+            try Self.validateCorrection(text,was:live.text)
+            editRecord(expected.id) { $0.reviseExcerptSegment(segmentID,text:text) }
+            return
+        }
+        guard current.excerptSegments == nil, current.quote == expected.quote,
+              current.originalQuote == expected.originalQuote,current.originalOCR == expected.originalOCR else {
+            throw FolioError(message:message)
+        }
+        guard current.quote != text else { return }
+        try Self.validateCorrection(text,was:current.quote)
+        editRecord(expected.id) {
+            if $0.originalQuote == nil, !$0.quote.isEmpty { $0.originalQuote = $0.quote }
+            $0.quote = text
+        }
     }
+
+    private static func validateCorrection(_ text:String,was:String) throws {
+        if !was.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,
+           text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
+            throw FolioError(message:"校订文字为空，请保留至少一段文字")
+        }
+    }
+
 }
 
 /// Read back the generated file before atomic replacement of the destination.
