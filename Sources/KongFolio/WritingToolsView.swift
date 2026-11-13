@@ -38,7 +38,7 @@ struct WritingToolbar: View {
                             ForEach((0...MarkdownTool.allCases.count).reversed(),id:\.self) { count in
                                 markdownControls(markdownFile,visibleCount:count)
                             }
-                        }
+                        }.frame(maxWidth:.infinity,alignment:.leading)
                     }
                 }.buttonStyle(.borderless).font(.system(size:14)).controlSize(.regular)
             } else if showsControls {
@@ -90,7 +90,7 @@ struct WritingToolbar: View {
 
     private func markdownControls(_ note:MarkdownNote,visibleCount:Int) -> some View {
         let visible = MarkdownTool.allCases.prefix(visibleCount)
-        return HStack(spacing:8) {
+        return MarkdownToolbarRow {
             ForEach(visible,id:\.self) { command in
                 markdownTool(command,note:note)
             }
@@ -102,7 +102,7 @@ struct WritingToolbar: View {
                 editingCommands
             } label: { Image(systemName:"ellipsis.circle") }
                 .help("更多编辑").accessibilityLabel("更多编辑")
-        }.fixedSize(horizontal:true,vertical:false)
+        }
     }
 
     @ViewBuilder private func markdownTool(_ command:MarkdownTool,note:MarkdownNote) -> some View {
@@ -200,6 +200,34 @@ struct WritingToolbar: View {
         Button(action:action) { Image(systemName:symbol) }.help(name).accessibilityLabel(name)
     }
 }
+/// Advertise the compact width to ViewThatFits, then distribute the chosen buttons in the offered space.
+struct MarkdownToolbarRow: Layout {
+    static let minimumSpacing: CGFloat = 8
+
+    static func spacing(width: CGFloat, itemWidths: [CGFloat]) -> CGFloat {
+        guard itemWidths.count > 1 else { return 0 }
+        return max(minimumSpacing,(width-itemWidths.reduce(0,+))/CGFloat(itemWidths.count-1))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let minimum = sizes.map(\.width).reduce(0,+) + Self.minimumSpacing*CGFloat(max(0,sizes.count-1))
+        let offered = proposal.width ?? minimum
+        return CGSize(width:offered.isFinite ? max(minimum,offered) : minimum,
+                      height:sizes.map(\.height).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let widths = subviews.map { $0.sizeThatFits(.unspecified).width }
+        let spacing = Self.spacing(width:bounds.width,itemWidths:widths)
+        var x = widths.count == 1 ? bounds.maxX-(widths.first ?? 0) : bounds.minX
+        for (view,width) in zip(subviews,widths) {
+            view.place(at:CGPoint(x:x,y:bounds.midY),anchor:.leading,proposal:.unspecified)
+            x += width+spacing
+        }
+    }
+}
+
 struct WritingCleanupView: View {
     @ObservedObject var session:WritingSession
     @Environment(\.dismiss) private var dismiss

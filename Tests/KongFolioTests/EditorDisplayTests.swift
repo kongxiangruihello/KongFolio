@@ -80,6 +80,14 @@ final class EditorDisplayTests: XCTestCase {
         store.openReadingDesk(.search,window:true)
         XCTAssertNotNil(store.readingDeskWindowRequest);XCTAssertFalse(store.showReadingDesk)
     }
+    func testMarkdownToolbarDistributesExtraWidthWithoutCompressingButtons() {
+        let widths: [CGFloat] = [24,42,30,28]
+        XCTAssertEqual(MarkdownToolbarRow.spacing(width:484,itemWidths:widths),120)
+        XCTAssertEqual(MarkdownToolbarRow.spacing(width:148,itemWidths:widths),8)
+        XCTAssertEqual(MarkdownToolbarRow.spacing(width:110,itemWidths:widths),8)
+        XCTAssertEqual(MarkdownToolbarRow.spacing(width:160,itemWidths:[28]),0)
+    }
+
     func testToolbarLeavesRoomForAlwaysVisiblePanelSelector() {
         for width in stride(from:320.0,through:1600,by:5) {
             XCTAssertTrue(Double(SingleRowToolbarPolicy.visibleCount(width:width))*36+198<=width)
