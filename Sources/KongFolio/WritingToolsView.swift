@@ -28,6 +28,7 @@ struct WritingToolbar: View {
     var previewControl: AnyView? = nil
     var saveDocument: (() -> Void)? = nil
     var showDocumentDisplay: (() -> Void)? = nil
+    @State private var showSyntaxReference = false
     @State private var showFind = false
     @State private var showCleanup = false
     @State private var showReplacePreview = false
@@ -84,6 +85,9 @@ struct WritingToolbar: View {
         }
         .onChange(of:session.findRequest) { _,_ in session.beginFind();showFind = true }
         .onChange(of:session.cleanupRequest) { _,_ in showCleanup = true }
+        .sheet(isPresented:$showSyntaxReference) {
+            if let textFile { SyntaxReferenceView(format:textFile.format) }
+        }
         .sheet(isPresented:$showReplacePreview) { EditorReplaceView(session:session) }
         .sheet(isPresented:$showCleanup) { WritingCleanupView(session:session,allowsMarkdownQuote:textFile == nil || textFile?.format == .markdown) }
     }
@@ -108,7 +112,7 @@ struct WritingToolbar: View {
         case undo = "撤销", redo = "重做"
         case paragraphs = "段落", cleanup = "整理粘贴…"
         case pdf = "导出 PDF…", word = "导出 Word…"
-        case image = "插入图片…", table = "插入表格"
+        case image = "插入图片…", table = "插入表格", syntax = "语法手册"
 
         var symbol: String {
             switch self {
@@ -122,13 +126,14 @@ struct WritingToolbar: View {
             case .word: return "doc.text"
             case .image: return "photo"
             case .table: return "tablecells"
+            case .syntax: return "book"
             }
         }
     }
 
     private func textTools(for format:TextDocumentFormat) -> [TextFileTool] {
         let common: [TextFileTool] = [.find,.replace,.undo,.redo,.paragraphs,.cleanup]
-        return common + (format == .html ? [.image,.table] : []) + [.pdf,.word]
+        return common + (format == .html ? [.image,.table,.syntax] : []) + [.pdf,.word]
     }
 
     private func textControls(_ note:MarkdownNote,commands:[TextFileTool],visibleCount:Int) -> some View {
@@ -174,13 +179,14 @@ struct WritingToolbar: View {
         case .word: note.exportWord()
         case .image: note.chooseImage()
         case .table: note.insertTable()
+        case .syntax: showSyntaxReference = true
         case .paragraphs: break
         }
     }
 
     // Keep frequently used commands visible first. Every remaining command stays in the menu.
     private enum MarkdownTool: CaseIterable, Hashable {
-        case find, headings, bold, italic, quote, list, taskList, outline, insert, link, image, table, code
+        case find, headings, bold, italic, quote, list, taskList, outline, insert, link, image, table, code, syntax
     }
 
     private func markdownControls(_ note:MarkdownNote,visibleCount:Int) -> some View {
@@ -220,6 +226,7 @@ struct WritingToolbar: View {
         case .table: tool("表格","tablecells") { note.insertTable() }
         case .taskList: tool("任务列表","checklist") { session.prefix("- [ ] ") }
         case .code: tool("行内代码","chevron.left.forwardslash.chevron.right") { insertCode() }
+        case .syntax: tool("语法手册","book") { showSyntaxReference = true }
         }
     }
 
@@ -238,6 +245,7 @@ struct WritingToolbar: View {
         case .table: Button("表格") { note.insertTable() }
         case .taskList: Button("任务列表") { session.prefix("- [ ] ") }
         case .code: Button("行内代码",action:insertCode)
+        case .syntax: Button("语法手册") { showSyntaxReference = true }
         }
     }
 
