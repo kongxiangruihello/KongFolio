@@ -15,6 +15,39 @@ struct ReadingExportSnapshot: Codable, Equatable {
 }
 enum ReadingRecordExport {
     enum Format:String,CaseIterable,Codable { case word = "Word", markdown = "Markdown", pdf = "PDF"; var ext:String { self == .word ? "docx" : (self == .markdown ? "md" : "pdf") } }
+    private static let inlineSourceLink = try! NSRegularExpression(
+        pattern:#"\[返回原文\]\((?:<kongfolio://source\?ref=[A-Za-z0-9%+/=]+>|kongfolio://source\?ref=[A-Za-z0-9%+/=]+)\)"#
+    )
+    private static let sourceURLPattern = try! NSRegularExpression(pattern:#"kongfolio://source\?ref=[A-Za-z0-9%+/=]+"#)
+
+    static func exportedNote(_ text: String, sources: Bool, citations: [InlineNoteCitation] = [], portablePaths: [String:String]? = nil) -> String {
+        if sources {
+            var updated = text
+            for entry in citations {
+                let old = entry.link
+                let source = entry.citation.source
+                let relative = portablePaths?[source.path].map { $0+"#page="+String(source.page+1) }
+                let replacement = relative ?? SourceLink.url(source)?.absoluteString
+                if let replacement, source.invalidPage053 != true {
+                    updated = updated.replacingOccurrences(of:"(<"+old+">)",with:"(<"+replacement+">)")
+                    updated = updated.replacingOccurrences(of:"("+old+")",with:"(<"+replacement+">)")
+                } else {
+                    updated = updated.replacingOccurrences(of:"[返回原文](<"+old+">)",with:"")
+                    updated = updated.replacingOccurrences(of:"[返回原文]("+old+")",with:"")
+                }
+            }
+            return updated
+        }
+        return text.components(separatedBy:"\n").compactMap { line in
+            let range = NSRange(location:0,length:line.utf16.count)
+            if line.hasPrefix("> "), inlineSourceLink.firstMatch(in:line,range:range).map({ NSMaxRange($0.range) == range.length }) == true {
+                return nil
+            }
+            let withoutLinks = inlineSourceLink.stringByReplacingMatches(in:line,range:range,withTemplate:"")
+            return sourceURLPattern.stringByReplacingMatches(in:withoutLinks,range:NSRange(location:0,length:withoutLinks.utf16.count),withTemplate:"")
+        }.joined(separator:"\n")
+    }
+
     static func rich(_ snapshot:ReadingExportSnapshot, assets:URL,wordFootnotes:Bool = false) throws -> RichTextDocument {
         let preferences = snapshot.options ?? ReadingExportOptions()
         guard preferences.valid else { throw FolioError(message:"导出设置无效，请检查字体、字号和内容选项") }
@@ -30,7 +63,7 @@ enum ReadingRecordExport {
         func extraContent053(_ extras:ReadingRecordExtras053?) throws {
             guard let extras else { return }
             if preferences.includeQuote {
-                for q in extras.quotations ?? [] { paragraph("引用副本："+q.title,heading:3);paragraph(q.text);for asset in Set(q.assets ?? []).sorted() { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(asset)),alt:"引用图片副本")) };if let created=q.originalCreated { paragraph("原记录创建："+ReadingRecordMetadata.date(created)) };paragraph("引用时间："+ReadingRecordMetadata.date(q.captured)) }
+                for q in extras.quotations ?? [] { paragraph("引用副本："+q.title,heading:3);paragraph(exportedNote(q.text,sources:preferences.includeSources));for asset in Set(q.assets ?? []).sorted() { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(asset)),alt:"引用图片副本")) };if let created=q.originalCreated { paragraph("原记录创建："+ReadingRecordMetadata.date(created)) };paragraph("引用时间："+ReadingRecordMetadata.date(q.captured)) }
                 for region in extras.regions ?? [] { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(region.asset)),alt:"来源区域")) }
             }
             if preferences.includeQuote,preferences.includeRegionImages==true,let name=extras.visualAsset { blocks.append(.image(try Data(contentsOf:assets.appendingPathComponent(name)),alt:"标注快照")) }
@@ -97,7 +130,7 @@ enum ReadingRecordExport {
                     if !record.note.isEmpty {
                         if let heading = preferences.noteHeading { paragraph(heading,heading:3) }
                         else if record.kind != .note { paragraph("我的笔记：") }
-                        try writingParagraph(record.note)
+                        try writingParagraph(exportedNote(record.note,sources:preferences.includeSources,citations:record.inlineNoteCitations ?? [],portablePaths:preferences.sourceLinks))
                     }
                 case "sources":
                     guard preferences.includeSources else { break }
@@ -130,10 +163,10 @@ enum ReadingRecordExport {
                     }
                 }
                 for line in ReadingRecordMetadata.essayLines(essay) { paragraph(line) }
-                for block in essay.blocks { try Task.checkCancellation();if let ref = block.record { try record(ref,heading:false) };if preferences.includeNote { try writingParagraph(block.text) } }
+                for block in essay.blocks { try Task.checkCancellation();if let ref = block.record { try record(ref,heading:false) };if preferences.includeNote { try writingParagraph(exportedNote(block.text,sources:preferences.includeSources)) } }
             }
         }
-        if preferences.bibliography053==true { paragraph("参考文献",heading:1);for line in ReadingWorkflow053.bibliography(snapshot.orderedItems.map { value in switch value {case .record(let r):return ReadingLibraryItem.record(r);case .essay(let e):return ReadingLibraryItem.essay(e)} }) { paragraph(line) } }
+        if preferences.includeSources, preferences.bibliography053==true { paragraph("参考文献",heading:1);for line in ReadingWorkflow053.bibliography(snapshot.orderedItems.map { value in switch value {case .record(let r):return ReadingLibraryItem.record(r);case .essay(let e):return ReadingLibraryItem.essay(e)} }) { paragraph(line) } }
         if !sourceIndex.entries.isEmpty {
             paragraph("出处索引",heading:1)
             for entry in sourceIndex.entries { linkedParagraph(entry.label+"　"+entry.detail,citation:entry.citation) }
@@ -152,7 +185,7 @@ enum ReadingRecordExport {
         var citationFormat053=ReadingCitationFormat053()
         func extras053(_ extras:ReadingRecordExtras053?) {
             guard let extras,preferences.includeQuote else { return }
-            for q in extras.quotations ?? [] { for asset in Set(q.assets ?? []).sorted() { lines += ["![引用图片副本](<"+imageFolder+"/"+asset+">)",""] };lines += ["### 引用副本："+literal(q.title),"",q.text,""]+["引用时间："+ReadingRecordMetadata.date(q.captured),""] }
+            for q in extras.quotations ?? [] { for asset in Set(q.assets ?? []).sorted() { lines += ["![引用图片副本](<"+imageFolder+"/"+asset+">)",""] };lines += ["### 引用副本："+literal(q.title),"",exportedNote(q.text,sources:preferences.includeSources),""]+["引用时间："+ReadingRecordMetadata.date(q.captured),""] }
             for region in extras.regions ?? [] { lines += ["![来源区域](<"+imageFolder+"/"+region.asset+">)",""] }
             if preferences.includeQuote,preferences.includeRegionImages==true,let name=extras.visualAsset { lines += ["![标注快照](<"+imageFolder+"/"+name+">)",""] }
         }
@@ -200,7 +233,7 @@ enum ReadingRecordExport {
                     if !ref.note.isEmpty {
                         if let heading = preferences.noteHeading { lines += ["### "+literal(heading),""] }
                         else if ref.kind != .note { lines += ["我的笔记：",""] }
-                        lines += [ref.note,""]
+                        lines += [exportedNote(ref.note,sources:preferences.includeSources,citations:ref.inlineNoteCitations ?? [],portablePaths:preferences.sourceLinks),""]
                     }
                 case "sources":
                     guard preferences.includeSources else { break }
@@ -234,11 +267,11 @@ enum ReadingRecordExport {
                 lines += ReadingRecordMetadata.essayLines(essay).map(literal)
                 for block in essay.blocks {
                     if let ref = block.record { record(ref,heading:false) }
-                    if preferences.includeNote { lines += [block.text,""] }
+                    if preferences.includeNote { lines += [exportedNote(block.text,sources:preferences.includeSources),""] }
                 }
             }
         }
-        if preferences.bibliography053==true { lines += ["## 参考文献",""]+ReadingWorkflow053.bibliography(snapshot.orderedItems.map { value in switch value {case .record(let r):return ReadingLibraryItem.record(r);case .essay(let e):return ReadingLibraryItem.essay(e)} }) }
+        if preferences.includeSources, preferences.bibliography053==true { lines += ["## 参考文献",""]+ReadingWorkflow053.bibliography(snapshot.orderedItems.map { value in switch value {case .record(let r):return ReadingLibraryItem.record(r);case .essay(let e):return ReadingLibraryItem.essay(e)} }) }
         if !sourceIndex.entries.isEmpty {
             lines += ["","## 出处索引",""]
             for entry in sourceIndex.entries {

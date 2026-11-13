@@ -83,7 +83,10 @@ extension Workspace {
                 guard importGeneration == generation,!worker.isCancelled else { return }
                 isImporting = false;busy = false;cancelAuxiliary = nil
                 store?.recordActivity("载入已解析的文档")
+                let started = ProcessInfo.processInfo.systemUptime
                 load(urls,insert:insert,prepared:payload,reading:reading)
+                let duration = ProcessInfo.processInfo.systemUptime - started
+                store?.recordActivity("完成界面文档载入",elapsedMilliseconds:Int(duration * 1_000))
                 if !insert {
                     let failure = count == 0 ? error.map{FolioError(message:$0)} : nil
                     store?.recordBatchLoad(self,error:failure)

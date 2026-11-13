@@ -14,18 +14,19 @@ enum ReadingNoteCitationInsertion {
 }
 
 extension WorkspaceStore {
-    private var currentCitationNote: ReadingRecord? {
+    var citationNoteTarget: ReadingRecord? {
         guard !journal.unreadable else { return nil }
         let current = showReadingDesk && readingDeskSection == .notes ? readingRecordID : nil
-        return [pinnedReadingID,current,lastRightPanelNoteID].compactMap { journal.record($0) }
+        return [pinnedReadingID,current].compactMap { journal.record($0) }
             .first { $0.kind == .note && $0.removed == nil }
     }
 
-    var canInsertPDFSelectionInNote: Bool { currentCitationNote != nil }
+    var canInsertPDFSelectionInNote: Bool { citationNoteTarget != nil }
 
     @discardableResult
-    func insertPDFSelectionInNote(from workspace:Workspace,selection:PDFSelection) -> Bool {
-        guard let note = currentCitationNote,
+    func insertPDFSelectionInNote(from workspace:Workspace,selection:PDFSelection,expectedNoteID:UUID? = nil) -> Bool {
+        guard let note = citationNoteTarget,
+              expectedNoteID == nil || expectedNoteID == note.id,
               let excerpt = workspace.readingExcerpt(from:selection) else { return false }
         let identity = "note:"+note.id.uuidString
         let text = ReadingNoteCitationInsertion.markdown(excerpt)

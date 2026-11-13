@@ -345,6 +345,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             format.copy(capture,defaults:workspace.readingDefaults)
             self?.hideSelectionToolbar()
         }
+        let noteTarget = workspace.store?.citationNoteTarget
         let toolbar = PDFSelectionActions(
             editable: !workspace.readingLocked, compact: bounds.width < 340,
             excerpt: { [weak self, weak workspace] in
@@ -360,10 +361,11 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
                 }
                 self?.hideSelectionToolbar()
             },
-            insertInNote: workspace.store?.canInsertPDFSelectionInNote == true ? { [weak self, weak workspace] in
+            insertInNote: noteTarget != nil ? { [weak self, weak workspace] in
                 guard let workspace else { return }
-                if workspace.store?.insertPDFSelectionInNote(from:workspace,selection:selected) == true { self?.hideSelectionToolbar() }
+                if workspace.store?.insertPDFSelectionInNote(from:workspace,selection:selected,expectedNoteID:noteTarget?.id) == true { self?.hideSelectionToolbar() }
             } : nil,
+            noteTargetTitle:noteTarget?.displayTitle,
             copy: { [weak workspace] in copySelection(.preferred(workspace?.readingDefaults ?? .standard)) },
             copyAs:copySelection,
             openExisting:match.map { record in { [weak self, weak workspace] in

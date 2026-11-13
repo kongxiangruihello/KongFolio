@@ -338,7 +338,8 @@ extension Workspace {
 
     func startSearch(resuming previous: PDFSearchResume? = nil) {
         searchResume = nil
-        searchTask?.cancel();searchTask=nil;searchResults=[];searchMessage="";searchCursor=nil
+        resetPDFSearch()
+        let generation = searchGeneration
         guard !search.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,count>0 else { return }
         let query=search,version=revision;searchMessage="正在搜索…"
         if previous == nil { rememberHomePDFSearch(query:query) }
@@ -355,17 +356,35 @@ extension Workspace {
         Task { [weak self] in
             do {
                 let hits=try await job.value
-                guard !job.isCancelled,let self,self.revision==version,self.search==query else { return }
-                self.searchResults=hits;self.searchTask=nil
+                guard let self,self.searchGeneration == generation else { return }
+                self.searchTask = nil
+                guard !job.isCancelled,self.revision == version,self.search == query else {
+                    self.searchMessage = ""
+                    return
+                }
+                self.searchResults = hits
                 if let previous, let page = previous.page {
                     self.searchCursor = hits.firstIndex { $0.page == page && $0.range == previous.range && $0.strips == previous.strips }
                     if previous.revealMatch, let index = self.searchCursor { self.goToSearch(hits[index],remember:false) }
                 }
                 self.searchMessage=hits.isEmpty ? "没有找到匹配文字。扫描件需先识别文字；请在快捷工具中使用 OCR。" : (hits.count==1000 ? "显示前 1000 处匹配，请缩小范围":"找到 \(hits.count) 处匹配；点击结果跳到原页")
-            } catch { guard !job.isCancelled,let self,self.revision==version,self.search==query else { return };self.searchTask=nil;if !FolioCancellation.matches(error) { self.searchMessage=error.localizedDescription } }
+            } catch {
+                guard let self, self.searchGeneration == generation else { return }
+                self.searchTask = nil
+                self.searchMessage = FolioCancellation.matches(error) ? "" : error.localizedDescription
+            }
         }
     }
-    func cancelSearch053() { searchTask?.cancel();searchTask=nil;searchMessage="已停止搜索" }
+    func resetPDFSearch(message: String = "") {
+        searchGeneration = UUID()
+        searchTask?.cancel()
+        searchTask = nil
+        searchResults = []
+        searchCursor = nil
+        searchMessage = message
+    }
+
+    func cancelSearch053() { resetPDFSearch(message:"已停止搜索") }
     func goToSearch(_ hit: SearchHit, remember: Bool = true) {
         searchCursor = searchResults.firstIndex { $0.id == hit.id }
         if remember, let index = searchCursor {

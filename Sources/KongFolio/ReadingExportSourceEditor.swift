@@ -2,38 +2,77 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ReadingExportSourceTarget: Equatable {
+    enum Location: Equatable {
+        case direct
+        case region(UUID)
+        case quotation(UUID)
+    }
+
     let item: ReadingLibraryID
     let block: UUID?
     let index: Int
+    var location: Location = .direct
 
-    @MainActor func record(in journal:ReadingJournal) -> ReadingRecord? {
-        switch journal.libraryItem053(item) {
-        case .record(let record): return record
-        case .essay(let essay): return essay.blocks.first{$0.id == block}?.record
-        case nil: return nil
+    @MainActor func citations(in journal: ReadingJournal) -> [ReadingCitation]? {
+        guard let item = journal.libraryItem053(item) else { return nil }
+        switch item {
+        case .record(let record):
+            return sources(record:record,extras:record.extras)
+        case .essay(let essay):
+            if let block {
+                guard let record = essay.blocks.first(where:{ $0.id == block })?.record else { return nil }
+                return sources(record:record,extras:record.extras)
+            }
+            return sources(record:nil,extras:essay.extras)
         }
     }
 
-    @MainActor func apply(_ citation:ReadingCitation,replacing expected:ReadingCitation?,in journal:ReadingJournal) throws {
-        guard !journal.unreadable, let record = record(in:journal),
-              record.citations.indices.contains(index) ? record.citations[index] == expected : index == record.citations.count && expected == nil else {
+    private func sources(record: ReadingRecord?, extras: ReadingRecordExtras053?) -> [ReadingCitation]? {
+        switch location {
+        case .direct: return record?.citations
+        case .region(let id): return extras?.regions?.first { $0.id == id }.map { [$0.citation] }
+        case .quotation(let id): return extras?.quotations?.first { $0.id == id }?.citations
+        }
+    }
+
+    @MainActor func apply(_ citation: ReadingCitation,replacing expected: ReadingCitation?,in journal: ReadingJournal) throws {
+        guard !journal.unreadable, let current = citations(in:journal),
+              current.indices.contains(index) ? current[index] == expected : index == current.count && expected == nil else {
             throw FolioError(message:"这条出处已改变，请回到核对列表重新打开")
         }
-        func update(_ record:inout ReadingRecord) {
-            if record.citations.indices.contains(index) {
-                let previous = record.citations[index]
-                record.citations[index] = citation
-                record.replaceInlineCitation(previous,with:citation)
+        func update(_ sources: inout [ReadingCitation]) {
+            if sources.indices.contains(index) { sources[index] = citation }
+            else { sources.append(citation) }
+        }
+        func updateExtras(_ extras: inout ReadingRecordExtras053?) {
+            switch location {
+            case .direct: break
+            case .region(let id):
+                if let i = extras?.regions?.firstIndex(where:{ $0.id == id }) { extras?.regions?[i].citation = citation }
+            case .quotation(let id):
+                if let i = extras?.quotations?.firstIndex(where:{ $0.id == id }) {
+                    var sources = current
+                    update(&sources)
+                    extras?.quotations?[i].citations = sources
+                }
             }
-            else { record.citations.append(citation) }
+        }
+        func updateRecord(_ record: inout ReadingRecord) {
+            if location == .direct {
+                update(&record.citations)
+                if let expected { record.replaceInlineCitation(expected,with:citation) }
+            } else { updateExtras(&record.extras) }
         }
         switch item {
-        case .record(let id): journal.editRecord(id,update)
+        case .record(let id): journal.editRecord(id,updateRecord)
         case .essay(let id):
             journal.editEssay(id) { essay in
-                guard let i = essay.blocks.firstIndex(where:{$0.id == block}),var copy = essay.blocks[i].record else { return }
-                update(&copy)
-                essay.blocks[i].record = copy
+                if let block, let i = essay.blocks.firstIndex(where:{ $0.id == block }), var record = essay.blocks[i].record {
+                    updateRecord(&record)
+                    essay.blocks[i].record = record
+                } else if block == nil {
+                    updateExtras(&essay.extras)
+                }
             }
         }
     }
@@ -95,7 +134,7 @@ struct ReadingExportSourceEditor: View {
             }
         }.padding(22).adaptiveSheet(width:550,height:370,minimumWidth:360)
             .onAppear {
-                let citations = target.record(in:journal)?.citations ?? []
+                let citations = target.citations(in:journal) ?? []
                 if citations.indices.contains(target.index) {
                     original = citations[target.index]
                     draft = citations[target.index]

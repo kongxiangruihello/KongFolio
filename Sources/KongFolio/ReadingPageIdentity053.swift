@@ -11,38 +11,36 @@ extension Workspace {
         let value=UUID().uuidString;pageMeta[i].readingID053=value;return value
     }
     func preparePageIdentities053() {
-        guard let path=readingJournalPath,let journal=store?.journal else { return }
-        for i in 0..<count { _=pageIdentity053(i) }
-        let ids=readingPageIDs053,old=journal.state
-        var next=old
-        for i in next.records.indices {
-            for j in next.records[i].citations.indices where ReadingBookIdentity.key(next.records[i].citations[j].source.path)==ReadingBookIdentity.key(path) {
-                let original=next.records[i].citations[j]
-                var c=original
-                guard c.source.invalidPage053 != true,let id=ids[c.source.page] else { continue }
-                if c.tracking==nil { c.tracking=ReadingSourceIdentity053(documentID:ReadingJournal.stablePDFRecordID(path),capturedPage:c.source.page,pageFingerprint:id,capturedPageLabel:c.source.pageLabel) }
-                else if c.tracking?.pageFingerprint==nil || c.tracking?.pageFingerprint==c.source.fingerprint { c.tracking?.pageFingerprint=id }
-                next.records[i].citations[j]=c
-                next.records[i].replaceInlineCitation(original,with:c)
+        guard let path = readingJournalPath, let journal = store?.journal else { return }
+        for i in 0..<count { _ = pageIdentity053(i) }
+        let ids = readingPageIDs053, key = ReadingBookIdentity.key(path)
+        journal.updateSourceLocations { citation in
+            guard ReadingBookIdentity.key(citation.source.path) == key, citation.source.invalidPage053 != true,
+                  let id = ids[citation.source.page] else { return }
+            if citation.tracking == nil {
+                citation.tracking = ReadingSourceIdentity053(documentID:ReadingJournal.stablePDFRecordID(path),capturedPage:citation.source.page,
+                                                              pageFingerprint:id,capturedPageLabel:citation.source.pageLabel)
+            } else if citation.tracking?.pageFingerprint == nil || citation.tracking?.pageFingerprint == citation.source.fingerprint {
+                citation.tracking?.pageFingerprint = id
             }
         }
-        if next != old { journal.change{$0=next} }
     }
+
     func reconcilePageIdentities053() {
-        guard let path=readingJournalPath,let journal=store?.journal else { return }
-        let ids=readingPageIDs053,old=journal.state
-        var next=old
-        for i in next.records.indices {
-            for j in next.records[i].citations.indices where ReadingBookIdentity.key(next.records[i].citations[j].source.path)==ReadingBookIdentity.key(path) {
-                let original=next.records[i].citations[j]
-                var c=original
-                guard let fingerprint=c.tracking?.pageFingerprint else { continue }
-                if let index=ids.keys.sorted().first(where:{ids[$0]==fingerprint}) { c.source.page=index;c.source.invalidPage053=nil;c.tracking?.needsReview=nil }
-                else { c.source.invalidPage053=true;c.tracking?.needsReview=true }
-                next.records[i].citations[j]=c
-                next.records[i].replaceInlineCitation(original,with:c)
+        guard let path = readingJournalPath, let journal = store?.journal else { return }
+        let ids = readingPageIDs053
+        let positions = Dictionary(ids.map { ($0.value,$0.key) },uniquingKeysWith:min)
+        let key = ReadingBookIdentity.key(path)
+        journal.updateSourceLocations { citation in
+            guard ReadingBookIdentity.key(citation.source.path) == key, let fingerprint = citation.tracking?.pageFingerprint else { return }
+            if let page = positions[fingerprint] {
+                citation.source.page = page
+                citation.source.invalidPage053 = nil
+                citation.tracking?.needsReview = nil
+            } else {
+                citation.source.invalidPage053 = true
+                citation.tracking?.needsReview = true
             }
         }
-        if next != old { journal.change{$0=next} }
     }
 }

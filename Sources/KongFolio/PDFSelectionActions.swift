@@ -6,6 +6,7 @@ struct PDFSelectionActions: View {
     let excerpt: () -> Void
     let note: () -> Void
     var insertInNote: (() -> Void)? = nil
+    var noteTargetTitle: String? = nil
     let copy: () -> Void
     var copyAs: ((ReadingExcerptCopyFormat) -> Void)? = nil
     var openExisting: (() -> Void)? = nil
@@ -22,7 +23,7 @@ struct PDFSelectionActions: View {
             }
             action("写笔记", icon: "square.and.pencil", help: "针对所选原文写笔记", perform: note)
             if let insertInNote {
-                action("加入当前笔记",icon:"text.append",help:"将所选原文、书名、页码和返回链接加入当前笔记",perform:insertInNote)
+                action("加入当前笔记",icon:"text.append",help:noteTargetTitle.map { "加入《" + $0 + "》" } ?? "加入当前笔记",perform:insertInNote)
             }
             action("复制",icon:"doc.on.doc",help:"按上次选择的格式复制",perform:copy)
             if let copyAs {

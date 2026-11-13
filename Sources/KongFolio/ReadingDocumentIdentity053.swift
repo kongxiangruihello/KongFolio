@@ -46,34 +46,74 @@ actor ReadingIdentityWriter053 {
     static let shared=ReadingIdentityWriter053()
     func write(_ entries:[ReadingDocumentIdentity053],to file:URL)throws { try JSONEncoder().encode(entries).write(to:file,options:.atomic) }
 }
-extension ReadingJournal {
-    func adoptDocument053(_ identity:ReadingDocumentIdentity053,path:String) {
-        let old=state
-        var next=old
-        for i in next.records.indices { for j in next.records[i].citations.indices {
-            var c=next.records[i].citations[j]
-            guard c.tracking?.documentID==identity.id || identity.paths.contains(ReadingBookIdentity.key(c.source.path)) else { continue }
-            if c.tracking==nil { c.tracking=ReadingSourceIdentity053(documentID:identity.id,capturedPage:c.source.page,pageFingerprint:nil,capturedPageLabel:c.source.pageLabel) }
-            else { c.tracking?.documentID=identity.id }
-            c.source.path=path;c.source.fileName=URL(fileURLWithPath:path).lastPathComponent
-            next.records[i].citations[j]=c
-        } }
-        if next != old { change{$0=next} }
+extension ReadingRecordExtras053 {
+    mutating func updateSourceLocations(_ update: (inout ReadingCitation) -> Void) {
+        if var regions {
+            for index in regions.indices { update(&regions[index].citation) }
+            self.regions = regions
+        }
+        if var quotations {
+            for index in quotations.indices {
+                for source in quotations[index].citations.indices { update(&quotations[index].citations[source]) }
+            }
+            self.quotations = quotations
+        }
     }
-    func remapSources053(path:String,order:[Int]) {
+}
+
+extension ReadingJournal {
+    func updateSourceLocations(_ update: (inout ReadingCitation) -> Void) {
         guard !unreadable else { return }
-        let before=state
-        change { s in
-            for i in s.records.indices {
-                var changed=false
-                for j in s.records[i].citations.indices where ReadingBookIdentity.key(s.records[i].citations[j].source.path)==ReadingBookIdentity.key(path) {
-                    var c=s.records[i].citations[j]
-                    if c.tracking==nil { c.tracking=ReadingSourceIdentity053(documentID:ReadingJournal.stablePDFRecordID(path),capturedPage:c.source.page,pageFingerprint:c.source.fingerprint,capturedPageLabel:c.source.pageLabel) }
-                    if let next=order.firstIndex(of:c.source.page) { c.source.page=next;c.source.invalidPage053=nil;c.tracking?.needsReview=nil }
-                    else { c.source.invalidPage053=true;c.tracking?.needsReview=true }
-                    if c != s.records[i].citations[j] { s.records[i].citations[j]=c;changed=true }
+        func updateRecord(_ record: inout ReadingRecord) {
+            for index in record.citations.indices { update(&record.citations[index]) }
+            if var links = record.inlineNoteCitations {
+                for index in links.indices { update(&links[index].citation) }
+                record.inlineNoteCitations = links
+            }
+            record.extras?.updateSourceLocations(update)
+        }
+        var next = state
+        for index in next.records.indices { updateRecord(&next.records[index]) }
+        for index in next.essays.indices {
+            next.essays[index].extras?.updateSourceLocations(update)
+            for block in next.essays[index].blocks.indices {
+                if var record = next.essays[index].blocks[block].record {
+                    updateRecord(&record)
+                    next.essays[index].blocks[block].record = record
                 }
-                if changed { s.records[i].modified=Date() }
+            }
+        }
+        if next != state { change { $0 = next } }
+    }
+
+    func adoptDocument053(_ identity: ReadingDocumentIdentity053, path: String) {
+        updateSourceLocations { citation in
+            guard citation.tracking?.documentID == identity.id || identity.paths.contains(ReadingBookIdentity.key(citation.source.path)) else { return }
+            if citation.tracking == nil {
+                citation.tracking = ReadingSourceIdentity053(documentID:identity.id,capturedPage:citation.source.page,pageFingerprint:nil,capturedPageLabel:citation.source.pageLabel)
+            } else { citation.tracking?.documentID = identity.id }
+            citation.source.path = path
+            citation.source.fileName = URL(fileURLWithPath:path).lastPathComponent
+        }
+    }
+
+    func remapSources053(path: String, order: [Int]) {
+        let before = state
+        let key = ReadingBookIdentity.key(path)
+        let newPositions = Dictionary(order.enumerated().map { ($0.element,$0.offset) },uniquingKeysWith:min)
+        updateSourceLocations { citation in
+            guard ReadingBookIdentity.key(citation.source.path) == key, citation.source.invalidPage053 != true else { return }
+            if citation.tracking == nil {
+                citation.tracking = ReadingSourceIdentity053(documentID:Self.stablePDFRecordID(path),capturedPage:citation.source.page,
+                                                              pageFingerprint:citation.source.fingerprint,capturedPageLabel:citation.source.pageLabel)
+            }
+            if let page = newPositions[citation.source.page] {
+                citation.source.page = page
+                citation.source.invalidPage053 = nil
+                citation.tracking?.needsReview = nil
+            } else {
+                citation.source.invalidPage053 = true
+                citation.tracking?.needsReview = true
             }
         }
         if before != state { finishBulk(before,"页面变动后的出处校准") }

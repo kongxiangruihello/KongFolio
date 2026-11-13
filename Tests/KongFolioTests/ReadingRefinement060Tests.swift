@@ -26,6 +26,97 @@ final class ReadingRefinement060Tests: XCTestCase {
         XCTAssertEqual(store.writingSearchHit?.range.location,updated.note.utf16.count)
     }
 
+    @MainActor func testReorderedPDFCitationSurvivesWritingUndoAndExport() async throws {
+        let root = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at:root) }
+        let file = try PDFTextSnapshot053Tests().fixture(root)
+        let store = WorkspaceStore(storage:root)
+        store.bootstrap()
+        let workspace = try XCTUnwrap(store.activeWorkspace)
+        workspace.load([file],prepared:.documents([try Data(contentsOf:file)]))
+        let selection = try XCTUnwrap(workspace.document.findString("FindPage2Only").first)
+        let note = ReadingRecord(kind:.note,note:"已有正文")
+        store.journal.add(note)
+        store.showReadingPanel(.notes,noteID:note.id)
+        XCTAssertTrue(store.insertPDFSelectionInNote(from:workspace,selection:selection))
+        workspace.checkpoint()
+        workspace.rebuild(order:[1,0],selected:[0])
+        store.journal.editRecord(note.id) { $0.note += "继续写作" }
+        let updated = try XCTUnwrap(store.journal.record(note.id))
+        XCTAssertEqual(updated.citations.map(\.source.page),[0])
+        XCTAssertEqual(updated.inlineNoteCitations?.map(\.citation.source.page),[0])
+
+        let exported = ReadingRecordExport.exportedNote(updated.note,sources:true,citations:updated.inlineNoteCitations ?? [])
+        let newLink = try XCTUnwrap(updated.citations.first.flatMap { SourceLink.url($0.source) })
+        XCTAssertTrue(exported.contains(newLink.absoluteString))
+        let oldLink = try XCTUnwrap(updated.inlineNoteCitations?.first?.link)
+        XCTAssertFalse(exported.contains(oldLink))
+        var options = ReadingExportOptions()
+        options.includeSources = false
+        let snapshot = ReadingExportSnapshot(title:"导出",records:[updated],options:options)
+        let markdown = ReadingRecordExport.markdown(snapshot,imageFolder:"Assets")
+        XCTAssertTrue(markdown.contains("FindPage2Only"))
+        XCTAssertTrue(markdown.contains("继续写作"))
+        XCTAssertFalse(markdown.contains("kongfolio://source"))
+        XCTAssertFalse(markdown.contains("返回原文"))
+        workspace.undo()
+        XCTAssertEqual(store.journal.record(note.id)?.citations.map(\.source.page),[1])
+        workspace.redo()
+        XCTAssertEqual(store.journal.record(note.id)?.inlineNoteCitations?.map(\.citation.source.page),[0])
+        try await store.journal.flush()
+    }
+
+    @MainActor func testOutputReviewFindsAndRepairsFrozenQuotationSource() async throws {
+        let root = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at:root) }
+        let missing = ReadingCitation(source:SourceRef(path:root.appendingPathComponent("moved.pdf").path,fileName:"原书.pdf",page:0),title:"原书")
+        let excerpt = ReadingRecord(kind:.excerpt,quote:"引文",citations:[missing])
+        let note = ReadingRecord(kind:.note,note:"正文",extras:ReadingRecordExtras053(quotations:excerpt.frozenExcerptParts))
+        let journal = ReadingJournal(storage:root)
+        journal.add(note)
+        let snapshot = ReadingExportSnapshot(title:"核对",records:[note])
+        let issues = try await ReadingOutputReview.shared.inspect(snapshot,assets:root)
+        let target = try XCTUnwrap(issues.first { $0.message.contains("原文链接失效") }?.source)
+        let pdf = try PDFTextSnapshot053Tests().fixture(root)
+        var repaired = missing
+        repaired.source.path = pdf.path
+        try target.apply(repaired,replacing:missing,in:journal)
+        XCTAssertEqual(journal.record(note.id)?.extras?.quotations?.first?.citations,[repaired])
+        XCTAssertEqual(journal.record(note.id)?.citations,[])
+        try await journal.flush()
+    }
+
+    @MainActor func testHiddenUnpinnedNoteIsNotAnInsertionTarget() throws {
+        let root = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at:root) }
+        let store = WorkspaceStore(storage:root)
+        let note = ReadingRecord(kind:.note,note:"先前的笔记")
+        store.journal.add(note)
+        store.showReadingPanel(.notes,noteID:note.id)
+        XCTAssertEqual(store.citationNoteTarget?.id,note.id)
+        store.closeRightReadingPanel()
+        XCTAssertNil(store.citationNoteTarget)
+        store.pinnedReadingID = note.id
+        XCTAssertEqual(store.citationNoteTarget?.id,note.id)
+    }
+
+    @MainActor func testChangingPDFSearchCancelsOldStatus() async throws {
+        let root = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at:root) }
+        let file = try PDFTextSnapshot053Tests().fixture(root)
+        let workspace = Workspace(storage:root)
+        workspace.load([file],prepared:.documents([try Data(contentsOf:file)]))
+        workspace.search = "旧关键词"
+        workspace.startSearch()
+        workspace.search = "FindPage2Only"
+        XCTAssertNil(workspace.searchTask)
+        XCTAssertEqual(workspace.searchMessage,"")
+        workspace.startSearch()
+        for _ in 0..<100 where workspace.searchTask != nil { try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertNil(workspace.searchTask)
+        XCTAssertEqual(workspace.searchResults.map(\.page),[1])
+    }
+
     @MainActor func testSourceAnchorFindsRecordedPageAndMissingTextKeepsPage() throws {
         let root = try Release027Tests().folder()
         defer { try? FileManager.default.removeItem(at:root) }

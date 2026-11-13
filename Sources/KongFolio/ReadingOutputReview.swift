@@ -14,49 +14,79 @@ actor ReadingOutputReview {
         var result:[ReadingOutputIssue] = [],pages:[String:Int] = [:],digests:[String:String] = [:]
         for item in snapshot.orderedItems {
             try Task.checkCancellation()
-            let target:ReadingLibraryID
-            switch item { case .record(let r):target = .record(r.id);case .essay(let e):target = .essay(e.id) }
-            let targets: [(ReadingRecord,UUID?)]
-            switch item {
-            case .record(let record): targets = [(record,nil)]
-            case .essay(let essay): targets = essay.blocks.compactMap { block in block.record.map{($0,block.id)} }
+            let target = item.libraryID
+            func append(_ message: String, source: ReadingExportSourceTarget? = nil) {
+                result.append(ReadingOutputIssue(id:item.id+":"+String(result.count),item:target,title:item.title,message:message,source:source))
             }
-            for (record,block) in targets {
-                func append(_ message:String,index:Int? = nil) {
-                    let source = index.map{ReadingExportSourceTarget(item:target,block:block,index:$0)}
-                    result.append(ReadingOutputIssue(id:item.id+":"+String(result.count),item:target,title:item.title,message:message,source:source))
+            var inspectedAssets = Set<String>()
+            func inspectAsset(_ name: String) {
+                guard inspectedAssets.insert(name).inserted else { return }
+                let file = assets.appendingPathComponent(name)
+                if name != file.lastPathComponent || name.contains("..") { append("摘录图片路径无效") }
+                else if let data = try? Data(contentsOf:file), SignatureImage.loadData(data) != nil {} else { append("摘录图片缺失或无法读取") }
+            }
+            func inspectSources(_ citations: [ReadingCitation], block: UUID?, location: ReadingExportSourceTarget.Location,
+                                wholeBook: Bool = false, required: Bool = false) throws {
+                guard snapshot.options?.includeSources != false else { return }
+                if citations.isEmpty, required {
+                    append("未填写出处",source:ReadingExportSourceTarget(item:target,block:block,index:0,location:location))
                 }
-                if snapshot.options?.includeQuote != false,let name = record.imageAsset {
-                    let file = assets.appendingPathComponent(name)
-                    if name != file.lastPathComponent || name.contains("..") { append("摘录图片路径无效") }
-                    else if let data = try? Data(contentsOf:file), SignatureImage.loadData(data) != nil {} else { append("摘录图片缺失或无法读取") }
-                }
-                guard snapshot.options?.includeSources != false else { continue }
-                if record.citations.isEmpty, record.kind != .note || record.linkedRecords.count > 0 {
-                    append("未填写出处",index:0)
-                }
-                for (index,citation) in record.citations.enumerated() {
-                    if citation.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { append("出处缺少书名",index:index) }
-                    if (citation.edition ?? "").trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { append("《"+citation.title+"》尚未填写版本",index:index) }
-                    if citation.source.page < 0 || citation.source.invalidPage053 == true {
-                        append("缺少可用的 PDF 页码，请重新核对原页",index:index)
+                for (index,citation) in citations.enumerated() {
+                    try Task.checkCancellation()
+                    func issue(_ message: String) {
+                        append(message,source:ReadingExportSourceTarget(item:target,block:block,index:index,location:location))
                     }
-                    if !record.wholeBook, citation.source.pageLabel?.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty != false { append("《"+citation.title+"》尚未核对印刷页码",index:index) }
+                    if citation.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { issue("出处缺少书名") }
+                    if (citation.edition ?? "").trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { issue("《"+citation.title+"》尚未填写版本") }
+                    if citation.source.page < 0 || citation.source.invalidPage053 == true || citation.tracking?.needsReview == true {
+                        issue("缺少可用的 PDF 页码，请重新核对原页")
+                    }
+                    if !wholeBook, citation.source.pageLabel?.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty != false { issue("《"+citation.title+"》尚未核对印刷页码") }
                     let path = citation.source.path
-                    guard !path.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { append("缺少原文链接",index:index);continue }
-                    guard FileManager.default.fileExists(atPath:path) else { append("《"+citation.title+"》原文链接失效",index:index);continue }
-                    // Never cause an iCloud download in an advisory check.
-                    let file = URL(fileURLWithPath:path),resource = try? file.resourceValues(forKeys:[.isUbiquitousItemKey,.ubiquitousItemDownloadingStatusKey])
-                    if resource?.isUbiquitousItem == true,resource?.ubiquitousItemDownloadingStatus == .notDownloaded { append("《"+citation.title+"》尚未下载，页码暂未检查",index:index);continue }
+                    guard !path.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { issue("缺少原文链接");continue }
+                    let file = URL(fileURLWithPath:path)
+                    switch ShelfFileStatus.read(file) {
+                    case .missing: issue("《"+citation.title+"》原文链接失效");continue
+                    case .cloud: issue("《"+citation.title+"》尚未下载，页码暂未检查");continue
+                    case .available: break
+                    }
                     if let expected = citation.source.fingerprint {
                         if digests[path] == nil { digests[path] = try? FileBaseline.capture(file).digest }
-                        if digests[path] == nil { append("《"+citation.title+"》原文暂不可读取",index:index);continue }
-                        if digests[path] != expected { append("《"+citation.title+"》原文内容已变化，请核对版本与定位",index:index) }
+                        if digests[path] == nil { issue("《"+citation.title+"》原文暂不可读取");continue }
+                        if digests[path] != expected { issue("《"+citation.title+"》原文内容已变化，请核对版本与定位") }
                     }
                     if TextImport.handles(file) { continue }
-                    if pages[path] == nil { pages[path] = autoreleasepool { PDFDocument(url:file)?.pageCount ?? 0 } }
-                    if pages[path] == 0 { append("《"+citation.title+"》原文暂不可读取",index:index) }
-                    else if citation.source.page >= pages[path]! { append("《"+citation.title+"》来源页码超出文献范围",index:index) }
+                    if pages[path] == nil { pages[path] = autoreleasepool { ReadingSourceInput(url:file).document()?.pageCount ?? 0 } }
+                    if pages[path] == 0 { issue("《"+citation.title+"》原文暂不可读取") }
+                    else if citation.source.page >= pages[path]! { issue("《"+citation.title+"》来源页码超出文献范围") }
+                }
+            }
+            func inspectExtras(_ extras: ReadingRecordExtras053?, block: UUID?) throws {
+                guard let extras else { return }
+                for region in extras.regions ?? [] {
+                    if snapshot.options?.includeQuote != false { inspectAsset(region.asset) }
+                    try inspectSources([region.citation],block:block,location:.region(region.id))
+                }
+                for quote in extras.quotations ?? [] {
+                    if snapshot.options?.includeQuote != false { (quote.assets ?? []).forEach(inspectAsset) }
+                    try inspectSources(quote.citations,block:block,location:.quotation(quote.id),required:true)
+                }
+                if snapshot.options?.includeQuote != false, snapshot.options?.includeRegionImages == true, let asset = extras.visualAsset {
+                    inspectAsset(asset)
+                }
+            }
+            func inspectRecord(_ record: ReadingRecord, block: UUID?) throws {
+                if snapshot.options?.includeQuote != false, let asset = record.imageAsset { inspectAsset(asset) }
+                let requiresSource = (record.kind != .note || !record.linkedRecords.isEmpty) && record.citations053.isEmpty
+                try inspectSources(record.citations,block:block,location:.direct,wholeBook:record.wholeBook,required:requiresSource)
+                try inspectExtras(record.extras,block:block)
+            }
+            switch item {
+            case .record(let record): try inspectRecord(record,block:nil)
+            case .essay(let essay):
+                try inspectExtras(essay.extras,block:nil)
+                for block in essay.blocks {
+                    if let record = block.record { try inspectRecord(record,block:block.id) }
                 }
             }
         }

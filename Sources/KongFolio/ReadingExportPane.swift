@@ -32,6 +32,7 @@ struct ReadingExportPane: View {
     @State private var focusedIssue: String?
     @State private var previewIssues: [ReadingOutputIssue] = []
     @State private var checkedPreviewDigest: String?
+    @State private var previewCheckError: String?
     @State private var checkedCandidateIDs: Set<String>?
     @State private var showIncremental = false
     @State private var preparation: Task<Void,Never>?
@@ -129,6 +130,7 @@ struct ReadingExportPane: View {
         guard previewCurrent else { return }
         let current = snapshot
         checkedPreviewDigest = nil
+        previewCheckError = nil
         do {
             let result = try await ReadingOutputReview.shared.inspect(current,assets:assets)
             try Task.checkCancellation()
@@ -138,8 +140,8 @@ struct ReadingExportPane: View {
             return
         } catch {
             previewIssues = []
-            checkedPreviewDigest = current.digest
-            controller.message = "未能检查预览 · "+error.localizedDescription
+            checkedPreviewDigest = nil
+            previewCheckError = "未能检查预览 · "+error.localizedDescription
         }
     }
     private var assets:URL { journal.folder.appendingPathComponent("Assets") }
@@ -164,7 +166,10 @@ struct ReadingExportPane: View {
                 Text(warning).font(.caption).foregroundStyle(.orange)
             }
             if previewCurrent, let file = controller.previewURL {
-                if checkedPreviewDigest != snapshot.digest {
+                if let previewCheckError {
+                    Text(previewCheckError).font(.caption).foregroundStyle(.orange)
+                    Button("重试出处检查") { Task { await inspectPreview() } }
+                } else if checkedPreviewDigest != snapshot.digest {
                     ProgressView("正在检查预览中的出处和图片…").controlSize(.small)
                 } else if !previewIssues.isEmpty {
                     ForEach(previewIssues.prefix(3)) { issue in

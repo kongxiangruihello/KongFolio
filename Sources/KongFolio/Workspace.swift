@@ -86,7 +86,13 @@ import UniformTypeIdentifiers
     var importGeneration = UUID()
     @Published var comparison: PDFDocument?
     @Published var recognizedText = ""
-    @Published var search = ""
+    @Published var search = "" {
+        didSet {
+            guard oldValue != search else { return }
+            resetPDFSearch()
+        }
+    }
+    var searchGeneration = UUID()
     @Published var recentFiles: [String] = []
     @Published var recoveryStatus = ""
     @Published var readingRuler = ReadingRuler() { didSet { scheduleReadingRuler() } }
@@ -424,8 +430,7 @@ import UniformTypeIdentifiers
         layoutRevision = UUID()
         pageVersions = [:]
         thumbnails.clear()
-        searchTask?.cancel()
-        searchResults = []
+        resetPDFSearch()
         annotationNotes = []
         title = archive.title
         // Recovery already carries its baseline. Reading the current cloud file here can block launch
@@ -564,9 +569,7 @@ import UniformTypeIdentifiers
                 pageVersions = [:]
                 thumbnails.clear()
             }
-            searchTask?.cancel()
-            searchResults = []
-            searchMessage = ""
+            resetPDFSearch()
             annotationNotes = []
             if sidebarTab == .notes { refreshNotes() }
         }
