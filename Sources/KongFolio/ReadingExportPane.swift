@@ -28,6 +28,10 @@ struct ReadingExportPane: View {
     @State private var page = 0
     @State private var showBatch = false
     @State private var showReview = false
+    @State private var reviewItem: ReadingLibraryID?
+    @State private var focusedIssue: String?
+    @State private var previewIssues: [ReadingOutputIssue] = []
+    @State private var checkedPreviewDigest: String?
     @State private var checkedCandidateIDs: Set<String>?
     @State private var showIncremental = false
     @State private var preparation: Task<Void,Never>?
@@ -104,9 +108,39 @@ struct ReadingExportPane: View {
             temporarySort = value == .selected ? .selection : nil
             if let pendingSort { sortSelection.wrappedValue = pendingSort; self.pendingSort = nil }
         }.onChange(of:candidates.count) { _,_ in page = pagination.index }
-        .sheet(isPresented:$showReview) { ReadingOutputReviewView(journal:journal,snapshot:snapshot,assets:assets) }
+        .sheet(isPresented:$showReview,onDismiss:openReviewedItem) {
+            ReadingOutputReviewView(journal:journal,snapshot:snapshot,assets:assets,focusedIssue:focusedIssue) { item in
+                reviewItem = item
+                showReview = false
+            }
+        }
         .sheet(isPresented:$showIncremental) { ReadingIncrementalExportView(journal:journal,controller:store.incrementalExport,options:preferences.options) }
         .sheet(isPresented:$showBatch) { ReadingExportBatchView(store:store,journal:journal,snapshot:snapshot) }
+    }
+
+    private func openReviewedItem() {
+        focusedIssue = nil
+        guard let item = reviewItem else { return }
+        reviewItem = nil
+        store.openReadingItem(item)
+    }
+
+    private func inspectPreview() async {
+        guard previewCurrent else { return }
+        let current = snapshot
+        checkedPreviewDigest = nil
+        do {
+            let result = try await ReadingOutputReview.shared.inspect(current,assets:assets)
+            try Task.checkCancellation()
+            previewIssues = result
+            checkedPreviewDigest = current.digest
+        } catch where FolioCancellation.matches(error) {
+            return
+        } catch {
+            previewIssues = []
+            checkedPreviewDigest = current.digest
+            controller.message = "未能检查预览 · "+error.localizedDescription
+        }
     }
     private var assets:URL { journal.folder.appendingPathComponent("Assets") }
     private var previewSection: some View {
@@ -130,13 +164,26 @@ struct ReadingExportPane: View {
                 Text(warning).font(.caption).foregroundStyle(.orange)
             }
             if previewCurrent, let file = controller.previewURL {
+                if checkedPreviewDigest != snapshot.digest {
+                    ProgressView("正在检查预览中的出处和图片…").controlSize(.small)
+                } else if !previewIssues.isEmpty {
+                    ForEach(previewIssues.prefix(3)) { issue in
+                        Button(issue.title+" · "+issue.message) {
+                            focusedIssue = issue.id
+                            showReview = true
+                        }.buttonStyle(.link).lineLimit(2)
+                    }
+                    if previewIssues.count > 3 {
+                        Text("共 \(previewIssues.count) 项 · 点击问题查看完整清单").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 AcademicFilePreview(url:file).frame(height:320).clipped()
             } else {
                 Text(empty ? "没有可导出的资料，请更换范围或勾选记录。" :
                      format == .word ? "Word 导出前，请生成预览并核对内容。" : "可先生成预览，也可直接导出。")
                     .font(.callout).foregroundStyle(.secondary)
             }
-        }
+        }.task(id:previewCurrent ? controller.previewURL : nil) { await inspectPreview() }
     }
 
     private var reviewActions: some View {

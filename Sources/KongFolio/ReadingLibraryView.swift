@@ -241,7 +241,7 @@ struct ReadingLibraryView: View {
 
     private var searchField:some View {
         VStack(alignment:.leading,spacing:8) {
-            Label("搜索阅读资料",systemImage:"magnifyingglass").font(.headline)
+            ReadingSearchScopeMenu(store:store,title:bookSource == nil ? "全部资料库" : "当前书的阅读资料")
             HStack(spacing:6) {
                 TextField("摘录、标注、评论、笔记或出处关键词",text:$query)
                     .textFieldStyle(.roundedBorder).focused($librarySearchFocused)

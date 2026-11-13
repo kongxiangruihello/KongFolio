@@ -161,3 +161,16 @@ extension WorkspaceStore {
         readingEssayBlockID = journal.insert(record,in:essay,after:readingEssayBlockID,at:WritingRegistry.selection(key))
     }
 }
+
+
+struct BookSearchRequest: Equatable {
+    let id = UUID()
+    let section: ReadingDeskSection
+}
+
+extension WorkspaceStore {
+    func searchCurrentBook(_ section:ReadingDeskSection) {
+        showReadingPanel(section)
+        bookSearchRequest = BookSearchRequest(section:section)
+    }
+}

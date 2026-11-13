@@ -115,8 +115,10 @@ import UniformTypeIdentifiers
     @Published var showFolderSearch = false
     @Published var showDocumentComparison = false
     var showOCRTasksAfterSearch = false
+    @Published var bookSearchRequest: BookSearchRequest?
     @Published var showReadingBatch = false
-    @Published var readingBatch: ReadingOpenBatch?
+    @Published var readingBatches: [ReadingOpenBatch]
+    @Published var selectedReadingBatchID: UUID?
     @Published var openBatchIDs:Set<UUID> = []
     private var forwarding: AnyCancellable?
 
@@ -125,7 +127,7 @@ import UniformTypeIdentifiers
         self.storage = folder
         self.library = BookLibrary(storage: folder)
         self.readingDefaults = readingDefaults ?? (AppEnvironment.isTestRun ? UserDefaults(suiteName: "KongFolio.ReadingTests." + UUID().uuidString)! : .standard)
-        self.readingBatch = ReadingOpenBatch.load(self.readingDefaults)
+        self.readingBatches = ReadingOpenBatch.loadHistory(self.readingDefaults)
         self.readingMode = self.readingDefaults.object(forKey:Self.readingModeKey) as? Bool ?? !AppEnvironment.isTestRun
         self.documentTasks = DocumentTaskQueue(storage: folder)
         self.board = Board(storage: folder)
@@ -241,6 +243,7 @@ import UniformTypeIdentifiers
         for entry in permitted {
             let workspace = Workspace(storage: storage, slot: entry.slot, readingDefaults: readingDefaults)
             workspace.store = self
+            workspace.readingBatchEntryID = entry.readingBatchEntryID
             // Unsaved changes win: a recovery copy exists, so the tab was not clean when the app ended.
             if entry.kind == .recovery || recoveryExists(entry.slot) {
                 guard recoveryExists(entry.slot) else { continue }
@@ -415,11 +418,13 @@ import UniformTypeIdentifiers
                 continue
             }
             let path = ReadingBookIdentity.key(url.path)
+            let entry = readingBatch?.entry(url.path)
             if let existing = existingDocuments[path] {
                 batch.insert(existing.id)
+                if let entry { existing.readingBatchEntryID = entry.id }
                 if existing.count == 0,!existing.busy {
                     existing.error = nil;existing.needsLoad = true
-                    if existing.pendingView == nil { existing.pendingView = readingBatch?.entry(url.path)?.position }
+                    if existing.pendingView == nil { existing.pendingView = readingBatchPosition(url.path) }
                 }
                 if first == nil { first = existing.id }; continue
             }
@@ -432,7 +437,8 @@ import UniformTypeIdentifiers
             }
             target.needsLoad = true
             target.sourceURL = url
-            target.pendingView = readingBatch?.entry(url.path)?.position
+            target.readingBatchEntryID = entry?.id
+            target.pendingView = readingBatchPosition(url.path)
             existingDocuments[path] = target
             batch.insert(target.id)
             if first == nil { first = target.id }
@@ -449,7 +455,7 @@ import UniformTypeIdentifiers
     func open() {
         guard !DocumentOpenPanel.coordinator.revealExisting() else { return }
         recordActivity("显示文件选择器")
-        DocumentOpenPanel.coordinator.present(DocumentOpenPanel.files(),presentation:.separate) { [weak self] response,urls in
+        DocumentOpenPanel.coordinator.present(DocumentOpenPanel.files(offersFinder:true),presentation:.separate) { [weak self] response,urls in
             guard let self else { return }
             if response == .abort {
                 self.recordActivity("文件选择器未能显示")
@@ -459,6 +465,10 @@ import UniformTypeIdentifiers
                 self.openEach(urls)
             } else { self.recordActivity("关闭文件选择器") }
         }
+    }
+
+    func browseFilesInFinder() {
+        NSWorkspace.shared.open(FileManager.default.homeDirectoryForCurrentUser)
     }
 
     // MARK: Notes
@@ -547,7 +557,7 @@ import UniformTypeIdentifiers
             }
             if workspace.count > 0 {
                 let position = workspace.currentViewPosition()
-                let entry = readingBatch?.entry(workspace.displayPath)
+                let entry = readingBatchEntry(for:workspace)
                 let isReading = !workspace.browsingReadingReference
                 if !workspace.closeDocument() { return }
                 if let entry,isReading {

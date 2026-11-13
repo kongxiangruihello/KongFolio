@@ -118,6 +118,9 @@ struct ReadingSidebar: View {
 
     private var searchResults: some View {
         Group {
+            if let store = workspace.store {
+                ReadingSearchScopeMenu(store:store,title:"当前 PDF 正文").padding(.horizontal,10)
+            }
             HStack {
                 TextField("搜索当前 PDF 正文（简繁通查）", text: $workspace.search).focused($searchFocused053).onSubmit { workspace.find() }.accessibilityLabel("PDF 正文关键词")
                 Button { workspace.find() } label: { Image(systemName: "magnifyingglass") }

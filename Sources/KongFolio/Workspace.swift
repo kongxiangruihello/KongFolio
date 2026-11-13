@@ -48,6 +48,7 @@ import UniformTypeIdentifiers
     @Published var readingProgress = ReadingProgress()
     var progressLoadedFor: String?
     var progressTask: Task<Void, Never>?
+    var readingBatchEntryID: UUID?
     var browsingReadingReference = false
     var readingSaveTask: Task<Void, Never>?
     var readingBookmarkTask: Task<Void,Never>?
@@ -743,7 +744,9 @@ import UniformTypeIdentifiers
         } else { searchResume = nil }
         readingAnnotationTask?.cancel();readingAnnotationTask = nil
         autoTask?.cancel(); autoTask = nil
-        saveReadingRecord(); progressTask?.cancel(); readingSaveTask?.cancel(); readingBookmarkTask?.cancel(); readingBookmarkTask = nil
+        saveReadingRecord()
+        if !keepingSource { readingBatchEntryID = nil }
+        progressTask?.cancel(); readingSaveTask?.cancel(); readingBookmarkTask?.cancel(); readingBookmarkTask = nil
         try? persistWordDraft()
         try? persistTableDrafts()
         tableDrafts = []; pendingTableDraftID = nil
@@ -801,6 +804,7 @@ import UniformTypeIdentifiers
     func forgetSource() {
         if let spilledSession { try? FileManager.default.removeItem(at: spilledSession); self.spilledSession = nil; writer.discard(recoveryURL) }
         projectURL = nil; sourceURL = nil; needsLoad = false; pendingView = nil; browsingReadingReference = false
+        readingBatchEntryID = nil
     }
 
     private func applyPendingView() {
@@ -822,20 +826,20 @@ import UniformTypeIdentifiers
     /// How this tab is written to the session file; nil for a tab with nothing to restore.
     var sessionEntry: SessionEntry? {
         if count > 0 {
-            guard canRestoreFromFile else { return SessionEntry(slot: slot, kind: .recovery) }
+            guard canRestoreFromFile else { return SessionEntry(slot: slot, kind: .recovery, readingBatchEntryID:readingBatchEntryID) }
             if browsingReadingReference, let path = progressPath {
                 let saved = ReadingProgress.load(path:path,defaults:readingDefaults)
                 return fileEntry(position:saved.resumePosition(pageCount:count) ?? ViewPosition(selection:0))
             }
             return fileEntry(position: currentViewPosition())
         }
-        if needsLoad, spilledSession != nil { return SessionEntry(slot: slot, kind: .recovery) }
+        if needsLoad, spilledSession != nil { return SessionEntry(slot: slot, kind: .recovery, readingBatchEntryID:readingBatchEntryID) }
         return (needsLoad || isImporting) ? fileEntry(position: pendingView) : nil
     }
 
     private func fileEntry(position: ViewPosition?) -> SessionEntry? {
-        if let url = projectURL { return SessionEntry(slot: slot, kind: .project, path: url.path, position: position, layout: pendingReadingLayout ?? readingLayout) }
-        if let url = sourceURL { return SessionEntry(slot: slot, kind: .file, path: url.path, position: position, layout: pendingReadingLayout ?? readingLayout) }
+        if let url = projectURL { return SessionEntry(slot: slot, kind: .project, path: url.path, position: position, layout: pendingReadingLayout ?? readingLayout, readingBatchEntryID:readingBatchEntryID) }
+        if let url = sourceURL { return SessionEntry(slot: slot, kind: .file, path: url.path, position: position, layout: pendingReadingLayout ?? readingLayout, readingBatchEntryID:readingBatchEntryID) }
         return nil
     }
 

@@ -86,6 +86,7 @@ struct FunctionToolbar: View {
     @ViewBuilder private func moreActions(_ overflow: [FileToolbarAction]) -> some View {
         Section("文件") {
             overflowControls(overflow,actions:[.newFile,.open,.save,.export])
+            Button("在访达中浏览…") { store.browseFilesInFinder() }
             if store.canSave { Button("另存为…") { store.saveActive(asNew:true) } }
             Button("签名管理…") { store.showSignatureManager = true }
             Button("打印…") { store.printActive() }.disabled(!store.canSave)
@@ -94,7 +95,7 @@ struct FunctionToolbar: View {
             }
         }
         Section("阅读") {
-            Button("上次批阅…") { store.showReadingBatch = true }
+            Button("最近批阅…") { store.showReadingBatch = true }
                 .disabled(store.readingBatch == nil)
             Menu("搜索") {
                 if overflow.contains(.search) { control(.search,menu:true) }

@@ -29,15 +29,22 @@ actor ReadingOutputReview {
                 if snapshot.options?.includeQuote != false,let name = record.imageAsset {
                     let file = assets.appendingPathComponent(name)
                     if name != file.lastPathComponent || name.contains("..") { append("摘录图片路径无效") }
-                    else if let data = try? Data(contentsOf:file), (try? SignatureImage.loadData(data)) != nil {} else { append("摘录图片缺失或无法读取") }
+                    else if let data = try? Data(contentsOf:file), SignatureImage.loadData(data) != nil {} else { append("摘录图片缺失或无法读取") }
                 }
-                if record.citations.isEmpty { append("未填写出处",index:0) }
+                guard snapshot.options?.includeSources != false else { continue }
+                if record.citations.isEmpty, record.kind != .note || record.linkedRecords.count > 0 {
+                    append("未填写出处",index:0)
+                }
                 for (index,citation) in record.citations.enumerated() {
                     if citation.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { append("出处缺少书名",index:index) }
                     if (citation.edition ?? "").trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { append("《"+citation.title+"》尚未填写版本",index:index) }
-                    if citation.source.pageLabel?.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty != false { append("《"+citation.title+"》尚未核对印刷页码",index:index) }
+                    if citation.source.page < 0 || citation.source.invalidPage053 == true {
+                        append("缺少可用的 PDF 页码，请重新核对原页",index:index)
+                    }
+                    if !record.wholeBook, citation.source.pageLabel?.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty != false { append("《"+citation.title+"》尚未核对印刷页码",index:index) }
                     let path = citation.source.path
-                    guard !path.isEmpty,FileManager.default.fileExists(atPath:path) else { append("《"+citation.title+"》原文链接失效",index:index);continue }
+                    guard !path.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { append("缺少原文链接",index:index);continue }
+                    guard FileManager.default.fileExists(atPath:path) else { append("《"+citation.title+"》原文链接失效",index:index);continue }
                     // Never cause an iCloud download in an advisory check.
                     let file = URL(fileURLWithPath:path),resource = try? file.resourceValues(forKeys:[.isUbiquitousItemKey,.ubiquitousItemDownloadingStatusKey])
                     if resource?.isUbiquitousItem == true,resource?.ubiquitousItemDownloadingStatus == .notDownloaded { append("《"+citation.title+"》尚未下载，页码暂未检查",index:index);continue }

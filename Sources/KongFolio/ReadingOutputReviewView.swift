@@ -5,12 +5,15 @@ struct ReadingOutputReviewView: View {
     @ObservedObject var journal: ReadingJournal
     let snapshot: ReadingExportSnapshot
     let assets: URL
+    var focusedIssue: String?
+    var openItem: (ReadingLibraryID) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var issues: [ReadingOutputIssue] = []
     @State private var busy = true
     @State private var message = ""
     @State private var page = 0
     @State private var editing: ReadingOutputIssue?
+    @State private var positioned = false
     private var pagination: ReadingPagination { ReadingPagination(total:issues.count,page:page,size:10) }
 
     var body: some View {
@@ -43,12 +46,14 @@ struct ReadingOutputReviewView: View {
         HStack {
             VStack(alignment:.leading,spacing:4) {
                 Text(issue.title).lineLimit(1).help(issue.title)
+                    .fontWeight(issue.id == focusedIssue ? .semibold : .regular)
                 Text(issue.message).font(.caption).foregroundStyle(.orange)
             }
             Spacer()
             if issue.source != nil {
                 Button("修正出处…") { editing = issue }.disabled(journal.unreadable)
             }
+            Button("查看记录") { openItem(issue.item) }
         }
     }
 
@@ -59,7 +64,10 @@ struct ReadingOutputReviewView: View {
             let result = try await ReadingOutputReview.shared.inspect(current,assets:assets)
             try Task.checkCancellation()
             issues = result
-            page = pagination.index
+            if !positioned,let focusedIssue,let index = result.firstIndex(where:{$0.id == focusedIssue}) {
+                page = index / pagination.size
+                positioned = true
+            } else { page = pagination.index }
             message = result.isEmpty ? "本次检查未发现问题" : "还有 \(result.count) 条需要核对"
         } catch where FolioCancellation.matches(error) { return }
         catch { message = error.localizedDescription }

@@ -25,6 +25,7 @@ struct SessionEntry: Codable, Equatable {
     var path: String? = nil
     var position: ViewPosition? = nil
     var layout: ReadingLayout? = nil
+    var readingBatchEntryID: UUID? = nil
 }
 
 struct Session: Codable, Equatable {

@@ -40,6 +40,7 @@ struct ReadingQuotation053:Codable,Equatable,Identifiable {
 struct ReadingRecordExtras053:Codable,Equatable {
     enum Review:String,Codable,CaseIterable { case unreviewed="待核对",verified="已核对",uncertain="存疑" }
     var review:Review? = nil
+    var reviewDeferred:Bool? = nil
     var colorMeaning:String? = nil
     var chapter:String? = nil
     var visualAsset:String? = nil

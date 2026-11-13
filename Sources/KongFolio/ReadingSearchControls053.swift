@@ -35,3 +35,23 @@ struct ReadingSearchControls053:View {
         }
     }
 }
+
+
+struct ReadingSearchScopeMenu: View {
+    @ObservedObject var store: WorkspaceStore
+    let title: String
+
+    var body: some View {
+        Menu {
+            Button("当前 PDF 正文") { store.openPDFSearch() }.disabled(!store.canSearchPDF)
+            Button("当前书的摘录") { store.searchCurrentBook(.excerpts) }.disabled(!hasBook)
+            Button("当前书的笔记") { store.searchCurrentBook(.notes) }.disabled(!hasBook)
+            Button("全部资料库") { store.showReadingPanel(.search) }
+        } label: {
+            Label(title,systemImage:"magnifyingglass")
+        }
+        .accessibilityLabel("搜索范围 · "+title)
+    }
+
+    private var hasBook: Bool { store.commandWorkspace?.readingJournalPath != nil }
+}

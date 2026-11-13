@@ -28,7 +28,6 @@ struct ReadingExcerptReviewPane: View {
     }
     @State private var editing: Correction?
     @State private var page = 0
-    @State private var deferred = Set<UUID>()
     @State private var lastJudgment: Judgment?
     private struct Judgment {
         let id:UUID
@@ -40,7 +39,8 @@ struct ReadingExcerptReviewPane: View {
         scope == .batch ? batchPaths : Set(initialPath.map{[ReadingBookIdentity.key($0)]} ?? [])
     }
     private var pending: [ReadingRecord] { ReadingExcerptReviewQueue.records(journal.state,paths:paths) }
-    private var queue: [ReadingRecord] { pending.filter{!deferred.contains($0.id)} }
+    private var deferred: [ReadingRecord] { pending.filter { $0.extras?.reviewDeferred == true } }
+    private var queue: [ReadingRecord] { pending.filter { $0.extras?.reviewDeferred != true } }
 
     var body: some View {
         let records = queue
@@ -49,7 +49,7 @@ struct ReadingExcerptReviewPane: View {
             header(records.count)
             if let record = records.first(where:{$0.id == selection}) { details(record) }
             if records.isEmpty {
-                Text(pending.isEmpty ? "这个范围暂无待核对的摘录。" : "剩余摘录已暂时跳过。").font(.caption).foregroundStyle(.secondary)
+                Text(pending.isEmpty ? "这个范围暂无待核对的摘录。" : "剩余摘录已保存为稍后核对。").font(.caption).foregroundStyle(.secondary)
                 Spacer()
             } else {
                 List(Array(records[pagination.range])) { record in
@@ -70,7 +70,7 @@ struct ReadingExcerptReviewPane: View {
             }
         }.padding(10)
             .onAppear { if initialPath == nil && !batchPaths.isEmpty { scope = .batch } }
-            .onChange(of:scope) { _,_ in navigator.cancel(); selection = nil; page = 0; deferred = [] }
+            .onChange(of:scope) { _,_ in navigator.cancel(); selection = nil; page = 0 }
             .onChange(of:pagination.last) { _,last in if page > last { page = last } }
             .onDisappear { navigator.cancel() }
             .sheet(item:$editing) { request in
@@ -89,7 +89,10 @@ struct ReadingExcerptReviewPane: View {
             if !deferred.isEmpty || lastJudgment != nil {
                 PanelRow {
                     if !deferred.isEmpty {
-                        Button("重看跳过的 \(deferred.count) 条") { deferred = [];page = 0 }
+                        Button("继续核对暂存的 \(deferred.count) 条") {
+                            journal.updateExtras053(Set(deferred.map { .record($0.id) })) { $0.reviewDeferred = nil }
+                            page = 0
+                        }.disabled(journal.unreadable)
                     }
                     if lastJudgment != nil { Button("撤销上次判断",action:undoJudgment).disabled(journal.unreadable || navigator.busy) }
                 }.font(.caption)
@@ -110,7 +113,7 @@ struct ReadingExcerptReviewPane: View {
             PanelRow {
                 Button("已核对并继续") { advance(record,status:.verified) }.buttonStyle(.borderedProminent)
                 Button("存疑并继续") { advance(record,status:.uncertain) }
-                Button("暂时跳过") { advance(record,status:nil) }
+                Button("稍后核对") { advance(record,status:nil) }
             }.disabled(journal.unreadable || navigator.busy)
         }.padding(8).background(.quaternary,in:RoundedRectangle(cornerRadius:6))
     }
@@ -145,7 +148,9 @@ struct ReadingExcerptReviewPane: View {
         if let status {
             lastJudgment = Judgment(id:record.id,status:status,previous:record.extras?.review)
             journal.updateExtras053([.record(record.id)]) { $0.review = status }
-        } else { deferred.insert(record.id) }
+        } else {
+            journal.updateExtras053([.record(record.id)]) { $0.reviewDeferred = true }
+        }
         selection = nil
         if let next {
             if let index = queue.firstIndex(where:{$0.id == next.id}) { page = index/10 }

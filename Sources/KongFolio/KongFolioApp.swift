@@ -35,6 +35,7 @@ import KongFolioUpdateKit
             }
             CommandGroup(replacing: .newItem) {
                 Button("打开…") { store.open() }.keyboardShortcut("o")
+                Button("在访达中浏览…") { store.browseFilesInFinder() }
                 Button("新建 PDF") { store.newPDF() }
                 Button("新建 Markdown 文件") { store.newNote() }.keyboardShortcut("n")
                 Button("新建阅读笔记") { store.newReadingNote() }.keyboardShortcut("n",modifiers:[.command,.option])
@@ -50,7 +51,7 @@ import KongFolioUpdateKit
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
             CommandMenu("阅读") {
-                Button("上次批阅…") { store.showReadingBatch = true }
+                Button("最近批阅…") { store.showReadingBatch = true }
                     .disabled(store.readingBatch == nil)
                 Button("搜索当前 PDF 正文") { store.openPDFSearch() }
                     .keyboardShortcut("f",modifiers:.control).disabled(!store.canSearchPDF)

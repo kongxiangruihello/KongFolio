@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
         panel.message = "可多选文献；尚未下载的 iCloud 文件将在应用内后台准备，可取消并切换阅读其他文件。"
     }
 
-    static func files(imagesOnly:Bool = false) -> NSOpenPanel {
+    static func files(imagesOnly:Bool = false, offersFinder:Bool = false) -> NSOpenPanel {
         let panel = NSOpenPanel()
         configure(panel)
         panel.allowsMultipleSelection = true
@@ -22,6 +22,10 @@ import UniformTypeIdentifiers
         } else {
             panel.allowedContentTypes = [ReadingShortcut.fileType,.pdf,.image,.html,.plainText,UTType(exportedAs:"com.kongfolio.project")]
                 + TextImport.markdownExtensions.compactMap { UTType(filenameExtension:$0) }
+        }
+        if offersFinder {
+            panel.message = "双击文件夹进入，或选中后按 ⌘↓。所选 iCloud 文件将在应用内后台下载。"
+            coordinator.installFinderButton(on:panel)
         }
         return panel
     }
@@ -33,6 +37,21 @@ import UniformTypeIdentifiers
     enum Presentation { case separate, sheet }
     private(set) var panel:NSOpenPanel?
     private var closeObserver:NSObjectProtocol?
+
+    func installFinderButton(on panel:NSOpenPanel) {
+        let button = NSButton(title:"在访达中浏览当前文件夹",target:self,action:#selector(browseInFinder(_:)))
+        button.toolTip = "在访达选中文献，可拖入 KongFolio 窗口"
+        button.sizeToFit()
+        panel.accessoryView = button
+        panel.isAccessoryViewDisclosed = true
+    }
+
+    @objc private func browseInFinder(_ sender:NSButton) {
+        guard let panel else { return }
+        let directory = panel.directoryURL ?? FileManager.default.homeDirectoryForCurrentUser
+        panel.cancel(nil)
+        DispatchQueue.main.async { NSWorkspace.shared.open(directory) }
+    }
 
     @discardableResult func revealExisting() -> Bool {
         guard let panel else { return false }

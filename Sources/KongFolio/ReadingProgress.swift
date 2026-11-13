@@ -215,7 +215,7 @@ extension Workspace {
         if markVisited { record.visited.insert(selection) }
         readingProgress = record; progressLoadedFor = path
         record.save(path: path, defaults: readingDefaults)
-        if let store, let entry = store.readingBatch?.entry(displayPath) {
+        if let store, let entry = store.readingBatchEntry(for:self) {
             let position = ViewPosition(selection:selection,x:record.x,y:record.y,scale:record.scale)
             store.updateBatchEntry(entry.id) { $0.position = position }
         }

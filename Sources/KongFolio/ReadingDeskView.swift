@@ -6,6 +6,8 @@ struct ReadingDeskView: View {
     @Binding var section:ReadingDeskSection
     var compact = false
     @State private var query = ""
+    @FocusState private var recordSearchFocused: Bool
+    @State private var browsingSearchResults = false
     @State private var tag = ""
     private enum NoteFilter: String, CaseIterable {
         case current = "当前书", independent = "独立笔记", all = "全部"
@@ -76,13 +78,22 @@ struct ReadingDeskView: View {
             do { try await Task.sleep(nanoseconds:2_000_000_000) } catch { return }
             highlightedExcerpt = nil
         }
+        .onChange(of:store.bookSearchRequest,initial:true) { _,request in
+            guard compact,request?.section == section else { return }
+            noteFilter = .current
+            excerptsBookOnly = true
+            browsingSearchResults = true
+            recordSearchFocused = true
+        }
         .onChange(of:query) { _,_ in page = 0 }.onChange(of:tag) { _,_ in page = 0 }.onChange(of:path) { _,_ in page = 0 }
         .onChange(of:section) { _,_ in page = 0 }
         .onChange(of:sourceFilter) { _,_ in page = 0 }.onChange(of:recent) { _,_ in page = 0 }.onChange(of:removed) { _,_ in page = 0 }
         .onChange(of:pageSize) { _,_ in page = 0 }.onChange(of:hits.count) { _,_ in page = pagination.index }
-        .onChange(of:journal.draftRecord?.id) { _,id in if id != nil { page = 0; query = ""; tag = ""; removed = false; recent = false } }
+        .onChange(of:store.readingRecordID) { _,id in if id != nil { browsingSearchResults = false } }
+        .onChange(of:journal.draftRecord?.id) { _,id in if id != nil { browsingSearchResults = false; page = 0; query = ""; tag = ""; removed = false; recent = false } }
     }
     private var selectedRecord: ReadingRecord? {
+        guard !browsingSearchResults else { return nil }
         let ids = [store.readingImageOCRRequest?.recordID,store.pinnedReadingID,store.readingRecordID]
         let selected = ids.compactMap { journal.record($0) }.first { ($0.kind == .note) == (section == .notes) }
         if section == .excerpts, let excerptInList, selected?.id == excerptInList,
@@ -111,9 +122,19 @@ struct ReadingDeskView: View {
             }
         }
     }
+    private var recordSearchTitle: String {
+        let kind = section == .notes ? "笔记" : "摘录"
+        switch sourceFilter {
+        case .book: return "当前书的"+kind
+        case .independent: return "独立笔记"
+        case .all: return "全部"+kind
+        }
+    }
     private var recordList: some View {
         VStack(alignment:.leading,spacing:8) {
-            TextField("搜索摘录、笔记、书名或页码",text:$query).textFieldStyle(.roundedBorder)
+            ReadingSearchScopeMenu(store:store,title:recordSearchTitle)
+            TextField(section == .notes ? "搜索笔记、书名或页码" : "搜索摘录、书名或页码",text:$query)
+                .textFieldStyle(.roundedBorder).focused($recordSearchFocused).accessibilityLabel(recordSearchTitle)
             if section == .notes {
                 Picker("笔记范围",selection:Binding(
                     get:{ path == nil && noteFilter == .current ? .all : noteFilter },
@@ -245,6 +266,7 @@ struct ReadingDeskView: View {
                     .accessibilityLabel("第 \(index+1) 个选中")
             }
             Button {
+                browsingSearchResults = false
                 excerptInList = nil
                 if section == .notes || store.pinnedExcerptNote == nil { store.pinnedReadingID = nil }
                 store.readingRecordID = record.id
