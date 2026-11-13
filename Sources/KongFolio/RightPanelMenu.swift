@@ -50,6 +50,7 @@ struct RightReadingPanelLayout<Content: View>: View {
     @ViewBuilder var content: () -> Content
     @State private var excerptDropTargeted = false
     @State private var reviewing = false
+    @State private var showsPageRecords = false
     @State private var reviewBook: String?
     @State private var reviewBatch = Set<String>()
 
@@ -77,13 +78,17 @@ struct RightReadingPanelLayout<Content: View>: View {
     private var panel: some View {
         VStack(spacing:0) {
             HStack(spacing:6) {
-                panelTab("搜索",selected:store.rightPDFSearchWorkspace != nil) { store.openPDFSearch() }
+                panelTab("搜索",selected:!showsPageRecords && store.rightPDFSearchWorkspace != nil) { showsPageRecords = false;store.openPDFSearch() }
                     .disabled(!store.canSearchPDF)
-                panelTab("摘录",selected:isSelected(.excerpts)) { store.showReadingPanel(.excerpts) }
-                panelTab("笔记",selected:isSelected(.notes)) { store.showReadingPanel(.notes) }
-                panelTab("全部资料",selected:isSelected(.search)) { store.showReadingPanel(.search) }
+                panelTab("摘录",selected:!showsPageRecords && isSelected(.excerpts)) { showsPageRecords = false;store.showReadingPanel(.excerpts) }
+                panelTab("笔记",selected:!showsPageRecords && isSelected(.notes)) { showsPageRecords = false;store.showReadingPanel(.notes) }
+                panelTab("全部资料",selected:!showsPageRecords && isSelected(.search)) { showsPageRecords = false;store.showReadingPanel(.search) }
+                Button { showsPageRecords.toggle(); reviewing = false } label: {
+                    Image(systemName:"doc.text.magnifyingglass").foregroundStyle(showsPageRecords ? Color.accentColor : Color.secondary)
+                }.buttonStyle(.borderless).help("查看本页已有记录").accessibilityLabel("查看本页已有记录")
+                    .disabled(store.commandWorkspace?.readingJournalPath == nil || !store.canSearchPDF)
                 Spacer(minLength:0)
-                if store.showReadingDesk && store.readingDeskSection == .notes {
+                if !showsPageRecords && store.showReadingDesk && store.readingDeskSection == .notes {
                     Button { store.newReadingNote() } label: { Image(systemName:"plus") }
                         .buttonStyle(.borderless).help("新建笔记").accessibilityLabel("新建笔记")
                         .disabled(store.journal.unreadable)
@@ -96,7 +101,9 @@ struct RightReadingPanelLayout<Content: View>: View {
                     .buttonStyle(.borderless).help("隐藏右侧面板").accessibilityLabel("隐藏右侧面板")
             }.font(.system(size:12)).padding(.horizontal,8).padding(.vertical,9).background(.bar)
             Divider()
-            if store.showReadingDesk {
+            if showsPageRecords,let workspace = store.commandWorkspace,workspace.count > 0 {
+                ReadingPageRecordsPane(store:store,workspace:workspace,journal:store.journal) { showsPageRecords = false }.id(workspace.id)
+            } else if store.showReadingDesk {
                 if store.readingDeskSection == .excerpts {
                     if reviewing {
                         ReadingExcerptReviewPane(store:store,journal:store.journal,initialPath:reviewBook,batchPaths:reviewBatch) { reviewing = false }
@@ -108,6 +115,9 @@ struct RightReadingPanelLayout<Content: View>: View {
                 ReadingSidebar(workspace:workspace,searchOnly:true).id(workspace.id).padding(.top,10)
             }
         }.frame(maxHeight:.infinity).background(Color(nsColor:.windowBackgroundColor))
+            .onChange(of:store.readingExcerptFeedback?.id) { _,id in if id != nil { showsPageRecords = false; reviewing = false } }
+            .onChange(of:store.readingDeskSection) { _,_ in showsPageRecords = false }
+            .onChange(of:store.pdfSearchWorkspaceID) { _,id in if id != nil { showsPageRecords = false } }
     }
     private var excerptDropArea: some View {
         VStack(spacing:0) {

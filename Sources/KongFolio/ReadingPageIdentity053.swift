@@ -17,11 +17,13 @@ extension Workspace {
         var next=old
         for i in next.records.indices {
             for j in next.records[i].citations.indices where ReadingBookIdentity.key(next.records[i].citations[j].source.path)==ReadingBookIdentity.key(path) {
-                var c=next.records[i].citations[j]
+                let original=next.records[i].citations[j]
+                var c=original
                 guard c.source.invalidPage053 != true,let id=ids[c.source.page] else { continue }
                 if c.tracking==nil { c.tracking=ReadingSourceIdentity053(documentID:ReadingJournal.stablePDFRecordID(path),capturedPage:c.source.page,pageFingerprint:id,capturedPageLabel:c.source.pageLabel) }
                 else if c.tracking?.pageFingerprint==nil || c.tracking?.pageFingerprint==c.source.fingerprint { c.tracking?.pageFingerprint=id }
                 next.records[i].citations[j]=c
+                next.records[i].replaceInlineCitation(original,with:c)
             }
         }
         if next != old { journal.change{$0=next} }
@@ -32,11 +34,13 @@ extension Workspace {
         var next=old
         for i in next.records.indices {
             for j in next.records[i].citations.indices where ReadingBookIdentity.key(next.records[i].citations[j].source.path)==ReadingBookIdentity.key(path) {
-                var c=next.records[i].citations[j]
+                let original=next.records[i].citations[j]
+                var c=original
                 guard let fingerprint=c.tracking?.pageFingerprint else { continue }
                 if let index=ids.keys.sorted().first(where:{ids[$0]==fingerprint}) { c.source.page=index;c.source.invalidPage053=nil;c.tracking?.needsReview=nil }
                 else { c.source.invalidPage053=true;c.tracking?.needsReview=true }
                 next.records[i].citations[j]=c
+                next.records[i].replaceInlineCitation(original,with:c)
             }
         }
         if next != old { journal.change{$0=next} }

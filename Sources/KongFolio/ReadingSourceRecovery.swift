@@ -141,6 +141,7 @@ extension ReadingJournal {
         guard original != replacement, record(id)?.citations053.contains(original) == true else { return }
         editRecord(id) { record in
             record.citations = record.citations.map { $0 == original ? replacement : $0 }
+            record.replaceInlineCitation(original,with:replacement)
             if var regions = record.extras?.regions {
                 for index in regions.indices where regions[index].citation == original { regions[index].citation = replacement }
                 record.extras?.regions = regions

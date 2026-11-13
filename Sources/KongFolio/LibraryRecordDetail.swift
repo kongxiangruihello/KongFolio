@@ -58,6 +58,14 @@ struct LibraryRecordDetail: View {
                     Menu("记录操作") {
                         Button(store.pinnedReadingID == record.id ? "取消固定" : "固定记录，翻页时继续写") { store.pinnedReadingID = store.pinnedReadingID == record.id ? nil : record.id }
                         if current.kind == .note { Button("关联更多摘录…") { showLinkPicker = true } }
+                        if current.isExcerpt {
+                            Menu("复制摘录") {
+                                Button("按上次格式复制") { ReadingExcerptCopyFormat.preferred(store.readingDefaults).copy(current,defaults:store.readingDefaults) }
+                                ForEach(ReadingExcerptCopyFormat.allCases,id:\.self) { format in
+                                    Button(format.rawValue) { format.copy(current,defaults:store.readingDefaults) }
+                                }
+                            }
+                        }
                         if current.kind != .note {
                             Button("针对摘录写笔记") {
                                 if let onNewLinkedNote { onNewLinkedNote(current) }

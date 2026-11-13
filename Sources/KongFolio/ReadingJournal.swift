@@ -31,6 +31,7 @@ struct ReadingRecord: Codable, Identifiable, Equatable {
     var extras:ReadingRecordExtras053? = nil
     var excerptRemark: String? = nil
     var excerptSegments: [ReadingExcerptSegment]? = nil
+    var inlineNoteCitations: [InlineNoteCitation]? = nil
     var hasContent: Bool {
         let heading = wholeBook && title == "整本书心得" ? "" : title
         return pdfOrigin != nil || extras?.hasContent == true || [heading, quote, note, excerptRemark ?? ""].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } || imageAsset != nil || !linkedRecords.isEmpty || tags.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -238,13 +239,26 @@ actor ReadingJournalWriter {
     }
     func editRecord(_ id:UUID,_ edit:(inout ReadingRecord)->Void) {
         guard !unreadable else { return }
+        func update(_ record:inout ReadingRecord) {
+            let previous = record.note
+            edit(&record)
+            if previous != record.note { record.syncInlineNoteCitations() }
+            record.modified = Date()
+        }
         if var draft = draftRecord, draft.id == id {
-            edit(&draft); draft.modified = Date(); draftRecord = draft
+            update(&draft)
+            draftRecord = draft
             if draft.hasContent { add(draft) }
             return
         }
         guard let i = state.records.firstIndex(where:{$0.id == id}) else { return }
-        change { value in edit(&value.records[i]); value.records[i].modified = Date(); for citation in value.records[i].citations { value.lastNotes[citation.source.path] = id } }
+        change { value in
+            let previous = Set(value.records[i].citations.map(\.source.path))
+            update(&value.records[i])
+            let paths = Set(value.records[i].citations.map(\.source.path))
+            for path in previous.subtracting(paths) where value.lastNotes[path] == id { value.lastNotes[path] = nil }
+            for path in paths { value.lastNotes[path] = id }
+        }
     }
     @discardableResult func newEssay(title:String = "未命名笔记") -> UUID {
         let essay = ReadingEssay(title:title)
@@ -283,7 +297,13 @@ actor ReadingJournalWriter {
         let newPath = ReadingProgress.canonicalPath(url.path)
         func update(_ record:inout ReadingRecord) {
             guard recordID == nil || record.id == recordID else { return }
-            for i in record.citations.indices where record.citations[i].source.path == old { record.citations[i].source.path = newPath; record.citations[i].source.relativePath = nil; record.citations[i].source.fingerprint = nil }
+            for i in record.citations.indices where record.citations[i].source.path == old {
+                let original = record.citations[i]
+                record.citations[i].source.path = newPath
+                record.citations[i].source.relativePath = nil
+                record.citations[i].source.fingerprint = nil
+                record.replaceInlineCitation(original,with:record.citations[i])
+            }
         }
         change { value in
             for i in value.records.indices { update(&value.records[i]) }

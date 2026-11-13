@@ -84,7 +84,16 @@ class ComposingTextView: NSTextView {
         if supportsMarkdownLists,!hasMarkedText(),let edit = WritingEdit.indent(string,selection:selectedRange(),outdent:true) { WritingEdit.apply(edit,to:self) } else { super.insertBacktab(sender) }
     }
     override var undoManager:UndoManager? { editingHistory }
-    func finishEditingSession() { if !hasMarkedText() { committed?(self) }; WritingPositions.shared.capture(self,key:positionKey);WritingPositions.shared.flush(); committed = nil; focused = nil; delegate = nil; editingHistory.removeAllActions() }
+    func finishEditingSession() {
+        if !hasMarkedText() { committed?(self) }
+        WritingPositions.shared.capture(self,key:positionKey)
+        WritingPositions.shared.flush()
+        WritingRegistry.detach(self,key:positionKey)
+        committed = nil
+        focused = nil
+        delegate = nil
+        editingHistory.removeAllActions()
+    }
     var committed: ((NSTextView) -> Void)?
     override func insertText(_ text: Any, replacementRange: NSRange) { super.insertText(text, replacementRange:replacementRange); if !hasMarkedText() { committed?(self) } }
     override func unmarkText() { super.unmarkText(); committed?(self) }

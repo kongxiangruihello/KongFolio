@@ -43,7 +43,7 @@ extension Workspace {
         return true
     }
 
-    func readingExcerpt(from selection: PDFSelection) -> ReadingRecord? {
+    func readingExcerpt(from selection: PDFSelection,trackVisual:Bool = true) -> ReadingRecord? {
         guard let raw = selection.string else { return nil }
         let quote = ExcerptText.tidy(raw)
         guard !quote.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { return nil }
@@ -52,7 +52,7 @@ extension Workspace {
             let index = document.index(for:page); guard index != NSNotFound else { return nil }
             let lines = selectedLines.filter { $0.pages.contains(where:{$0 === page}) }
             let rectangles = (lines.isEmpty ? [selection] : lines).map { $0.bounds(for:page) }.filter { !$0.isEmpty }
-            return readingCitation(page:index,rects:rectangles,anchor:String((page.string?.contains(raw) == true ? raw : lines.first?.string ?? "").prefix(40)))
+            return readingCitation(page:index,rects:rectangles,anchor:String((page.string?.contains(raw) == true ? raw : lines.first?.string ?? "").prefix(40)),trackVisual:trackVisual)
         }
         guard !citations.isEmpty else { return nil }
         return ReadingRecord(kind:.excerpt,quote:quote,citations:citations)

@@ -20,7 +20,11 @@ struct ReadingExportSourceTarget: Equatable {
             throw FolioError(message:"这条出处已改变，请回到核对列表重新打开")
         }
         func update(_ record:inout ReadingRecord) {
-            if record.citations.indices.contains(index) { record.citations[index] = citation }
+            if record.citations.indices.contains(index) {
+                let previous = record.citations[index]
+                record.citations[index] = citation
+                record.replaceInlineCitation(previous,with:citation)
+            }
             else { record.citations.append(citation) }
         }
         switch item {

@@ -212,7 +212,7 @@ struct ReadingDeskView: View {
 
     private func locateCapturedExcerpt(_ feedback: ReadingExcerptFeedback) {
         guard let record = journal.record(feedback.recordID) else { return }
-        excerptInList = record.id
+        excerptInList = feedback.opensEditor ? nil : record.id
         highlightedExcerpt = record.id
         excerptScrollTarget = nil
         pendingExcerptReveal = record.id

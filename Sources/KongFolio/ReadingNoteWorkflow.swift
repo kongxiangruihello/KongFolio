@@ -217,3 +217,39 @@ extension WorkspaceStore {
         window.makeFirstResponder(view)
     }
 }
+
+enum ReadingExcerptCopyFormat: String, CaseIterable {
+    case text = "仅复制原文"
+    case citation = "原文与出处"
+    case markdown = "Markdown 引用"
+    private static let key = "KongFolio.excerptCopyFormat"
+
+    static func preferred(_ defaults:UserDefaults = .standard) -> Self {
+        defaults.string(forKey:key).flatMap(Self.init(rawValue:)) ?? .citation
+    }
+
+    func text(_ record:ReadingRecord) -> String {
+        let quote = record.quote.isEmpty ? (record.imageAsset == nil ? (record.pdfOrigin?.contents ?? "") : "[图片摘录]") : record.quote
+        switch self {
+        case .text: return quote
+        case .citation: return ReadingCitationClipboardOptions(printedPage:true,sourceLink:false).text([record])
+        case .markdown:
+            if record.excerptSegments != nil {
+                return record.textExcerptSegments.map { segment in
+                    ReadingNoteCitationInsertion.markdown(ReadingRecord(kind:.excerpt,quote:segment.text,citations:segment.sources(in:record)))
+                }.joined().trimmingCharacters(in:.newlines)
+            }
+            var copy = record
+            copy.quote = quote
+            copy.citations = record.citations053
+            return ReadingNoteCitationInsertion.markdown(copy).trimmingCharacters(in:.newlines)
+        }
+    }
+
+    @MainActor func copy(_ record:ReadingRecord,defaults:UserDefaults = .standard) {
+        let value = text(record)
+        guard !value.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        if NSPasteboard.general.setString(value,forType:.string) { defaults.set(rawValue,forKey:Self.key) }
+    }
+}

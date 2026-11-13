@@ -338,6 +338,13 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
               !(selected.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let page = selected.pages.last else { return }
         let area = convert(selected.bounds(for: page), from: page)
+        let match = workspace.readingExcerpt(from:selected,trackVisual:false).flatMap { workspace.store?.existingReadingExcerpt($0) }
+        let copySelection: (ReadingExcerptCopyFormat) -> Void = { [weak self, weak workspace] format in
+            guard let workspace, var capture = workspace.readingExcerpt(from:selected,trackVisual:false) else { return }
+            if let text = selected.string { capture.quote = text }
+            format.copy(capture,defaults:workspace.readingDefaults)
+            self?.hideSelectionToolbar()
+        }
         let toolbar = PDFSelectionActions(
             editable: !workspace.readingLocked, compact: bounds.width < 340,
             excerpt: { [weak self, weak workspace] in
@@ -357,14 +364,12 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
                 guard let workspace else { return }
                 if workspace.store?.insertPDFSelectionInNote(from:workspace,selection:selected) == true { self?.hideSelectionToolbar() }
             } : nil,
-            copy: { [weak self, weak workspace] in
-                var record = workspace?.readingExcerpt(from: selected)
-                if let original = selected.string { record?.quote = original }
-                let text = record.map { ReadingCitationClipboardOptions.load().text([$0]) } ?? selected.string ?? ""
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
+            copy: { [weak workspace] in copySelection(.preferred(workspace?.readingDefaults ?? .standard)) },
+            copyAs:copySelection,
+            openExisting:match.map { record in { [weak self, weak workspace] in
+                workspace?.store?.revealCapturedExcerpt(record,message:"已打开已有摘录",opensEditor:true)
                 self?.hideSelectionToolbar()
-            },
+            } },
             mark: { [weak self, weak workspace] style, color, annotate in
                 guard let workspace, !workspace.readingLocked else { return }
                 if let color { workspace.markupColor = color }

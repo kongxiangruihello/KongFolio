@@ -69,6 +69,7 @@ struct ReadingExcerptFeedback: Identifiable {
     let id = UUID()
     let recordID: UUID
     let message: String
+    var opensEditor = false
 }
 
 struct ReadingExcerptUndo {
@@ -86,13 +87,20 @@ extension WorkspaceStore {
             .max { $0.created < $1.created }
     }
 
+    func existingReadingExcerpt(_ capture:ReadingRecord) -> ReadingRecord? {
+        guard !capture.quote.isEmpty,!capture.citations.isEmpty else { return nil }
+        return journal.state.records.first { existing in
+            existing.kind == .excerpt && existing.removed == nil &&
+                existing.textExcerptSegments.contains {
+                    $0.duplicates(capture.quote,citations:capture.citations,in:existing)
+                }
+        }
+    }
+
     @discardableResult
     func saveReadingExcerpt(_ record: ReadingRecord, append: Bool = false) -> Bool {
         guard !journal.unreadable,record.kind == .excerpt,!record.quote.isEmpty else { return false }
-        let live = journal.state.records.lazy.filter { $0.kind == .excerpt && $0.removed == nil }
-        if let duplicate = live.first(where:{ existing in
-            existing.textExcerptSegments.contains { $0.duplicates(record.quote,citations:record.citations,in:existing) }
-        }) {
+        if let duplicate = existingReadingExcerpt(record) {
             revealCapturedExcerpt(duplicate,message:"已摘录过 · "+excerptLocation(record))
             return true
         }
@@ -142,12 +150,12 @@ extension WorkspaceStore {
         return true
     }
 
-    func revealCapturedExcerpt(_ record: ReadingRecord, message: String) {
+    func revealCapturedExcerpt(_ record: ReadingRecord, message: String, opensEditor:Bool = false) {
         rememberRightPanelNote()
         if let pinned = journal.record(pinnedReadingID), pinned.kind != .note { pinnedReadingID = nil }
         readingRecordID = record.id
         openReadingDesk(.excerpts)
-        readingExcerptFeedback = ReadingExcerptFeedback(recordID:record.id,message:message)
+        readingExcerptFeedback = ReadingExcerptFeedback(recordID:record.id,message:message,opensEditor:opensEditor)
     }
 
     private func excerptLocation(_ record: ReadingRecord) -> String {

@@ -4,7 +4,9 @@ import PDFKit
 /// A local link keeps the full page/rectangle reference when notes are copied outside the app.
 enum SourceLink {
     static func url(_ source: SourceRef) -> URL? {
-        guard !source.path.isEmpty, let data = try? JSONEncoder().encode(source) else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        guard !source.path.isEmpty, let data = try? encoder.encode(source) else { return nil }
         var value = URLComponents(); value.scheme = "kongfolio"; value.host = "source"
         value.queryItems = [URLQueryItem(name: "ref", value: data.base64EncodedString())]
         return value.url
