@@ -34,7 +34,6 @@ struct WritingToolbar: View {
                 HStack(spacing:8) {
                     documentControls.fixedSize(horizontal:true,vertical:false)
                     if showsControls {
-                        Divider().frame(height:18)
                         ViewThatFits(in:.horizontal) {
                             if textFile.format == .plain {
                                 ForEach((0...PlainTextTool.allCases.count).reversed(),id:\.self) { count in
@@ -91,8 +90,10 @@ struct WritingToolbar: View {
     }
 
     private enum PlainTextTool: String, CaseIterable {
-        case find = "查找替换", paragraphs = "段落", cleanup = "整理粘贴…", replace = "逐项替换…"
-        case undo = "撤销", redo = "重做", pdf = "导出 PDF…", word = "导出 Word…"
+        case find = "查找替换", replace = "逐项替换…"
+        case undo = "撤销", redo = "重做"
+        case paragraphs = "段落", cleanup = "整理粘贴…"
+        case pdf = "导出 PDF…", word = "导出 Word…"
 
         var symbol: String {
             switch self {
@@ -154,7 +155,7 @@ struct WritingToolbar: View {
 
     // Keep frequently used commands visible first. Every remaining command stays in the menu.
     private enum MarkdownTool: CaseIterable, Hashable {
-        case find, headings, list, insert, bold, italic, quote, outline, link, image, table, taskList, code
+        case find, headings, bold, italic, quote, list, taskList, outline, insert, link, image, table, code
     }
 
     private func markdownControls(_ note:MarkdownNote,visibleCount:Int) -> some View {
