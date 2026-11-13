@@ -644,7 +644,7 @@ extension OpenTab {
     var switcherTitle: String {
         switch self {
         case .document(let workspace):
-            return workspace.count == 0 && workspace.sourceURL == nil && workspace.projectURL == nil ? "新标签页" : workspace.displayName
+            return workspace.count == 0 && workspace.sourceURL == nil && workspace.projectURL == nil ? "首页" : workspace.displayName
         case .note(let note): return note.title
         }
     }

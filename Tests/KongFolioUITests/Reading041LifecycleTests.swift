@@ -70,6 +70,7 @@ final class Reading041LifecycleTests:XCTestCase {
         defer { if let old { UserDefaults.standard.set(old,forKey:key) } else { UserDefaults.standard.removeObject(forKey:key) } }
         UserDefaults.standard.set(0.3,forKey:key)
         let note = MarkdownNote(text:"# 可调预览\n\n保留编辑器",storage:try self.folder())
+        note.showPreview = true
         let host = NSHostingView(rootView:AnyView(TextEditorPreviewSplit(note:note))); host.frame = NSRect(x:0,y:0,width:1000,height:600)
         host.layoutSubtreeIfNeeded(); try await Task.sleep(nanoseconds:80_000_000); host.layoutSubtreeIfNeeded()
         let view = try XCTUnwrap(note.textView), first = try XCTUnwrap(view.enclosingScrollView).frame.width

@@ -446,26 +446,8 @@ struct ContentView: View {
                 Image(systemName: "doc.richtext").font(.system(size: 64, weight: .ultraLight)).foregroundStyle(Brand.accent)
                 Text("每一页，都井井有条。").font(.system(size: 28, weight: .medium))
                 Text("PDF 与文本文档的阅读、批注、整理工作台").foregroundStyle(.secondary)
-                HStack(spacing: 12) {
-                    if let store = workspace.store {
-                        Button { store.openReadingHistory(.bookshelf) } label: {
-                            Label("个人书架", systemImage: FileToolbarAction.books.symbol)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    Button { workspace.open() } label: {
-                        Label(FileToolbarAction.open.title, systemImage: FileToolbarAction.open.symbol)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    if let store = workspace.store {
-                        Button { store.openReadingDesk(.search, window: true) } label: {
-                            Label(FileToolbarAction.library.title, systemImage: FileToolbarAction.library.symbol)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-                .labelStyle(.titleAndIcon)
-                .controlSize(.large)
+                WelcomeActions(workspace:workspace)
+                    .padding(.horizontal,12)
                 Text("PDF · 图片 · Markdown · HTML · TXT · 可直接拖入窗口").font(.caption).foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

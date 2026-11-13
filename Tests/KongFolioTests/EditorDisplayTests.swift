@@ -111,6 +111,14 @@ final class EditorDisplayTests: XCTestCase {
         XCTAssertTrue(RootView.showsFunctionToolbar(for:nil))
     }
 
+    @MainActor func testWelcomeTabTitleChangesWhenAFileIsAssigned() {
+        let workspace = WorkspaceStore().addWorkspace()
+        let tab = OpenTab.document(workspace)
+        XCTAssertEqual(tab.switcherTitle,"首页")
+        workspace.sourceURL = URL(fileURLWithPath:"/tmp/万国公报.pdf")
+        XCTAssertEqual(tab.switcherTitle,"万国公报.pdf")
+    }
+
     func testToolbarLeavesRoomForAlwaysVisiblePanelSelector() {
         for width in stride(from:320.0,through:1600,by:5) {
             XCTAssertTrue(Double(SingleRowToolbarPolicy.visibleCount(width:width))*36+198<=width)

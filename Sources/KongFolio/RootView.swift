@@ -80,7 +80,7 @@ struct TabBar: View {
             Menu {
                 ForEach(store.tabs) { tab in
                     Button { store.select(tab.id) } label: {
-                        if tab.id == store.selectedID { Label(tabName(tab), systemImage: "checkmark") } else { Text(tabName(tab)) }
+                        if tab.id == store.selectedID { Label(tab.switcherTitle, systemImage: "checkmark") } else { Text(tab.switcherTitle) }
                     }
                 }
             } label: { Image(systemName: "list.bullet") }
@@ -96,12 +96,6 @@ struct TabBar: View {
         .background(.bar)
     }
 
-    private func tabName(_ tab: OpenTab) -> String {
-        switch tab {
-        case .document(let workspace): return workspace.count == 0 && workspace.sourceURL == nil && workspace.projectURL == nil ? "新标签页" : workspace.displayName
-        case .note(let note): return note.title
-        }
-    }
 }
 
 private struct TabItem: View {
@@ -128,7 +122,7 @@ private struct DocumentTab: View {
         let known = workspace.sourceURL != nil || workspace.projectURL != nil
         let loading = workspace.count == 0 && workspace.busy
         TabChip(icon: loading ? "arrow.down.circle" : (workspace.count == 0 ? (known ? "doc" : "tray") : "doc.richtext"),
-                title: workspace.count == 0 && !known ? "新标签页" : workspace.displayName,
+                title: OpenTab.document(workspace).switcherTitle,
                 tooltip: workspace.displayPath ?? "",
                 dirty: workspace.dirty && workspace.count > 0, selected: selected, compact: compact,
                 dimmed: workspace.count == 0 && known && !loading,
