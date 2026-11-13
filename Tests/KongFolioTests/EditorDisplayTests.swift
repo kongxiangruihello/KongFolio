@@ -88,6 +88,18 @@ final class EditorDisplayTests: XCTestCase {
         XCTAssertEqual(MarkdownToolbarRow.spacing(width:160,itemWidths:[28]),0)
     }
 
+    @MainActor func testFunctionToolbarHidesDuringMarkdownEditingOnly() {
+        let markdown = MarkdownNote(format:.markdown)
+        XCTAssertFalse(RootView.showsFunctionToolbar(for:.note(markdown)))
+        markdown.cleanEditing = true
+        XCTAssertFalse(RootView.showsFunctionToolbar(for:.note(markdown)))
+        markdown.readOnly = true
+        XCTAssertTrue(RootView.showsFunctionToolbar(for:.note(markdown)))
+        XCTAssertTrue(RootView.showsFunctionToolbar(for:.note(MarkdownNote(format:.html))))
+        XCTAssertTrue(RootView.showsFunctionToolbar(for:.note(MarkdownNote(format:.plain))))
+        XCTAssertTrue(RootView.showsFunctionToolbar(for:nil))
+    }
+
     func testToolbarLeavesRoomForAlwaysVisiblePanelSelector() {
         for width in stride(from:320.0,through:1600,by:5) {
             XCTAssertTrue(Double(SingleRowToolbarPolicy.visibleCount(width:width))*36+198<=width)

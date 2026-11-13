@@ -4,12 +4,19 @@ import SwiftUI
 struct RootView: View {
     @ObservedObject var store: WorkspaceStore
 
+    static func showsFunctionToolbar(for tab: OpenTab?) -> Bool {
+        guard let note = tab?.note else { return true }
+        return note.format != .markdown || note.readOnly
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             TabBar(store: store)
             Divider()
-            FunctionToolbar(store:store)
-            Divider()
+            if Self.showsFunctionToolbar(for:store.activeTab) {
+                FunctionToolbar(store:store)
+                Divider()
+            }
             RightReadingPanelLayout(store:store) {
                 if let tab = store.activeTab {
                     switch tab {
