@@ -442,15 +442,25 @@ struct ContentView: View {
             .padding()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if workspace.count == 0 {
-            VStack(spacing: 20) {
-                Image(systemName: "doc.richtext").font(.system(size: 64, weight: .ultraLight)).foregroundStyle(Brand.accent)
-                Text("每一页，都井井有条。").font(.system(size: 28, weight: .medium))
-                Text("PDF 与文本文档的阅读、批注、整理工作台").foregroundStyle(.secondary)
-                WelcomeActions(workspace:workspace)
-                    .padding(.horizontal,12)
-                Text("PDF · 图片 · Markdown · HTML · TXT · 可直接拖入窗口").font(.caption).foregroundStyle(.tertiary)
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(spacing:16) {
+                        Image(systemName:"doc.richtext").font(.system(size:54,weight:.ultraLight)).foregroundStyle(Brand.accent)
+                        Text("每一页，都井井有条。").font(.system(size:26,weight:.medium))
+                        WelcomeActions(workspace:workspace)
+                        if let store = workspace.store {
+                            HomeReadingView(store:store,journal:store.journal)
+                                .frame(maxWidth:610)
+                                .padding(.top,8)
+                        }
+                        Text("PDF · 图片 · Markdown · HTML · TXT · 可直接拖入窗口")
+                            .font(.caption).foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal,16)
+                    .padding(.vertical,24)
+                    .frame(maxWidth:.infinity,minHeight:proxy.size.height)
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             PDFCanvas(workspace: workspace)
                 .overlay(alignment: .top) {

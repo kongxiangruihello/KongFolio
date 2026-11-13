@@ -24,6 +24,8 @@ struct ReadingDeskView: View {
     @AppStorage("readingRecordsPageSize") private var pageSize = 10
     private var path:String? { store.commandWorkspace?.readingJournalPath }
     @State private var hits:[ReadingDeskHit] = []
+    @State private var homeSearchTarget: ReadingLibraryID?
+    @State private var homeSearchSubmission = UUID()
     private var sourceFilter: ReadingDeskSourceFilter {
         if section == .notes && noteFilter == .independent { return .independent }
         let currentBookOnly = section == .notes ? noteFilter == .current : excerptsBookOnly
@@ -38,9 +40,10 @@ struct ReadingDeskView: View {
         let tag: String
         let removed: Bool
         let recent: Bool
+        let submission: UUID
     }
     private var searchRequest: RecordsRequest {
-        RecordsRequest(revision:journal.revisionID,section:section,source:sourceFilter,query:query,tag:tag,removed:removed,recent:recent)
+        RecordsRequest(revision:journal.revisionID,section:section,source:sourceFilter,query:query,tag:tag,removed:removed,recent:recent,submission:homeSearchSubmission)
     }
     private var pagination: ReadingPagination { ReadingPagination(total: hits.count, page: page, size: pageSize) }
     var body:some View {
@@ -68,6 +71,21 @@ struct ReadingDeskView: View {
             if !Task.isCancelled {
                 hits = result
                 positionCapturedExcerpt(in:result)
+                if let target = homeSearchTarget {
+                    homeSearchTarget = nil
+                    if let index = result.firstIndex(where:{ $0.libraryID == target }) {
+                        page = index / max(1,pageSize)
+                        switch target {
+                        case .record(let id):
+                            browsingSearchResults = false
+                            excerptInList = nil
+                            store.readingRecordID = id
+                        case .essay(let id):
+                            journal.selectEssay(id)
+                            section = .essays
+                        }
+                    }
+                }
             }
         }
         .onChange(of:store.readingExcerptFeedback?.id,initial:true) { _,_ in
@@ -85,9 +103,16 @@ struct ReadingDeskView: View {
             browsingSearchResults = true
             recordSearchFocused = true
         }
+        .onChange(of:store.homeSearchRequest,initial:true) { _,value in
+            guard compact, let value, value.search.scope == .notes && section == .notes ||
+                    value.search.scope == .excerpts && section == .excerpts else { return }
+            restoreHomeDeskSearch(value.search)
+            store.homeSearchRequest = nil
+        }
         .onChange(of:query) { _,_ in page = 0 }.onChange(of:tag) { _,_ in page = 0 }.onChange(of:path) { _,_ in page = 0 }
         .onChange(of:section) { _,_ in page = 0 }
-        .onChange(of:sourceFilter) { _,_ in page = 0 }.onChange(of:recent) { _,_ in page = 0 }.onChange(of:removed) { _,_ in page = 0 }
+        .onChange(of:sourceFilter) { _,_ in page = 0 }
+        .onChange(of:recent) { _,_ in page = 0 }.onChange(of:removed) { _,_ in page = 0 }
         .onChange(of:pageSize) { _,_ in page = 0 }.onChange(of:hits.count) { _,_ in page = pagination.index }
         .onChange(of:store.readingRecordID) { _,id in if id != nil { browsingSearchResults = false } }
         .onChange(of:journal.draftRecord?.id) { _,id in if id != nil { browsingSearchResults = false; page = 0; query = ""; tag = ""; removed = false; recent = false } }
@@ -133,12 +158,15 @@ struct ReadingDeskView: View {
     private var recordList: some View {
         VStack(alignment:.leading,spacing:8) {
             ReadingSearchScopeMenu(store:store,title:recordSearchTitle)
-            TextField(section == .notes ? "搜索笔记、书名或页码" : "搜索摘录、书名或页码",text:$query)
+            TextField(section == .notes ? "搜索笔记、书名或页码" : "搜索摘录、书名或页码",text:Binding(get:{query},set:{ value in
+                query = value
+                rememberHomeDeskSearch()
+            }))
                 .textFieldStyle(.roundedBorder).focused($recordSearchFocused).accessibilityLabel(recordSearchTitle)
             if section == .notes {
                 Picker("笔记范围",selection:Binding(
                     get:{ path == nil && noteFilter == .current ? .all : noteFilter },
-                    set:{ noteFilter = $0 }
+                    set:{ noteFilter = $0;rememberHomeDeskSearch() }
                 )) {
                     ForEach(NoteFilter.allCases.filter { $0 != .current || path != nil },id:\.self) { filter in
                         Text(filter.rawValue).tag(filter)
@@ -146,7 +174,7 @@ struct ReadingDeskView: View {
                 }.pickerStyle(.segmented).labelsHidden()
             }
             HStack {
-                if section == .excerpts { Toggle("仅当前书",isOn:$excerptsBookOnly).disabled(path == nil) }
+                if section == .excerpts { Toggle("仅当前书",isOn:Binding(get:{excerptsBookOnly},set:{ excerptsBookOnly = $0;rememberHomeDeskSearch() })).disabled(path == nil) }
                 Toggle("最近七天",isOn:$recent)
             }.font(.caption)
             HStack {
@@ -176,7 +204,7 @@ struct ReadingDeskView: View {
                 switch hit {
                 case .record(let record): row(record).id(record.id)
                 case .essay(let essay):
-                    Button { journal.selectEssay(essay.id); section = .essays } label: {
+                    Button { rememberHomeDeskSearch(target:.essay(essay.id));journal.selectEssay(essay.id);section = .essays } label: {
                         VStack(alignment:.leading,spacing:3) {
                             Label(essay.title,systemImage:"doc.text").lineLimit(2).help(essay.title)
                             let source = ReadingLibraryItem.essay(essay).citations053.first?.display ?? "独立笔记"
@@ -254,6 +282,35 @@ struct ReadingDeskView: View {
         pendingExcerptReveal = nil
     }
 
+    private func rememberHomeDeskSearch(target: ReadingLibraryID? = nil) {
+        guard homeSearchTarget == nil, section == .notes || section == .excerpts,
+              !query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { return }
+        let scope: HomeReadingSearch.Scope = section == .notes ? .notes : .excerpts
+        let filter = HomeReadingSearch.DeskFilter(source:sourceFilter,tag:tag,recent:recent,removed:removed)
+        let last = HomeReadingSearch.load(store.readingDefaults)
+        if target == nil, last?.query == query, last?.scope == scope, last?.deskFilter == filter { return }
+        let sourcePath: String?
+        if case .book(let path) = sourceFilter { sourcePath = path } else { sourcePath = nil }
+        HomeReadingSearch(scope:scope,query:query,path:sourcePath,record:target,deskFilter:filter).save(store.readingDefaults)
+    }
+
+    private func restoreHomeDeskSearch(_ search: HomeReadingSearch) {
+        switch search.deskFilter?.source {
+        case .book: noteFilter = .current;excerptsBookOnly = true
+        case .independent: noteFilter = .independent;excerptsBookOnly = false
+        default: noteFilter = .all;excerptsBookOnly = false
+        }
+        tag = search.deskFilter?.tag ?? ""
+        recent = search.deskFilter?.recent ?? false
+        removed = search.deskFilter?.removed ?? false
+        browsingSearchResults = true
+        store.pinnedReadingID = nil
+        store.readingRecordID = nil
+        query = search.query
+        homeSearchTarget = search.record
+        homeSearchSubmission = UUID()
+    }
+
     private func createNote(source:ReadingNoteSource = .currentPage,linked:ReadingRecord? = nil) {
         if compact { store.newReadingNote(source:source,linked:linked) }
         else if store.prepareReadingNote(source:source,linked:linked) != nil { section = .notes }
@@ -266,6 +323,7 @@ struct ReadingDeskView: View {
                     .accessibilityLabel("第 \(index+1) 个选中")
             }
             Button {
+                rememberHomeDeskSearch(target:.record(record.id))
                 browsingSearchResults = false
                 excerptInList = nil
                 if section == .notes || store.pinnedExcerptNote == nil { store.pinnedReadingID = nil }

@@ -13,7 +13,7 @@ struct ReadingSearchRequest:Hashable {
     var options053:ReadingLibraryOptions053? = nil
     var indexFolder:String? = nil
 }
-enum ReadingDeskSourceFilter: Hashable {
+enum ReadingDeskSourceFilter: Codable, Hashable {
     case all, book(String), independent
 
     func includes(_ item: ReadingLibraryItem) -> Bool {
@@ -52,6 +52,9 @@ actor ReadingSearchWorker {
 
 enum ReadingDeskHit:Identifiable {
     case record(ReadingRecord),essay(ReadingEssay)
+    var libraryID: ReadingLibraryID {
+        switch self { case .record(let value): return .record(value.id); case .essay(let value): return .essay(value.id) }
+    }
     var id:String { switch self { case .record(let value): return "record:"+value.id.uuidString; case .essay(let value): return "essay:"+value.id.uuidString } }
     var date:Date { switch self { case .record(let value): return value.created; case .essay(let value): return value.created } }
 }

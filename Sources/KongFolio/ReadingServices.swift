@@ -27,6 +27,7 @@ struct PDFSearchResume {
     let page: Int?
     let range: NSRange?
     let strips: [CGRect]?
+    var revealMatch = false
 }
 
 struct SearchHit: Identifiable {
@@ -340,6 +341,7 @@ extension Workspace {
         searchTask?.cancel();searchTask=nil;searchResults=[];searchMessage="";searchCursor=nil
         guard !search.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,count>0 else { return }
         let query=search,version=revision;searchMessage="正在搜索…"
+        if previous == nil { rememberHomePDFSearch(query:query) }
         var records:[Int:[RecognizedLine]]=[:]
         for i in 0..<count { if let lines=meta(i).ocrRegions,OrderedText.isVertical(lines) { records[i]=lines } }
         let job=Task { [weak self,records] () throws->[SearchHit] in
@@ -357,19 +359,28 @@ extension Workspace {
                 self.searchResults=hits;self.searchTask=nil
                 if let previous, let page = previous.page {
                     self.searchCursor = hits.firstIndex { $0.page == page && $0.range == previous.range && $0.strips == previous.strips }
+                    if previous.revealMatch, let index = self.searchCursor { self.goToSearch(hits[index],remember:false) }
                 }
                 self.searchMessage=hits.isEmpty ? "没有找到匹配文字。扫描件需先识别文字；请在快捷工具中使用 OCR。" : (hits.count==1000 ? "显示前 1000 处匹配，请缩小范围":"找到 \(hits.count) 处匹配；点击结果跳到原页")
             } catch { guard !job.isCancelled,let self,self.revision==version,self.search==query else { return };self.searchTask=nil;if !FolioCancellation.matches(error) { self.searchMessage=error.localizedDescription } }
         }
     }
     func cancelSearch053() { searchTask?.cancel();searchTask=nil;searchMessage="已停止搜索" }
-    func goToSearch(_ hit: SearchHit) {
+    func goToSearch(_ hit: SearchHit, remember: Bool = true) {
         searchCursor = searchResults.firstIndex { $0.id == hit.id }
+        if remember, let index = searchCursor {
+            rememberHomePDFSearch(query:hit.query ?? search,match:.init(page:hit.page,range:hit.range,strips:hit.strips,index:index))
+        }
         selectPage(hit.page, readingReference:true)
         guard let selection = searchSelection(for: hit) else { return }
         if let page { let bounds = selection.bounds(for: page); readingPoint = CGPoint(x: bounds.minX, y: bounds.maxY + 20) }
         pdfView?.setCurrentSelection(selection, animate: true); pdfView?.go(to: selection)
     }
+    private func rememberHomePDFSearch(query: String, match: HomeReadingSearch.PDFMatch? = nil) {
+        guard let path = displayPath else { return }
+        HomeReadingSearch(scope:.pdf,query:query,path:path,pdfMatch:match).save(readingDefaults)
+    }
+
     /// Copies the selected text (or the page being read, when nothing is selected) in reading order. On a vertical page
     /// that was recognised here that means a line per column, right to left; PDFKit's own copy would read the columns
     /// left to right. Other selections are copied as PDFKit gives them.

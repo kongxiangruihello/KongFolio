@@ -95,6 +95,8 @@ import UniformTypeIdentifiers
     lazy var research = ResearchStore(storage: storage)
     let storage: URL
     let readingDefaults: UserDefaults
+    @Published var homePinnedFolders: [HomePinnedFolder]
+    @Published var homeSearchRequest: HomeSearchRequest?
     @Published var showReadingHistory = false
     @Published var libraryTab = ReadingHistoryPage.bookshelf.rawValue
     @Published var showHistorySettings = false
@@ -127,6 +129,7 @@ import UniformTypeIdentifiers
         self.storage = folder
         self.library = BookLibrary(storage: folder)
         self.readingDefaults = readingDefaults ?? (AppEnvironment.isTestRun ? UserDefaults(suiteName: "KongFolio.ReadingTests." + UUID().uuidString)! : .standard)
+        self.homePinnedFolders = HomePinnedFolder.load(self.readingDefaults)
         self.readingBatches = ReadingOpenBatch.loadHistory(self.readingDefaults)
         self.readingMode = self.readingDefaults.object(forKey:Self.readingModeKey) as? Bool ?? !AppEnvironment.isTestRun
         self.documentTasks = DocumentTaskQueue(storage: folder)
@@ -452,10 +455,14 @@ import UniformTypeIdentifiers
     var emptyFileChooserWorkspace:Workspace? {
         tabs.compactMap(\.workspace).first { $0.count == 0 && !$0.needsLoad && !$0.busy && !$0.isImporting && $0.sourceURL == nil && $0.projectURL == nil }
     }
-    func open() {
+    func open() { open(directory:nil) }
+
+    func open(directory:URL?) {
         guard !DocumentOpenPanel.coordinator.revealExisting() else { return }
         recordActivity("显示文件选择器")
-        DocumentOpenPanel.coordinator.present(DocumentOpenPanel.files(offersFinder:true),presentation:.separate) { [weak self] response,urls in
+        let panel = DocumentOpenPanel.files(offersFinder:true)
+        if let directory { panel.directoryURL = directory }
+        DocumentOpenPanel.coordinator.present(panel,presentation:.separate) { [weak self] response,urls in
             guard let self else { return }
             if response == .abort {
                 self.recordActivity("文件选择器未能显示")

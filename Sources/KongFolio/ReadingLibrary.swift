@@ -1,6 +1,6 @@
 import Foundation
 
-enum ReadingLibraryID: Hashable { case record(UUID), essay(UUID) }
+enum ReadingLibraryID: Codable, Hashable { case record(UUID), essay(UUID) }
 enum ReadingLibraryItem: Identifiable {
     case record(ReadingRecord), essay(ReadingEssay)
     var id:ReadingLibraryID { switch self { case .record(let r): .record(r.id); case .essay(let e): .essay(e.id) } }

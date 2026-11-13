@@ -19,6 +19,7 @@ struct ReadingProgress: Equatable, Codable {
     var layout: ReadingLayout? = nil
     var title: String? = nil
     var bookmark: Data? = nil
+    var pageLabel: String? = nil
 
     struct Chapter: Equatable {
         var title: String
@@ -93,7 +94,7 @@ struct ReadingProgress: Equatable, Codable {
                                date: (stored["date"] as? Double).map { Date(timeIntervalSince1970: $0) }, pages: stored["pages"] as? Int ?? 0,
                                x: finite(stored["x"] as? Double), y: finite(stored["y"] as? Double),
                                scale: validScale(stored["scale"] as? Double),
-                               layout: (stored["layout"] as? String).flatMap(ReadingLayout.init(rawValue:)), title: stored["title"] as? String, bookmark: stored["bookmark"] as? Data)
+                               layout: (stored["layout"] as? String).flatMap(ReadingLayout.init(rawValue:)), title: stored["title"] as? String, bookmark: stored["bookmark"] as? Data, pageLabel: stored["pageLabel"] as? String)
     }
 
     /// Stored as a plain dictionary under "KongFolio.progress.<path>" in KongFolio's preferences; KongSeek reads
@@ -107,6 +108,7 @@ struct ReadingProgress: Equatable, Codable {
         if let layout { stored["layout"] = layout.rawValue }
         if let title { stored["title"] = title }
         if let bookmark { stored["bookmark"] = bookmark }
+        if let pageLabel { stored["pageLabel"] = pageLabel }
         defaults.set(stored, forKey: Self.key(path))
         let canonical = Self.canonicalPath(path)
         if canonical != path { defaults.set(stored, forKey: Self.key(canonical)) }
@@ -201,6 +203,7 @@ extension Workspace {
         if capture { captureReadingPosition(scheduleSave: false) }
         var record = ReadingProgress.load(path: path, defaults: readingDefaults)
         record.last = selection; record.pages = count; if updateDate { record.date = Date() }; record.title = displayName
+        record.pageLabel = page.flatMap { ReadingServices.pageLabel($0,index:selection) }
         record.x = readingPoint.map { Double($0.x) }; record.y = readingPoint.map { Double($0.y) }
         record.scale = readingScale; record.layout = readingLayout
         if record.bookmark == nil, readingBookmarkTask == nil {

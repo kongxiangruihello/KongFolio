@@ -49,6 +49,7 @@ struct ReadingLibraryView: View {
     @State private var searching053=false
     @State private var searchToken053=UUID()
     @State private var searchSubmission=UUID()
+    @State private var homeSearchTarget: ReadingLibraryID?
     @FocusState private var librarySearchFocused:Bool
     private struct SearchActivation:Equatable { var request:ReadingSearchRequest;var submission:UUID }
     private var request:ReadingSearchRequest { ReadingSearchRequest(revision:journal.revisionID,query:query,kind:kind,tag:tag,topic:topic,removed:removed,recent:recent,untagged:untagged,bookPath:bookSource?.source.path,options053:options053,indexFolder:journal.folder.path) }
@@ -97,7 +98,7 @@ struct ReadingLibraryView: View {
             }
         }
         .onAppear { options053=ReadingLibraryOptions053.load(store.readingDefaults) }
-        .onChange(of:options053) { _,value in page=0;value.save(store.readingDefaults) }
+        .onChange(of:options053) { _,value in page=0;value.save(store.readingDefaults);rememberHomeSearch() }
     }
 
     private var layout:some View {
@@ -115,10 +116,34 @@ struct ReadingLibraryView: View {
             let request = request
             do { try await Task.sleep(nanoseconds:300_000_000) } catch { return }
             let result = await ReadingSearchWorker.shared.library(journal.state,request:request)
-            if !Task.isCancelled { items = result;if let desired = pendingFilterPage { page = ReadingPagination(total:result.count,page:desired,size:size).index;pendingFilterPage = nil };if let target = pendingNavigation,let i = result.firstIndex(where:{$0.id == target}) { page = i/size;editing = target;selection = [target];pendingNavigation = nil } }
+            guard !Task.isCancelled else { return }
+            items = result
+            if let desired = pendingFilterPage {
+                page = ReadingPagination(total:result.count,page:desired,size:size).index
+                pendingFilterPage = nil
+            }
+            if let target = pendingNavigation, let i = result.firstIndex(where:{$0.id == target}) {
+                page = i/size
+                editing = target
+                selection = [target]
+                pendingNavigation = nil
+            }
+            if let target = homeSearchTarget {
+                homeSearchTarget = nil
+                if let i = result.firstIndex(where:{$0.id == target}) {
+                    page = i/size
+                    selection = [target]
+                    editing = target
+                }
+            }
         }
         .onAppear { if !restoredSession { restoredSession = true;if bookSource == nil && store.readingLibraryNavigation == nil { let s = ReadingLibrarySession.load(store.readingDefaults);query = s.query;kind = (s.kind == "札记" ? "笔记" : s.kind);tag = s.tag;topic = s.topic;recent = s.recent;untagged = s.untagged;removed = s.removed;pendingFilterPage = s.page;size = s.size } };do { filters = try SavedReadingFilter.load(journal.folder) } catch { filterMessage = error.localizedDescription };if bookSource == nil { if let preferred = store.readingLibraryPreferredKind { kind = preferred;store.readingLibraryPreferredKind = nil };if let target = store.readingLibraryNavigation { navigate(target) } } }
         .onChange(of:store.readingLibraryNavigationRequest) { _,_ in if bookSource == nil { if let preferred = store.readingLibraryPreferredKind { kind = preferred;store.readingLibraryPreferredKind = nil };if let target = store.readingLibraryNavigation { navigate(target) } } }
+        .onChange(of:store.homeSearchRequest,initial:true) { _,value in
+            guard bookSource == nil, !compact, let value, value.search.scope == .library else { return }
+            restoreHomeSearch(value.search)
+            store.homeSearchRequest = nil
+        }
         .onDisappear { rememberPage();copyGeneration = UUID();contextFocus = UUID();sourceNavigator.cancel() }
         .onChange(of:page) { _,_ in rememberPage() }
         .onChange(of:journal.draftRecord?.id) { _,_ in validateEditing() }
@@ -243,7 +268,11 @@ struct ReadingLibraryView: View {
         VStack(alignment:.leading,spacing:8) {
             ReadingSearchScopeMenu(store:store,title:bookSource == nil ? "全部资料库" : "当前书的阅读资料")
             HStack(spacing:6) {
-                TextField("摘录、标注、评论、笔记或出处关键词",text:$query)
+                TextField("摘录、标注、评论、笔记或出处关键词",text:Binding(get:{query},set:{ value in
+                    query = value
+                    page = 0
+                    rememberHomeSearch()
+                }))
                     .textFieldStyle(.roundedBorder).focused($librarySearchFocused)
                     .accessibilityLabel("阅读资料关键词").onSubmit(submitLibrarySearch)
                 if !query.isEmpty {
@@ -259,7 +288,7 @@ struct ReadingLibraryView: View {
         }
     }
     private func submitLibrarySearch() {
-        pendingFilterPage=nil;page=0;librarySearchFocused=true;searchSubmission=UUID()
+        pendingFilterPage=nil;page=0;librarySearchFocused=true;searchSubmission=UUID();rememberHomeSearch()
     }
     private var newMenu:some View {
                 Menu("新增") {
@@ -294,6 +323,7 @@ struct ReadingLibraryView: View {
     private func updateSelection(_ ids: Set<ReadingLibraryID>) {
         selectionOrder = orderedSelection(ids)
         selection = ids
+        rememberHomeSearch(target:ids.count == 1 ? ids.first : nil)
     }
 
     private func orderedSelection(_ ids: Set<ReadingLibraryID>) -> [ReadingLibraryID] {
@@ -400,6 +430,35 @@ struct ReadingLibraryView: View {
     private func removeFilter(_ id:UUID) {
         do { var values = try SavedReadingFilter.load(journal.folder);values.removeAll{$0.id == id};try SavedReadingFilter.save(values,folder:journal.folder);filters = values;selectedFilter = nil } catch { filterMessage = error.localizedDescription }
     }
+    private func rememberHomeSearch(target: ReadingLibraryID? = nil) {
+        guard bookSource == nil, homeSearchTarget == nil, !query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { return }
+        let session = ReadingLibrarySession(query:query,kind:kind,tag:tag,topic:topic,recent:recent,untagged:untagged,removed:removed,page:page,size:size)
+        let last = HomeReadingSearch.load(store.readingDefaults)
+        if target == nil, last?.scope == .library, last?.librarySession == session, last?.libraryOptions == options053 { return }
+        HomeReadingSearch(scope:.library,query:query,record:target,librarySession:session,libraryOptions:options053)
+            .save(store.readingDefaults)
+    }
+
+    private func restoreHomeSearch(_ search: HomeReadingSearch) {
+        let session = search.librarySession ?? ReadingLibrarySession(query:search.query)
+        selectedFilter = nil
+        pendingNavigation = nil
+        query = search.query
+        kind = session.kind
+        tag = session.tag
+        topic = session.topic
+        recent = session.recent
+        untagged = session.untagged
+        removed = session.removed
+        size = session.size
+        options053 = search.libraryOptions ?? ReadingLibraryOptions053()
+        selection = []
+        editing = nil
+        homeSearchTarget = search.record
+        pendingFilterPage = session.page
+        searchSubmission = UUID()
+    }
+
     private func rememberPage() {
         guard bookSource == nil else { return }
         ReadingLibrarySession(query:query,kind:kind,tag:tag,topic:topic,recent:recent,untagged:untagged,removed:removed,page:page,size:size).save(store.readingDefaults)

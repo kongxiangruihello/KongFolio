@@ -143,7 +143,7 @@ extension WorkspaceStore {
     }
     func restoreReadingRecord(for workspace:Workspace) {
         guard workspace.id != stagedShelfTab || workspace.id == selectedID,
-              readingMode, let path = workspace.readingJournalPath, let id = journal.state.lastNotes[path],
+              readingMode, homeSearchRequest == nil, let path = workspace.readingJournalPath, let id = journal.state.lastNotes[path],
               let record = journal.record(id), record.removed == nil, record.hasContent,
               ReadingLibraryItem.record(record).isFromBook(path) else { return }
         if showReadingDesk && readingDeskSection == .excerpts { return }

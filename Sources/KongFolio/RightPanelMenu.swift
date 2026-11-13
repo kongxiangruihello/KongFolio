@@ -117,6 +117,11 @@ struct RightReadingPanelLayout<Content: View>: View {
         }.frame(maxHeight:.infinity).background(Color(nsColor:.windowBackgroundColor))
             .onChange(of:store.readingExcerptFeedback?.id) { _,id in if id != nil { showsPageRecords = false; reviewing = false } }
             .onChange(of:store.readingDeskSection) { _,_ in showsPageRecords = false }
+            .onChange(of:store.homeSearchRequest) { _,request in
+                guard let request, request.search.scope == .notes || request.search.scope == .excerpts else { return }
+                showsPageRecords = false
+                reviewing = false
+            }
             .onChange(of:store.pdfSearchWorkspaceID) { _,id in if id != nil { showsPageRecords = false } }
     }
     private var excerptDropArea: some View {
