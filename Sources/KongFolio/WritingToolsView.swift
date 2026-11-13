@@ -20,7 +20,7 @@ struct ReadingWritingEditor: View {
 struct WritingToolbar: View {
     @ObservedObject var session:WritingSession
     var prominent = false
-    var markdownFile: MarkdownNote? = nil
+    var textFile: MarkdownNote? = nil
     var formatting = true
     var showsControls = true
     var documentControls: AnyView? = nil
@@ -29,14 +29,20 @@ struct WritingToolbar: View {
     @State private var showReplacePreview = false
     var body:some View {
         VStack(alignment:.leading,spacing:5) {
-            if let documentControls, let markdownFile {
+            if let documentControls, let textFile {
                 HStack(spacing:8) {
                     documentControls.fixedSize(horizontal:true,vertical:false)
                     if showsControls {
                         Divider().frame(height:18)
                         ViewThatFits(in:.horizontal) {
-                            ForEach((0...MarkdownTool.allCases.count).reversed(),id:\.self) { count in
-                                markdownControls(markdownFile,visibleCount:count)
+                            if textFile.format == .plain {
+                                ForEach((0...PlainTextTool.allCases.count).reversed(),id:\.self) { count in
+                                    plainTextControls(visibleCount:count)
+                                }
+                            } else {
+                                ForEach((0...MarkdownTool.allCases.count).reversed(),id:\.self) { count in
+                                    markdownControls(textFile,visibleCount:count)
+                                }
                             }
                         }.frame(maxWidth:.infinity,alignment:.leading)
                     }
@@ -75,12 +81,65 @@ struct WritingToolbar: View {
         .onChange(of:session.findRequest) { _,_ in session.beginFind();showFind = true }
         .onChange(of:session.cleanupRequest) { _,_ in showCleanup = true }
         .sheet(isPresented:$showReplacePreview) { EditorReplaceView(session:session) }
-        .sheet(isPresented:$showCleanup) { WritingCleanupView(session:session) }
+        .sheet(isPresented:$showCleanup) { WritingCleanupView(session:session,allowsMarkdownQuote:textFile?.format != .plain) }
     }
 
     private func toggleFind() {
         if showFind { session.endFind() } else { session.beginFind() }
         showFind.toggle()
+    }
+
+    private enum PlainTextTool: String, CaseIterable {
+        case find = "查找替换", paragraphs = "段落", cleanup = "整理粘贴…", replace = "逐项替换…"
+
+        var symbol: String {
+            switch self {
+            case .find: return "magnifyingglass"
+            case .paragraphs: return "text.alignleft"
+            case .cleanup: return "doc.on.clipboard"
+            case .replace: return "arrow.left.arrow.right"
+            }
+        }
+    }
+
+    private func plainTextControls(visibleCount:Int) -> some View {
+        MarkdownToolbarRow {
+            ForEach(PlainTextTool.allCases.prefix(visibleCount),id:\.self) { command in
+                if command == .paragraphs {
+                    Menu { paragraphCommands } label: { Image(systemName:command.symbol) }
+                        .help(command.rawValue).accessibilityLabel(command.rawValue)
+                } else {
+                    tool(command.rawValue,command.symbol) { runPlainTextTool(command) }
+                }
+            }
+            if visibleCount < PlainTextTool.allCases.count {
+                Menu {
+                    ForEach(PlainTextTool.allCases.dropFirst(visibleCount),id:\.self) { command in
+                        if command == .paragraphs {
+                            Menu(command.rawValue) { paragraphCommands }
+                        } else {
+                            Button(command.rawValue) { runPlainTextTool(command) }
+                        }
+                    }
+                } label: { Image(systemName:"ellipsis.circle") }
+                    .help("更多文本编辑").accessibilityLabel("更多文本编辑")
+            }
+        }
+    }
+
+    @ViewBuilder private var paragraphCommands: some View {
+        ForEach(WritingEdit.ParagraphAction.allCases,id:\.self) { action in
+            Button(action.rawValue+"  "+action.shortcut) { session.paragraph(action) }
+        }
+    }
+
+    private func runPlainTextTool(_ command:PlainTextTool) {
+        switch command {
+        case .find: toggleFind()
+        case .cleanup: showCleanup = true
+        case .replace: showReplacePreview = true
+        case .paragraphs: break
+        }
     }
 
     // Keep frequently used commands visible first. Every remaining command stays in the menu.
@@ -230,6 +289,7 @@ struct MarkdownToolbarRow: Layout {
 
 struct WritingCleanupView: View {
     @ObservedObject var session:WritingSession
+    var allowsMarkdownQuote = true
     @Environment(\.dismiss) private var dismiss
     private enum PasteMode:String,CaseIterable {
         case original = "原样", joined = "合并段内断行", quote = "Markdown 引用"
@@ -243,7 +303,7 @@ struct WritingCleanupView: View {
         VStack(alignment:.leading,spacing:12) {
             Text("整理粘贴文字").font(.headline)
             Text("先核对整理结果；诗文、古籍可保留原来的换行。原始文献保持原样。").font(.caption)
-            Picker("粘贴方式",selection:$mode) { ForEach(PasteMode.allCases,id:\.self) { Text($0.rawValue) } }.pickerStyle(.segmented)
+            Picker("粘贴方式",selection:$mode) { ForEach(PasteMode.allCases.filter { allowsMarkdownQuote || $0 != .quote },id:\.self) { Text($0.rawValue) } }.pickerStyle(.segmented)
             if mode == .joined {
                 HStack { Toggle("合并英文行末断字",isOn:$options.dehyphenate);Toggle("清理多余空格",isOn:$options.compactSpaces) }
             }

@@ -53,7 +53,10 @@ final class EditorDisplayTests: XCTestCase {
         XCTAssertFalse(note.cleanEditing)
         XCTAssertFalse(note.showPreview)
         XCTAssertTrue(note.text.isEmpty)
-        XCTAssertEqual(store.newNote(format:.plain).format,.plain)
+        let plain = store.newNote(format:.plain)
+        XCTAssertEqual(plain.format,.plain)
+        XCTAssertTrue(plain.focusNewEditor)
+        XCTAssertFalse(plain.showPreview)
         XCTAssertTrue(store.newNote(format:.html).showPreview)
 
         note.text = "# 写作\n\n正文"
@@ -88,7 +91,7 @@ final class EditorDisplayTests: XCTestCase {
         XCTAssertEqual(MarkdownToolbarRow.spacing(width:160,itemWidths:[28]),0)
     }
 
-    @MainActor func testFunctionToolbarHidesDuringMarkdownEditingOnly() {
+    @MainActor func testFunctionToolbarHidesDuringMarkdownAndPlainTextEditing() {
         let markdown = MarkdownNote(format:.markdown)
         XCTAssertFalse(RootView.showsFunctionToolbar(for:.note(markdown)))
         markdown.cleanEditing = true
@@ -96,7 +99,10 @@ final class EditorDisplayTests: XCTestCase {
         markdown.readOnly = true
         XCTAssertTrue(RootView.showsFunctionToolbar(for:.note(markdown)))
         XCTAssertTrue(RootView.showsFunctionToolbar(for:.note(MarkdownNote(format:.html))))
-        XCTAssertTrue(RootView.showsFunctionToolbar(for:.note(MarkdownNote(format:.plain))))
+        let plain = MarkdownNote(format:.plain)
+        XCTAssertFalse(RootView.showsFunctionToolbar(for:.note(plain)))
+        plain.readOnly = true
+        XCTAssertTrue(RootView.showsFunctionToolbar(for:.note(plain)))
         XCTAssertTrue(RootView.showsFunctionToolbar(for:nil))
     }
 
