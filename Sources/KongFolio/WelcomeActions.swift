@@ -9,35 +9,47 @@ struct WelcomeActions: View {
 
     var body: some View {
         ViewThatFits(in:.horizontal) {
-            HStack(spacing:12) { buttons }
+            HStack(spacing:12) { buttons(compact:false) }
                 .fixedSize(horizontal:true,vertical:false)
-            VStack(spacing:8) { buttons }
+            HStack(spacing:8) { buttons(compact:true) }
+                .fixedSize(horizontal:true,vertical:false)
+            VStack(spacing:8) { buttons(compact:false) }
         }
         .onDisappear { hovered = nil }
     }
 
-    @ViewBuilder private var buttons: some View {
+    @ViewBuilder private func buttons(compact: Bool) -> some View {
         if let store = workspace.store {
-            action(.books,title:"个人书架") { store.openReadingHistory(.bookshelf) }
+            action(.books,title:"个人书架",compact:compact) { store.openReadingHistory(.bookshelf) }
         }
-        action(.open,title:FileToolbarAction.open.title) { workspace.open() }
+        action(.open,title:FileToolbarAction.open.title,compact:compact) { workspace.open() }
         if let store = workspace.store {
-            action(.library,title:FileToolbarAction.library.title) {
+            action(.library,title:FileToolbarAction.library.title,compact:compact) {
                 store.openReadingDesk(.search,window:true)
             }
         }
     }
 
-    private func action(_ item:FileToolbarAction,title:String,perform:@escaping () -> Void) -> some View {
+    private func action(_ item:FileToolbarAction,title:String,compact:Bool,perform:@escaping () -> Void) -> some View {
         let highlighted = isEnabled && hovered == item
         let keyboardFocused = isEnabled && focused == item
         return Button(action:perform) {
-            Label(title,systemImage:item.symbol)
-                .labelStyle(.titleAndIcon)
-                .font(.system(size:14,weight:.medium))
+            Group {
+                if compact {
+                    VStack(spacing:3) {
+                        Image(systemName:item.symbol)
+                        Text(title)
+                    }
+                    .frame(minWidth:58)
+                } else {
+                    Label(title,systemImage:item.symbol).labelStyle(.titleAndIcon)
+                }
+            }
+                .accessibilityLabel(title)
+                .font(.system(size:compact ? 12 : 14,weight:.medium))
                 .foregroundStyle(highlighted ? .white : Color.primary)
-                .padding(.horizontal,14)
-                .frame(minHeight:36)
+                .padding(.horizontal,compact ? 7 : 14)
+                .frame(minHeight:compact ? 42 : 36)
                 .background {
                     RoundedRectangle(cornerRadius:9)
                         .fill(highlighted ? Brand.accent : Color.primary.opacity(0.07))

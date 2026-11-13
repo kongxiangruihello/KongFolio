@@ -95,6 +95,7 @@ import UniformTypeIdentifiers
     lazy var research = ResearchStore(storage: storage)
     let storage: URL
     let readingDefaults: UserDefaults
+    let homeReadingPreparation = HomeReadingPreparation()
     @Published var homePinnedFolders: [HomePinnedFolder]
     @Published var homeSearchRequest: HomeSearchRequest?
     @Published var showReadingHistory = false

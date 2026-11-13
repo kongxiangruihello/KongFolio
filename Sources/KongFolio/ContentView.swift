@@ -87,7 +87,8 @@ struct ContentView: View {
 
     /// The window can be any size: panels and top bar controls adapt to the width (see `LayoutMetrics`).
     private func layout(width: CGFloat) -> some View {
-        VStack(spacing: 0) {
+        let isHome = workspace.count == 0 && workspace.displayPath == nil
+        return VStack(spacing: 0) {
             if showsPrimaryToolbar {
                 if readingMode, let store = workspace.store { ReadingToolbar(store:store,workspace:workspace,width:width) }
                 else { topBar(width:width) }
@@ -95,7 +96,7 @@ struct ContentView: View {
             if workspace.saveConflict { SaveConflictBanner(copy: workspace.chooseConflictCopy, reload: workspace.reloadAfterConflict) }
             Divider()
             HSplitView {
-                if workspace.pageEditing053 {
+                if !isHome, workspace.pageEditing053 {
                     VStack(spacing:0) {
                         HStack {
                             Text("PDF 页面编辑").font(.headline)
@@ -105,7 +106,7 @@ struct ContentView: View {
                         Divider()
                         PDFPageEditor053(workspace:workspace)
                     }.frame(minWidth:180,idealWidth:240,maxWidth:300)
-                } else if LayoutMetrics.showsInspector(preferred:!readingMode && showInspector,width:width,boardShown:boardShown(width:width),splitShown:splitShown(width:width)) {
+                } else if !isHome, LayoutMetrics.showsInspector(preferred:!readingMode && showInspector,width:width,boardShown:boardShown(width:width),splitShown:splitShown(width:width)) {
                     VStack(spacing:0) {
                         HStack {
                             Text("PDF 属性与标注").font(.headline)
@@ -115,12 +116,12 @@ struct ContentView: View {
                         Divider()
                         inspector
                     }.frame(minWidth:220,idealWidth:290,maxWidth:340)
-                } else if LayoutMetrics.showsSidebar(preferred:showSidebar,width:width) {
+                } else if !isHome, LayoutMetrics.showsSidebar(preferred:showSidebar,width:width) {
                     sidebar.frame(minWidth:180,idealWidth:240,maxWidth:300)
                 }
-                if boardShown(width: width), let board = workspace.store?.board { BoardView(board: board, workspace: workspace).frame(minWidth: 280, idealWidth: 380, maxWidth: .infinity) }
+                if !isHome, boardShown(width: width), let board = workspace.store?.board { BoardView(board: board, workspace: workspace).frame(minWidth: 280, idealWidth: 380, maxWidth: .infinity) }
                 canvas.frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
-                if splitShown(width: width), let partner = workspace.splitPartner {
+                if !isHome, splitShown(width: width), let partner = workspace.splitPartner {
                     SplitPane(primary: workspace, partner: partner) { workspace.splitPartner = nil }
                         .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -145,7 +146,17 @@ struct ContentView: View {
             }
             if width >= 760 { Text(workspace.savePhase.isEmpty ? workspace.recoveryStatus : workspace.savePhase + " \(Int(workspace.saveProgress*100))%").foregroundStyle(.secondary).lineLimit(1) }
             if workspace.count > 0 { Button { workspace.showSaveDetails = true } label:{ Image(systemName:workspace.saveConflict || workspace.error != nil ? "exclamationmark.circle" : (workspace.saving || workspace.dirty ? "clock" : "checkmark.circle")) }.buttonStyle(.plain).help("保存状态与重试").sheet(isPresented:$workspace.showSaveDetails) { DocumentSaveDetails(workspace:workspace) } }
-            if let store = workspace.store { DocumentTaskButton(queue:store.documentTasks,store:store,onlyWhileRunning:true) }
+            if let store = workspace.store {
+                if store.activeWorkspace === workspace, store.nextAfterFinishing(workspace) != nil {
+                    Button {
+                        Task { await store.finishReadingAndOpenNext(workspace) }
+                    } label: {
+                        if width >= 650 { Label("读完并打开下一份",systemImage:"arrow.right.circle") }
+                        else { Image(systemName:"arrow.right.circle").accessibilityLabel("读完并打开下一份") }
+                    }.help("标记本份已读完，打开本批下一份")
+                }
+                DocumentTaskButton(queue:store.documentTasks,store:store,onlyWhileRunning:true)
+            }
             if workspace.canRetry { Button("重试任务") { workspace.retryJob() } }
             if width >= 640 { Text("KongFolio \(AppInfo.version)").foregroundStyle(.tertiary).lineLimit(1) }
         }
@@ -442,24 +453,11 @@ struct ContentView: View {
             .padding()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if workspace.count == 0 {
-            GeometryReader { proxy in
-                ScrollView {
-                    VStack(spacing:16) {
-                        Image(systemName:"doc.richtext").font(.system(size:54,weight:.ultraLight)).foregroundStyle(Brand.accent)
-                        Text("每一页，都井井有条。").font(.system(size:26,weight:.medium))
-                        WelcomeActions(workspace:workspace)
-                        if let store = workspace.store {
-                            HomeReadingView(store:store,journal:store.journal)
-                                .frame(maxWidth:610)
-                                .padding(.top,8)
-                        }
-                        Text("PDF · 图片 · Markdown · HTML · TXT · 可直接拖入窗口")
-                            .font(.caption).foregroundStyle(.tertiary)
-                    }
-                    .padding(.horizontal,16)
-                    .padding(.vertical,24)
-                    .frame(maxWidth:.infinity,minHeight:proxy.size.height)
-                }
+            if let store = workspace.store {
+                HomeReadingView(store:store,journal:store.journal,workspace:workspace)
+            } else {
+                WelcomeActions(workspace:workspace)
+                    .frame(maxWidth:.infinity,maxHeight:.infinity)
             }
         } else {
             PDFCanvas(workspace: workspace)

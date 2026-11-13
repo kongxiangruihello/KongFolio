@@ -124,11 +124,12 @@ extension WorkspaceStore {
         }
     }
 
-    func continueHomeReading(_ item: ReadingProgress.HistoryItem, resolvedFile: URL? = nil) throws {
+    @discardableResult
+    func continueHomeReading(_ item: ReadingProgress.HistoryItem, resolvedFile: URL? = nil) throws -> Workspace {
         let progress = item.progress
         let position = progress.resumePosition(pageCount:max(progress.pages,progress.last + 1)) ?? ViewPosition(selection:0)
         let shortcut = ReadingShortcut(path:item.path,title:item.title,position:position,layout:progress.layout,bookmark:progress.bookmark)
-        try openReadingShortcut(shortcut,resolvedFile:resolvedFile)
+        return try openReadingShortcut(shortcut,resolvedFile:resolvedFile)
     }
 
     func resumeHomeSearch(_ search: HomeReadingSearch) async throws {
@@ -167,5 +168,106 @@ extension WorkspaceStore {
             showReadingPanel(section)
             homeSearchRequest = HomeSearchRequest(search:search)
         }
+    }
+}
+
+@MainActor final class HomeReadingPreparation: ObservableObject {
+    enum Phase: Equatable {
+        case locating, downloading(String), ready, missing, failed(String)
+
+        var inProgress: Bool {
+            switch self {
+            case .locating, .downloading: return true
+            default: return false
+            }
+        }
+    }
+
+    @Published private(set) var phase: Phase?
+    private(set) var path: String?
+    private var task: Task<Void,Never>?
+    private var generation = UUID()
+
+    func start(_ shortcut: ReadingShortcut, trackedPath: String,
+               prepare: @escaping CloudFilePreparation.Handler = CloudFilePreparation.prepare,
+               resolve: @escaping @Sendable (ReadingShortcut) throws -> URL = { shortcut in
+                   try shortcut.validate()
+                   do { return try shortcut.resolvedURL() }
+                   catch { throw ReadingOpenFailure.missing }
+               },
+               open: @escaping (URL) throws -> Bool) {
+        cancel()
+        let token = generation
+        path = trackedPath
+        phase = .locating
+        task = Task { [weak self] in
+            do {
+                let url = try await Task.detached(priority:.utility) { try resolve(shortcut) }.value
+                try Task.checkCancellation()
+                let update: @Sendable (String) -> Void = { [weak self] text in
+                    Task { @MainActor in
+                        guard let self, self.generation == token, self.task != nil else { return }
+                        self.phase = .downloading(text)
+                    }
+                }
+                let worker = Task.detached(priority:.utility) { try await prepare([url],update) }
+                try await withTaskCancellationHandler(operation:{ try await worker.value },onCancel:{ worker.cancel() })
+                try Task.checkCancellation()
+                guard let self else { return }
+                if try open(url) { self.cancel() }
+                else { self.phase = .ready; self.task = nil }
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                self.task = nil
+                if FolioCancellation.matches(error) { self.cancel() }
+                else if case ReadingOpenFailure.missing = error { self.phase = .missing }
+                else { self.phase = .failed(error.localizedDescription) }
+            }
+        }
+    }
+
+    func cancel() {
+        generation = UUID()
+        task?.cancel()
+        task = nil
+        path = nil
+        phase = nil
+    }
+}
+
+extension ReadingLibraryItem {
+    var homeNotePreview: String? {
+        let body: String
+        switch self {
+        case .record(let note): body = note.note
+        case .essay(let essay):
+            body = essay.blocks.lazy.map(\.text).first { !$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty } ?? ""
+        }
+        for line in body.split(whereSeparator:\.isNewline) {
+            let text = line.trimmingCharacters(in:.whitespacesAndNewlines)
+            if !text.isEmpty { return text }
+        }
+        return nil
+    }
+
+    var homeNoteTitle: String {
+        let defaultTitles = ["", "未命名笔记", "未命名札记", "笔记"]
+        if defaultTitles.contains(title.trimmingCharacters(in:.whitespacesAndNewlines)) {
+            return homeNotePreview ?? "未命名笔记"
+        }
+        return title
+    }
+}
+
+extension ReadingOpenBatch {
+    func sharesHomeResume(with path: String?) -> Bool {
+        guard let path, let next else { return false }
+        return ReadingBookIdentity.key(path) == ReadingBookIdentity.key(next.path)
+    }
+
+    func pendingAfterFinishing(_ entryID: UUID) -> Entry? {
+        guard let index = entries.firstIndex(where:{ $0.id == entryID }) else { return nil }
+        return entries.suffix(from:index + 1).first { $0.status == .pending }
+            ?? entries.prefix(index).first { $0.status == .pending }
     }
 }

@@ -17,6 +17,85 @@ import XCTest
         XCTAssertNil(ReadingLibraryItem.latestHomeNote(state)?.homeSource)
     }
 
+    func testUntitledNoteUsesFirstNonemptyLineAndPreservesSource() {
+        let citation = ReadingCitation(source:SourceRef(path:"/tmp/book.pdf",fileName:"book.pdf",page:6),title:"史料")
+        let note = ReadingRecord(kind:.note,title:"未命名笔记",note:"  \n  第一行内容  \n第二行",citations:[citation])
+        let item = ReadingLibraryItem.record(note)
+        XCTAssertEqual(item.homeNoteTitle,"第一行内容")
+        XCTAssertEqual(item.homeNotePreview,"第一行内容")
+        XCTAssertEqual(item.homeSource?.1,citation)
+    }
+
+    func testFinishingBatchOpensOnlyFollowingPendingDocument() async throws {
+        let root = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at:root) }
+        let store = WorkspaceStore(storage:root)
+        store.bootstrap()
+        let workspace = try XCTUnwrap(store.activeWorkspace)
+        let pdf = try Release046Tests().pdf(root,pages:2)
+        let prior = root.appendingPathComponent("first.pdf")
+        let next = root.appendingPathComponent("next.pdf")
+        try FileManager.default.copyItem(at:pdf,to:prior)
+        try FileManager.default.copyItem(at:pdf,to:next)
+        store.startReadingBatch([prior,pdf,next])
+        let batch = try XCTUnwrap(store.readingBatch)
+        let current = batch.entries[1]
+        workspace.load([pdf],prepared:.documents([try Data(contentsOf:pdf)]))
+        workspace.readingBatchEntryID = current.id
+        store.trackBatchSelection(workspace)
+        XCTAssertEqual(store.readingBatch?.sharesHomeResume(with:pdf.path),true)
+        XCTAssertEqual(store.readingBatch?.sharesHomeResume(with:prior.path),false)
+        await store.finishReadingAndOpenNext(workspace)
+        XCTAssertEqual(store.readingBatch?.entries[1].status,.finished)
+        XCTAssertEqual(store.activeWorkspace?.displayPath,next.path)
+        XCTAssertEqual(store.tabs.compactMap { $0.workspace?.displayPath }.sorted(),[pdf.path,next.path].sorted())
+        store.activeWorkspace?.cancelImport()
+    }
+
+    func testCancelledCloudResumeDoesNotOpenOrOverwriteNewRequest() async throws {
+        let job = HomeReadingPreparation()
+        let path = "/tmp/test.pdf"
+        let shortcut = ReadingShortcut(path:path,title:"文献",position:ViewPosition())
+        var opened = 0
+        job.start(shortcut,trackedPath:path,prepare:{ _,progress in
+            progress("正在下载 iCloud 文件")
+            try? await Task.sleep(nanoseconds:1_000_000_000)
+            progress("旧任务的迟到消息")
+        },resolve:{ URL(fileURLWithPath:$0.path) }) { _ in
+            opened += 1
+            return true
+        }
+        try await waitForPhase(job,.downloading("正在下载 iCloud 文件"))
+        job.cancel()
+        XCTAssertNil(job.phase)
+        job.start(shortcut,trackedPath:path,prepare:{ _,_ in },resolve:{ URL(fileURLWithPath:$0.path) }) { _ in
+            opened += 1
+            return false
+        }
+        try await waitForPhase(job,.ready)
+        XCTAssertEqual(opened,1)
+        XCTAssertEqual(job.phase,.ready)
+    }
+
+    func testMissingFileStaysOnHomeWithRelinkState() async throws {
+        let job = HomeReadingPreparation()
+        let path = "/tmp/"+UUID().uuidString+".pdf"
+        job.start(ReadingShortcut(path:path,title:"文献",position:ViewPosition()),trackedPath:path) { _ in
+            XCTFail("Missing file cannot open")
+            return true
+        }
+        try await waitForPhase(job,.missing)
+        XCTAssertEqual(job.path,path)
+    }
+
+    private func waitForPhase(_ preparation: HomeReadingPreparation,_ phase: HomeReadingPreparation.Phase) async throws {
+        let deadline = Date().addingTimeInterval(3)
+        while preparation.phase != phase && Date() < deadline {
+            try await Task.sleep(nanoseconds:10_000_000)
+        }
+        XCTAssertEqual(preparation.phase,phase)
+    }
+
     func testSearchPreservesScopeMatchAndRecordAcrossStores() throws {
         let name = "KongFolio.HomeTests."+UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName:name))

@@ -141,6 +141,29 @@ extension WorkspaceStore {
         openEach([URL(fileURLWithPath:entry.path)],startBatch:false)
     }
 
+    func nextAfterFinishing(_ workspace: Workspace) -> ReadingOpenBatch.Entry? {
+        guard workspace.count > 0, !workspace.busy, !workspace.browsingReadingReference,
+              let entry = readingBatchEntry(for:workspace), entry.status == .pending,
+              let batch = readingBatches.first(where:{ $0.entries.contains(where:{ $0.id == entry.id }) }) else { return nil }
+        return batch.pendingAfterFinishing(entry.id)
+    }
+
+    func finishReadingAndOpenNext(_ workspace: Workspace) async {
+        guard activeWorkspace === workspace, !workspace.closingInProgress, let next = nextAfterFinishing(workspace),
+              let entry = readingBatchEntry(for:workspace) else { return }
+        guard await workspace.finishPendingSave(), activeWorkspace === workspace,
+              !workspace.busy, !workspace.dirty, !workspace.saving,
+              readingBatchEntry(for:workspace)?.id == entry.id,
+              nextAfterFinishing(workspace)?.id == next.id else { return }
+        let position = workspace.currentViewPosition()
+        workspace.saveReadingRecord(capture:false)
+        updateBatchEntry(entry.id) {
+            $0.position = position
+            $0.status = .finished
+        }
+        openReadingBatchEntry(next)
+    }
+
     func skipReadingBatchEntry(_ entry:ReadingOpenBatch.Entry) {
         updateBatchEntry(entry.id) { $0.status = .skipped }
         guard let workspace = tabs.compactMap(\.workspace).first(where:{ readingBatchEntry(for:$0)?.id == entry.id }) else { return }
