@@ -25,6 +25,8 @@ struct WritingToolbar: View {
     var showsControls = true
     var documentControls: AnyView? = nil
     var documentOptions: AnyView? = nil
+    var saveDocument: (() -> Void)? = nil
+    var showDocumentDisplay: (() -> Void)? = nil
     @State private var showFind = false
     @State private var showCleanup = false
     @State private var showReplacePreview = false
@@ -84,6 +86,15 @@ struct WritingToolbar: View {
         .sheet(isPresented:$showCleanup) { WritingCleanupView(session:session,allowsMarkdownQuote:textFile?.format != .plain) }
     }
 
+    @ViewBuilder private var documentActions: some View {
+        if let saveDocument {
+            tool("保存当前文件（⌘S）","square.and.arrow.down",action:saveDocument)
+        }
+        if let showDocumentDisplay {
+            tool("编辑区显示设置","textformat.size",action:showDocumentDisplay)
+        }
+    }
+
     private func toggleFind() {
         if showFind { session.endFind() } else { session.beginFind() }
         showFind.toggle()
@@ -111,6 +122,7 @@ struct WritingToolbar: View {
 
     private func plainTextControls(_ note:MarkdownNote,visibleCount:Int) -> some View {
         MarkdownToolbarRow {
+            documentActions
             ForEach(PlainTextTool.allCases.prefix(visibleCount),id:\.self) { command in
                 if command == .paragraphs {
                     Menu { paragraphCommands } label: { Text(command.rawValue) }
@@ -161,6 +173,7 @@ struct WritingToolbar: View {
     private func markdownControls(_ note:MarkdownNote,visibleCount:Int) -> some View {
         let visible = MarkdownTool.allCases.prefix(visibleCount)
         return MarkdownToolbarRow {
+            documentActions
             ForEach(visible,id:\.self) { command in
                 markdownTool(command,note:note)
             }

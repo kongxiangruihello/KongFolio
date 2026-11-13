@@ -21,7 +21,9 @@ struct MarkdownEditorView: View {
                         WritingToolbar(session:note.writingSession,prominent:true,textFile:note,
                                        showsControls:!focusedWriting,
                                        documentControls:AnyView(editorHeader(width:proxy.size.width,showsOptions:false)),
-                                       documentOptions:AnyView(editorOptions))
+                                       documentOptions:AnyView(editorOptions),
+                                       saveDocument:showsPrimaryToolbar ? nil : { note.save() },
+                                       showDocumentDisplay:{ showDisplay = true })
                             .frame(maxWidth:.infinity,alignment:.leading)
                             .padding(.horizontal,12)
                             .padding(.vertical,8).background(.bar)
@@ -121,13 +123,13 @@ struct MarkdownEditorView: View {
                 .tint(note.showPreview ? .accentColor : nil)
                 .help("查看排版预览").accessibilityLabel("排版预览")
             }
-            if !showsPrimaryToolbar {
+            if !showsPrimaryToolbar && (showsOptions || focusedWriting) {
                 Button { note.save() } label:{ Image(systemName:"square.and.arrow.down") }
                     .help("保存当前文件（⌘S）").accessibilityLabel("保存当前文件")
             }
             if !focusedWriting {
-                Button { showDisplay = true } label:{ if fullControls && (width >= 1120 || (note.readOnly && width >= 540)) { Label("显示设置",systemImage:"textformat.size") } else { Image(systemName:"textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
                 if showsOptions {
+                    Button { showDisplay = true } label:{ if fullControls && (width >= 1120 || (note.readOnly && width >= 540)) { Label("显示设置",systemImage:"textformat.size") } else { Image(systemName:"textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
                     Menu { editorOptions } label: {
                         if fullControls && (width >= 1120 || (note.readOnly && width >= 540)) {
                             Label("更多编辑",systemImage:"ellipsis.circle")
