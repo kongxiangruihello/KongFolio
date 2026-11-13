@@ -24,6 +24,7 @@ struct WritingToolbar: View {
     var formatting = true
     var showsControls = true
     var documentControls: AnyView? = nil
+    var documentOptions: AnyView? = nil
     @State private var showFind = false
     @State private var showCleanup = false
     @State private var showReplacePreview = false
@@ -126,7 +127,7 @@ struct WritingToolbar: View {
                     }
                 }
                 if visibleCount < PlainTextTool.allCases.count { Divider() }
-                Button("不可见字符检查") { note.editingTool = .characters }
+                documentOptions
             } label: { Image(systemName:"ellipsis.circle") }
                 .help("更多编辑").accessibilityLabel("更多编辑")
         }
@@ -168,6 +169,10 @@ struct WritingToolbar: View {
                 }
                 if visibleCount < MarkdownTool.allCases.count { Divider() }
                 editingCommands
+                if let documentOptions {
+                    Divider()
+                    documentOptions
+                }
             } label: { Image(systemName:"ellipsis.circle") }
                 .help("更多编辑").accessibilityLabel("更多编辑")
         }

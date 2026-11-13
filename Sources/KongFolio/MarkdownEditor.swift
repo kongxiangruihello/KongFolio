@@ -20,7 +20,8 @@ struct MarkdownEditorView: View {
                     if !note.readOnly && (note.format == .plain || !note.cleanEditing) {
                         WritingToolbar(session:note.writingSession,prominent:true,textFile:note,
                                        showsControls:!focusedWriting,
-                                       documentControls:AnyView(editorHeader(width:proxy.size.width)))
+                                       documentControls:AnyView(editorHeader(width:proxy.size.width,showsOptions:false)),
+                                       documentOptions:AnyView(editorOptions))
                             .frame(maxWidth:.infinity,alignment:.leading)
                             .padding(.horizontal,12)
                             .padding(.vertical,8).background(.bar)
@@ -86,7 +87,7 @@ struct MarkdownEditorView: View {
         } message: { Text(note.error ?? "") }
     }
 
-    private func editorHeader(width:CGFloat)->some View {
+    private func editorHeader(width:CGFloat,showsOptions:Bool = true)->some View {
         let fullControls = note.format == .html || note.readOnly || (note.format == .markdown && note.cleanEditing)
         return HStack(spacing:note.format != .html || width < 500 ? 8 : 12) {
             VStack(alignment:.leading,spacing:3) {
@@ -126,31 +127,41 @@ struct MarkdownEditorView: View {
             }
             if !focusedWriting {
                 Button { showDisplay = true } label:{ if fullControls && (width >= 1120 || (note.readOnly && width >= 540)) { Label("显示设置",systemImage:"textformat.size") } else { Image(systemName:"textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
-                Menu {
-                    if !note.readOnly && (note.format == .plain || (note.format == .markdown && !note.cleanEditing)) {
-                        Button("专注写作") { focusedWriting = true }
-                        Divider()
-                    }
-                    Button(note.readOnly ? "切换为编辑模式" : "切换为阅读模式") { note.toggleReadOnly() }
-                    if note.format == .plain {
-                        Button("另存为…") { note.save(asNew:true) }
-                        Button("导出 PDF…") { note.exportPDF() }
-                        Button("导出 Word…") { note.exportWord() }
-                        Button("导出版式…") { showLayout = true }
-                    } else {
-                        Button("插入图片…") { note.chooseImage() }.disabled(note.readOnly)
-                        if note.format != .markdown { Toggle("显示右侧导出预览",isOn:$note.showPreview) }
-                        Toggle("预览跟随正文段落",isOn:$note.followPreview)
-                        Button("导出版式与预览设置…") { showLayout = true }
-                    }
-                    Divider()
-                    ForEach(note.format == .plain ? [.paragraphs,.history,.merge,.encoding,.characters] : FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool }.disabled(note.format == .markdown && note.cleanEditing) }
-                    Button("创建独立编辑副本…") { note.createEditingCopy() }
-                } label:{ if fullControls && (width >= 1120 || (note.readOnly && width >= 540)) { Label("编辑选项",systemImage:"ellipsis") } else { Image(systemName:"ellipsis.circle") } }.menuStyle(.borderlessButton).fixedSize().help("编辑选项").accessibilityLabel("编辑选项")
+                if showsOptions {
+                    Menu { editorOptions } label: {
+                        if fullControls && (width >= 1120 || (note.readOnly && width >= 540)) {
+                            Label("更多编辑",systemImage:"ellipsis.circle")
+                        } else { Image(systemName:"ellipsis.circle") }
+                    }.menuStyle(.borderlessButton).fixedSize().help("更多编辑").accessibilityLabel("更多编辑")
+                }
             } else {
                 Button("退出专注") { focusedWriting = false }.help("恢复编辑工具栏")
             }
         }.controlSize(.regular).font(.system(size:13))
+    }
+
+    @ViewBuilder private var editorOptions: some View {
+        if !note.readOnly && (note.format == .plain || (note.format == .markdown && !note.cleanEditing)) {
+            Button("专注写作") { focusedWriting = true }
+            Divider()
+        }
+        Button(note.readOnly ? "切换为编辑模式" : "切换为阅读模式") { note.toggleReadOnly() }
+        if note.format == .plain {
+            Button("另存为…") { note.save(asNew:true) }
+            if note.readOnly {
+                Button("导出 PDF…") { note.exportPDF() }
+                Button("导出 Word…") { note.exportWord() }
+            }
+            Button("导出版式…") { showLayout = true }
+        } else {
+            Button("插入图片…") { note.chooseImage() }.disabled(note.readOnly)
+            if note.format != .markdown { Toggle("显示右侧导出预览",isOn:$note.showPreview) }
+            Toggle("预览跟随正文段落",isOn:$note.followPreview)
+            Button("导出版式与预览设置…") { showLayout = true }
+        }
+        Divider()
+        ForEach(note.format == .plain ? [.paragraphs,.history,.merge,.encoding,.characters] : FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool }.disabled(note.format == .markdown && note.cleanEditing) }
+        Button("创建独立编辑副本…") { note.createEditingCopy() }
     }
 
     private func titleWidth(available:CGFloat) -> CGFloat {
