@@ -17,7 +17,7 @@ struct DraftNoteTitle: View {
                 .padding(.horizontal,5).padding(.vertical,3)
                 .background(hovering || focused ? Color.accentColor.opacity(0.08) : .clear,in:RoundedRectangle(cornerRadius:5))
                 .onHover { hovering = $0 }
-                .help("点击即可修改笔记名称，回车确认，Esc 取消；保存时沿用这个名称")
+                .help(note.title+"\n点击即可修改名称，回车确认")
                 .onAppear { name = note.title }
                 .onChange(of:note.title) { _,value in if !focused { name = value } }
                 .onChange(of:focused) { old,value in if old && !value { commit() } }

@@ -24,7 +24,6 @@ struct WritingToolbar: View {
     var formatting = true
     var showsControls = true
     var documentControls: AnyView? = nil
-    var compactMarkdown = false
     @State private var showFind = false
     @State private var showCleanup = false
     @State private var showReplacePreview = false
@@ -35,14 +34,19 @@ struct WritingToolbar: View {
                     documentControls
                     if showsControls {
                         Divider().frame(height:18)
-                        if compactMarkdown {
-                            Menu {
-                                markdownCommands(markdownFile)
-                            } label: { Image(systemName:"textformat") }
-                                .help("Markdown 格式与插入").accessibilityLabel("Markdown 格式与插入")
-                            tool("查找替换（⌘F）","magnifyingglass",action:toggleFind)
-                        } else {
+                        ViewThatFits(in:.horizontal) {
                             markdownControls(markdownFile)
+                            HStack(spacing:8) {
+                                compactMarkdownMenu(markdownFile,includesAllTools:false)
+                                listMenu
+                                insertionMenu(markdownFile)
+                                findButton
+                                outlineMenu
+                            }.fixedSize(horizontal:true,vertical:false)
+                            HStack(spacing:8) {
+                                compactMarkdownMenu(markdownFile)
+                                findButton
+                            }.fixedSize(horizontal:true,vertical:false)
                         }
                     }
                 }.buttonStyle(.borderless).font(.system(size:14)).controlSize(.regular)
@@ -95,25 +99,38 @@ struct WritingToolbar: View {
             tool("斜体","italic") { session.wrap("*","*",placeholder:"斜体") }
             tool("引用","text.quote") { session.prefix("> ") }
             listMenu
-            Menu { insertionCommands(note) } label: { Image(systemName:"plus") }
-                .help("插入").accessibilityLabel("插入")
-            tool("查找替换（⌘F）","magnifyingglass",action:toggleFind)
+            insertionMenu(note)
+            findButton
             outlineMenu
             Menu { editingCommands } label: { Image(systemName:"ellipsis.circle") }
                 .help("更多编辑").accessibilityLabel("更多编辑")
         }.fixedSize(horizontal:true,vertical:false)
     }
 
-    @ViewBuilder private func markdownCommands(_ note:MarkdownNote) -> some View {
-        headingMenu
-        Button("粗体") { session.wrap("**","**",placeholder:"粗体") }
-        Button("斜体") { session.wrap("*","*",placeholder:"斜体") }
-        Button("引用") { session.prefix("> ") }
-        Menu("列表") { listCommands }
-        Menu("插入") { insertionCommands(note) }
-        Menu("文章大纲") { outlineCommands }
-        Divider()
-        editingCommands
+    private func compactMarkdownMenu(_ note:MarkdownNote,includesAllTools:Bool = true) -> some View {
+        Menu {
+            headingMenu
+            Button("粗体") { session.wrap("**","**",placeholder:"粗体") }
+            Button("斜体") { session.wrap("*","*",placeholder:"斜体") }
+            Button("引用") { session.prefix("> ") }
+            if includesAllTools {
+                Menu("列表") { listCommands }
+                Menu("插入") { insertionCommands(note) }
+                Menu("文章大纲") { outlineCommands }
+            }
+            Divider()
+            editingCommands
+        } label: { Image(systemName:"textformat") }
+            .help("Markdown 格式工具").accessibilityLabel("Markdown 格式工具")
+    }
+
+    private func insertionMenu(_ note:MarkdownNote) -> some View {
+        Menu { insertionCommands(note) } label: { Image(systemName:"plus") }
+            .help("插入").accessibilityLabel("插入")
+    }
+
+    private var findButton: some View {
+        tool("查找替换（⌘F）","magnifyingglass",action:toggleFind)
     }
 
     private var headingMenu: some View {

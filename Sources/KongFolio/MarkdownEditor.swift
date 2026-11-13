@@ -20,12 +20,13 @@ struct MarkdownEditorView: View {
                     if !note.readOnly && !note.cleanEditing {
                         WritingToolbar(session:note.writingSession,prominent:true,markdownFile:note,
                                        showsControls:!focusedWriting,
-                                       documentControls:AnyView(editorHeader(width:proxy.size.width)),
-                                       compactMarkdown:proxy.size.width < 980)
+                                       documentControls:AnyView(editorHeader(width:proxy.size.width)))
+                            .frame(maxWidth:.infinity,alignment:.leading)
                             .padding(.horizontal,proxy.size.width < 500 ? 10 : 20)
                             .padding(.vertical,8).background(.bar)
                     } else {
                         editorHeader(width:proxy.size.width)
+                            .frame(maxWidth:.infinity,alignment:.leading)
                             .padding(.horizontal,16).padding(.vertical,8).background(.bar)
                     }
                 } else {
@@ -92,8 +93,16 @@ struct MarkdownEditorView: View {
                     Text(note.format.rawValue + (note.readOnly ? " · 只读" : ""))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
-            }.frame(minWidth:40,maxWidth:.infinity,alignment:.leading).layoutPriority(-1)
+            }.frame(width:note.format == .markdown ? titleWidth(available:width) : nil,alignment:.leading)
+                .frame(maxWidth:note.format == .markdown ? nil : .infinity,alignment:.leading)
+                .layoutPriority(-1)
             if note.format == .markdown, !focusedWriting {
+                if note.readOnly {
+                    Button { note.toggleReadOnly() } label: {
+                        if width >= 540 { Label("编辑",systemImage:"pencil") }
+                        else { Image(systemName:"pencil") }
+                    }.help("退出只读并编辑 Markdown").accessibilityLabel("切换为编辑模式")
+                }
                 editorMode(width:width)
                 Button {
                     let separate = width < LayoutMetrics.previewMinimum || note.cleanEditing
@@ -103,7 +112,7 @@ struct MarkdownEditorView: View {
                         showPreviewSheet = true
                     } else { note.showPreview.toggle() }
                 } label: {
-                    if width >= 1100 { Label("预览",systemImage:"rectangle.split.2x1") }
+                    if width >= 1120 || (note.readOnly && width >= 540) { Label("预览",systemImage:"rectangle.split.2x1") }
                     else { Image(systemName:"rectangle.split.2x1") }
                 }
                 .tint(note.showPreview ? .accentColor : nil)
@@ -114,7 +123,7 @@ struct MarkdownEditorView: View {
                     .help("保存当前文件（⌘S）").accessibilityLabel("保存当前文件")
             }
             if !focusedWriting {
-                Button { showDisplay = true } label:{ if width >= 1100 { Label("显示设置",systemImage:"textformat.size") } else { Image(systemName:"textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
+                Button { showDisplay = true } label:{ if width >= 1120 || (note.readOnly && width >= 540) { Label("显示设置",systemImage:"textformat.size") } else { Image(systemName:"textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
                 Menu {
                     if note.format == .markdown, !note.cleanEditing {
                         Button("专注写作") { focusedWriting = true }
@@ -130,15 +139,24 @@ struct MarkdownEditorView: View {
                     Divider()
                     ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool }.disabled(note.format == .markdown && note.cleanEditing) }
                     Button("创建独立编辑副本…") { note.createEditingCopy() }
-                } label:{ if width >= 1100 { Label("编辑选项",systemImage:"ellipsis") } else { Image(systemName:"ellipsis.circle") } }.menuStyle(.borderlessButton).fixedSize().help("编辑选项").accessibilityLabel("编辑选项")
+                } label:{ if width >= 1120 || (note.readOnly && width >= 540) { Label("编辑选项",systemImage:"ellipsis") } else { Image(systemName:"ellipsis.circle") } }.menuStyle(.borderlessButton).fixedSize().help("编辑选项").accessibilityLabel("编辑选项")
             } else {
                 Button("退出专注") { focusedWriting = false }.help("恢复 Markdown 工具栏")
             }
         }.controlSize(.regular).font(.system(size:13))
     }
 
+    private func titleWidth(available:CGFloat) -> CGFloat {
+        let font = NSFont.systemFont(ofSize:17,weight:.semibold)
+        let natural = (note.title as NSString).size(withAttributes:[.font:font]).width
+        let padding: CGFloat = note.fileURL == nil ? 32 : 2
+        let limit = min(176,max(76,available*0.24))
+        let minimum: CGFloat = available >= 650 ? (note.readOnly ? 110 : 72) : 56
+        return min(limit,max(minimum,ceil(natural)+padding))
+    }
+
     @ViewBuilder private func editorMode(width:CGFloat) -> some View {
-        if width >= 980 {
+        if width >= 850 {
             Picker("编辑方式",selection:Binding(get:{note.cleanEditing},set:setParagraphEditing)) {
                 Text("正文").tag(false)
                 Text("段落").tag(true)
