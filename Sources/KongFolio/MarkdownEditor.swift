@@ -8,21 +8,32 @@ struct MarkdownEditorView: View {
     var showsPrimaryToolbar = true
     @State private var showLayout = false
     @State private var showDisplay = false
+    @State private var showPreviewSheet = false
+    @State private var restoreSplitPreview = false
+    @State private var focusedWriting = false
 
     var body: some View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
                 if showsPrimaryToolbar { toolbar }
                 editorHeader(width:proxy.size.width)
-                if !note.readOnly && !(note.format == .markdown && note.cleanEditing) { WritingToolbar(session:note.writingSession,prominent:true).padding(.horizontal,16).padding(.vertical,7).background(.bar) }
+                if !note.readOnly && !(note.format == .markdown && note.cleanEditing) {
+                    WritingToolbar(session:note.writingSession,prominent:true,markdownFile:note.format == .markdown ? note : nil,
+                                   formatting:note.format != .plain,showsControls:!focusedWriting)
+                        .padding(.horizontal,16).padding(.vertical,focusedWriting ? 0 : 4)
+                }
                 if note.saveConflict { SaveConflictBanner(copy: { note.save(asNew: true) }, reload: note.reloadAfterConflict,compare:{ note.editingTool = .merge }) }
                 Divider()
-                if note.format == .markdown && note.cleanEditing { CleanWritingView(note:note) } else { TextEditorPreviewSplit(note:note) }
+                if note.format == .markdown && note.cleanEditing { CleanWritingView(note:note) }
+                else { TextEditorPreviewSplit(note:note,allowsPreview:!focusedWriting && !showPreviewSheet) }
                 Divider()
                 HStack {
                     Text(note.status.isEmpty ? (note.fileURL?.path ?? "尚未保存到文件") : note.status).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                     if let store { DocumentTaskButton(queue:store.documentTasks,store:store,onlyWhileRunning:true) }
+                    if note.format == .markdown {
+                        Text(note.readOnly ? "只读" : ".md").fixedSize().accessibilityLabel(note.readOnly ? "只读" : "Markdown 文件")
+                    }
                     WritingCharacterCount(session:note.writingSession).lineLimit(1).fixedSize()
                 }
                 .font(.system(size:12)).foregroundStyle(.secondary)
@@ -31,6 +42,26 @@ struct MarkdownEditorView: View {
             .frame(width: proxy.size.width)
         }
         .sheet(item:$note.editingTool) { tool in FileEditingSheet(note:note,tool:tool) }
+        .sheet(isPresented:$showPreviewSheet,onDismiss:{
+            note.showPreview = restoreSplitPreview
+        }) {
+            VStack(spacing:0) {
+                HStack {
+                    Label("排版预览",systemImage:"doc.richtext").font(.headline)
+                    Spacer()
+                    Button("完成") { showPreviewSheet = false }.keyboardShortcut(.cancelAction)
+                }.padding()
+                if !note.previewMessage.isEmpty {
+                    Text(note.previewMessage).font(.caption).foregroundStyle(.orange).padding(8)
+                } else if note.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
+                    ContentUnavailableView("还没有可预览的内容",systemImage:"doc.text")
+                } else if note.preview == nil {
+                    ProgressView("正在生成预览…").frame(maxHeight:.infinity)
+                } else {
+                    MarkdownPreview(note:note)
+                }
+            }.adaptiveSheet(width:680,height:710,minimumWidth:360)
+        }
         .sheet(isPresented:$showDisplay) { EditorDisplaySheet(note:note) }
         .sheet(isPresented: $showLayout) { TextLayoutSheet(note: note) }
         .sheet(isPresented: $note.showVersionHistory) { FileEditingSheet(note:note,tool:.history) }
@@ -43,31 +74,77 @@ struct MarkdownEditorView: View {
         HStack(spacing:width < 500 ? 8 : 12) {
             VStack(alignment:.leading,spacing:3) {
                 DraftNoteTitle(note:note)
-                if width >= 650 { Text(note.format.rawValue + (note.readOnly ? " · 阅读模式" : " · 编辑模式")).font(.system(size:12)).foregroundStyle(.secondary) }
+                if note.format == .markdown || width >= 650 {
+                    Text(note.format.rawValue + (note.readOnly ? " · 只读" : ""))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
             }.frame(minWidth:40,maxWidth:.infinity,alignment:.leading)
-            if note.format == .markdown {
-                Picker("编辑方式",selection:Binding(get:{!note.cleanEditing},set:{ value in
-                    guard note.textView?.hasMarkedText() != true,(NSApp?.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() != true else { return };note.cleanEditing = !value
-                })) { Text("段落").tag(false);Text("源码").tag(true) }.pickerStyle(.segmented).labelsHidden().accessibilityLabel("编辑方式").frame(width:140).fixedSize(horizontal:true,vertical:false).help("段落编辑显示图片；源码编辑提供全文格式和查找工具")
+            if note.format == .markdown, !focusedWriting {
+                editorMode(width:width)
+                Button {
+                    let separate = width < LayoutMetrics.previewMinimum || note.cleanEditing
+                    if separate {
+                        restoreSplitPreview = note.showPreview
+                        note.showPreview = true
+                        showPreviewSheet = true
+                    } else { note.showPreview.toggle() }
+                } label: {
+                    if width >= 700 { Label("预览",systemImage:"rectangle.split.2x1") }
+                    else { Image(systemName:"rectangle.split.2x1") }
+                }
+                .tint(note.showPreview ? .accentColor : nil)
+                .help("查看排版预览").accessibilityLabel("排版预览")
             }
             if !showsPrimaryToolbar {
                 Button { note.save() } label:{ Image(systemName:"square.and.arrow.down") }
                     .help("保存当前文件（⌘S）").accessibilityLabel("保存当前文件")
             }
-            Button { showDisplay = true } label:{ if width >= 720 { Label("显示设置",systemImage:"textformat.size") } else { Image(systemName:"textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
+            if !focusedWriting {
+                Button { showDisplay = true } label:{ if width >= 720 { Label("显示设置",systemImage:"textformat.size") } else { Image(systemName:"textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
+                Menu {
+                    if note.format == .markdown, !note.cleanEditing {
+                        Button("专注写作") { focusedWriting = true }
+                        Divider()
+                    }
+                    Button(note.readOnly ? "切换为编辑模式" : "切换为阅读模式") { note.toggleReadOnly() }
+                    Button("插入图片…") { note.chooseImage() }.disabled(note.readOnly || note.format == .plain)
+                    if note.format != .plain {
+                        if note.format != .markdown { Toggle("显示右侧导出预览",isOn:$note.showPreview) }
+                        Toggle("预览跟随正文段落",isOn:$note.followPreview)
+                        Button("导出版式与预览设置…") { showLayout = true }
+                    }
+                    Divider()
+                    ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool }.disabled(note.format == .markdown && note.cleanEditing) }
+                    Button("创建独立编辑副本…") { note.createEditingCopy() }
+                } label:{ if width >= 600 { Label("编辑选项",systemImage:"ellipsis") } else { Image(systemName:"ellipsis.circle") } }.menuStyle(.borderlessButton).fixedSize().help("编辑选项").accessibilityLabel("编辑选项")
+            } else {
+                Button("退出专注") { focusedWriting = false }.help("恢复 Markdown 工具栏")
+            }
+        }.controlSize(.regular).font(.system(size:13)).padding(.horizontal,width < 500 ? 10 : 20).padding(.vertical,10).background(.bar)
+    }
+
+    @ViewBuilder private func editorMode(width:CGFloat) -> some View {
+        if width >= 640 {
+            Picker("编辑方式",selection:Binding(get:{note.cleanEditing},set:setParagraphEditing)) {
+                Text("正文").tag(false)
+                Text("段落").tag(true)
+            }.pickerStyle(.segmented).labelsHidden().frame(width:122)
+                .accessibilityLabel("编辑方式").help("正文编辑完整 Markdown；段落模式逐段写作并显示图片")
+        } else {
             Menu {
-                Button(note.readOnly ? "切换为编辑模式" : "切换为阅读模式") { note.toggleReadOnly() }
-                Button("插入图片…") { note.chooseImage() }.disabled(note.readOnly || note.format == .plain)
-                if note.format != .plain {
-                    Toggle("显示右侧导出预览",isOn:$note.showPreview)
-                    Toggle("预览跟随正文段落",isOn:$note.followPreview)
-                    Button("导出版式与预览设置…") { showLayout = true }
-                }
-                Divider()
-                ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool }.disabled(note.format == .markdown && note.cleanEditing) }
-                Button("创建独立编辑副本…") { note.createEditingCopy() }
-            } label:{ if width >= 600 { Label("编辑选项",systemImage:"ellipsis") } else { Image(systemName:"ellipsis.circle") } }.menuStyle(.borderlessButton).fixedSize().help("编辑选项").accessibilityLabel("编辑选项")
-        }.controlSize(.regular).font(.system(size:13)).padding(.horizontal,width < 500 ? 10 : 20).padding(.vertical,12).background(.bar)
+                Button("正文编辑") { setParagraphEditing(false) }
+                Button("段落编辑") { setParagraphEditing(true) }
+            } label: { Image(systemName:note.cleanEditing ? "text.alignleft" : "pencil") }
+                .menuStyle(.borderlessButton).fixedSize()
+                .help(note.cleanEditing ? "段落编辑" : "正文编辑").accessibilityLabel("编辑方式")
+        }
+    }
+
+    private func setParagraphEditing(_ value:Bool) {
+        guard note.textView?.hasMarkedText() != true,
+              (NSApp?.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() != true else { return }
+        if note.cleanEditing != value { note.writingSession.endFind() }
+        note.cleanEditing = value
     }
 
     private var toolbar: some View {
@@ -127,7 +204,7 @@ struct MarkdownTextView: NSViewRepresentable {
         scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
         let view = NoteTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
         view.note = note
-        view.positionKey = note.fileURL.map{"text-file:"+ReadingProgress.canonicalPath($0.path)} ?? "markdown:"+note.id.uuidString; view.supportsMarkdownLists = note.format == .markdown;note.writingSession.view = view;view.writingSession = note.writingSession
+        view.positionKey = note.fileURL.map{"text-file:"+ReadingProgress.canonicalPath($0.path)} ?? "markdown:"+note.id.uuidString; view.supportsMarkdownLists = note.format == .markdown;view.continuesMarkdownQuotes = note.format == .markdown;note.writingSession.view = view;view.writingSession = note.writingSession
         view.minSize = NSSize(width: 0, height: 400); view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         view.isVerticallyResizable = true; view.isHorizontallyResizable = false
         view.autoresizingMask = [.width]
@@ -138,6 +215,7 @@ struct MarkdownTextView: NSViewRepresentable {
         view.delegate = context.coordinator
         view.committed = { [weak coordinator = context.coordinator] in coordinator?.commit($0) }
         view.isEditable = !note.readOnly
+        view.allowsMarkdownFormatting = note.format != .plain
         view.isRichText = false
         view.allowsUndo = true
         view.displayOptions = note.editorDisplay
@@ -145,7 +223,6 @@ struct MarkdownTextView: NSViewRepresentable {
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticDashSubstitutionEnabled = false
         view.isAutomaticTextReplacementEnabled = false
-        view.displayOptions = note.editorDisplay
         view.string = note.text
         note.textView = view
         WritingPositions.shared.restore(view,key:view.positionKey)
@@ -157,6 +234,9 @@ struct MarkdownTextView: NSViewRepresentable {
         note.textView = view
         view.displayOptions = note.editorDisplay
         view.isEditable = !note.readOnly
+        view.allowsMarkdownFormatting = note.format != .plain
+        view.supportsMarkdownLists = note.format == .markdown
+        view.continuesMarkdownQuotes = note.format == .markdown
         let nextKey = note.fileURL.map{"text-file:"+ReadingProgress.canonicalPath($0.path)} ?? "markdown:"+note.id.uuidString
         if nextKey != view.positionKey { WritingPositions.shared.capture(view,key:view.positionKey);view.positionKey = nextKey;WritingRegistry.attach(view,key:nextKey);WritingPositions.shared.capture(view,key:nextKey) }
         view.minSize = NSSize(width: 0, height: max(1, scroll.contentSize.height))

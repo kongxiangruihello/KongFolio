@@ -87,6 +87,33 @@ extension MarkdownNote {
 
 final class NoteTextView: DisplayTextView {
     weak var note: MarkdownNote?
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard note?.focusNewEditor == true,window != nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self,let note,let window,window.isKeyWindow,
+                  note.store?.activeTab?.id == note.id else { return }
+            note.focusNewEditor = false
+            window.makeFirstResponder(self)
+        }
+    }
+
+    override func draw(_ dirtyRect:NSRect) {
+        super.draw(dirtyRect)
+        guard note?.format == .markdown,isEditable,string.isEmpty,!hasMarkedText() else { return }
+        let inset = textContainerOrigin
+        let origin = NSPoint(x:inset.x+(textContainer?.lineFragmentPadding ?? 0),y:inset.y)
+        ("开始写作…" as NSString).draw(at:origin,withAttributes:[
+            .font:font ?? NSFont.systemFont(ofSize:18),
+            .foregroundColor:NSColor.placeholderTextColor
+        ])
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        if note?.format == .markdown { needsDisplay = true }
+    }
+
     override func paste(_ sender: Any?) {
         if NSPasteboard.general.availableType(from: [.png, .tiff]) != nil, note?.pasteImage() == true { return }
         super.paste(sender)

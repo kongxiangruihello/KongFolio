@@ -11,8 +11,8 @@ class ComposingTextView: NSTextView {
         if modifiers == [.command,.shift],key == "z" { if undoManager?.canRedo == true { undoManager?.redo();committed?(self) };return true }
         guard let session = writingSession else { return super.performKeyEquivalent(with:event) }
         if modifiers == .command {
-            if key == "b" { session.wrap("**","**",placeholder:"粗体");return true }
-            if key == "i" { session.wrap("*","*",placeholder:"斜体");return true }
+            if allowsMarkdownFormatting,key == "b" { session.wrap("**","**",placeholder:"粗体");return true }
+            if allowsMarkdownFormatting,key == "i" { session.wrap("*","*",placeholder:"斜体");return true }
             if key == "f" { session.findRequest = UUID();return true }
             if key == "g" { session.find(session.lastQuery);return true }
         }
@@ -62,6 +62,7 @@ class ComposingTextView: NSTextView {
         undoManager?.endUndoGrouping()
         breakUndoCoalescing()
     }
+    var allowsMarkdownFormatting = true
     var supportsMarkdownLists = false
     var continuesMarkdownQuotes = false
     private let editingHistory = UndoManager()

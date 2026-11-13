@@ -20,35 +20,47 @@ struct ReadingWritingEditor: View {
 struct WritingToolbar: View {
     @ObservedObject var session:WritingSession
     var prominent = false
+    var markdownFile: MarkdownNote? = nil
+    var formatting = true
+    var showsControls = true
     @Environment(\.isEnabled) private var enabled
     @State private var showFind = false
     @State private var showCleanup = false
     @State private var showReplacePreview = false
     var body:some View {
         VStack(alignment:.leading,spacing:5) {
-            ScrollView(.horizontal,showsIndicators:false) {
-                HStack(spacing:9) {
-                    Button { session.wrap("**","**",placeholder:"粗体") } label:{Image(systemName:"bold")}.help("加粗选中文字（⌘B）")
-                    Button { session.wrap("*","*",placeholder:"斜体") } label:{Image(systemName:"italic")}.help("斜体（⌘I）")
-                    Menu { ForEach(1...3,id:\.self) { level in Button("\(level) 级标题") { session.prefix(String(repeating:"#",count:level)+" ") } } } label:{Image(systemName:"textformat.size")}.help("设置标题")
-                    Button { session.prefix("> ") } label:{Image(systemName:"text.quote")}.help("引用段落")
-                    Button { session.wrap("[","](https://)",placeholder:"链接文字") } label:{Image(systemName:"link")}.help("插入链接")
-                    if prominent {
-                        Button { session.prefix("- ") } label:{Image(systemName:"list.bullet")}.help("无序列表")
-                        Button { session.prefix("1. ") } label:{Image(systemName:"list.number")}.help("有序列表")
-                    }
-                    if !prominent { Button("清除格式") { session.clearFormatting() } }
-                    Button("查找替换") { if showFind { session.endFind();showFind = false } else { session.beginFind();showFind = true } }
-                    if prominent {
-                        Menu("更多编辑") {
-                            Button("清除格式") { session.clearFormatting() }
-                            Button("逐项替换…") { showReplacePreview = true }
-                            Button("整理粘贴…") { showCleanup = true }
+            if showsControls,let markdownFile {
+                ViewThatFits(in:.horizontal) {
+                    markdownControls(markdownFile,withInlineTools:true)
+                    markdownControls(markdownFile,withInlineTools:false)
+                }.buttonStyle(.borderless).font(.system(size:14)).controlSize(.regular)
+            } else if showsControls {
+                ScrollView(.horizontal,showsIndicators:false) {
+                    HStack(spacing:9) {
+                        if formatting {
+                            Button { session.wrap("**","**",placeholder:"粗体") } label:{Image(systemName:"bold")}.help("加粗选中文字（⌘B）")
+                            Button { session.wrap("*","*",placeholder:"斜体") } label:{Image(systemName:"italic")}.help("斜体（⌘I）")
+                            Menu { ForEach(1...3,id:\.self) { level in Button("\(level) 级标题") { session.prefix(String(repeating:"#",count:level)+" ") } } } label:{Image(systemName:"textformat.size")}.help("设置标题")
+                            Button { session.prefix("> ") } label:{Image(systemName:"text.quote")}.help("引用段落")
+                            Button { session.wrap("[","](https://)",placeholder:"链接文字") } label:{Image(systemName:"link")}.help("插入链接")
+                            if prominent {
+                                Button { session.prefix("- ") } label:{Image(systemName:"list.bullet")}.help("无序列表")
+                                Button { session.prefix("1. ") } label:{Image(systemName:"list.number")}.help("有序列表")
+                            }
+                            if !prominent { Button("清除格式") { session.clearFormatting() } }
                         }
-                    } else { Button("逐项替换…") { showReplacePreview = true };Button("整理粘贴…") { showCleanup = true } }
-                    WritingParagraphMenu(session:session)
-                    Menu("文章大纲") { if session.analysis.headings.isEmpty { Text("使用标题后在这里跳转") };ForEach(session.analysis.headings) { h in Button(String(repeating:"　",count:max(0,h.level-1))+h.title) { session.go(h.range) } } }
-                }.buttonStyle(.borderless).font(.system(size:prominent ? 15 : 12)).controlSize(prominent ? .regular : .small).padding(.vertical,prominent ? 5 : 0)
+                        Button("查找替换",action:toggleFind)
+                        if prominent {
+                            Menu("更多编辑") {
+                                if formatting { Button("清除格式") { session.clearFormatting() } }
+                                Button("逐项替换…") { showReplacePreview = true }
+                                Button("整理粘贴…") { showCleanup = true }
+                            }
+                        } else { Button("逐项替换…") { showReplacePreview = true };Button("整理粘贴…") { showCleanup = true } }
+                        WritingParagraphMenu(session:session)
+                        if formatting { Menu("文章大纲") { if session.analysis.headings.isEmpty { Text("使用标题后在这里跳转") };ForEach(session.analysis.headings) { h in Button(String(repeating:"　",count:max(0,h.level-1))+h.title) { session.go(h.range) } } } }
+                    }.buttonStyle(.borderless).font(.system(size:prominent ? 15 : 12)).controlSize(prominent ? .regular : .small).padding(.vertical,prominent ? 5 : 0)
+                }
             }
             if showFind { WritingFindBar(session:session) { session.endFind();showFind = false } }
             if !session.message.isEmpty { Text(session.message).font(.caption).foregroundStyle(.secondary) }
@@ -57,6 +69,62 @@ struct WritingToolbar: View {
         .onChange(of:session.cleanupRequest) { _,_ in showCleanup = true }
         .sheet(isPresented:$showReplacePreview) { EditorReplaceView(session:session) }
         .sheet(isPresented:$showCleanup) { WritingCleanupView(session:session) }
+    }
+
+    private func toggleFind() {
+        if showFind { session.endFind() } else { session.beginFind() }
+        showFind.toggle()
+    }
+
+    private func markdownControls(_ note:MarkdownNote,withInlineTools:Bool) -> some View {
+        HStack(spacing:12) {
+            Menu {
+                ForEach(1...6,id:\.self) { level in
+                    Button("标题 \(level)") { session.prefix(String(repeating:"#",count:level)+" ") }
+                }
+            } label: { Label("标题",systemImage:"textformat") }.help("设置 Markdown 标题")
+            if withInlineTools {
+                tool("粗体","bold") { session.wrap("**","**",placeholder:"粗体") }
+                tool("斜体","italic") { session.wrap("*","*",placeholder:"斜体") }
+                tool("引用","text.quote") { session.prefix("> ") }
+            }
+            Menu {
+                Button("无序列表") { session.prefix("- ") }
+                Button("有序列表") { session.prefix("1. ") }
+                Button("任务列表") { session.prefix("- [ ] ") }
+            } label: { Image(systemName:"list.bullet") }.help("列表").accessibilityLabel("列表")
+            Menu {
+                if !withInlineTools {
+                    Button("粗体") { session.wrap("**","**",placeholder:"粗体") }
+                    Button("斜体") { session.wrap("*","*",placeholder:"斜体") }
+                    Button("引用") { session.prefix("> ") }
+                    Divider()
+                }
+                Button("链接") { session.wrap("[","](https://)",placeholder:"链接文字") }
+                Button("图片…") { note.chooseImage() }
+                Button("表格") { note.insertTable() }
+                Button("行内代码") { session.wrap("`","`",placeholder:"代码") }
+                Button("代码块") { session.wrap("```\n","\n```",placeholder:"代码") }
+                Button("分隔线") { note.insertSource("\n---\n") }
+            } label: { Label("插入",systemImage:"plus") }
+            tool("查找替换（⌘F）","magnifyingglass",action:toggleFind)
+            Menu {
+                if session.analysis.headings.isEmpty { Text("添加标题后可跳转") }
+                ForEach(session.analysis.headings) { heading in
+                    Button(String(repeating:"　",count:max(0,heading.level-1))+heading.title) { session.go(heading.range) }
+                }
+            } label: { Image(systemName:"list.bullet.indent") }.help("文章大纲").accessibilityLabel("文章大纲")
+            Menu {
+                WritingParagraphMenu(session:session)
+                Button("清除格式") { session.clearFormatting() }
+                Button("逐项替换…") { showReplacePreview = true }
+                Button("整理粘贴…") { showCleanup = true }
+            } label: { Image(systemName:"ellipsis.circle") }.help("更多编辑").accessibilityLabel("更多编辑")
+        }.fixedSize(horizontal:true,vertical:false)
+    }
+
+    private func tool(_ name:String,_ symbol:String,action:@escaping () -> Void) -> some View {
+        Button(action:action) { Image(systemName:symbol) }.help(name).accessibilityLabel(name)
     }
 }
 struct WritingCleanupView: View {

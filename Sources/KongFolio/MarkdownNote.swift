@@ -40,7 +40,7 @@ struct TextEdit: Equatable {
     var fileBaseline: FileBaseline?
     var baselineText: String?
     @Published var readOnly = false
-    @Published var cleanEditing = true
+    @Published var cleanEditing = false
     @Published var editingTool: FileEditingTool?
     @Published var followPreview = false
     @Published var includeCorrections = true { didSet { refreshPreview() } }
@@ -50,7 +50,7 @@ struct TextEdit: Equatable {
     weak var lastFollowedDocument: PDFDocument?
     @Published var saveConflict = false
     @Published var dirty = false
-    @Published var showPreview = true
+    @Published var showPreview = false { didSet { if showPreview != oldValue { refreshPreview() } } }
     @Published var showVersionHistory = false
     @Published var preview: PDFDocument?
     @Published var error: String?
@@ -61,6 +61,7 @@ struct TextEdit: Equatable {
     let cleanSession = CleanWritingSession()
     var characterCount:Int { text.reduce(0){$0+($1.isWhitespace ? 0 : 1)} }
     var pendingSearchRange: NSRange?
+    var focusNewEditor = false
     private var previewTask: Task<Void, Never>?
     private var previewGeneration = UUID()
     private var editorClosed = false
@@ -72,7 +73,9 @@ struct TextEdit: Equatable {
         self.baselineText = fileURL == nil ? nil : text
         self.fileURL = fileURL
         self.fileBaseline = fileURL.flatMap { try? FileBaseline.capture($0) }
-        self.format = format ?? fileURL.map { TextDocumentFormat.forURL($0) } ?? .markdown
+        let resolvedFormat = format ?? fileURL.map { TextDocumentFormat.forURL($0) } ?? .markdown
+        self.format = resolvedFormat
+        self.showPreview = resolvedFormat == .html
         self.dirty = dirty
         self.storage = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("KongFolio", isDirectory: true)
         writingSession.analyze(text)
@@ -250,7 +253,7 @@ struct TextEdit: Equatable {
     func refreshPreview() {
         previewTask?.cancel()
         guard !editorClosed else { return }
-        guard format != .plain else { preview = nil; previewMessage = ""; return }
+        guard format != .plain,showPreview else { preview = nil; previewMessage = ""; return }
         previewGeneration = UUID()
         let generation = previewGeneration
         previewTask = Task { [weak self] in

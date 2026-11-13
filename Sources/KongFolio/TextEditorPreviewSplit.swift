@@ -2,10 +2,11 @@ import SwiftUI
 
 struct TextEditorPreviewSplit: View {
     @ObservedObject var note: MarkdownNote
+    var allowsPreview = true
     @AppStorage("KongFolio.textPreviewEditorFraction") private var fraction = 0.55
     var body: some View {
         GeometryReader { geometry in
-            let preview = note.format != .plain && LayoutMetrics.showsPreview(preferred:note.showPreview,width:geometry.size.width)
+            let preview = allowsPreview && note.format != .plain && LayoutMetrics.showsPreview(preferred:note.showPreview,width:geometry.size.width)
             let width = geometry.size.width
             HStack(spacing:0) {
                 MarkdownTextView(note:note).frame(width:preview ? max(180,min(width-188,width*safeFraction)) : width)

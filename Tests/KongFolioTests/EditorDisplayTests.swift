@@ -43,6 +43,31 @@ final class EditorDisplayTests: XCTestCase {
         var options = EditorDisplayOptions();options.size = 22;view.displayOptions = options;view.setFrameSize(NSSize(width:420,height:400));input.synchronize(view)
         XCTAssertEqual(view.string,edited);XCTAssertEqual(text,edited);view.undoManager!.undo();XCTAssertEqual(view.string,"- 第一行\n- 第二行")
     }
+    @MainActor func testNewMarkdownStartsInContinuousEditorWithPreviewOnDemand() async throws {
+        let folder = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at:folder) }
+        let store = WorkspaceStore(storage:folder,readingDefaults:Release037Tests().suite())
+        let note = store.newNote()
+        XCTAssertEqual(note.format,.markdown)
+        XCTAssertTrue(note.focusNewEditor)
+        XCTAssertFalse(note.cleanEditing)
+        XCTAssertFalse(note.showPreview)
+        XCTAssertTrue(note.text.isEmpty)
+        XCTAssertEqual(store.newNote(format:.plain).format,.plain)
+        XCTAssertTrue(store.newNote(format:.html).showPreview)
+
+        note.text = "# 写作\n\n正文"
+        XCTAssertNil(note.preview)
+        note.showPreview = true
+        let deadline = Date().addingTimeInterval(5)
+        while note.preview == nil && note.previewMessage.isEmpty && Date() < deadline {
+            try await Task.sleep(for:.milliseconds(20))
+        }
+        XCTAssertEqual(note.preview?.pageCount,1,note.previewMessage)
+        XCTAssertEqual(note.text,"# 写作\n\n正文")
+        note.showPreview = false
+        XCTAssertNil(note.preview)
+    }
     @MainActor func testRightPanelRoutingDoesNotOpenUnexpectedWindow() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let store = WorkspaceStore(storage:folder);store.readingMode = false
