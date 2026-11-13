@@ -36,6 +36,7 @@ struct WritingToolbar: View {
                         Divider().frame(height:18)
                         ViewThatFits(in:.horizontal) {
                             if textFile.format == .plain {
+                                plainTextControls(visibleCount:PlainTextTool.allCases.count,showsLabels:true)
                                 ForEach((0...PlainTextTool.allCases.count).reversed(),id:\.self) { count in
                                     plainTextControls(visibleCount:count)
                                 }
@@ -44,7 +45,7 @@ struct WritingToolbar: View {
                                     markdownControls(textFile,visibleCount:count)
                                 }
                             }
-                        }.frame(maxWidth:.infinity,alignment:.leading)
+                        }.frame(maxWidth:.infinity,alignment:textFile.format == .plain ? .center : .leading)
                     }
                 }.buttonStyle(.borderless).font(.system(size:14)).controlSize(.regular)
             } else if showsControls {
@@ -102,14 +103,15 @@ struct WritingToolbar: View {
         }
     }
 
-    private func plainTextControls(visibleCount:Int) -> some View {
-        HStack(spacing:8) {
+    private func plainTextControls(visibleCount:Int,showsLabels:Bool = false) -> some View {
+        HStack(spacing:showsLabels ? 24 : 8) {
             ForEach(PlainTextTool.allCases.prefix(visibleCount),id:\.self) { command in
                 if command == .paragraphs {
-                    Menu { paragraphCommands } label: { Image(systemName:command.symbol) }
+                    Menu { paragraphCommands } label: { plainTextToolLabel(command,showsLabel:showsLabels) }
                         .help(command.rawValue).accessibilityLabel(command.rawValue)
                 } else {
-                    tool(command.rawValue,command.symbol) { runPlainTextTool(command) }
+                    Button { runPlainTextTool(command) } label: { plainTextToolLabel(command,showsLabel:showsLabels) }
+                        .help(command.rawValue).accessibilityLabel(command.rawValue)
                 }
             }
             if visibleCount < PlainTextTool.allCases.count {
@@ -125,6 +127,14 @@ struct WritingToolbar: View {
                     .help("更多文本编辑").accessibilityLabel("更多文本编辑")
             }
         }.fixedSize(horizontal:true,vertical:false)
+    }
+
+    @ViewBuilder private func plainTextToolLabel(_ command:PlainTextTool,showsLabel:Bool) -> some View {
+        if showsLabel {
+            Label(command.rawValue,systemImage:command.symbol)
+        } else {
+            Image(systemName:command.symbol)
+        }
     }
 
     @ViewBuilder private var paragraphCommands: some View {
