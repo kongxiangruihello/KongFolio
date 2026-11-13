@@ -16,11 +16,25 @@ struct MarkdownEditorView: View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
                 if showsPrimaryToolbar { toolbar }
-                editorHeader(width:proxy.size.width)
-                if !note.readOnly && !(note.format == .markdown && note.cleanEditing) {
-                    WritingToolbar(session:note.writingSession,prominent:true,markdownFile:note.format == .markdown ? note : nil,
-                                   formatting:note.format != .plain,showsControls:!focusedWriting)
-                        .padding(.horizontal,16).padding(.vertical,focusedWriting ? 0 : 4)
+                if note.format == .markdown {
+                    if !note.readOnly && !note.cleanEditing {
+                        WritingToolbar(session:note.writingSession,prominent:true,markdownFile:note,
+                                       showsControls:!focusedWriting,
+                                       documentControls:AnyView(editorHeader(width:proxy.size.width)),
+                                       compactMarkdown:proxy.size.width < 980)
+                            .padding(.horizontal,proxy.size.width < 500 ? 10 : 20)
+                            .padding(.vertical,8).background(.bar)
+                    } else {
+                        editorHeader(width:proxy.size.width)
+                            .padding(.horizontal,16).padding(.vertical,8).background(.bar)
+                    }
+                } else {
+                    editorHeader(width:proxy.size.width)
+                        .padding(.horizontal,16).padding(.vertical,8).background(.bar)
+                    if !note.readOnly {
+                        WritingToolbar(session:note.writingSession,prominent:true,formatting:note.format != .plain)
+                            .padding(.horizontal,16).padding(.vertical,4)
+                    }
                 }
                 if note.saveConflict { SaveConflictBanner(copy: { note.save(asNew: true) }, reload: note.reloadAfterConflict,compare:{ note.editingTool = .merge }) }
                 Divider()
@@ -74,11 +88,11 @@ struct MarkdownEditorView: View {
         HStack(spacing:width < 500 ? 8 : 12) {
             VStack(alignment:.leading,spacing:3) {
                 DraftNoteTitle(note:note)
-                if note.format == .markdown || width >= 650 {
+                if width >= 650 {
                     Text(note.format.rawValue + (note.readOnly ? " · 只读" : ""))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
-            }.frame(minWidth:40,maxWidth:.infinity,alignment:.leading)
+            }.frame(minWidth:40,maxWidth:.infinity,alignment:.leading).layoutPriority(-1)
             if note.format == .markdown, !focusedWriting {
                 editorMode(width:width)
                 Button {
@@ -89,7 +103,7 @@ struct MarkdownEditorView: View {
                         showPreviewSheet = true
                     } else { note.showPreview.toggle() }
                 } label: {
-                    if width >= 700 { Label("预览",systemImage:"rectangle.split.2x1") }
+                    if width >= 1100 { Label("预览",systemImage:"rectangle.split.2x1") }
                     else { Image(systemName:"rectangle.split.2x1") }
                 }
                 .tint(note.showPreview ? .accentColor : nil)
@@ -100,7 +114,7 @@ struct MarkdownEditorView: View {
                     .help("保存当前文件（⌘S）").accessibilityLabel("保存当前文件")
             }
             if !focusedWriting {
-                Button { showDisplay = true } label:{ if width >= 720 { Label("显示设置",systemImage:"textformat.size") } else { Image(systemName:"textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
+                Button { showDisplay = true } label:{ if width >= 1100 { Label("显示设置",systemImage:"textformat.size") } else { Image(systemName:"textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
                 Menu {
                     if note.format == .markdown, !note.cleanEditing {
                         Button("专注写作") { focusedWriting = true }
@@ -116,15 +130,15 @@ struct MarkdownEditorView: View {
                     Divider()
                     ForEach(FileEditingTool.allCases) { tool in Button(tool.rawValue) { note.editingTool = tool }.disabled(note.format == .markdown && note.cleanEditing) }
                     Button("创建独立编辑副本…") { note.createEditingCopy() }
-                } label:{ if width >= 600 { Label("编辑选项",systemImage:"ellipsis") } else { Image(systemName:"ellipsis.circle") } }.menuStyle(.borderlessButton).fixedSize().help("编辑选项").accessibilityLabel("编辑选项")
+                } label:{ if width >= 1100 { Label("编辑选项",systemImage:"ellipsis") } else { Image(systemName:"ellipsis.circle") } }.menuStyle(.borderlessButton).fixedSize().help("编辑选项").accessibilityLabel("编辑选项")
             } else {
                 Button("退出专注") { focusedWriting = false }.help("恢复 Markdown 工具栏")
             }
-        }.controlSize(.regular).font(.system(size:13)).padding(.horizontal,width < 500 ? 10 : 20).padding(.vertical,10).background(.bar)
+        }.controlSize(.regular).font(.system(size:13))
     }
 
     @ViewBuilder private func editorMode(width:CGFloat) -> some View {
-        if width >= 640 {
+        if width >= 980 {
             Picker("编辑方式",selection:Binding(get:{note.cleanEditing},set:setParagraphEditing)) {
                 Text("正文").tag(false)
                 Text("段落").tag(true)

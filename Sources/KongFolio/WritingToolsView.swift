@@ -23,16 +23,28 @@ struct WritingToolbar: View {
     var markdownFile: MarkdownNote? = nil
     var formatting = true
     var showsControls = true
-    @Environment(\.isEnabled) private var enabled
+    var documentControls: AnyView? = nil
+    var compactMarkdown = false
     @State private var showFind = false
     @State private var showCleanup = false
     @State private var showReplacePreview = false
     var body:some View {
         VStack(alignment:.leading,spacing:5) {
-            if showsControls,let markdownFile {
-                ViewThatFits(in:.horizontal) {
-                    markdownControls(markdownFile,withInlineTools:true)
-                    markdownControls(markdownFile,withInlineTools:false)
+            if let documentControls, let markdownFile {
+                HStack(spacing:8) {
+                    documentControls
+                    if showsControls {
+                        Divider().frame(height:18)
+                        if compactMarkdown {
+                            Menu {
+                                markdownCommands(markdownFile)
+                            } label: { Image(systemName:"textformat") }
+                                .help("Markdown 格式与插入").accessibilityLabel("Markdown 格式与插入")
+                            tool("查找替换（⌘F）","magnifyingglass",action:toggleFind)
+                        } else {
+                            markdownControls(markdownFile)
+                        }
+                    }
                 }.buttonStyle(.borderless).font(.system(size:14)).controlSize(.regular)
             } else if showsControls {
                 ScrollView(.horizontal,showsIndicators:false) {
@@ -76,51 +88,79 @@ struct WritingToolbar: View {
         showFind.toggle()
     }
 
-    private func markdownControls(_ note:MarkdownNote,withInlineTools:Bool) -> some View {
-        HStack(spacing:12) {
-            Menu {
-                ForEach(1...6,id:\.self) { level in
-                    Button("标题 \(level)") { session.prefix(String(repeating:"#",count:level)+" ") }
-                }
-            } label: { Label("标题",systemImage:"textformat") }.help("设置 Markdown 标题")
-            if withInlineTools {
-                tool("粗体","bold") { session.wrap("**","**",placeholder:"粗体") }
-                tool("斜体","italic") { session.wrap("*","*",placeholder:"斜体") }
-                tool("引用","text.quote") { session.prefix("> ") }
-            }
-            Menu {
-                Button("无序列表") { session.prefix("- ") }
-                Button("有序列表") { session.prefix("1. ") }
-                Button("任务列表") { session.prefix("- [ ] ") }
-            } label: { Image(systemName:"list.bullet") }.help("列表").accessibilityLabel("列表")
-            Menu {
-                if !withInlineTools {
-                    Button("粗体") { session.wrap("**","**",placeholder:"粗体") }
-                    Button("斜体") { session.wrap("*","*",placeholder:"斜体") }
-                    Button("引用") { session.prefix("> ") }
-                    Divider()
-                }
-                Button("链接") { session.wrap("[","](https://)",placeholder:"链接文字") }
-                Button("图片…") { note.chooseImage() }
-                Button("表格") { note.insertTable() }
-                Button("行内代码") { session.wrap("`","`",placeholder:"代码") }
-                Button("代码块") { session.wrap("```\n","\n```",placeholder:"代码") }
-                Button("分隔线") { note.insertSource("\n---\n") }
-            } label: { Label("插入",systemImage:"plus") }
+    private func markdownControls(_ note:MarkdownNote) -> some View {
+        HStack(spacing:8) {
+            headingMenu
+            tool("粗体","bold") { session.wrap("**","**",placeholder:"粗体") }
+            tool("斜体","italic") { session.wrap("*","*",placeholder:"斜体") }
+            tool("引用","text.quote") { session.prefix("> ") }
+            listMenu
+            Menu { insertionCommands(note) } label: { Image(systemName:"plus") }
+                .help("插入").accessibilityLabel("插入")
             tool("查找替换（⌘F）","magnifyingglass",action:toggleFind)
-            Menu {
-                if session.analysis.headings.isEmpty { Text("添加标题后可跳转") }
-                ForEach(session.analysis.headings) { heading in
-                    Button(String(repeating:"　",count:max(0,heading.level-1))+heading.title) { session.go(heading.range) }
-                }
-            } label: { Image(systemName:"list.bullet.indent") }.help("文章大纲").accessibilityLabel("文章大纲")
-            Menu {
-                WritingParagraphMenu(session:session)
-                Button("清除格式") { session.clearFormatting() }
-                Button("逐项替换…") { showReplacePreview = true }
-                Button("整理粘贴…") { showCleanup = true }
-            } label: { Image(systemName:"ellipsis.circle") }.help("更多编辑").accessibilityLabel("更多编辑")
+            outlineMenu
+            Menu { editingCommands } label: { Image(systemName:"ellipsis.circle") }
+                .help("更多编辑").accessibilityLabel("更多编辑")
         }.fixedSize(horizontal:true,vertical:false)
+    }
+
+    @ViewBuilder private func markdownCommands(_ note:MarkdownNote) -> some View {
+        headingMenu
+        Button("粗体") { session.wrap("**","**",placeholder:"粗体") }
+        Button("斜体") { session.wrap("*","*",placeholder:"斜体") }
+        Button("引用") { session.prefix("> ") }
+        Menu("列表") { listCommands }
+        Menu("插入") { insertionCommands(note) }
+        Menu("文章大纲") { outlineCommands }
+        Divider()
+        editingCommands
+    }
+
+    private var headingMenu: some View {
+        Menu {
+            ForEach(1...6,id:\.self) { level in
+                Button("标题 \(level)") { session.prefix(String(repeating:"#",count:level)+" ") }
+            }
+        } label: { Text("标题") }.help("设置 Markdown 标题")
+    }
+
+    private var listMenu: some View {
+        Menu { listCommands } label: { Image(systemName:"list.bullet") }
+            .help("列表").accessibilityLabel("列表")
+    }
+
+    @ViewBuilder private var listCommands: some View {
+        Button("无序列表") { session.prefix("- ") }
+        Button("有序列表") { session.prefix("1. ") }
+        Button("任务列表") { session.prefix("- [ ] ") }
+    }
+
+    @ViewBuilder private func insertionCommands(_ note:MarkdownNote) -> some View {
+        Button("链接") { session.wrap("[","](https://)",placeholder:"链接文字") }
+        Button("图片…") { note.chooseImage() }
+        Button("表格") { note.insertTable() }
+        Button("行内代码") { session.wrap("`","`",placeholder:"代码") }
+        Button("代码块") { session.wrap("```\n","\n```",placeholder:"代码") }
+        Button("分隔线") { note.insertSource("\n---\n") }
+    }
+
+    private var outlineMenu: some View {
+        Menu { outlineCommands } label: { Image(systemName:"list.bullet.indent") }
+            .help("文章大纲").accessibilityLabel("文章大纲")
+    }
+
+    @ViewBuilder private var outlineCommands: some View {
+        if session.analysis.headings.isEmpty { Text("添加标题后可跳转") }
+        ForEach(session.analysis.headings) { heading in
+            Button(String(repeating:"　",count:max(0,heading.level-1))+heading.title) { session.go(heading.range) }
+        }
+    }
+
+    @ViewBuilder private var editingCommands: some View {
+        WritingParagraphMenu(session:session)
+        Button("清除格式") { session.clearFormatting() }
+        Button("逐项替换…") { showReplacePreview = true }
+        Button("整理粘贴…") { showCleanup = true }
     }
 
     private func tool(_ name:String,_ symbol:String,action:@escaping () -> Void) -> some View {
