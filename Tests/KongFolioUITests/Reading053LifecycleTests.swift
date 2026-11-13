@@ -64,22 +64,37 @@ final class Reading053LifecycleTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName:suite))
         defer { defaults.removePersistentDomain(forName:suite) }
         let store = WorkspaceStore(storage:root.appendingPathComponent("Support"),readingDefaults:defaults)
-        let files = (0..<20).map { index -> URL in
+        let files = try (0..<20).map { index -> URL in
             let file = root.appendingPathComponent("文献-\(index).pdf")
             let document = PDFDocument()
-            for _ in 0..<2 { document.insert(PDFPage(),at:document.pageCount) }
+            let image = NSImage(size:NSSize(width:400,height:560),flipped:false) { bounds in
+                NSColor.white.setFill()
+                bounds.fill()
+                NSColor.black.setFill()
+                for row in 0..<20 { NSRect(x:30,y:30+row*24,width:280-row*3,height:5).fill() }
+                return true
+            }
+            let page = try XCTUnwrap(PDFPage(image:image))
+            document.insert(page,at:0)
+            document.insert(PDFPage(),at:1)
             XCTAssertTrue(document.write(to:file))
             return file
         }
 
-        for round in 1...3 {
-            switch round {
-            case 1: store.openEach(files)
-            case 2:
+        for round in 1...6 {
+            if round <= 3 {
+                let chooser = DocumentChooserCoordinator()
+                let panel = TestDocumentPanel()
+                panel.selected = files
+                chooser.present(panel,presentation:.separate) { response,urls in
+                    store.finishOpeningDocuments(response,urls:urls)
+                }
+                panel.completion?(.OK)
+                try await wait("文件选择器交接") { store.tabs.compactMap(\.workspace).filter { $0.sourceURL != nil }.count == 20 }
+            } else {
                 let finder = ExternalDocumentRouter()
                 finder.attach(store)
                 finder.receive(files)
-            default: store.activeWorkspace?.openDropped(files)
             }
             XCTAssertEqual(store.readingBatch?.entries.count,20)
             let cloud = try XCTUnwrap(store.tabs.compactMap(\.workspace).first{$0.sourceURL == files.last})

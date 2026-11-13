@@ -18,6 +18,8 @@ struct ReadingSourceReview: Identifiable {
     private var generation = UUID()
 
     func open(_ citation: ReadingCitation, record: ReadingRecord, store: WorkspaceStore, reviewOnly: Bool = false) {
+        cancel()
+        review = nil
         let original = citation.source
         if TextImport.handles(URL(fileURLWithPath:original.path)), !original.path.isEmpty {
             store.reveal(original,beside:false)
@@ -33,6 +35,10 @@ struct ReadingSourceReview: Identifiable {
             var source = original
             source.path = path
             if !source.rects.isEmpty { source.anchor = nil }
+            else if let anchor = source.anchor, let page = workspace.document.page(at:source.page) {
+                source.rects = ReadingSourceRecovery.passageRects(page,anchor:anchor)
+                if !source.rects.isEmpty { source.anchor = nil }
+            }
             if !source.rects.isEmpty || (source.anchor == nil && record.quote.isEmpty) {
                 store.reveal(source,beside:false)
                 return
@@ -147,6 +153,19 @@ struct ReadingSourceReview: Identifiable {
         store.reveal(target,beside:false)
     }
 
+    func openRecordedPage(_ request: ReadingSourceReview, store: WorkspaceStore) {
+        guard let inspection = request.inspection,
+              (0..<inspection.pageCount).contains(request.citation.source.page),
+              request.citation.source.invalidPage053 != true else { return }
+        var source = request.citation.source
+        source.path = inspection.input.url.path
+        source.anchor = nil
+        source.rects = []
+        source.keep = nil
+        review = nil
+        store.reveal(source,beside:false)
+    }
+
     func cancel() {
         generation = UUID()
         job?.cancel()
@@ -233,6 +252,10 @@ struct ReadingSourceReviewSheet: View {
                 if navigator.busy { ProgressView().controlSize(.small) }
                 Spacer()
                 Button("取消") { navigator.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
+                if let inspection = request.inspection, request.citation.source.invalidPage053 != true,
+                   (0..<inspection.pageCount).contains(request.citation.source.page) {
+                    Button("仅打开记录页") { navigator.openRecordedPage(request,store:store) }.disabled(navigator.busy)
+                }
                 Button("确认关联并返回") {
                     if let inspectedPage, inspectedPage.index == pageNumber-1 {
                         navigator.confirm(request,page:inspectedPage,store:store)
@@ -256,11 +279,34 @@ struct ReadingSourceReviewSheet: View {
     }
 
     private func chooseFile() {
-        let panel = NSOpenPanel()
+        let panel = DocumentOpenPanel.files()
         panel.allowedContentTypes = [.pdf,UTType(filenameExtension:"kongfolio") ?? .pdf]
         panel.allowsMultipleSelection = false
         panel.message = "选择这条笔记的原始 PDF"
-        guard panel.runModal() == .OK,let url = panel.url else { return }
-        navigator.inspect(url,seed:request,store:store)
+        DocumentOpenPanel.coordinator.present(panel,presentation:.separate) { _,urls in
+            guard let url = urls.first else { return }
+            navigator.inspect(url,seed:request,store:store)
+        }
+    }
+}
+
+
+extension WorkspaceStore {
+    func openLinkedReadingSource(_ url: URL,source: SourceRef) {
+        if TextImport.handles(URL(fileURLWithPath:source.path)) {
+            reveal(source,beside:false)
+            return
+        }
+        let link = url.absoluteString
+        if source.relativePath == nil {
+            for record in journal.state.records where record.removed == nil {
+                if let tracked = record.inlineNoteCitations?.first(where:{ $0.link == link && record.hasInlineNoteLink($0.link) }) {
+                    linkedSourceNavigator.open(tracked.citation,record:record,store:self)
+                    return
+                }
+            }
+        }
+        let citation = ReadingCitation(source:source,title:source.fileName)
+        linkedSourceNavigator.open(citation,record:ReadingRecord(kind:.excerpt,citations:[citation]),store:self)
     }
 }

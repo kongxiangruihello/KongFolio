@@ -70,6 +70,10 @@ import AppKit
         return (view.string,view.selectedRange())
     }
     static func selection(_ key:String) -> NSRange? { entries[key]?.view?.selectedRange() }
+    static func hasEditor(_ key:String,window:NSWindow?) -> Bool {
+        guard let editorWindow = entries[key]?.view?.window else { return false }
+        return window == nil || window === editorWindow
+    }
     static func insertAtCursor(_ text:String,key:String,expected:String,window:NSWindow?) -> Bool {
         guard let view = entries[key]?.view,let editorWindow = view.window,
               window == nil || window === editorWindow,view.isEditable,!view.hasMarkedText(),view.string == expected else { return false }

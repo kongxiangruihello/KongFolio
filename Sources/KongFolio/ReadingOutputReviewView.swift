@@ -14,7 +14,11 @@ struct ReadingOutputReviewView: View {
     @State private var page = 0
     @State private var editing: ReadingOutputIssue?
     @State private var positioned = false
-    private var pagination: ReadingPagination { ReadingPagination(total:issues.count,page:page,size:10) }
+    @State private var issuesOnly = false
+    private var items: [ReadingExportItem] { snapshot.refreshed(in:journal).orderedItems }
+    private var pagination: ReadingPagination {
+        ReadingPagination(total:issuesOnly ? issues.count : items.count,page:page,size:10)
+    }
 
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
@@ -27,13 +31,44 @@ struct ReadingOutputReviewView: View {
                 .font(.caption).foregroundStyle(.secondary)
             if busy { ProgressView().controlSize(.small) }
             Text(message).font(.caption)
-            List(Array(issues[pagination.range])) { issue in issueRow(issue) }
+            Picker("查看",selection:$issuesOnly) {
+                Text("导出顺序与出处").tag(false)
+                Text("待核对问题").tag(true)
+            }.pickerStyle(.segmented)
+            if issuesOnly {
+                List(Array(issues[pagination.range])) { issue in issueRow(issue) }
+            } else {
+                let ordered = items
+                let issuesByItem = Dictionary(grouping:issues,by:\.item)
+                List(pagination.range,id:\.self) { index in
+                    let item = ordered[index]
+                    VStack(alignment:.leading,spacing:5) {
+                        HStack {
+                            Text("\(index+1). "+item.title).lineLimit(1).help(item.title)
+                            Spacer()
+                            Button("查看记录") { openItem(item.libraryID) }
+                        }
+                        Text("创建 "+ReadingRecordMetadata.date(item.created)+" · 修改 "+ReadingRecordMetadata.date(item.modified))
+                            .font(.caption).foregroundStyle(.secondary)
+                        if snapshot.options?.includeSources != false {
+                            if item.citations.isEmpty {
+                                Text("未附出处").font(.caption).foregroundStyle(.secondary)
+                            }
+                            ForEach(Array(item.citations.enumerated()),id:\.offset) { _,citation in
+                                Text(citation.display).font(.caption).textSelection(.enabled)
+                            }
+                        }
+                        ForEach(issuesByItem[item.libraryID] ?? []) { issue in issueRow(issue) }
+                    }.padding(.vertical,3)
+                }
+            }
             HStack {
                 Text(pagination.label)
                 Button("上一页") { page -= 1 }.disabled(pagination.index == 0)
                 Button("下一页") { page += 1 }.disabled(pagination.index >= pagination.last)
             }
-        }.padding(20).adaptiveSheet(width:720,height:500,minimumWidth:360)
+        }.padding(20).onAppear { issuesOnly = focusedIssue != nil }.adaptiveSheet(width:720,height:500,minimumWidth:360)
+            .onChange(of:issuesOnly) { _,_ in page = 0 }
             .task(id:journal.revisionID) { await refresh() }
             .sheet(item:$editing) { issue in
                 if let target = issue.source {

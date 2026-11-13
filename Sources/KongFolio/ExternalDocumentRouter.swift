@@ -42,12 +42,16 @@ import Foundation
                     guard store.journal.libraryItem053(item) != nil else { throw FolioError(message:"这条阅读记录不存在或已移除") };store.openReadingItem(item)
                 } else if ReadingShortcut.handles(url) { try store.openReadingShortcut(url) }
                 else if let source = SourceLink.source(url) {
-                    store.reveal(try SourceLink.resolved(source, baseURL: store.activeNote?.fileURL?.deletingLastPathComponent()), beside: false)
+                    let resolved = try SourceLink.resolved(source,baseURL:store.activeNote?.fileURL?.deletingLastPathComponent())
+                    store.openLinkedReadingSource(url,source:resolved)
                 } else { throw FolioError(message: "无法识别这个 KongFolio 阅读链接") }
             } catch {
                 errors.append(error.localizedDescription); errors = Array(errors.suffix(20)); store.present(error)
             }
         }
-        if !documents.isEmpty { store.openEach(documents) }
+        if !documents.isEmpty {
+            store.recordActivity("收到访达或外部文件")
+            store.openEach(documents)
+        }
     }
 }

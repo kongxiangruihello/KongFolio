@@ -180,7 +180,7 @@ struct ReadingExportPane: View {
                 AcademicFilePreview(url:file).frame(height:320).clipped()
             } else {
                 Text(empty ? "没有可导出的资料，请更换范围或勾选记录。" :
-                     format == .word ? "Word 导出前，请生成预览并核对内容。" : "可先生成预览，也可直接导出。")
+                     "导出前请生成预览，核对顺序和出处。")
                     .font(.callout).foregroundStyle(.secondary)
             }
         }.task(id:previewCurrent ? controller.previewURL : nil) { await inspectPreview() }
@@ -188,7 +188,7 @@ struct ReadingExportPane: View {
 
     private var reviewActions: some View {
         HStack {
-            Button("检查图片与出处…") {
+            Button("核对顺序与出处…") {
                 checkedCandidateIDs = Set(candidates.map(\.id))
                 showReview = true
             }
@@ -226,7 +226,7 @@ struct ReadingExportPane: View {
             }.disabled(preparing || controller.busy)
             Button("选择位置并导出…",action:export)
                 .buttonStyle(.borderedProminent)
-                .disabled(empty || !preferences.options.valid || preparing || controller.busy || (format == .word && !previewCurrent))
+                .disabled(empty || !preferences.options.valid || preparing || controller.busy || (!previewCurrent || checkedPreviewDigest != snapshot.digest))
         }
     }
 
@@ -305,6 +305,7 @@ struct ReadingExportPane: View {
     }
 
     private func export() {
+        guard previewCurrent, checkedPreviewDigest == snapshot.digest else { return }
         let value = snapshot, kind = format
         let profile = ReadingExportProfile(name:"上次成功导出",format:kind,options:preferences.options,scope:scope,sort:reusableSort)
         let panel = NSSavePanel()
@@ -312,11 +313,19 @@ struct ReadingExportPane: View {
         panel.directoryURL = preferences.directoryURL
         panel.nameFieldStringValue = ReadingExportJobs.filename(value.title)+"."+kind.ext
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard snapshot.digest == value.digest, format == kind else {
+            controller.message = "记录或设置已变化，请刷新预览后导出"
+            return
+        }
         preferences.directoryPath = url.deletingLastPathComponent().path
         preferences.save()
         do {
             let baseline = try FileBaseline.capture(url)
             withSavedRecords {
+                guard snapshot.digest == value.digest, format == kind else {
+                    controller.message = "记录或设置已变化，请刷新预览后导出"
+                    return
+                }
                 controller.export(value,format:kind,assets:assets,to:url,expected:baseline) {
                     profile.rememberSuccessful()
                     lastExport = profile

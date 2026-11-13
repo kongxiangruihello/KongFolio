@@ -1,8 +1,44 @@
 import AppKit
+import PDFKit
 import XCTest
 @testable import KongFolio
 
 final class ReadingRefinement060Tests: XCTestCase {
+    @MainActor func testSelectionAppendsToCurrentUnpinnedNoteWithExactSource() throws {
+        let root = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at:root) }
+        let file = try PDFTextSnapshot053Tests().fixture(root)
+        let store = WorkspaceStore(storage:root)
+        store.bootstrap()
+        let workspace = try XCTUnwrap(store.activeWorkspace)
+        workspace.load([file],prepared:.documents([try Data(contentsOf:file)]))
+        let note = ReadingRecord(kind:.note,note:"已有正文")
+        store.journal.add(note)
+        store.showReadingPanel(.notes,noteID:note.id)
+        XCTAssertNil(store.pinnedReadingID)
+        let selection = try XCTUnwrap(workspace.document.findString("FindPage2Only").first)
+        XCTAssertTrue(store.insertPDFSelectionInNote(from:workspace,selection:selection))
+        let updated = try XCTUnwrap(store.journal.record(note.id))
+        XCTAssertTrue(updated.note.hasPrefix("已有正文"))
+        XCTAssertTrue(updated.note.contains("FindPage2Only"))
+        XCTAssertEqual(updated.citations.first?.source.page,1)
+        XCTAssertFalse(updated.citations.first?.source.rects.isEmpty ?? true)
+        XCTAssertEqual(store.writingSearchHit?.range.location,updated.note.utf16.count)
+    }
+
+    @MainActor func testSourceAnchorFindsRecordedPageAndMissingTextKeepsPage() throws {
+        let root = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at:root) }
+        let file = try PDFTextSnapshot053Tests().fixture(root)
+        let workspace = Workspace(storage:root)
+        workspace.load([file],prepared:.documents([try Data(contentsOf:file)]))
+        let located = try XCTUnwrap(workspace.locate(anchor:"FindPage2Only",near:1))
+        XCTAssertEqual(located.page,1)
+        XCTAssertFalse(located.rects.isEmpty)
+        workspace.go(to:ViewPosition(selection:1),anchor:"不存在的句子")
+        XCTAssertEqual(workspace.selection,1)
+    }
+
     func testInlineCitationSurvivesOtherCopiesAndReturnsOnRedo() throws {
         let base = ReadingCitation(source:SourceRef(path:"/tmp/a.pdf",fileName:"a.pdf",page:2),title:"原有出处")
         let inserted = ReadingCitation(source:SourceRef(path:"/tmp/b.pdf",fileName:"b.pdf",page:3,rects:[CGRect(x:1,y:2,width:3,height:4)]),title:"插入出处")

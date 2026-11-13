@@ -43,7 +43,7 @@ struct HomeReadingView: View {
                 .frame(maxWidth:.infinity,minHeight:geometry.size.height,alignment:lastRead == nil ? .center : .top)
             }
         }
-        .modifier(HomeSourceSheet(navigator:sourceNavigator,store:store))
+        .modifier(ReadingSourceSheetPresenter(navigator:sourceNavigator,store:store))
         .task(id:historyRevision) {
             lastSearch = HomeReadingSearch.load(store.readingDefaults)
             let snapshot = store.readingDefaults.dictionaryRepresentation()
@@ -306,7 +306,7 @@ struct HomeReadingView: View {
 
 }
 
-private struct HomeSourceSheet: ViewModifier {
+struct ReadingSourceSheetPresenter: ViewModifier {
     @ObservedObject var navigator: ReadingSourceNavigator
     let store: WorkspaceStore
     func body(content: Content) -> some View {

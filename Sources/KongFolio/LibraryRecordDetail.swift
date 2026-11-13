@@ -120,6 +120,7 @@ struct LibraryRecordDetail: View {
                     continuesQuotes:current.kind == .note).id("note:"+record.id.uuidString).frame(height:focusedWriting ? max(380,viewport.size.height-72) : 380)
                 if !focusedWriting {
                 if current.kind == .note {
+                    inlineSourceLinks
                     ReadingFollowUpButton(journal:journal,item:.record(record.id),identity:"note:"+record.id.uuidString)
                 }
                 DisclosureGroup("标签与出处（\(current.citations.count)）") {
@@ -201,6 +202,23 @@ struct LibraryRecordDetail: View {
             }
         }
     }
+    @ViewBuilder private var inlineSourceLinks: some View {
+        let links = (current.inlineNoteCitations ?? []).filter { current.hasInlineNoteLink($0.link) }
+        if !links.isEmpty {
+            DisclosureGroup("正文引文（\(links.count)）") {
+                ForEach(links,id:\.link) { link in
+                    HStack {
+                        Text(link.citation.display).lineLimit(1).help(link.citation.display)
+                        Spacer(minLength:4)
+                        Button("返回原文") {
+                            sourceNavigator.open(link.citation,record:current,store:store)
+                        }.disabled(sourceNavigator.busy)
+                    }
+                }
+            }.font(.caption)
+        }
+    }
+
     private func focusWritingBody() async {
         let identity = "note:"+record.id.uuidString
         for _ in 0..<15 {

@@ -28,6 +28,7 @@ struct RootView: View {
                 } else { Color.clear }
             }
         }
+        .modifier(ReadingSourceSheetPresenter(navigator:store.linkedSourceNavigator,store:store))
         .task { await store.importLegacyReadingRecords() }
         .onChange(of:store.readingDeskWindowRequest) { _,request in if request != nil { ReadingDeskWindowManager.shared.show(store) } }
         .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in store.checkOpenSourceChanges() }

@@ -164,22 +164,15 @@ extension Workspace {
 
     // MARK: Going to a place in the document
 
-    /// Where an excerpt really is now: on the recorded page if its first words are still there, otherwise the nearest
-    /// page that has them (pages may have been added, removed or reordered since the excerpt was made).
-    /// Pages are searched by their own text, starting at the recorded page and moving outward; PDFKit's document search
-    /// is not reliable for CJK text mixed with digits.
-    func locate(anchor: String, near index: Int) -> (page: Int, rect: CGRect)? {
+    /// Check the recorded page first and keep reader navigation bounded on large PDFs.
+    func locate(anchor: String, near index: Int) -> (page: Int, rects: [CGRect])? {
         guard count > 0, !anchor.isEmpty else { return nil }
-        let start = max(0, min(index, count - 1))
-        if document.page(at: start)?.string?.contains(anchor) == true { return nil }
-        for distance in 1..<max(2, count) {
-            for candidate in [start - distance, start + distance] where candidate >= 0 && candidate < count {
-                guard let page = document.page(at: candidate), let text = page.string else { continue }
-                let range = (text as NSString).range(of: anchor)
-                guard range.location != NSNotFound else { continue }
-                let rect = page.selection(for: range)?.bounds(for: page) ?? page.bounds(for: .cropBox)
-                return (candidate, rect)
-            }
+        let start = max(0,min(index,count - 1))
+        let candidates = [start] + (1...min(6,count)).flatMap { [start - $0,start + $0] }
+        for index in candidates where (0..<count).contains(index) {
+            guard let page = document.page(at:index) else { continue }
+            let rects = ReadingSourceRecovery.passageRects(page,anchor:anchor)
+            if !rects.isEmpty { return (index,rects) }
         }
         return nil
     }
@@ -189,9 +182,9 @@ extension Workspace {
         guard count > 0 else { pendingView = position; return }
         var target = position
         var marks = rects
-        if let anchor, !anchor.isEmpty, let found = locate(anchor: anchor, near: min(position.selection, count - 1)) {
-            target = ViewPosition(selection: found.page, x: Double(found.rect.minX), y: Double(found.rect.maxY + 36), scale: nil)
-            marks = [found.rect]
+        if rects.isEmpty, let anchor, let found = locate(anchor:anchor,near:position.selection), let first = found.rects.first {
+            target = ViewPosition(selection:found.page,x:Double(first.minX),y:Double(first.maxY + 36),scale:position.scale)
+            marks = found.rects
         }
         selection = max(0, min(target.selection, count - 1))
         selectedPages = [selection]

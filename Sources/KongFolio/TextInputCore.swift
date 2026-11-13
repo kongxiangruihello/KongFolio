@@ -96,8 +96,18 @@ class ComposingTextView: NSTextView {
         editingHistory.removeAllActions()
     }
     var committed: ((NSTextView) -> Void)?
-    override func insertText(_ text: Any, replacementRange: NSRange) { super.insertText(text, replacementRange:replacementRange); if !hasMarkedText() { committed?(self) } }
-    override func unmarkText() { super.unmarkText(); committed?(self) }
+    private(set) var updatingComposition = false
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        updatingComposition = true
+        defer { updatingComposition = false }
+        super.setMarkedText(string,selectedRange:selectedRange,replacementRange:replacementRange)
+    }
+    override func insertText(_ text: Any, replacementRange: NSRange) { super.insertText(text, replacementRange:replacementRange); if !updatingComposition, !hasMarkedText() { committed?(self) } }
+    override func unmarkText() {
+        super.unmarkText()
+        if !updatingComposition, !hasMarkedText() { committed?(self) }
+    }
     override func resignFirstResponder() -> Bool { let result = super.resignFirstResponder(); if result && !hasMarkedText() { committed?(self); WritingPositions.shared.capture(self,key:positionKey) }; return result }
 }
 
@@ -134,12 +144,16 @@ class ComposingTextView: NSTextView {
     func synchronize(_ view: NSTextView) {
         let value=read();guard !view.hasMarkedText(),value != accepted else { return }
         if view.string != accepted {
-            DispatchQueue.main.async { [weak self,weak view] in if let view { self?.publish(view) } };return
+            DispatchQueue.main.async { [weak self,weak view] in
+                guard let self, let view, view.delegate === self else { return }
+                self.publish(view)
+            }
+            return
         }
         accepted=value;TextInputSync.replaceExternal(view,with:value)
     }
     func publish(_ view: NSTextView) {
-        guard !view.hasMarkedText() else { return }
+        guard !view.hasMarkedText(), (view as? ComposingTextView)?.updatingComposition != true else { return }
         let external=read()
         guard external != view.string else { accepted=external;return }
         let merged=ConcurrentText053.merge(base:accepted,local:view.string,external:external)

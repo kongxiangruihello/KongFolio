@@ -53,6 +53,7 @@ import UniformTypeIdentifiers
     @Published var writingSearchHit:ReadingTextHit?
     @Published var writingSearchRequest = UUID()
     @Published var pinnedReadingID:UUID?
+    let linkedSourceNavigator = ReadingSourceNavigator()
     @Published var quickExcerptNoteID:UUID?
     @Published var readingDetailRequest: ReadingDetailRequest?
     @Published var readingRecordID:UUID?
@@ -465,14 +466,18 @@ import UniformTypeIdentifiers
         if let directory { panel.directoryURL = directory }
         DocumentOpenPanel.coordinator.present(panel,presentation:.separate) { [weak self] response,urls in
             guard let self else { return }
-            if response == .abort {
-                self.recordActivity("文件选择器未能显示")
-                self.present(FolioError(message:"系统文件选择器未能显示。可重试，或从访达打开文档。"))
-            } else if !urls.isEmpty {
-                self.recordActivity("文件选择器已返回文件")
-                self.openEach(urls)
-            } else { self.recordActivity("关闭文件选择器") }
+            self.finishOpeningDocuments(response,urls:urls)
         }
+    }
+
+    func finishOpeningDocuments(_ response:NSApplication.ModalResponse,urls:[URL]) {
+        if response == .abort {
+            recordActivity("文件选择器未能显示")
+            present(FolioError(message:"系统文件选择器未能显示。可重试，或从访达打开文档。"))
+        } else if response == .OK, !urls.isEmpty {
+            recordActivity("文件选择器已返回文件")
+            openEach(urls)
+        } else { recordActivity("关闭文件选择器") }
     }
 
     func browseFilesInFinder() {

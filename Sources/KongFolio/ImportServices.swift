@@ -64,13 +64,13 @@ extension Workspace {
             for url in urls where ShelfFileStatus.read(url) == .missing { throw ReadingOpenFailure.missing }
             let fromCloud = urls.contains { ShelfFileStatus.read($0) == .cloud }
             do {
-                try await prepare(urls) { phase in Task { @MainActor [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = phase } }
+                try await prepare(urls) { phase in Task { @MainActor [weak self] in guard let self,self.importGeneration == generation else { return };if self.taskLabel != phase { self.store?.recordActivity(phase) };self.taskLabel = phase } }
             } catch where fromCloud && !FolioCancellation.matches(error) {
                 throw ReadingOpenFailure.cloud(error.localizedDescription)
             }
             await MainActor.run { [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = "等候文件解析…" }
             try await ImportLimiter.shared.acquire();defer { Task { await ImportLimiter.shared.release() } }
-            await MainActor.run { [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = "正在解析文件…" }
+            await MainActor.run { [weak self] in guard let self,self.importGeneration == generation else { return };self.taskLabel = "正在解析文件…";self.store?.recordActivity("正在解析 PDF 或文档") }
             let payload = try ImportServices.read(urls)
             let reading:PreparedReading?
             if !insert,urls.count == 1,urls[0].pathExtension.lowercased() == "pdf",case .documents(let bytes) = payload { reading = try PreparedReading.read(urls[0],bytes:bytes[0],storage:root) } else { reading = nil }
@@ -82,6 +82,7 @@ extension Workspace {
                 let (payload,reading) = try await worker.value;try Task.checkCancellation()
                 guard importGeneration == generation,!worker.isCancelled else { return }
                 isImporting = false;busy = false;cancelAuxiliary = nil
+                store?.recordActivity("载入已解析的文档")
                 load(urls,insert:insert,prepared:payload,reading:reading)
                 if !insert {
                     let failure = count == 0 ? error.map{FolioError(message:$0)} : nil

@@ -14,22 +14,37 @@ enum ReadingNoteCitationInsertion {
 }
 
 extension WorkspaceStore {
-    var canInsertPDFSelectionInNote: Bool {
-        showReadingDesk && readingDeskSection == .notes && pinnedExcerptNote != nil && !journal.unreadable
+    private var currentCitationNote: ReadingRecord? {
+        guard !journal.unreadable else { return nil }
+        let current = showReadingDesk && readingDeskSection == .notes ? readingRecordID : nil
+        return [pinnedReadingID,current,lastRightPanelNoteID].compactMap { journal.record($0) }
+            .first { $0.kind == .note && $0.removed == nil }
     }
+
+    var canInsertPDFSelectionInNote: Bool { currentCitationNote != nil }
 
     @discardableResult
     func insertPDFSelectionInNote(from workspace:Workspace,selection:PDFSelection) -> Bool {
-        guard canInsertPDFSelectionInNote,let note = pinnedExcerptNote,
+        guard let note = currentCitationNote,
               let excerpt = workspace.readingExcerpt(from:selection) else { return false }
         let identity = "note:"+note.id.uuidString
         let text = ReadingNoteCitationInsertion.markdown(excerpt)
-        guard WritingRegistry.insertAtCursor(text,key:identity,expected:note.note,window:workspace.pdfView?.window) else {
-            workspace.status = "请先结束正在输入的文字，并在右侧已固定的笔记中定位光标"
-            return false
-        }
-        journal.editRecord(note.id) { record in
-            record.registerInlineNoteCitations(excerpt.citations)
+        let window = workspace.pdfView?.window
+        if WritingRegistry.hasEditor(identity,window:window) {
+            guard WritingRegistry.insertAtCursor(text,key:identity,expected:note.note,window:window) else {
+                workspace.status = "请先完成正在输入的文字，再加入笔记"
+                return false
+            }
+            journal.editRecord(note.id) { $0.registerInlineNoteCitations(excerpt.citations) }
+        } else {
+            journal.editRecord(note.id) {
+                $0.note += text
+                $0.registerInlineNoteCitations(excerpt.citations)
+            }
+            showReadingPanel(.notes,noteID:note.id)
+            let body = note.note + text
+            writingSearchHit = ReadingTextHit(identity:identity,range:NSRange(location:body.utf16.count,length:0),context:"",source:body)
+            writingSearchRequest = UUID()
         }
         workspace.status = "已将所选原文与出处插入笔记"
         return true
@@ -56,9 +71,7 @@ extension ReadingRecord {
 
     mutating func syncInlineNoteCitations() {
         guard kind == .note, let tracked = inlineNoteCitations, !tracked.isEmpty else { return }
-        let active = tracked.filter { entry in
-            note.contains("(<"+entry.link+">)") || note.contains("("+entry.link+")")
-        }
+        let active = tracked.filter { hasInlineNoteLink($0.link) }
         let activeSources = Set(active.map{InlineSource($0.citation)})
         let trackedSources = Set(tracked.map{InlineSource($0.citation)})
         var existing = Set(citations.map(InlineSource.init))
@@ -69,6 +82,10 @@ extension ReadingRecord {
             let key = InlineSource(citation)
             return trackedSources.contains(key) && !activeSources.contains(key)
         }
+    }
+
+    func hasInlineNoteLink(_ link: String) -> Bool {
+        note.contains("(<"+link+">)") || note.contains("("+link+")")
     }
 
     mutating func replaceInlineCitation(_ original:ReadingCitation,with updated:ReadingCitation) {

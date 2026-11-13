@@ -4,6 +4,12 @@ enum ReadingExportItem:Identifiable {
     case record(ReadingRecord),essay(ReadingEssay)
     var id:String { switch self { case .record(let r):return "r:"+r.id.uuidString;case .essay(let e):return "e:"+e.id.uuidString } }
     var title:String { switch self { case .record(let r):return r.displayTitle;case .essay(let e):return e.title } }
+    var libraryID: ReadingLibraryID {
+        switch self { case .record(let record): return .record(record.id); case .essay(let essay): return .essay(essay.id) }
+    }
+    var modified: Date {
+        switch self { case .record(let record): return record.modified; case .essay(let essay): return essay.modified }
+    }
     var created:Date { switch self { case .record(let r):return r.created;case .essay(let e):return e.created } }
     var citations: [ReadingCitation] {
         switch self {
