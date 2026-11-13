@@ -21,6 +21,7 @@ struct MarkdownEditorView: View {
                                    showsControls:!focusedWriting,
                                    documentControls:AnyView(editorHeader(width:proxy.size.width,showsOptions:false)),
                                    documentOptions:AnyView(editorOptions),
+                                   previewControl:note.format == .plain ? nil : AnyView(previewButton(width:proxy.size.width)),
                                    saveDocument:showsPrimaryToolbar ? nil : { note.save() },
                                    showDocumentDisplay:{ showDisplay = true })
                         .frame(maxWidth:.infinity,alignment:.leading)
@@ -97,19 +98,7 @@ struct MarkdownEditorView: View {
             }
             if note.format != .plain, !focusedWriting {
                 if note.format == .markdown { editorMode(width:width) }
-                Button {
-                    let separate = width < LayoutMetrics.previewMinimum || (note.format == .markdown && note.cleanEditing)
-                    if separate {
-                        restoreSplitPreview = note.showPreview
-                        note.showPreview = true
-                        showPreviewSheet = true
-                    } else { note.showPreview.toggle() }
-                } label: {
-                    if fullControls && (width >= 1120 || (note.readOnly && width >= 540)) { Label("预览",systemImage:"rectangle.split.2x1") }
-                    else { Image(systemName:"rectangle.split.2x1") }
-                }
-                .tint(note.showPreview ? .accentColor : nil)
-                .help("查看排版预览").accessibilityLabel("排版预览")
+                if showsOptions { previewButton(width:width,showsLabel:fullControls && (width >= 1120 || (note.readOnly && width >= 540))) }
             }
             if !showsPrimaryToolbar && (showsOptions || focusedWriting) {
                 Button { note.save() } label:{ Image(systemName:"square.and.arrow.down") }
@@ -128,6 +117,26 @@ struct MarkdownEditorView: View {
                 Button("退出专注") { focusedWriting = false }.help("恢复编辑工具栏")
             }
         }.controlSize(.regular).font(.system(size:13))
+    }
+
+    private func previewButton(width:CGFloat,showsLabel:Bool = false) -> some View {
+        Button {
+            let separate = width < LayoutMetrics.previewMinimum || (note.format == .markdown && note.cleanEditing)
+            if separate {
+                restoreSplitPreview = note.showPreview
+                note.showPreview = true
+                showPreviewSheet = true
+            } else {
+                note.showPreview.toggle()
+            }
+        } label: {
+            if showsLabel { Label("预览",systemImage:"rectangle.split.2x1") }
+            else { Image(systemName:"rectangle.split.2x1") }
+        }
+        .tint(note.showPreview ? .accentColor : nil)
+        .help(note.showPreview ? "隐藏排版预览" : "查看排版预览")
+        .accessibilityLabel("排版预览")
+        .accessibilityAddTraits(note.showPreview ? .isSelected : [])
     }
 
     @ViewBuilder private var editorOptions: some View {

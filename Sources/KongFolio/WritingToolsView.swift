@@ -25,6 +25,7 @@ struct WritingToolbar: View {
     var showsControls = true
     var documentControls: AnyView? = nil
     var documentOptions: AnyView? = nil
+    var previewControl: AnyView? = nil
     var saveDocument: (() -> Void)? = nil
     var showDocumentDisplay: (() -> Void)? = nil
     @State private var showFind = false
@@ -91,6 +92,7 @@ struct WritingToolbar: View {
         if let saveDocument {
             tool("保存当前文件（⌘S）","square.and.arrow.down",action:saveDocument)
         }
+        previewControl
         if let showDocumentDisplay {
             tool("编辑区显示设置","textformat.size",action:showDocumentDisplay)
         }
