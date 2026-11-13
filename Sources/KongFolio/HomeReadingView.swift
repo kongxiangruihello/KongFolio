@@ -26,21 +26,20 @@ struct HomeReadingView: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let compact = geometry.size.height < 540 || geometry.size.width < 460
             ScrollView {
-                VStack(spacing: lastRead == nil ? 18 : 12) {
+                VStack(spacing:compact ? 14 : 22) {
+                    welcomeBrand(compact:compact)
                     WelcomeActions(workspace:workspace)
-                    if lastRead == nil {
-                        Image(systemName:"doc.richtext")
-                            .font(.system(size:48,weight:.ultraLight)).foregroundStyle(Brand.accent)
-                        Text("每一页，都井井有条。").font(.title2.weight(.medium))
-                    }
                     readingRows.frame(maxWidth:640)
                     if lastRead == nil {
                         Text("PDF · 图片 · Markdown · HTML · TXT · 可直接拖入窗口")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                .padding(.horizontal,14).padding(.vertical,lastRead == nil ? 24 : 14)
+                .padding(.horizontal,14)
+                .padding(.top,compact ? 18 : min(68,max(32,geometry.size.height * 0.07)))
+                .padding(.bottom,24)
                 .frame(maxWidth:.infinity,minHeight:geometry.size.height,alignment:lastRead == nil ? .center : .top)
             }
         }
@@ -64,6 +63,19 @@ struct HomeReadingView: View {
             }
             Button("取消",role:.cancel) {}
         } message: { Text(relinkReview?.message ?? "") }
+    }
+
+    private func welcomeBrand(compact: Bool) -> some View {
+        VStack(spacing:compact ? 7 : 12) {
+            Image(systemName:"doc.richtext")
+                .font(.system(size:compact ? 38 : 54,weight:.ultraLight))
+                .foregroundStyle(Brand.accent)
+                .accessibilityHidden(true)
+            Text("每一页，都井井有条。")
+                .font(.system(size:compact ? 20 : 28,weight:.medium))
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+        }
     }
 
     private var readingRows: some View {
@@ -198,6 +210,7 @@ struct HomeReadingView: View {
             ViewThatFits(in:.horizontal) {
                 HStack(spacing:10) {
                     rowLabel(heading,icon:icon,title:title,detail:detail,preview:preview,prominent:prominent)
+                        .frame(idealWidth:200,maxWidth:.infinity,alignment:.leading)
                     Spacer(minLength:6)
                     HStack(spacing:6,content:actions).fixedSize()
                 }
