@@ -103,7 +103,7 @@ struct WritingToolbar: View {
     }
 
     private func plainTextControls(visibleCount:Int) -> some View {
-        MarkdownToolbarRow {
+        HStack(spacing:8) {
             ForEach(PlainTextTool.allCases.prefix(visibleCount),id:\.self) { command in
                 if command == .paragraphs {
                     Menu { paragraphCommands } label: { Image(systemName:command.symbol) }
@@ -124,7 +124,7 @@ struct WritingToolbar: View {
                 } label: { Image(systemName:"ellipsis.circle") }
                     .help("更多文本编辑").accessibilityLabel("更多文本编辑")
             }
-        }
+        }.fixedSize(horizontal:true,vertical:false)
     }
 
     @ViewBuilder private var paragraphCommands: some View {
