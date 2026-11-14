@@ -346,6 +346,7 @@ struct ContentView: View {
         Button("PDF · 固化标注，可附摘要页…") { workspace.openExport(format: .pdf, scope: .all, pdfMode: .flatten) }
         Button("PDF · 提取选中页") { workspace.exportPDF(currentOnly: true) }
         Button("PDF · 压缩体积…") { workspace.compress() }
+        Button("导出页面为图片…") { workspace.openImageExport() }
         Divider()
         Button("Word（.docx）· 文字与页面…") { workspace.openWordExport() }
         Button("保存历史与恢复…") { workspace.showVersionHistory = true }.disabled(workspace.historySource == nil)

@@ -48,6 +48,7 @@ import KongFolioUpdateKit
                 Button("另存为…") { store.saveActive(asNew: true) }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(!store.canSave)
                 Button("导出 PDF…") { store.exportActive() }.keyboardShortcut("e").disabled(!store.canSave)
                 Button("导出 Word…") { store.exportWordActive() }.disabled(!store.canSave)
+                Button("导出页面为图片…") { store.activeWorkspace?.openImageExport() }.disabled(store.activeWorkspace == nil || !store.canSave)
                 Button("关闭标签页") { store.closeActive() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(!store.canCloseActive)
             }
             CommandMenu("阅读") {

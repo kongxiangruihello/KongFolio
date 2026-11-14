@@ -152,6 +152,9 @@ struct FunctionToolbar: View {
                     Text("当前文件")
                     Button("导出为 PDF…") { store.exportActive() }.disabled(!store.canSave)
                     Button("导出为 Word…") { store.exportWordActive() }.disabled(!store.canSave)
+                    if let workspace = store.activeWorkspace {
+                        Button("导出页面为图片…") { workspace.openImageExport() }.disabled(workspace.count == 0 || workspace.busy)
+                    }
                     Divider()
                 }
                 Button("导出阅读资料…") { store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) }

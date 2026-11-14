@@ -63,14 +63,25 @@ enum ReadingLayout: String, Codable, CaseIterable, Identifiable {
     var title: String { rawValue }
 }
 
-/// Only PDF is written now; the type stays so exports and saved batch settings keep one shape.
 enum ExportFormat: String, Codable, CaseIterable, Identifiable {
-    case pdf = "PDF"
-    /// Settings saved when images could also be exported (PNG, JPG, TIFF) read as PDF.
-    init(from decoder: Decoder) throws { self = .pdf }
+    case pdf = "PDF", png = "PNG", jpeg = "JPEG", tiff = "TIFF"
+
+    init(from decoder: Decoder) throws {
+        let value = try? decoder.singleValueContainer().decode(String.self)
+        self = value == "JPG" ? .jpeg : value.flatMap(Self.init(rawValue:)) ?? .pdf
+    }
+
+    static let images: [Self] = [.png,.jpeg,.tiff]
     var id: String { rawValue }
-    var type: UTType { .pdf }
-    var suffix: String { "pdf" }
+    var type: UTType {
+        switch self {
+        case .pdf: .pdf
+        case .png: .png
+        case .jpeg: .jpeg
+        case .tiff: .tiff
+        }
+    }
+    var suffix: String { self == .jpeg ? "jpg" : rawValue.lowercased() }
 }
 
 enum ExportScope: String, Codable, CaseIterable, Identifiable {

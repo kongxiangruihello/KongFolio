@@ -30,7 +30,12 @@ struct ExportSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("导出设置").font(.title2.bold())
+            Text(workspace.exportOptions.format == .pdf ? "导出设置" : "导出页面为图片").font(.title2.bold())
+            if workspace.exportOptions.format != .pdf {
+                Picker("图片格式",selection:$workspace.exportOptions.format) {
+                    ForEach(ExportFormat.images) { Text($0.rawValue).tag($0) }
+                }
+            }
             Picker("页面范围", selection: $workspace.exportOptions.scope) {
                 ForEach(ExportScope.allCases) { Text($0.rawValue).tag($0) }
             }
@@ -56,12 +61,18 @@ struct ExportSheet: View {
                 if let page = workspace.page, let pixels = try? ExportServices.pixels(page, dpi: workspace.exportOptions.dpi) {
                     Text("当前页：\(Int(pixels.width)) × \(Int(pixels.height)) 像素").font(.caption).foregroundStyle(.secondary)
                 }
-                PanelRow {
-                    Text("JPEG 质量")
-                    Slider(value: $workspace.exportOptions.quality, in: 0.1...1)
-                    Text(workspace.exportOptions.quality, format: .percent.precision(.fractionLength(0))).frame(width: 45)
+                if workspace.exportOptions.usesJPEGQuality {
+                    PanelRow {
+                        Text("JPEG 质量")
+                        Slider(value: $workspace.exportOptions.quality, in: 0.1...1)
+                        Text(workspace.exportOptions.quality, format: .percent.precision(.fractionLength(0))).frame(width: 45)
+                    }
                 }
-                Text("图片型 PDF 把每页重绘为图片；提高 DPI 不会恢复原图中已丢失的细节。").font(.caption).foregroundStyle(.secondary)
+                if workspace.exportOptions.format == .pdf {
+                    Text("图片型 PDF 把每页重绘为图片；提高 DPI 不会恢复原图中已丢失的细节。").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("图片包含页面上的标注。导出多页时，每页保存一张图片。").font(.caption).foregroundStyle(.secondary)
+                }
             }
             Divider()
             PanelRow {
@@ -76,7 +87,8 @@ struct ExportSheet: View {
             PanelRow {
                 Button("取消") { workspace.showExport = false }
                 Spacer()
-                Button("选择位置并导出…") { workspace.configuredExport() }.buttonStyle(.borderedProminent)
+                Button("选择位置并导出…") { workspace.configuredExport() }
+                    .buttonStyle(.borderedProminent).disabled(workspace.exportPages.isEmpty)
             }
         }
         .padding(28)

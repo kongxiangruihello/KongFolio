@@ -23,8 +23,8 @@ struct ExportOptions: Equatable, Codable {
         get { format == .pdf && pdfMode == .raster }
         set { pdfMode = newValue ? .raster : .preserve }
     }
-    /// True when pages are redrawn as pictures inside the PDF (the image-based PDF type).
-    var rendersPixels: Bool { pdfMode == .raster }
+    var rendersPixels: Bool { format != .pdf || rasterPDF }
+    var usesJPEGQuality: Bool { format == .jpeg || rasterPDF }
 }
 struct ExportEstimate { var bytes: Int; var sampled: Int; var total: Int; var exact: Bool }
 enum ExportServices {
@@ -144,19 +144,56 @@ enum ExportServices {
             return ExportEstimate(bytes: size, sampled: pages.count, total: pages.count, exact: true)
         }
         let sample = Array(pages.prefix(3)); var bytes = 0
-        for index in sample { try Task.checkCancellation(); bytes += try autoreleasepool { try encode(render(doc.page(at: index).unwrap("页面读取失败"), dpi: options.dpi), options: options, pdfJPEG: true).count } }
+        for index in sample { try Task.checkCancellation(); bytes += try autoreleasepool { try encode(render(doc.page(at: index).unwrap("页面读取失败"), dpi: options.dpi), options: options, pdfJPEG: options.rasterPDF).count } }
         return ExportEstimate(bytes: Int(Double(bytes) / Double(sample.count) * Double(pages.count) * 1.03), sampled: sample.count, total: pages.count, exact: false)
     }
+    private static func exportImages(_ document: PDFDocument,spec: JobSpec,options: ExportOptions,to target: URL,
+                                     progress: @escaping @Sendable (Double) -> Void) throws -> JobResult {
+        func writePage(_ index: Int,to url: URL) throws {
+            try autoreleasepool {
+                let page = try document.page(at:index).unwrap("页面读取失败")
+                let image = try render(page,dpi:options.dpi)
+                try encode(image,options:options).write(to:url)
+            }
+        }
+        if spec.pages.count == 1, let page = spec.pages.first {
+            let baseline = try spec.outputBaseline.unwrap("缺少图片导出位置校验")
+            try DocumentTaskOutput.write(to:target,expected:baseline,protectedSource:spec.protectedSource) {
+                try writePage(page,to:$0)
+            }
+            progress(1)
+            return JobResult(message:"已导出第 \(page+1) 页为 \(options.format.rawValue)")
+        }
+        let id = UUID().uuidString
+        let staging = target.appendingPathComponent(".KongFolio-\(id).partial",isDirectory:true)
+        let folder = target.appendingPathComponent("KongFolio-页面图片-\(id.prefix(8))",isDirectory:true)
+        let files = FileManager.default
+        try files.createDirectory(at:staging,withIntermediateDirectories:false)
+        defer { try? files.removeItem(at:staging) }
+        for (offset,index) in spec.pages.enumerated() {
+            try Task.checkCancellation()
+            let name = String(format:"page-%04d",index+1)+"."+options.suffix
+            try writePage(index,to:staging.appendingPathComponent(name))
+            progress(Double(offset+1)/Double(spec.pages.count))
+        }
+        try Task.checkCancellation()
+        try files.moveItem(at:staging,to:folder)
+        return JobResult(destination:folder,message:"已导出 \(spec.pages.count) 张 \(options.format.rawValue) 图片")
+    }
+
     static func run(_ requested: JobSpec, progress: @escaping @Sendable (Double) -> Void) throws -> JobResult {
         var spec = requested
         if let target = spec.destination {
             try spec.validateOutput(target)
-            if spec.outputBaseline == nil { spec.outputBaseline = try FileBaseline.capture(target) }
+            if !spec.exportsImageFolder, spec.outputBaseline == nil { spec.outputBaseline = try FileBaseline.capture(target) }
         }
         guard let options = spec.exportOptions, let doc = PDFDocument(data: spec.source), !spec.pages.isEmpty,
               spec.pages.allSatisfy({ (0..<doc.pageCount).contains($0) }) else { throw FolioError(message: "导出设置无效") }
         let target = try spec.destination.unwrap("请选择导出位置")
         try Task.checkCancellation()
+        if options.format != .pdf {
+            return try exportImages(doc,spec:spec,options:options,to:target,progress:progress)
+        }
         if options.format == .pdf, options.appendsNotes, spec.pages == Array(0..<doc.pageCount) {
             let notes = ReadingServices.notes(doc)
             if !notes.isEmpty {
@@ -238,6 +275,11 @@ extension Workspace {
         exportEstimate = nil
         showExport = true
     }
+    func openImageExport() {
+        guard count > 0, !busy else { return }
+        openExport(format:.png,scope:.current)
+    }
+
     func invalidateEstimate() { estimateTask?.cancel(); estimateTask = nil; estimating = false; exportEstimate = nil }
     func estimateExport() {
         guard let data = try? pdfData() else { return }; invalidateEstimate(); estimating = true
@@ -249,12 +291,24 @@ extension Workspace {
         }
     }
     func configuredExport(reviewed: Bool = false) {
-        if !reviewed { do { try reviewExport(.pdf) { [weak self] in self?.configuredExport(reviewed:true) } } catch { self.error=error.localizedDescription };return }
+        if !reviewed, exportOptions.format == .pdf { do { try reviewExport(.pdf) { [weak self] in self?.configuredExport(reviewed:true) } } catch { self.error=error.localizedDescription };return }
         guard checkDraftsForExport(), let data = try? pdfData(), !exportPages.isEmpty else { return }
         let options = exportOptions, pages = exportPages
         invalidateEstimate(); showExport = false
         let destination: URL?
-        destination = saveURL(type: options.type, suffix: options.suffix)
+        if options.format != .pdf, pages.count > 1 {
+            let panel = NSOpenPanel()
+            DocumentOpenPanel.configure(panel)
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.canCreateDirectories = true
+            panel.prompt = "导出到此处"
+            panel.message = "将在所选位置新建文件夹，每页保存一张图片。"
+            destination = panel.runModal() == .OK ? panel.url : nil
+        } else {
+            let name = options.format == .pdf ? nil : title+"-第"+String((pages.first ?? 0)+1)+"页"
+            destination = saveURL(type:options.type,suffix:options.suffix,name:name)
+        }
         guard let destination else { return }
         runJob(JobSpec(operation: .configured, source: data, pages: pages, destination: destination, revision: revision, exportOptions: options))
     }

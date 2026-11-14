@@ -210,7 +210,7 @@ extension Workspace {
             do {
                 spec.protectedSource = historySource
                 try spec.validateOutput(target)
-                if spec.outputBaseline == nil { spec.outputBaseline = try FileBaseline.capture(target) }
+                if !spec.exportsImageFolder, spec.outputBaseline == nil { spec.outputBaseline = try FileBaseline.capture(target) }
             } catch { self.recordError(error); return }
         }
         busy = true
@@ -399,6 +399,10 @@ extension Workspace {
 }
 
 extension JobSpec {
+    var exportsImageFolder: Bool {
+        operation == .configured && pages.count > 1 && exportOptions.map { $0.format != .pdf } == true
+    }
+
     func validateOutput(_ target: URL) throws {
         if let protectedSource, DocumentTaskOutput.sameFile(protectedSource, target) {
             throw FolioError(message: "导出副本请选择与原文件不同的位置，原文件可用保存功能更新。")

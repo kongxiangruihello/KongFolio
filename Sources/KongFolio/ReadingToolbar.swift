@@ -38,7 +38,10 @@ struct ReadingToolbar: View {
                 Button("框选图片摘录") { workspace.tool = .region; workspace.showAnnotationBar = true }
             } label:{Label("摘录",systemImage:"text.quote")}.menuStyle(.borderlessButton).fixedSize().disabled(workspace.count == 0).help("保存所选文字，或框选扫描页、插图和表格")
             Button { store.newReadingNote() } label:{Label("笔记",systemImage:"note.text.badge.plus")}.help("新建与当前 PDF 关联的笔记")
-            Button { store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) } label:{Label("导出",systemImage:"square.and.arrow.up")}.help("导出所选记录、整本书笔记或笔记")
+            Menu {
+                Button("导出页面为图片…") { workspace.openImageExport() }.disabled(workspace.count == 0 || workspace.busy)
+                Button("导出阅读资料…") { store.readingExportEssay = false; store.openReadingDesk(.exports,window:true) }
+            } label:{Label("导出",systemImage:"square.and.arrow.up")}.help("导出 PDF 页面图片或阅读资料")
         }
     }
 }
