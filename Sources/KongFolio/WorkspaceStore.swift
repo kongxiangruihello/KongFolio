@@ -89,7 +89,8 @@ import UniformTypeIdentifiers
     lazy var incrementalExport = ReadingIncrementalController()
     @Published var startupEntries: [SessionEntry] = []
     @Published var startupSuspects: [String:Int] = [:]
-    var pendingStartupSelected: String?
+    @Published var pendingStartupSelected: String?
+    private var sessionSaveTask: Task<Void,Never>?
     var runtimeTimer: DispatchSourceTimer?
     @Published var residentMemoryMB = 0
     @Published var constrainedMemory = false
@@ -278,10 +279,22 @@ import UniformTypeIdentifiers
         if let target = selectedTab ?? tabs.first?.id { select(target) }
     }
 
+    func scheduleSessionSave() {
+        guard startupSafetyEnabled else { return }
+        sessionSaveTask?.cancel()
+        sessionSaveTask = Task { [weak self] in
+            do { try await Task.sleep(for:.milliseconds(350)) } catch { return }
+            self?.saveSession()
+        }
+    }
+
     func saveSession() {
         var entries = tabs.compactMap { $0.workspace?.sessionEntry }
         entries += startupEntries.filter { pending in !entries.contains { $0.slot == pending.slot } }
-        let session = Session(entries: entries, selected: activeWorkspace?.slot)
+        let selected = activeWorkspace.flatMap { workspace in
+            entries.contains(where:{ $0.slot == workspace.slot }) ? workspace.slot : nil
+        } ?? pendingStartupSelected
+        let session = Session(entries: entries, selected: selected)
         try? FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
         try? JSONEncoder().encode(session).write(to: sessionURL, options: .atomic)
     }
@@ -321,9 +334,9 @@ import UniformTypeIdentifiers
         recordActivity("切换标签页")
         tab.workspace?.lastActive = Date()
         tab.note?.lastActive = Date()
-        if startupSafetyEnabled, tab.workspace?.needsLoad == true { StartupProtection(storage:storage).opening(tab.workspace?.displayPath) }
         tab.workspace?.ensureLoaded()
         trimLoadedTabs()
+        scheduleSessionSave()
     }
 
     // MARK: Side by side
@@ -582,7 +595,7 @@ import UniformTypeIdentifiers
                     }
                 }
             } else { workspace.forgetSource() }
-            if tabs.count == 1 { return }
+            if tabs.count == 1 { scheduleSessionSave(); return }
         case .note(let note):
             guard note.confirmClose() else { return }
             note.releaseEditorResources()
@@ -593,6 +606,7 @@ import UniformTypeIdentifiers
             }
         }
         tabs.remove(at: index)
+        scheduleSessionSave()
         for workspace in tabs.compactMap(\.workspace) where workspace.splitPartner?.id == id { workspace.splitPartner = nil }
         if selectedID == id, !tabs.isEmpty { select(tabs[min(index, tabs.count - 1)].id) }
     }

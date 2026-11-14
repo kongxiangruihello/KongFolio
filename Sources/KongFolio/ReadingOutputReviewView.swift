@@ -15,9 +15,12 @@ struct ReadingOutputReviewView: View {
     @State private var editing: ReadingOutputIssue?
     @State private var positioned = false
     @State private var issuesOnly = false
+    @State private var importantOnly = false
+    @State private var returnToIssue: ReadingOutputIssue?
+    private var visibleIssues: [ReadingOutputIssue] { importantOnly ? issues.filter { !$0.supplemental } : issues }
     private var items: [ReadingExportItem] { snapshot.refreshed(in:journal).orderedItems }
     private var pagination: ReadingPagination {
-        ReadingPagination(total:issuesOnly ? issues.count : items.count,page:page,size:10)
+        ReadingPagination(total:issuesOnly ? visibleIssues.count : items.count,page:page,size:10)
     }
 
     var body: some View {
@@ -35,11 +38,12 @@ struct ReadingOutputReviewView: View {
                 Text("导出顺序与出处").tag(false)
                 Text("待核对问题").tag(true)
             }.pickerStyle(.segmented)
+            Toggle("只看影响使用的问题",isOn:$importantOnly)
             if issuesOnly {
-                List(Array(issues[pagination.range])) { issue in issueRow(issue) }
+                List(Array(visibleIssues[pagination.range])) { issue in issueRow(issue) }
             } else {
                 let ordered = items
-                let issuesByItem = Dictionary(grouping:issues,by:\.item)
+                let issuesByItem = Dictionary(grouping:visibleIssues,by:\.item)
                 List(pagination.range,id:\.self) { index in
                     let item = ordered[index]
                     VStack(alignment:.leading,spacing:5) {
@@ -69,6 +73,7 @@ struct ReadingOutputReviewView: View {
             }
         }.padding(20).onAppear { issuesOnly = focusedIssue != nil }.adaptiveSheet(width:720,height:500,minimumWidth:360)
             .onChange(of:issuesOnly) { _,_ in page = 0 }
+            .onChange(of:importantOnly) { _,_ in page = 0 }
             .task(id:journal.revisionID) { await refresh() }
             .sheet(item:$editing) { issue in
                 if let target = issue.source {
@@ -82,11 +87,11 @@ struct ReadingOutputReviewView: View {
             VStack(alignment:.leading,spacing:4) {
                 Text(issue.title).lineLimit(1).help(issue.title)
                     .fontWeight(issue.id == focusedIssue ? .semibold : .regular)
-                Text(issue.message).font(.caption).foregroundStyle(.orange)
+                Text(issue.message).font(.caption).foregroundStyle(issue.supplemental ? Color.secondary : Color.orange)
             }
             Spacer()
             if issue.source != nil {
-                Button("修正出处…") { editing = issue }.disabled(journal.unreadable)
+                Button("修正出处…") { returnToIssue = issue; editing = issue }.disabled(journal.unreadable)
             }
             Button("查看记录") { openItem(issue.item) }
         }
@@ -99,11 +104,16 @@ struct ReadingOutputReviewView: View {
             let result = try await ReadingOutputReview.shared.inspect(current,assets:assets)
             try Task.checkCancellation()
             issues = result
-            if !positioned,let focusedIssue,let index = result.firstIndex(where:{$0.id == focusedIssue}) {
+            if issuesOnly, let previous = returnToIssue,
+               let index = visibleIssues.firstIndex(where:{ $0.item == previous.item && $0.source == previous.source }) {
+                page = index / pagination.size
+            } else if !positioned,let focusedIssue,let index = visibleIssues.firstIndex(where:{$0.id == focusedIssue}) {
                 page = index / pagination.size
                 positioned = true
             } else { page = pagination.index }
-            message = result.isEmpty ? "本次检查未发现问题" : "还有 \(result.count) 条需要核对"
+            returnToIssue = nil
+            let supplemental = result.filter(\.supplemental).count
+            message = result.isEmpty ? "本次检查未发现问题" : "影响使用 \(result.count - supplemental) 项 · 可补充 \(supplemental) 项"
         } catch where FolioCancellation.matches(error) { return }
         catch { message = error.localizedDescription }
         busy = false

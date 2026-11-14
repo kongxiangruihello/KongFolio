@@ -10,8 +10,20 @@ struct StartupReviewView: View {
             ScrollView {
                 ForEach(store.startupEntries,id:\.slot) { entry in
                     HStack {
-                        VStack(alignment:.leading) { Text(entry.path.map { URL(fileURLWithPath:$0).lastPathComponent } ?? "未保存文档"); if let path = entry.path, let count = store.startupSuspects[path] { Text("打开中断 \(count) 次，请优先检查文件").foregroundStyle(.orange) } }
-                        Spacer(); Button("恢复这一本") { do { try store.restoreStartup(entry) } catch { message = error.localizedDescription } }
+                        VStack(alignment:.leading,spacing:4) {
+                            Text(entry.path.map { URL(fileURLWithPath:$0).lastPathComponent } ?? "未保存文档")
+                                .lineLimit(1).help(entry.path ?? "")
+                            HStack {
+                                if store.pendingStartupSelected == entry.slot { Text("上次正在阅读") }
+                                if let page = store.startupPage(entry) { Text("PDF 第 \(page) 页") }
+                                let interrupted = store.startupInterruptionCount(entry)
+                                if interrupted > 0 { Text("待重试 · 打开中断 \(interrupted) 次").foregroundStyle(.orange) }
+                            }.font(.caption)
+                        }
+                        Spacer()
+                        Button(store.startupInterruptionCount(entry) > 0 ? "重试打开" : "恢复这一本") {
+                            do { try store.restoreStartup(entry) } catch { message = error.localizedDescription }
+                        }
                     }.padding(.vertical,4)
                 }
             }

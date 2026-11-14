@@ -87,6 +87,35 @@ final class Release040Tests: XCTestCase {
         guarder.opening("/problem.pdf"); let next = try guarder.begin(); XCTAssertEqual(next.interrupted["/problem.pdf"],2)
         try guarder.finishReview(excluding:["bad"]); guarder.clean(); let normal = try guarder.begin(); XCTAssertFalse(normal.reviewRequired); XCTAssertTrue(normal.excludedSlots.contains("bad"))
     }
+    @MainActor func testInterruptedImportsKeepOtherTabsAvailableWithoutLoading() throws {
+        let root = try root()
+        let first = try pdf(root)
+        let second = root.appendingPathComponent("second.pdf")
+        try FileManager.default.copyItem(at:first,to:second)
+        let entries = [SessionEntry(slot:"first",kind:.file,path:first.path,position:ViewPosition(selection:1)),
+                       SessionEntry(slot:"second",kind:.file,path:second.path)]
+        try JSONEncoder().encode(Session(entries:entries,selected:"first")).write(to:root.appendingPathComponent("Session.json"))
+        let protection = StartupProtection(storage:root)
+        _ = try protection.begin()
+        let completed = UUID()
+        protection.trackImport(completed,path:second.path)
+        protection.trackImport(completed,path:nil)
+        protection.trackImport(UUID(),path:first.path)
+
+        let store = WorkspaceStore(storage:root)
+        store.startupSafetyEnabled = true
+        store.bootstrap()
+        XCTAssertEqual(store.startupPage(entries[0]),2)
+        XCTAssertEqual(store.startupInterruptionCount(entries[0]),1)
+        XCTAssertEqual(store.startupInterruptionCount(entries[1]),0)
+        XCTAssertNil(store.activeWorkspace?.displayPath)
+        try store.restoreStartup(entries[1])
+        XCTAssertEqual(store.activeWorkspace?.displayPath,second.path)
+        XCTAssertEqual(store.startupEntries,[entries[0]])
+        XCTAssertFalse(store.showStartupReview)
+        store.activeWorkspace?.cancelImport()
+    }
+
     @MainActor func testSafeStartupDoesNotLoadRecoveryUntilUserSelectsBook() throws {
         let root = try root(), file = try pdf(root), w = try open(file,storage:root)
         w.bookmarkName = "安全恢复书签"; w.addBookmark(); XCTAssertTrue(w.flushRecovery())

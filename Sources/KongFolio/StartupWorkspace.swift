@@ -12,23 +12,43 @@ extension WorkspaceStore {
     func restoreStartup(_ entry: SessionEntry) throws {
         guard startupEntries.contains(where: { $0.slot == entry.slot }) else { return }
         let w = Workspace(storage:storage,slot:entry.slot,readingDefaults:readingDefaults); w.store = self
-        StartupProtection(storage:storage).opening(entry.path ?? "恢复副本：" + entry.slot)
+        w.readingBatchEntryID = entry.readingBatchEntryID
+        let protection = StartupProtection(storage:storage)
+        let token = UUID()
+        if startupSafetyEnabled { protection.trackImport(token,path:entry.path ?? "恢复副本：" + entry.slot) }
         w.bootstrap()
+        if startupSafetyEnabled { protection.trackImport(token,path:nil) }
         if w.count == 0 {
             guard entry.kind != .recovery, let path = entry.path else { throw FolioError(message:"恢复副本未能打开，已保留，可从恢复中心查看") }
             let url = URL(fileURLWithPath:path)
-            guard FileManager.default.fileExists(atPath:path) else { throw FolioError(message:"原文件缺失，请在书架重新定位") }
             if entry.kind == .project { w.projectURL = url } else { w.sourceURL = url }
-            w.needsLoad = true; w.pendingView = entry.position; w.pendingReadingLayout = entry.layout
+            let progress = ReadingProgress.load(path:path,defaults:readingDefaults)
+            w.needsLoad = true
+            w.pendingView = progress.resumePosition(pageCount:progress.pages) ?? entry.position
+            w.pendingReadingLayout = progress.layout ?? entry.layout
         }
+        showStartupReview = false
         tabsForStartup(w)
         startupEntries.removeAll { $0.slot == entry.slot }
+        if pendingStartupSelected == entry.slot { pendingStartupSelected = nil }
         if startupEntries.isEmpty { try StartupProtection(storage:storage).finishReview(excluding:[]); showStartupReview = false }
         saveSession()
     }
+    func startupPage(_ entry: SessionEntry) -> Int? {
+        if let path = entry.path {
+            let saved = ReadingProgress.load(path:path,defaults:readingDefaults)
+            if let position = saved.resumePosition(pageCount:saved.pages) { return position.selection + 1 }
+        }
+        return entry.position.map { $0.selection + 1 }
+    }
+
+    func startupInterruptionCount(_ entry: SessionEntry) -> Int {
+        startupSuspects[entry.path ?? ("恢复副本：" + entry.slot)] ?? 0
+    }
+
     func deferStartupReview() { showStartupReview = false; saveSession() }
     func skipStartupEntries() throws {
         try StartupProtection(storage:storage).finishReview(excluding:Set(startupEntries.map(\.slot)))
-        startupEntries = []; showStartupReview = false; saveSession()
+        startupEntries = []; pendingStartupSelected = nil; showStartupReview = false; saveSession()
     }
 }

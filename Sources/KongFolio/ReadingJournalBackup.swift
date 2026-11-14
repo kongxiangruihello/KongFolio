@@ -1,4 +1,5 @@
 import Foundation
+import PDFKit
 
 struct ReadingBackup: Codable, Identifiable {
     enum Kind:String,Codable { case daily = "每日备份", manual = "手动备份", beforeRestore = "恢复前备份" }
@@ -103,5 +104,79 @@ extension ReadingBackupStorage {
         for (name,data) in transfer.assets { try Task.checkCancellation();let hash = OCRPageCache.digest(data),file = blobs.appendingPathComponent(hash);try checked(file);if FileManager.default.fileExists(atPath:file.path) { guard try Data(contentsOf:file) == data else { throw FolioError(message:"备份图片校验失败") } } else { try data.write(to:file,options:.atomic) };assets[name] = hash }
         let value = ReadingBackup(kind:.manual,state:transfer.state,assets:assets,digest:OCRPageCache.digest(try bytes(transfer.state)))
         try JSONEncoder().encode(value).write(to:try file(value.id,folder:folder),options:.atomic);return value
+    }
+}
+
+struct ReadingBackupVerification {
+    let excerpts: Int
+    let notes: Int
+    let otherRecords: Int
+    let images: Int
+    let links: Int
+    let missingLinks: Int
+    let cloudLinks: Int
+
+    var summary: String {
+        "试恢复通过 · 摘录 \(excerpts) 条 · 笔记 \(notes) 条 · 其他记录 \(otherRecords) 条 · 图片 \(images) 张 · 出处 \(links) 处"
+        + (missingLinks > 0 ? " · \(missingLinks) 处原文缺失或页码失效" : "")
+        + (cloudLinks > 0 ? " · \(cloudLinks) 处云端原文待下载" : "")
+    }
+}
+
+extension ReadingBackupStorage {
+    static func verifyRestore(_ id: String,folder: URL) throws -> ReadingBackupVerification {
+        let backup = try read(id,folder:folder)
+        let state = backup.state
+        let isolated = FileManager.default.temporaryDirectory.appendingPathComponent("KongFolio-restore-"+UUID().uuidString,isDirectory:true)
+        defer { try? FileManager.default.removeItem(at:isolated) }
+        let images = isolated.appendingPathComponent("Assets",isDirectory:true)
+        try FileManager.default.createDirectory(at:images,withIntermediateDirectories:true)
+        for name in state.assetNames053 {
+            try Task.checkCancellation()
+            guard let hash = backup.assets[name] else { throw FolioError(message:"试恢复失败：备份缺少图片 "+name) }
+            let source = root(folder).appendingPathComponent("Assets").appendingPathComponent(hash)
+            try checked(source)
+            let bytes = try Data(contentsOf:source,options:.mappedIfSafe)
+            guard OCRPageCache.digest(bytes) == hash, SignatureImage.loadData(bytes) != nil else {
+                throw FolioError(message:"试恢复失败：图片校验未通过")
+            }
+            try bytes.write(to:images.appendingPathComponent(name),options:.atomic)
+        }
+        try ReadingDeltaStorage.checkpoint(state,folder:isolated)
+        guard let restored = try ReadingJournalTransfer.read(isolated), restored.state == state,
+              restored.assets.allSatisfy({ OCRPageCache.digest($0.value) == backup.assets[$0.key] }) else {
+            throw FolioError(message:"试恢复后的记录或图片与备份不一致")
+        }
+        let items = state.records.map(ReadingLibraryItem.record) + state.essays.map(ReadingLibraryItem.essay)
+        let citations = items.flatMap(\.citations053)
+        var statuses: [String:ShelfFileStatus] = [:]
+        var pageCounts: [String:Int] = [:]
+        var missing = 0, cloud = 0
+        for citation in citations {
+            try Task.checkCancellation()
+            let path = citation.source.path
+            guard !path.isEmpty, citation.source.invalidPage053 != true else { missing += 1; continue }
+            let status = statuses[path] ?? ShelfFileStatus.read(URL(fileURLWithPath:path))
+            statuses[path] = status
+            switch status {
+            case .missing: missing += 1
+            case .cloud: cloud += 1
+            case .available:
+                let url = URL(fileURLWithPath:path)
+                guard ["pdf","kongfolio"].contains(url.pathExtension.lowercased()) else { continue }
+                if pageCounts[path] == nil {
+                    pageCounts[path] = autoreleasepool {
+                        guard let document = ReadingSourceInput(url:url).document(), !document.isLocked else { return 0 }
+                        return document.pageCount
+                    }
+                }
+                if !(0..<(pageCounts[path] ?? 0)).contains(citation.source.page) { missing += 1 }
+            }
+        }
+        let excerpts = state.records.filter(\.isExcerpt).count
+        let recordNotes = state.records.filter { $0.kind == .note }.count
+        return ReadingBackupVerification(excerpts:excerpts,notes:recordNotes+state.essays.count,
+                                         otherRecords:state.records.count-excerpts-recordNotes,
+                                         images:restored.assets.count,links:citations.count,missingLinks:missing,cloudLinks:cloud)
     }
 }

@@ -49,14 +49,19 @@ extension Workspace {
     /// Detach cancelled reads immediately; their eventual results must not mutate a reused tab.
     func cancelImport() {
         guard isImporting else { return }
+        if store?.startupSafetyEnabled == true {
+            StartupProtection(storage:storage).trackImport(importGeneration,path:nil)
+        }
         importGeneration = UUID()
         let cancel = cancelAuxiliary;cancelAuxiliary = nil;cancel?()
         isImporting = false;busy = false;progress = 0;taskLabel = "";status = "已取消读取，可关闭或重试"
     }
     func startImport(_ urls:[URL],insert:Bool) {
         store?.recordActivity("准备打开文件")
-        if store?.startupSafetyEnabled == true { StartupProtection(storage:storage).opening(urls.first?.path) }
         let generation = UUID();importGeneration = generation
+        let protection = store?.startupSafetyEnabled == true ? StartupProtection(storage:storage) : nil
+        protection?.trackImport(generation,path:urls.first?.path)
+        store?.scheduleSessionSave()
         isImporting = true;busy = true;progress = 0;taskLabel = "读取文件…"
         let root = storage
         let prepare = prepareImportFiles
@@ -78,6 +83,7 @@ extension Workspace {
         }
         cancelAuxiliary = { worker.cancel() }
         Task {
+            defer { protection?.trackImport(generation,path:nil); store?.scheduleSessionSave() }
             do {
                 let (payload,reading) = try await worker.value;try Task.checkCancellation()
                 guard importGeneration == generation,!worker.isCancelled else { return }

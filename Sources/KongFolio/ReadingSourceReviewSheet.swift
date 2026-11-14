@@ -40,7 +40,7 @@ struct ReadingSourceReview: Identifiable {
                 if !source.rects.isEmpty { source.anchor = nil }
             }
             if !source.rects.isEmpty || (source.anchor == nil && record.quote.isEmpty) {
-                store.reveal(source,beside:false)
+                reveal(source,recordID:record.id,store:store)
                 return
             }
         }
@@ -150,7 +150,13 @@ struct ReadingSourceReview: Identifiable {
         var target = citation.source
         // The worker already verified this page. Avoid a second, unbounded scan on the UI thread.
         target.anchor = nil
-        store.reveal(target,beside:false)
+        reveal(target,recordID:request.recordID,store:store)
+    }
+
+    private func reveal(_ source: SourceRef,recordID: UUID,store: WorkspaceStore) {
+        guard store.reveal(source,beside:false),
+              let record = store.journal.record(recordID), record.isExcerpt, record.removed == nil else { return }
+        store.revealCapturedExcerpt(record,message:"已定位原文 · "+source.pageDescription)
     }
 
     func openRecordedPage(_ request: ReadingSourceReview, store: WorkspaceStore) {
@@ -163,7 +169,7 @@ struct ReadingSourceReview: Identifiable {
         source.rects = []
         source.keep = nil
         review = nil
-        store.reveal(source,beside:false)
+        reveal(source,recordID:request.recordID,store:store)
     }
 
     func cancel() {

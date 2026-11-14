@@ -82,6 +82,12 @@ struct HomeReadingView: View {
         let batch = store.unfinishedHomeBatch
         let combined = batch?.sharesHomeResume(with:lastRead?.path) == true
         return VStack(alignment:.leading,spacing:0) {
+            if !store.startupEntries.isEmpty {
+                row(nil,icon:"clock.arrow.circlepath",title:"恢复上次打开的文献",
+                    detail:"还有 \(store.startupEntries.count) 份可恢复") {
+                    Button("查看上次标签页") { store.showStartupReview = true }
+                }
+            }
             if let item = lastRead {
                 resumeRow(item,batch:combined ? batch : nil)
             }

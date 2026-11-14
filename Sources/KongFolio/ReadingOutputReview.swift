@@ -7,6 +7,7 @@ struct ReadingOutputIssue:Identifiable {
     var title:String
     var message:String
     var source: ReadingExportSourceTarget? = nil
+    var supplemental = false
 }
 actor ReadingOutputReview {
     static let shared = ReadingOutputReview()
@@ -15,8 +16,8 @@ actor ReadingOutputReview {
         for item in snapshot.orderedItems {
             try Task.checkCancellation()
             let target = item.libraryID
-            func append(_ message: String, source: ReadingExportSourceTarget? = nil) {
-                result.append(ReadingOutputIssue(id:item.id+":"+String(result.count),item:target,title:item.title,message:message,source:source))
+            func append(_ message: String, source: ReadingExportSourceTarget? = nil, supplemental: Bool = false) {
+                result.append(ReadingOutputIssue(id:item.id+":"+String(result.count),item:target,title:item.title,message:message,source:source,supplemental:supplemental))
             }
             var inspectedAssets = Set<String>()
             func inspectAsset(_ name: String) {
@@ -33,15 +34,16 @@ actor ReadingOutputReview {
                 }
                 for (index,citation) in citations.enumerated() {
                     try Task.checkCancellation()
-                    func issue(_ message: String) {
-                        append(message,source:ReadingExportSourceTarget(item:target,block:block,index:index,location:location))
+                    func issue(_ message: String,supplemental: Bool = false) {
+                        append(message,source:ReadingExportSourceTarget(item:target,block:block,index:index,location:location),supplemental:supplemental)
                     }
                     if citation.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { issue("出处缺少书名") }
-                    if (citation.edition ?? "").trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { issue("《"+citation.title+"》尚未填写版本") }
+                    if citation.author.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { issue("《"+citation.title+"》尚未填写作者",supplemental:true) }
+                    if (citation.edition ?? "").trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { issue("《"+citation.title+"》尚未填写版本",supplemental:true) }
                     if citation.source.page < 0 || citation.source.invalidPage053 == true || citation.tracking?.needsReview == true {
                         issue("缺少可用的 PDF 页码，请重新核对原页")
                     }
-                    if !wholeBook, citation.source.pageLabel?.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty != false { issue("《"+citation.title+"》尚未核对印刷页码") }
+                    if !wholeBook, citation.source.pageLabel?.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty != false { issue("《"+citation.title+"》尚未核对印刷页码",supplemental:true) }
                     let path = citation.source.path
                     guard !path.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { issue("缺少原文链接");continue }
                     let file = URL(fileURLWithPath:path)
@@ -90,7 +92,7 @@ actor ReadingOutputReview {
                 }
             }
         }
-        return result
+        return result.filter { !$0.supplemental } + result.filter(\.supplemental)
     }
 }
 

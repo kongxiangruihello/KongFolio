@@ -88,9 +88,11 @@ final class Release046Tests: XCTestCase {
         let issues = try await ReadingOutputReview.shared.inspect(ReadingExportSnapshot(title:"检查",records:[r]),assets:try root());XCTAssertTrue(issues.contains{$0.message.contains("图片缺失")});XCTAssertTrue(issues.contains{$0.message.contains("链接失效")});XCTAssertTrue(issues.contains{$0.message.contains("版本")});XCTAssertTrue(issues.allSatisfy{$0.item == .record(r.id)})
     }
     func testOutputReviewAcceptsValidCitationAndDetectsOutOfRangePage() async throws {
-        let folder = try root(),file = try pdf(folder);var r = note();r.citations = [ReadingCitation(source:SourceRef(path:file.path,fileName:file.lastPathComponent,page:1,pageLabel:"二"),title:"史料",edition:"初版")]
+        let folder = try root(),file = try pdf(folder);var r = note();r.citations = [ReadingCitation(source:SourceRef(path:file.path,fileName:file.lastPathComponent,page:1,pageLabel:"二"),title:"史料",author:"作者",edition:"初版")]
         let good = try await ReadingOutputReview.shared.inspect(ReadingExportSnapshot(title:"检查",records:[r]),assets:folder);XCTAssertTrue(good.isEmpty)
-        r.citations[0].source.page = 9;let bad = try await ReadingOutputReview.shared.inspect(ReadingExportSnapshot(title:"检查",records:[r]),assets:folder);XCTAssertTrue(bad.contains{$0.message.contains("超出")})
+        r.citations[0].author = ""
+        r.citations[0].source.page = 9;let bad = try await ReadingOutputReview.shared.inspect(ReadingExportSnapshot(title:"检查",records:[r]),assets:folder);XCTAssertTrue(bad.first?.message.contains("超出") == true)
+        XCTAssertTrue(bad.contains { $0.supplemental && $0.message.contains("作者") })
     }
     func testDeltaDistinguishesAddModifyAndDelete() throws {
         let a = note("旧甲"),b = note("旧乙"),old = ReadingJournalState(records:[a,b]),ledger = try ReadingExportLedger.capture(old);var changed = a;changed.note = "新甲";let c = note("新丙"),next = ReadingJournalState(records:[changed,c]),delta = try ReadingExportDelta(next,old:ledger)

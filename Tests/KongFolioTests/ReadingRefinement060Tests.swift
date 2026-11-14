@@ -117,6 +117,53 @@ final class ReadingRefinement060Tests: XCTestCase {
         XCTAssertEqual(workspace.searchResults.map(\.page),[1])
     }
 
+    @MainActor func testBackupVerificationUsesIsolatedCatalogAndChecksSource() async throws {
+        let root = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at:root) }
+        let journal = ReadingJournal(storage:root)
+        let image = NSImage(size:NSSize(width:16,height:16),flipped:false) { bounds in
+            NSColor.black.setFill()
+            bounds.fill()
+            return true
+        }
+        let png = try XCTUnwrap(SignatureImage.pngData(try XCTUnwrap(image.cgImage(forProposedRect:nil,context:nil,hints:nil))))
+        let citation = ReadingCitation(source:SourceRef(path:root.appendingPathComponent("missing.pdf").path,fileName:"missing.pdf",page:0),title:"原书")
+        journal.add(ReadingRecord(kind:.image,citations:[citation]),image:png)
+        journal.add(ReadingRecord(kind:.note,note:"待核对笔记"))
+        let backup = try await journal.makeBackup()
+        let live = journal.state
+        let verified = try ReadingBackupStorage.verifyRestore(backup.id,folder:journal.folder)
+        XCTAssertEqual(verified.excerpts,1)
+        XCTAssertEqual(verified.notes,1)
+        XCTAssertEqual(verified.images,1)
+        XCTAssertEqual(verified.missingLinks,1)
+        XCTAssertEqual(journal.state,live)
+    }
+
+    @MainActor func testReturnToExcerptSelectsThatRecordAmongSamePageExcerpts() throws {
+        let root = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at:root) }
+        let file = try PDFTextSnapshot053Tests().fixture(root)
+        let store = WorkspaceStore(storage:root)
+        store.bootstrap()
+        let workspace = try XCTUnwrap(store.activeWorkspace)
+        workspace.load([file],prepared:.documents([try Data(contentsOf:file)]))
+        let first = workspace.readingCitation(page:1,rects:[CGRect(x:15,y:20,width:40,height:10)])
+        let second = workspace.readingCitation(page:1,rects:[CGRect(x:15,y:50,width:40,height:10)])
+        let a = ReadingRecord(kind:.excerpt,quote:"第一段",citations:[first])
+        let b = ReadingRecord(kind:.excerpt,quote:"第二段",citations:[second])
+        store.journal.add(a)
+        store.journal.add(b)
+        let navigator = ReadingSourceNavigator()
+        navigator.open(first,record:a,store:store)
+        XCTAssertEqual(workspace.selection,1)
+        XCTAssertEqual(store.readingExcerptFeedback?.recordID,a.id)
+        navigator.open(second,record:b,store:store)
+        XCTAssertEqual(store.readingDeskSection,.excerpts)
+        XCTAssertEqual(store.readingExcerptFeedback?.recordID,b.id)
+        XCTAssertEqual(store.readingRecordID,b.id)
+    }
+
     @MainActor func testSourceAnchorFindsRecordedPageAndMissingTextKeepsPage() throws {
         let root = try Release027Tests().folder()
         defer { try? FileManager.default.removeItem(at:root) }

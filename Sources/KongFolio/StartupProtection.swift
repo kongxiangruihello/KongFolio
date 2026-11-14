@@ -5,6 +5,7 @@ struct StartupProtection {
         var clean = true
         var reviewRequired = false
         var opening: String?
+        var activeImports: [String:String]?
         var interrupted: [String:Int] = [:]
         var excludedSlots: Set<String> = []
     }
@@ -24,11 +25,24 @@ struct StartupProtection {
                 state = State(clean:false,reviewRequired:true)
             }
         } else { state = State() }
-        if !state.clean { state.reviewRequired = true; if let path = state.opening { state.interrupted[path,default:0] += 1 } }
-        state.clean = false; state.opening = nil; try write(state); return state
+        if !state.clean {
+            state.reviewRequired = true
+            let paths = Set(Array((state.activeImports ?? [:]).values) + [state.opening].compactMap { $0 })
+            for path in paths { state.interrupted[path,default:0] += 1 }
+        }
+        state.clean = false; state.opening = nil; state.activeImports = nil
+        try write(state)
+        return state
     }
     func opening(_ path: String?) { var state = read(); state.opening = path; try? write(state) }
+    func trackImport(_ token: UUID, path: String?) {
+        var state = read()
+        var active = state.activeImports ?? [:]
+        active[token.uuidString] = path
+        state.activeImports = active.isEmpty ? nil : active
+        try? write(state)
+    }
     func requireReview() throws { var state = read(); state.reviewRequired = true; try write(state) }
-    func clean() { var state = read(); state.clean = true; state.opening = nil; try? write(state) }
+    func clean() { var state = read(); state.clean = true; state.opening = nil; state.activeImports = nil; try? write(state) }
     func finishReview(excluding slots: Set<String>) throws { var state = read(); state.reviewRequired = false; state.excludedSlots.formUnion(slots); try write(state) }
 }

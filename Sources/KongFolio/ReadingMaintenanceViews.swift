@@ -104,6 +104,16 @@ struct ReadingBackupView: View {
                 ForEach(backups) { value in Text(value.date.formatted(date:.numeric,time:.standard)+" · "+value.kind.rawValue).tag(Optional(value.id)) }
             }
             if let backup {
+                Button("试恢复并校验…") {
+                    let folder = journal.folder
+                    let id = backup.id
+                    run {
+                        let result = try await Task.detached(priority:.utility) {
+                            try ReadingBackupStorage.verifyRestore(id,folder:folder)
+                        }.value
+                        message = result.summary
+                    }
+                }.disabled(busy)
                 Text("备份含 \(backup.state.records.count) 条记录、\(backup.state.essays.count) 篇笔记。选择后先核对下方内容，再恢复。").font(.caption)
                 TextField("在备份中搜索标题、正文或出处",text:$query).textFieldStyle(.roundedBorder)
                 List(selection:$records) { ForEach(Array(entries.dropFirst(pagination.range.lowerBound).prefix(pagination.size))) { entry in
