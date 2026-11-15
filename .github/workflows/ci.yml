@@ -16,7 +16,7 @@ jobs:
       matrix:
         os: [macos-15, macos-26]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -41,7 +41,10 @@ jobs:
           swift test 2>&1 | tee ci-logs/xctest.log
       - name: Portable test script
         if: success() || failure()
-        timeout-minutes: 12
+        # Compiling the standalone test runner can take over ten minutes on a slow host.
+        timeout-minutes: 20
+        env:
+          NSUnbufferedIO: "YES"
         run: |
           set -o pipefail
           mkdir -p ci-logs
