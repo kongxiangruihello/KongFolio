@@ -16,6 +16,16 @@ import Foundation
         let persisted = try JSONDecoder().decode([ReadingDocumentIdentity053].self, from: Data(contentsOf: destination))
         XCTAssertEqual(persisted.first?.paths, ["/tmp/new-location.pdf"])
     }
+    func testExistingPDFInkRecordsAreHiddenWithoutDeletingJournalData() {
+        var ink = ReadingRecord(kind: .annotation, quote: "标注 · 手写", citations: [citation()])
+        ink.pdfOrigin = ReadingPDFOrigin(annotationID: "ink-one", type: "手写", contents: "", author: nil, originalCreated: nil, originalModified: nil)
+        let note = ReadingRecord(kind: .note, note: "需要保留的学术笔记")
+        let state = ReadingJournalState(records: [ink, note])
+        let visible = ReadingLibraryItem.results(state)
+        XCTAssertEqual(visible.count, 1)
+        XCTAssertEqual(visible.first?.id, .record(note.id))
+        XCTAssertEqual(state.records.count, 2) // Non-destructive; old data remains recoverable.
+    }
     func testConcurrentDisjointEditsRetainBoth() {
         let r=ConcurrentText053.merge(base:"甲乙丙丁",local:"甲新乙丙丁",external:"甲乙丙新丁")
         XCTAssertEqual(r.text,"甲新乙丙新丁");XCTAssertFalse(r.conflict)
