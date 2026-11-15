@@ -43,7 +43,8 @@ enum ReadingPDFCapture {
         return "legacy:"+String(index)+":"+type+":"+[b.minX,b.minY,b.width,b.height].map{String(format:"%.6f",Double($0))}.joined(separator:",")+":"+String(preceding)
     }
     static func record(_ a:PDFAnnotation,page:PDFPage,index:Int,source:ReadingCitation)->ReadingRecord? {
-        guard !["Link","Widget","Popup"].contains(a.type ?? "") else { return nil }
+        // Ink strokes remain in the PDF; they are not research-library records.
+        guard !["Link","Widget","Popup","Ink"].contains(a.type ?? "") else { return nil }
         let type = a.type ?? "Unknown",id = identity(a,on:page,index:index)
         let markup = ["Highlight","Underline","StrikeOut"].contains(type)
         let bounds = a.bounds
