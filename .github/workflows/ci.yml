@@ -73,7 +73,7 @@ jobs:
         if: always()
         run: ./scripts/ci-summary.sh ci-logs ${{ matrix.os }}
 
-  release-v06027:
+  release-v06028:
     needs: macos
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: macos-15
@@ -81,11 +81,12 @@ jobs:
     permissions:
       contents: write
     concurrency:
-      group: release-v0.60.27
+      group: release-v0.60.28
       cancel-in-progress: false
     env:
-      TAG: v0.60.27
-      VERSION: 0.60.27
+      TAG: v0.60.28
+      VERSION: 0.60.28
+      BUILD_NUMBER: 115
     steps:
       - uses: actions/checkout@v4
       - name: Check release version and tag
@@ -118,7 +119,7 @@ jobs:
           app="$extracted/KongFolio.app"
           codesign --verify --deep --strict "$app"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$VERSION"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = 114
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = "$BUILD_NUMBER"
           shasum -a 256 "$dmg" "$zip" > SHA256SUMS
           shasum -a 256 -c SHA256SUMS
       - name: Publish verified assets
