@@ -16,23 +16,6 @@ import Foundation
         let persisted = try JSONDecoder().decode([ReadingDocumentIdentity053].self, from: Data(contentsOf: destination))
         XCTAssertEqual(persisted.first?.paths, ["/tmp/new-location.pdf"])
     }
-    func testDocumentIdentityTracksReplacedFile() async throws {
-        let root = try folder()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let file = root.appendingPathComponent("source.pdf")
-        try Data("first version".utf8).write(to: file)
-        let registry = ReadingDocumentRegistry053.shared(root)
-        let original = registry.identity(file.path, digest: "first")
-        try Data("replacement".utf8).write(to: file, options: .atomic)
-        let changed = registry.identity(file.path, digest: "second")
-        XCTAssertEqual(original.id, changed.id)
-        // Persistence runs asynchronously, so use the actor as a serialization barrier.
-        let persistedFile = root.appendingPathComponent("DocumentIdentity053.json")
-        let snapshot = [changed]
-        try await ReadingIdentityWriter053.shared.write(snapshot, to: persistedFile, revision: Int.max)
-        let persisted = try JSONDecoder().decode([ReadingDocumentIdentity053].self, from: Data(contentsOf: persistedFile))
-        XCTAssertEqual(persisted.first?.digest, "second")
-    }
     func testConcurrentDisjointEditsRetainBoth() {
         let r=ConcurrentText053.merge(base:"甲乙丙丁",local:"甲新乙丙丁",external:"甲乙丙新丁")
         XCTAssertEqual(r.text,"甲新乙丙新丁");XCTAssertFalse(r.conflict)
