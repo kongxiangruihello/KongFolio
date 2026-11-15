@@ -15,6 +15,7 @@ struct ReadingDocumentIdentity053:Codable {
     }
     private let file:URL
     private var entries:[ReadingDocumentIdentity053]
+    private var writeRevision = 0
     init(_ storage:URL) { file=storage.appendingPathComponent("DocumentIdentity053.json");entries=(try? Data(contentsOf:file)).flatMap{try? JSONDecoder().decode([ReadingDocumentIdentity053].self,from:$0)} ?? [] }
     func identity(_ path:String,digest:String?)->ReadingDocumentIdentity053 {
         let url=URL(fileURLWithPath:path),canonical=ReadingBookIdentity.key(path)
@@ -26,11 +27,14 @@ struct ReadingDocumentIdentity053:Codable {
         let old=value
         if !value.paths.contains(canonical) { value.paths.append(canonical) }
         value.resource=resource;value.digest=digest
-        if i==nil || old.paths != value.paths { value.bookmark=try? url.bookmarkData(options:.suitableForBookmarkFile,includingResourceValuesForKeys:nil,relativeTo:nil) }
+        if i == nil || old.paths != value.paths || old.resource != value.resource {
+            value.bookmark = try? url.bookmarkData(options:.suitableForBookmarkFile,includingResourceValuesForKeys:nil,relativeTo:nil)
+        }
         if let i { entries[i]=value } else { entries.append(value) }
-        if i==nil || old.paths != value.paths || old.digest != value.digest {
-            let entries=entries,file=file
-            Task { do { try await ReadingIdentityWriter053.shared.write(entries,to:file) } catch { /* The citation still contains its path and fingerprint. */ } }
+        if i == nil || old.paths != value.paths || old.resource != value.resource || old.digest != value.digest || old.bookmark != value.bookmark {
+            writeRevision += 1
+            let revision = writeRevision, snapshot = entries, destination = file
+            Task { do { try await ReadingIdentityWriter053.shared.write(snapshot,to:destination,revision:revision) } catch { /* Citations retain their original path and page fingerprint. */ } }
         }
         return value
     }
@@ -43,8 +47,16 @@ struct ReadingDocumentIdentity053:Codable {
     }
 }
 actor ReadingIdentityWriter053 {
-    static let shared=ReadingIdentityWriter053()
-    func write(_ entries:[ReadingDocumentIdentity053],to file:URL)throws { try JSONEncoder().encode(entries).write(to:file,options:.atomic) }
+    static let shared = ReadingIdentityWriter053()
+    private var latestRevision: [String: Int] = [:]
+
+    /// Ignore out-of-order snapshots so an older asynchronous task cannot replace newer identities.
+    func write(_ entries: [ReadingDocumentIdentity053], to file: URL, revision: Int) throws {
+        let key = file.standardizedFileURL.path
+        guard revision > (latestRevision[key] ?? 0) else { return }
+        try JSONEncoder().encode(entries).write(to: file, options: .atomic)
+        latestRevision[key] = revision
+    }
 }
 extension ReadingRecordExtras053 {
     mutating func updateSourceLocations(_ update: (inout ReadingCitation) -> Void) {
