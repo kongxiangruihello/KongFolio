@@ -267,7 +267,17 @@ struct ReadingLibraryView: View {
             } else if let context=item.matchingContext(query) {
                 Text(SearchResultHighlight.text(context,query:query)).font(.caption).lineLimit(2)
             }
-        }.onDrag { NSItemProvider(object:ReadingDrag053.text(item,assets:journal.folder.appendingPathComponent("Assets")) as NSString) }
+        }
+        .frame(maxWidth:.infinity,alignment:.leading)
+        .contentShape(Rectangle())
+        .simultaneousGesture(TapGesture().onEnded {
+            // Draggable rows must also activate when List does not change selection.
+            // Let the native list handle Command/Shift multi-selection.
+            guard NSEvent.modifierFlags.intersection([.command,.shift]).isEmpty else { return }
+            updateSelection([item.id])
+            editing = item.id
+        })
+        .onDrag { NSItemProvider(object:ReadingDrag053.text(item,assets:journal.folder.appendingPathComponent("Assets")) as NSString) }
     }
     @ViewBuilder private var editor:some View {
             if let editing {
