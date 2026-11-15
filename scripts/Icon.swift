@@ -3,12 +3,12 @@ import AppKit
 // Rounded square silhouette, with a single high-contrast folio for small Dock sizes.
 let folder = URL(fileURLWithPath: CommandLine.arguments[1])
 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-let blue = NSColor(srgbRed: 23 / 255, green: 58 / 255, blue: 98 / 255, alpha: 1)
+let blue = NSColor(srgbRed: 49 / 255, green: 105 / 255, blue: 235 / 255, alpha: 1)
 
 func drawIcon() {
     NSGraphicsContext.current?.imageInterpolation = .high
     let backdrop = NSBezierPath(roundedRect: CGRect(x: 48, y: 48, width: 928, height: 928), xRadius: 208, yRadius: 208)
-    NSGradient(starting:blue,ending:NSColor(srgbRed:14/255,green:37/255,blue:68/255,alpha:1))!.draw(in:backdrop,angle:-90)
+    NSGradient(starting:blue,ending:NSColor(srgbRed:30/255,green:83/255,blue:211/255,alpha:1))!.draw(in:backdrop,angle:-90)
     NSGraphicsContext.saveGraphicsState()
     let shadow=NSShadow();shadow.shadowColor=NSColor.black.withAlphaComponent(0.23);shadow.shadowBlurRadius=28;shadow.shadowOffset=NSSize(width:0,height:-15);shadow.set()
     NSColor(srgbRed:0.85,green:0.83,blue:0.76,alpha:1).setFill()
