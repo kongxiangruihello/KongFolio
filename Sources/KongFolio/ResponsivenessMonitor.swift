@@ -51,10 +51,21 @@ final class ResponsivenessMonitor: @unchecked Sendable {
 extension WorkspaceStore {
     func recordActivity(_ action: String, elapsedMilliseconds: Int? = nil) {
         let workspaces = tabs.compactMap(\.workspace)
-        var facts = ["openTabs": tabs.count, "loadedDocuments": workspaces.filter { $0.count > 0 }.count,
-            "estimatedMemoryMB": workspaces.reduce(0) { $0 + $1.estimatedResidentBytes } / 1048576,
-            "pendingSaves": workspaces.filter { $0.saving || $0.dirty }.count,
-            "runningTasks": workspaces.filter(\.busy).count, "cloudImports": workspaces.filter(\.isImporting).count]
+        let loadedDocuments = workspaces.filter { $0.count > 0 }.count
+        let estimatedBytes: Int = workspaces.reduce(0) { total, workspace in
+            total + workspace.estimatedResidentBytes
+        }
+        let pendingSaves = workspaces.filter { $0.saving || $0.dirty }.count
+        let runningTasks = workspaces.filter { $0.busy }.count
+        let cloudImports = workspaces.filter { $0.isImporting }.count
+        var facts: [String: Int] = [
+            "openTabs": tabs.count,
+            "loadedDocuments": loadedDocuments,
+            "estimatedMemoryMB": estimatedBytes / 1_048_576,
+            "pendingSaves": pendingSaves,
+            "runningTasks": runningTasks,
+            "cloudImports": cloudImports
+        ]
         if let elapsedMilliseconds { facts["elapsedMilliseconds"] = elapsedMilliseconds }
         diagnosticMonitor?.record(action,facts:facts)
     }

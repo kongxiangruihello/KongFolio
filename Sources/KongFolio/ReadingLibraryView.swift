@@ -55,7 +55,7 @@ struct ReadingLibraryView: View {
     private var request:ReadingSearchRequest { ReadingSearchRequest(revision:journal.revisionID,query:query,kind:kind,tag:tag,topic:topic,removed:removed,recent:recent,untagged:untagged,bookPath:bookSource?.source.path,options053:options053,indexFolder:journal.folder.path) }
     private var pagination:ReadingPagination { ReadingPagination(total:items.count,page:page,size:size) }
     var body:some View {
-        observedContent
+        filterObservedContent
         .sheet(isPresented:$confirmBulk) { ReadingBulkConfirmation(journal:journal,ids:selection,removed:removed) { selection = [];editing = nil } }
         .sheet(item:$contextRequest) { request in
             switch request.kind {
@@ -108,7 +108,8 @@ struct ReadingLibraryView: View {
             editor
         }
     }
-    private var observedContent:some View {
+    // Split observation modifiers into smaller view expressions for the Swift compiler.
+    private var searchObservedContent:some View {
         layout
         .task(id:SearchActivation(request:request,submission:searchSubmission)) {
             let token=UUID();searchToken053=token;searching053=true
@@ -137,6 +138,10 @@ struct ReadingLibraryView: View {
                 }
             }
         }
+    }
+
+    private var observedContent:some View {
+        searchObservedContent
         .onAppear { if !restoredSession { restoredSession = true;if bookSource == nil && store.readingLibraryNavigation == nil { let s = ReadingLibrarySession.load(store.readingDefaults);query = s.query;kind = (s.kind == "札记" ? "笔记" : s.kind);tag = s.tag;topic = s.topic;recent = s.recent;untagged = s.untagged;removed = s.removed;pendingFilterPage = s.page;size = s.size } };do { filters = try SavedReadingFilter.load(journal.folder) } catch { filterMessage = error.localizedDescription };if bookSource == nil { if let preferred = store.readingLibraryPreferredKind { kind = preferred;store.readingLibraryPreferredKind = nil };if let target = store.readingLibraryNavigation { navigate(target) } } }
         .onChange(of:store.readingLibraryNavigationRequest) { _,_ in if bookSource == nil { if let preferred = store.readingLibraryPreferredKind { kind = preferred;store.readingLibraryPreferredKind = nil };if let target = store.readingLibraryNavigation { navigate(target) } } }
         .onChange(of:store.homeSearchRequest,initial:true) { _,value in
@@ -149,13 +154,25 @@ struct ReadingLibraryView: View {
         .onChange(of:journal.draftRecord?.id) { _,_ in validateEditing() }
         .onChange(of:journal.draftEssay?.id) { _,_ in validateEditing() }
         .onChange(of:journal.revisionID) { _,_ in validateEditing() }
+    }
+
+    private var filterObservedContent:some View {
+        observedContent
         .onChange(of:recent) { _,_ in resetPage() }.onChange(of:untagged) { _,_ in resetPage() }
-        .onChange(of:selection) { _,ids in
-            selectionOrder = orderedSelection(ids)
-            if ids.count == 1,let id = ids.first { editing = id; if case .record(let r) = id { store.readingRecordID = r;store.focusLibraryAnnotation053(r) } } }
+        .onChange(of:selection) { _, ids in handleLibrarySelection(ids) }
         .onChange(of:query) { _,_ in resetPage() }.onChange(of:kind) { _,_ in resetPage() }.onChange(of:tag) { _,_ in resetPage() }.onChange(of:removed) { _,_ in resetPage() }
         .onChange(of:topic) { _,_ in resetPage() }
         .onChange(of:size) { _,_ in page = 0 }.onChange(of:items.count) { _,_ in page = pagination.index }
+    }
+
+    private func handleLibrarySelection(_ ids: Set<ReadingLibraryID>) {
+        selectionOrder = orderedSelection(ids)
+        guard ids.count == 1, let id = ids.first else { return }
+        editing = id
+        if case .record(let recordID) = id {
+            store.readingRecordID = recordID
+            store.focusLibraryAnnotation053(recordID)
+        }
     }
 
     private var browser:some View {
