@@ -69,3 +69,62 @@ jobs:
       - name: Failure summary
         if: always()
         run: ./scripts/ci-summary.sh ci-logs ${{ matrix.os }}
+
+  release-v06027:
+    needs: macos
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    concurrency:
+      group: release-v0.60.27
+      cancel-in-progress: false
+    env:
+      TAG: v0.60.27
+      VERSION: 0.60.27
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check release version and tag
+        id: version
+        run: |
+          set -euo pipefail
+          if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)" != "$VERSION" ]]; then
+            exit 0
+          fi
+          if [[ -n "$(git ls-remote --tags origin "refs/tags/$TAG")" ]]; then
+            exit 0
+          fi
+          echo "package=true" >> "$GITHUB_OUTPUT"
+      - name: Build and verify DMG and ZIP
+        if: steps.version.outputs.package == 'true'
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          ./scripts/build.sh
+          mkdir -p "$RUNNER_TEMP/release"
+          dmg="KongFolio-$VERSION-arm64.dmg"
+          zip="KongFolio-$VERSION-macOS.zip"
+          ./scripts/dmg.sh "$RUNNER_TEMP/release/$dmg"
+          mv "../$zip" "$RUNNER_TEMP/release/"
+          cd "$RUNNER_TEMP/release"
+          hdiutil verify "$dmg"
+          unzip -tq "$zip"
+          extracted="$(mktemp -d)"
+          ditto -x -k "$zip" "$extracted"
+          app="$extracted/KongFolio.app"
+          codesign --verify --deep --strict "$app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = 114
+          shasum -a 256 "$dmg" "$zip" > SHA256SUMS
+          shasum -a 256 -c SHA256SUMS
+      - name: Publish verified assets
+        if: steps.version.outputs.package == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/release"
+          gh release create "$TAG" "KongFolio-$VERSION-arm64.dmg" "KongFolio-$VERSION-macOS.zip" SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "KongFolio $VERSION" \
+            --notes-file "$GITHUB_WORKSPACE/RELEASE-$VERSION.md"
