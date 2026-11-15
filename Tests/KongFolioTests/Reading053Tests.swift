@@ -5,6 +5,16 @@ import Foundation
 @MainActor final class Reading053Tests: XCTestCase {
     func folder()throws->URL { let u=FileManager.default.temporaryDirectory.appendingPathComponent("KongFolio053-tests-"+UUID().uuidString);try FileManager.default.createDirectory(at:u,withIntermediateDirectories:true);return u }
     func citation(_ page:Int=0)->ReadingCitation { ReadingCitation(source:SourceRef(path:"/generated/book.pdf",fileName:"book.pdf",page:page),title:"近代史料",author:"作者甲") }
+    func testExistingPDFInkRecordsAreHiddenWithoutDeletingJournalData() {
+        var ink = ReadingRecord(kind: .annotation, quote: "标注 · 手写", citations: [citation()])
+        ink.pdfOrigin = ReadingPDFOrigin(annotationID: "ink-one", type: "手写", contents: "", author: nil, originalCreated: nil, originalModified: nil)
+        let note = ReadingRecord(kind: .note, note: "需要保留的学术笔记")
+        let state = ReadingJournalState(records: [ink, note])
+        let visible = ReadingLibraryItem.results(state)
+        XCTAssertEqual(visible.count, 1)
+        XCTAssertEqual(visible.first?.id, .record(note.id))
+        XCTAssertEqual(state.records.count, 2) // Non-destructive; old data remains recoverable.
+    }
     func testConcurrentDisjointEditsRetainBoth() {
         let r=ConcurrentText053.merge(base:"甲乙丙丁",local:"甲新乙丙丁",external:"甲乙丙新丁")
         XCTAssertEqual(r.text,"甲新乙丙新丁");XCTAssertFalse(r.conflict)
