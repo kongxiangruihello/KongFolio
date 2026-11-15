@@ -62,7 +62,10 @@ final class Release047Tests: XCTestCase {
     @MainActor func testAutomaticFollowDebouncesAndKeepsSourceSelection() async throws {
         let n = MarkdownNote(text:"甲段\n乙段",storage:try folder()),v = ComposingTextView();v.string = n.text;n.textView = v;n.followPreview = true
         v.setSelectedRange(NSRange(location:0,length:0));n.followSourceSelection();v.setSelectedRange(NSRange(location:3,length:0));n.followSourceSelection()
-        try await Task.sleep(nanoseconds:450_000_000)
+        // Await the scheduled follow operation so loaded CI runners do not race a fixed delay.
+        let followTask = n.previewFollowTask
+        XCTAssertNotNil(followTask)
+        await followTask?.value
         XCTAssertEqual(v.selectedRange(),NSRange(location:3,length:0));XCTAssertEqual(n.lastFollowedParagraph?.location,3)
     }
     @MainActor func testReleasingEditorCancelsPendingPreviewFollow() throws {
