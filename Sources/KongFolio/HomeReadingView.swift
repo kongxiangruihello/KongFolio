@@ -43,6 +43,7 @@ struct HomeReadingView: View {
                 .frame(maxWidth:.infinity,minHeight:geometry.size.height,alignment:lastRead == nil ? .center : .top)
             }
         }
+        .background(Color(nsColor: .textBackgroundColor))
         .modifier(ReadingSourceSheetPresenter(navigator:sourceNavigator,store:store))
         .task(id:historyRevision) {
             lastSearch = HomeReadingSearch.load(store.readingDefaults)
