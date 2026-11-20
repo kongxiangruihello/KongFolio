@@ -29,7 +29,7 @@ struct FunctionToolbar: View {
         HStack(spacing: 8) {
             homeCreationButton("新建 Markdown", symbol: "doc", badge: "MD") { store.newNote() }
             homeCreationButton("新建文本", symbol: "doc.text") { store.newNote(format: .plain) }
-            homeCreationButton("新建 PDF", symbol: "doc", badge: "PDF") { store.newPDF() }
+            homeCreationButton("新建 PDF", symbol: "doc", badge: "PDF") { store.showPDFCreation = true }
             homeCreationButton("新建 HTML", symbol: "chevron.left.forwardslash.chevron.right") { store.newNote(format: .html) }
             ToolbarControlSurface {
                 Menu {

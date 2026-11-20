@@ -35,6 +35,7 @@ struct RootView: View {
         .onChange(of: store.showResearch) { _,show in
             if show { ResearchWindowManager.shared.show(store); store.showResearch = false }
         }
+        .sheet(isPresented:$store.showPDFCreation) { PDFCreationView(store:store) }
         .sheet(isPresented:$store.showSignatureManager) { SignatureManagerSheet(store:store) }
         .sheet(isPresented:$store.showReadingSettings) { ReadingRuntimeSettings(store:store) }
         .sheet(isPresented: $store.showStartupReview) { StartupReviewView(store:store) }

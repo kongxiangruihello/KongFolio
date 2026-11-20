@@ -110,6 +110,7 @@ extension Workspace {
 
     /// A close must include edits made while an earlier save was in flight.
     func finishPendingSave() async -> Bool {
+        if canDiscardEmptyCreation { return discardWork() }
         closingInProgress = true
         defer { closingInProgress = false }
         directSaveTask?.cancel()

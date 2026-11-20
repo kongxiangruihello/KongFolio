@@ -109,6 +109,8 @@ import UniformTypeIdentifiers
     let board: Board
     let documentTasks: DocumentTaskQueue
     @Published var showBackgroundJobs = false
+    var pdfCreationFromClipboard = false
+    @Published var showPDFCreation = false
     @Published var showSignatureManager = false
     @Published var exportReview: ExportReviewRequest?
     @Published var showRecoveryCenter = false
@@ -708,6 +710,8 @@ extension WorkspaceStore {
         workspace.document = document
         workspace.title = "未命名 PDF"
         workspace.edited(reset: true)
+        workspace.emptyCreationPDF = try? workspace.pdfData()
+        workspace.pageEditing053 = true
         workspace.status = "已新建 A4 PDF，可添加文字、图片和标注"
         return workspace
     }

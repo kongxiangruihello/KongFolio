@@ -81,6 +81,7 @@ import UniformTypeIdentifiers
     @Published var busy = false { didSet { if oldValue && !busy { openDeferredFiles() } } }
     @Published var progress = 0.0
     @Published var taskLabel = ""
+    var emptyCreationPDF: Data?
     @Published var dirty = false
     @Published var showTools = false
     var importGeneration = UUID()
@@ -408,7 +409,7 @@ import UniformTypeIdentifiers
     func makeArchive(pdf: Data) -> ProjectArchive {
         alignMeta()
         let reading = ReadingState(bookmarks: bookmarks, outline: outlineEntries, layout: readingLayout, point: readingPoint, scale: readingScale, bibliography: bibliography)
-        return ProjectArchive(tableDrafts: tableDrafts.isEmpty ? nil : tableDrafts, wordDraft: wordDraftArchive, fileBaseline: fileBaseline, reading: reading, signatureEdits: signatureEditArchives, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, readingPageIDs053:readingPageIDs053, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: .document, recipes: [:], drafts: [:], dirty: dirty, projectPath: projectURL?.path)
+        return ProjectArchive(tableDrafts: tableDrafts.isEmpty ? nil : tableDrafts, wordDraft: wordDraftArchive, fileBaseline: fileBaseline, reading: reading, signatureEdits: signatureEditArchives, ocrOriginals: ocrOriginals, ocrRegions: ocrRegions, readingPageIDs053:readingPageIDs053, emptyCreationPDF:emptyCreationPDF, sourcePath: sourceURL?.path, pdf: pdf, title: title, selection: selection, selectedPages: Set(effectivePages), mode: .document, recipes: [:], drafts: [:], dirty: dirty, projectPath: projectURL?.path)
     }
 
     func restore(_ archive: ProjectArchive, keepProjectURL: Bool = false) throws {
@@ -417,6 +418,7 @@ import UniformTypeIdentifiers
         restoreSignatureEdits(archive.signatureEdits ?? [:])
         ReadingServices.applyOutline(archive.reading?.outline ?? ReadingServices.outline(document), to: document)
         cachedPDF = archive.pdf
+        emptyCreationPDF = archive.emptyCreationPDF
         bookmarks = archive.reading?.bookmarks ?? []
         outlineEntries = archive.reading?.outline ?? ReadingServices.outline(document)
         readingLayout = archive.reading?.layout ?? .continuous
@@ -678,6 +680,7 @@ import UniformTypeIdentifiers
 
     func confirmReplace() -> Bool {
         guard dirty else { return true }
+        if canDiscardEmptyCreation { return discardWork() }
         return saveDirectly()
     }
 
@@ -721,6 +724,7 @@ import UniformTypeIdentifiers
     func prepareToClose() -> Bool {
         saveReadingRecord()
         guard !busy else { status = "请等待任务完成或点击取消任务"; return false }
+        if canDiscardEmptyCreation { return discardWork() }
         if dirty {
             guard confirmReplace() else { return false }
             // A discarded recovery file must not be recreated during termination.
@@ -771,7 +775,7 @@ import UniformTypeIdentifiers
         drawingInProgress = false; pendingReveal = nil; deferredOpen = nil
         if let path = rulerPath { try? readingRuler.save(path:path,storage:storage) }
         rulerTask?.cancel(); rulerPath = nil
-        document = PDFDocument(); cachedPDF = nil; incrementalBase = nil; incrementalPages = []
+        document = PDFDocument(); emptyCreationPDF = nil; cachedPDF = nil; incrementalBase = nil; incrementalPages = []
         pageMeta = []; selection = 0; selectedPages = [0]; rangeText = ""
         title = "未命名文档"; tool = .select; note = ""
         bookmarks = []; bookmarkName = ""; outlineEntries = []; bibliography = Bibliography()

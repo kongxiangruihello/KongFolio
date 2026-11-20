@@ -270,7 +270,7 @@ struct ContentView: View {
         default:
             Button {
                 switch action {
-                case .newPDF: workspace.store?.newPDF()
+                case .newPDF: workspace.store?.showPDFCreation = true
                 case .newMarkdown: workspace.store?.newNote()
                 case .newText: workspace.store?.newNote(format: .plain)
                 case .newHTML: workspace.store?.newNote(format: .html)

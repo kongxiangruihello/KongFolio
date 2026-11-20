@@ -122,7 +122,7 @@ extension WorkspaceStore {
         case .backgroundJobs: showBackgroundJobs = true
         case .formTemplate: w?.showFormTemplate = true
         case .open: open()
-        case .newPDF: newPDF()
+        case .newPDF: showPDFCreation = true
         case .newMarkdown: newNote()
         case .newHTML: newNote(format: .html)
         case .newText: newNote(format: .plain)

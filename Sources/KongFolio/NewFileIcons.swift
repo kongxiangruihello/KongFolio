@@ -4,7 +4,7 @@ struct NewDocumentMenu: View {
     var showTitle = false
     var body:some View {
         Menu {
-            Button("PDF") { store.newPDF() }
+            Button("PDF") { store.showPDFCreation = true }
             Button("Markdown (.md)") { store.newNote() }
             Button("纯文本 (.txt)") { store.newNote(format:.plain) }
             Button("HTML (.html)") { store.newNote(format:.html) }

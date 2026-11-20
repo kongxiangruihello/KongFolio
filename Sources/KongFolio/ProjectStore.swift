@@ -20,6 +20,8 @@ struct ProjectArchive: Codable {
     var ocrOriginals: [Int: Data]? = nil
     var ocrRegions: [Int: [RecognizedLine]]? = nil
     var readingPageIDs053:[Int:String]? = nil
+    /// Initial paper bytes allow an untouched, recovered new PDF to close without saving.
+    var emptyCreationPDF: Data? = nil
     /// The file this document was opened from (not a project), so a restored tab still shows its file name.
     var sourcePath: String? = nil
     var pdf: Data

@@ -36,7 +36,8 @@ import KongFolioUpdateKit
             CommandGroup(replacing: .newItem) {
                 Button("打开…") { store.open() }.keyboardShortcut("o")
                 Button("在访达中浏览…") { store.browseFilesInFinder() }
-                Button("新建 PDF") { store.newPDF() }
+                Button("新建 PDF…") { store.showPDFCreation = true }.keyboardShortcut("n", modifiers: [.command, .option, .shift])
+                Button("从剪贴板新建 PDF…") { store.pdfCreationFromClipboard = true; store.showPDFCreation = true }.keyboardShortcut("n", modifiers: [.command, .control])
                 Button("新建 Markdown 文件") { store.newNote() }.keyboardShortcut("n")
                 Button("新建阅读笔记") { store.newReadingNote() }.keyboardShortcut("n",modifiers:[.command,.option])
                 Button("新建 HTML 文件") { store.newNote(format: .html) }
