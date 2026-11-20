@@ -94,7 +94,7 @@ struct PDFThumbnailGrid: View {
             .help("将选中的页面保存为独立 PDF")
     }
 
-    private func thumbnail(_ index: Int) -> some View {
+    @ViewBuilder private func thumbnail(_ index: Int) -> some View {
         let selected = workspace.selectedPages.contains(index)
         let caption = workspace.printedPageLabel(index)
         let card = Button {
