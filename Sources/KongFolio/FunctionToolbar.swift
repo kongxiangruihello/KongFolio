@@ -6,6 +6,7 @@ struct FunctionToolbar: View {
     @AppStorage(ReaderToolbarProfile.key) private var profileData = Data()
     @State private var showToolbarSettings = false
     @State private var toolbarWidth: CGFloat = 800
+    @State private var homeRecentFiles: [String] = []
 
     private var profile: ReaderToolbarProfile { ReaderToolbarProfile.decode(profileData) }
     private var workspace: Workspace? { store.commandWorkspace }
@@ -15,6 +16,80 @@ struct FunctionToolbar: View {
     }
 
     var body: some View {
+        Group {
+            if context == .empty {
+                homeToolbar
+            } else {
+                documentToolbar
+            }
+        }
+    }
+
+    private var homeToolbar: some View {
+        HStack(spacing: 8) {
+            homeCreationButton("新建 Markdown", symbol: "doc", badge: "MD") { store.newNote() }
+            homeCreationButton("新建文本", symbol: "doc.text") { store.newNote(format: .plain) }
+            homeCreationButton("新建 PDF", symbol: "doc", badge: "PDF") { store.newPDF() }
+            homeCreationButton("新建 HTML", symbol: "chevron.left.forwardslash.chevron.right") { store.newNote(format: .html) }
+            ToolbarControlSurface {
+                Menu {
+                    if !homeRecentFiles.isEmpty {
+                        ForEach(homeRecentFiles, id: \.self) { path in
+                            Button(URL(fileURLWithPath: path).lastPathComponent) {
+                                store.openEach([URL(fileURLWithPath: path)])
+                            }.help(path)
+                        }
+                    } else {
+                        Text("暂无最近文件")
+                    }
+                } label: {
+                    Image(systemName: "clock.arrow.circlepath").frame(width: 28, height: 28)
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                .help("最近文件").accessibilityLabel("最近文件")
+            }.frame(maxWidth: .infinity)
+            ToolbarControlSurface {
+                Menu {
+                    Button("后台任务…") { store.showBackgroundJobs = true }
+                    Button("启动恢复与阅读内存…") { store.showReadingSettings = true }
+                    Button("检查更新…") { AppUpdateWindow.shared.show() }
+                } label: {
+                    Image(systemName: "ellipsis.circle").frame(width: 28, height: 28)
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                .help("更多").accessibilityLabel("更多")
+            }.frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderless)
+        .font(.system(size: 16, weight: .medium))
+        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+        .padding(.horizontal, 12)
+        .frame(maxWidth: 640)
+        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
+        .background(.bar)
+        .onAppear {
+            let file = store.storage.appendingPathComponent("Recent.json")
+            homeRecentFiles = (try? JSONDecoder().decode([String].self, from: Data(contentsOf: file))) ?? []
+        }
+    }
+
+    private func homeCreationButton(_ title: String, symbol: String, badge: String? = nil,
+                                    action: @escaping () -> Void) -> some View {
+        ToolbarControlSurface {
+            Button(action: action) {
+                ZStack {
+                    Image(systemName: symbol).font(.system(size: 22, weight: .regular))
+                    if let badge {
+                        Text(badge).font(.system(size: badge == "PDF" ? 6 : 8, weight: .bold))
+                            .offset(y: 3)
+                    }
+                }.frame(width: 28, height: 28)
+            }
+            .help(title).accessibilityLabel(title)
+        }.frame(maxWidth: .infinity)
+    }
+
+    private var documentToolbar: some View {
         GeometryReader { proxy in
             let showsQueue = context == .pdf && workspace?.id == store.shelfQueueReadingTab
             let issueWidth: CGFloat = issueInfo == nil ? 0 : 40
