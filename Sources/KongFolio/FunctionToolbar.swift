@@ -1,4 +1,5 @@
 import SwiftUI
+import PDFKit
 
 struct FunctionToolbar: View {
     @ObservedObject var store: WorkspaceStore
@@ -7,6 +8,8 @@ struct FunctionToolbar: View {
     @State private var showToolbarSettings = false
     @State private var toolbarWidth: CGFloat = 800
     @State private var homeRecentFiles: [String] = []
+    @AppStorage(LayoutKeys.sidebar) private var showNavigation = true
+    @AppStorage(LayoutKeys.inspector) private var showInspector = true
 
     private var profile: ReaderToolbarProfile { ReaderToolbarProfile.decode(profileData) }
     private var workspace: Workspace? { store.commandWorkspace }
@@ -97,6 +100,9 @@ struct FunctionToolbar: View {
             let visible = profile.visible(width:availableWidth,context:context)
             let overflow = profile.hidden(width:availableWidth,context:context)
             HStack(spacing:0) {
+                if let workspace, context == .pdf {
+                    PDFReaderPageControls(workspace: workspace).id(workspace.id)
+                }
                 ForEach(visible) { action in
                     ToolbarControlSurface(selected:isSelected(action)) {
                         control(action,menu:false)
@@ -134,7 +140,7 @@ struct FunctionToolbar: View {
             .font(.system(size:16,weight:.medium))
             .foregroundStyle(Color(nsColor:.secondaryLabelColor))
             .padding(.horizontal,12)
-            .frame(maxWidth:CGFloat(visible.count+1)*128+(showsQueue ? 40 : 0)+issueWidth)
+            .frame(maxWidth:CGFloat(visible.count+1)*128+(showsQueue ? 40 : 0)+issueWidth+(context == .pdf ? ReaderToolbarProfile.pageControlWidth : 0))
             .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:visible.isEmpty ? .trailing : .center)
             .onAppear { toolbarWidth = proxy.size.width }
             .onChange(of:proxy.size.width) { _,width in toolbarWidth = width }
@@ -176,19 +182,27 @@ struct FunctionToolbar: View {
                 if overflow.contains(.search) { control(.search,menu:true) }
                 Button("跨文件全文搜索…") { store.showFolderSearch = true }
             }
-            overflowControls(overflow,actions:[.sidebar,.annotate])
+            overflowControls(overflow,actions:[.navigation,.pageThumbnails,.zoom,.sidebar,.annotate,.pdfPages])
             let resources = overflow.filter { [.excerpt,.note,.library,.books].contains($0) }
             if !resources.isEmpty {
                 Menu("阅读资料") { ForEach(resources) { control($0,menu:true) } }
             }
             Menu("左侧导航") { LeftPanelActions(store:store) }
+            if context == .pdf, workspace?.progressPath != nil {
+                Button("打开全部阅读资料…") { store.openReadingDesk(.search, window: true) }
+            }
             if context == .pdf, let workspace {
+                if canRecognizeCurrentPage(workspace) {
+                    Button("识别当前页文字…") {
+                        recognizeCurrentPage(workspace)
+                    }
+                }
                 Button(workspace.readingLocked ? "切换为编辑模式" : "保护 PDF 正文") { workspace.toggleReadingLock() }
                 Button(store.readingMode ? "切换到完整 PDF 工具界面" : "切换到专注阅读界面") { store.readingMode.toggle() }
             }
         }
         if let workspace, context != .text, overflow.contains(.tools) {
-            PDFToolbarToolsMenu(workspace:workspace,store:store,showTitle:true,showPages:overflow.contains(.pdfPages),
+            PDFToolbarToolsMenu(workspace:workspace,store:store,showTitle:true,showPages:false,
                                 showSignature:context == .empty && overflow.contains(.signature))
         }
         Section("应用") {
@@ -218,9 +232,35 @@ struct FunctionToolbar: View {
                                     showPages:!profile.visible(width:toolbarWidth,context:context).contains(.pdfPages),
                                     showSignature:context == .empty && !profile.visible(width:toolbarWidth,context:context).contains(.signature))
             }
+        case .zoom:
+            if let workspace {
+                Menu { PDFReaderZoomActions(workspace: workspace) } label: { label(action, menu: menu) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                    .help("缩放 PDF").accessibilityLabel("缩放 PDF")
+            }
         case .excerpt:
-            Menu { ReadingExcerptActions(store:store) } label:{ label(action,menu:menu) }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle)
+            if menu || context != .pdf {
+                Menu { ReadingExcerptActions(store:store) } label:{ label(action,menu:menu) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle)
+            } else if let workspace {
+                HStack(spacing: 0) {
+                    Button {
+                        workspace.showsPageThumbnails = false
+                        workspace.excerptSelection()
+                    } label: { label(action, menu: false) }
+                    .help("摘录选中文字").accessibilityLabel("摘录选中文字")
+                    Menu {
+                        ReadingExcerptActions(store: store)
+                        if canRecognizeCurrentPage(workspace) {
+                            Button("识别当前页文字…") {
+                                recognizeCurrentPage(workspace)
+                            }
+                        }
+                    } label: { Image(systemName: "chevron.down").font(.system(size: 8)).frame(width: 14, height: 28) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                    .help("摘录方式").accessibilityLabel("摘录方式")
+                }.disabled(workspace.busy || workspace.showsPageThumbnails)
+            }
         case .export:
             Menu {
                 if context != .empty {
@@ -245,6 +285,8 @@ struct FunctionToolbar: View {
     private func isSelected(_ action: FileToolbarAction) -> Bool {
         switch action {
         case .sidebar: return store.rightReadingPanelVisible
+        case .navigation: return showNavigation && !showInspector && workspace?.showsPageThumbnails != true
+        case .pageThumbnails: return store.activeWorkspace?.showsPageThumbnails == true
         case .annotate: return workspace?.showAnnotationBar == true
         case .search: return store.rightPDFSearchWorkspace != nil
         case .pdfPages: return store.activeWorkspace?.pageEditing053 == true
@@ -263,20 +305,60 @@ struct FunctionToolbar: View {
         switch action {
         case .search: return !store.canSearchPDF
         case .pdfPages: return (store.activeWorkspace?.count ?? 0) == 0
+        case .pageThumbnails:
+            guard let active = store.activeWorkspace else { return true }
+            return active.busy || active.placingSignature != nil || active.drawingInProgress
         case .save: return !store.canSave
         case .annotate: return context != .pdf || workspace?.readingLocked == true
         default: return false
         }
     }
 
+    private func canRecognizeCurrentPage(_ workspace: Workspace) -> Bool {
+        guard !workspace.busy, !workspace.readingLocked, let page = workspace.page else { return false }
+        return BackgroundJobs.textCharacterCount(page) < workspace.ocrSettings.minimumTextCharacters
+    }
+
+    private func recognizeCurrentPage(_ workspace: Workspace) {
+        workspace.showsPageThumbnails = false
+        workspace.selectPage(workspace.selection)
+        workspace.ocr(selectedOnly: true)
+    }
+
     private func perform(_ action: FileToolbarAction) {
         switch action {
         case .search: store.openPDFSearch()
-        case .pdfPages: store.activeWorkspace?.pageEditing053 = true
+        case .pdfPages:
+            store.activeWorkspace?.showsPageThumbnails = false
+            store.activeWorkspace?.pageEditing053 = true
+        case .navigation:
+            let alreadyOpen = showNavigation && !showInspector && store.activeWorkspace?.showsPageThumbnails != true
+            store.activeWorkspace?.showsPageThumbnails = false
+            store.activeWorkspace?.pageEditing053 = false
+            showInspector = false
+            showNavigation = !alreadyOpen
+        case .pageThumbnails:
+            guard let active = store.activeWorkspace else { return }
+            if !active.showsPageThumbnails {
+                store.focus(active)
+                active.captureReadingPosition()
+                active.pdfView?.clearSelection()
+                active.pdfView?.window?.makeFirstResponder(nil)
+                store.closeRightReadingPanel()
+            }
+            active.showsPageThumbnails.toggle()
         case .open: store.open()
-        case .library: store.openReadingDesk(.search,window:true)
-        case .note: store.newReadingNote()
-        case .annotate: workspace?.showAnnotationBar.toggle()
+        case .library:
+            if context == .pdf, workspace?.progressPath != nil { store.openCurrentBookNotebook() }
+            else { store.openReadingDesk(.search,window:true) }
+        case .note:
+            if let workspace, !workspace.showsPageThumbnails, let selection = workspace.pdfView?.currentSelection,
+               let excerpt = workspace.readingExcerpt(from: selection, trackVisual: false) {
+                store.startNoteFromExcerpt(excerpt)
+            } else { store.newReadingNote() }
+        case .annotate:
+            workspace?.showsPageThumbnails = false
+            workspace?.showAnnotationBar.toggle()
         case .save: store.saveActive()
         case .books: store.openReadingHistory(.bookshelf)
         case .jobs: store.showBackgroundJobs = true
@@ -318,7 +400,10 @@ private struct PDFToolbarToolsMenu: View {
         Menu {
             Menu("页面编辑") {
                 if showPages {
-                    Button("编辑 PDF 页面") { store.activeWorkspace?.pageEditing053 = true }.disabled(!hasPDF)
+                    Button("编辑 PDF 页面") {
+                        store.activeWorkspace?.showsPageThumbnails = false
+                        store.activeWorkspace?.pageEditing053 = true
+                    }.disabled(!hasPDF)
                 }
                 Button("合并 PDF…") { workspace.open(insert:hasPDF,merge:!hasPDF) }.disabled(workspace.readingLocked || workspace.busy)
                 Button("对照阅读…") { workspace.compare() }.disabled(!hasPDF || workspace.busy)

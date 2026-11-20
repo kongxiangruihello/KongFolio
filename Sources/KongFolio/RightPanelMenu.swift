@@ -10,16 +10,19 @@ struct LeftPanelActions: View {
         Button("页面导航") {
             inspector = false
             sidebar = true
+            store.activeWorkspace?.showsPageThumbnails = false
             store.activeWorkspace?.pageEditing053 = false
         }
         Button("PDF 属性与标注") {
             store.readingMode = false
             inspector = true
+            store.activeWorkspace?.showsPageThumbnails = false
             store.activeWorkspace?.pageEditing053 = false
         }.disabled(store.activeWorkspace == nil)
         Button("隐藏左侧导航") {
             inspector = false
             sidebar = false
+            store.activeWorkspace?.showsPageThumbnails = false
             store.activeWorkspace?.pageEditing053 = false
         }
     }

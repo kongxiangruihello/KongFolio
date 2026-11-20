@@ -28,6 +28,7 @@ import Foundation
     /// The reader magnifier never opens the reading-record library or a text-file editor.
     @discardableResult func openPDFSearch()->Bool {
         guard canSearchPDF,let workspace=commandWorkspace else { return false }
+        workspace.showsPageThumbnails = false
         rememberRightPanelNote()
         showReadingDesk = false
         lastRightPanelWasSearch = true

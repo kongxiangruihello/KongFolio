@@ -28,8 +28,8 @@ extension Workspace {
     @discardableResult func receivePageDrag(_ value: String, before index: Int) -> Bool {
         guard let drag = PageDrag.decode(value), !busy, placingSignature == nil else { return false }
         if drag.source == id {
-            guard drag.revision == revision, let first = drag.pages.first else { return false }
-            movePages(before: index, dragged: first); return true
+            guard drag.revision == revision else { return false }
+            return movePages(drag.pages, before: index)
         }
         return store?.preparePageTransfer(drag, to: self, at: index) ?? false
     }

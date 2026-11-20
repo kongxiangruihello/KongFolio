@@ -21,7 +21,21 @@ final class VersionTwoTests: XCTestCase {
         XCTAssertEqual((0..<3).map { w.document.page(at: $0)!.rotation }, [180, 0, 90]); XCTAssertTrue(w.ocrRegions[2] != nil)
         w.duplicatePages(); XCTAssertEqual(w.count, 5); XCTAssertEqual(w.effectivePages, [3, 4]); XCTAssertTrue(w.ocrRegions[4] != nil)
         w.remove(); XCTAssertEqual(w.count, 3); w.undo(); XCTAssertEqual(w.count, 5); XCTAssertTrue(w.ocrRegions[4] != nil)
-        w.movePages(before: 0, dragged: 4); XCTAssertEqual(w.effectivePages, [0, 1]); XCTAssertTrue(w.ocrRegions[1] != nil)
+        w.movePages(w.effectivePages, before: 0); XCTAssertEqual(w.effectivePages, [0, 1]); XCTAssertTrue(w.ocrRegions[1] != nil)
+    }
+    @MainActor func testDraggedPagesUseOriginalSelectionAndCanBeAppended() {
+        let workspace = Workspace()
+        workspace.document = fixture()
+        for index in 0..<3 { workspace.document.page(at: index)?.rotation = index * 90 }
+        workspace.selectedPages = [0, 2]
+        let drag = workspace.pageDrag(0)
+        workspace.selectPage(1)
+        XCTAssertTrue(workspace.receivePageDrag(drag, before: 3))
+        XCTAssertEqual((0..<3).map { workspace.document.page(at: $0)?.rotation }, [90, 0, 180])
+        XCTAssertEqual(workspace.effectivePages, [1, 2])
+        XCTAssertFalse(workspace.receivePageDrag(drag, before: 0))
+        workspace.undo()
+        XCTAssertEqual((0..<3).map { workspace.document.page(at: $0)?.rotation }, [0, 90, 180])
     }
     @MainActor func testProjectRoundTripAndRecovery() throws {
         let folder = try temporary(); defer { try? FileManager.default.removeItem(at: folder) }

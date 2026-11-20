@@ -268,7 +268,8 @@ extension Workspace {
         case .all: return Array(0..<count)
         }
     }
-    func openExport(format: ExportFormat = .pdf, scope: ExportScope = .all, pdfMode: PDFExportMode = .preserve) {
+    func openExport(format: ExportFormat = .pdf, scope: ExportScope = .all, pdfMode: PDFExportMode = .preserve, extractingPages: Bool = false) {
+        extractingPDFPages = extractingPages
         exportOptions.format = format
         exportOptions.scope = scope
         exportOptions.pdfMode = pdfMode
@@ -293,7 +294,7 @@ extension Workspace {
     func configuredExport(reviewed: Bool = false) {
         if !reviewed, exportOptions.format == .pdf { do { try reviewExport(.pdf) { [weak self] in self?.configuredExport(reviewed:true) } } catch { self.error=error.localizedDescription };return }
         guard checkDraftsForExport(), let data = try? pdfData(), !exportPages.isEmpty else { return }
-        let options = exportOptions, pages = exportPages
+        let options = exportOptions, pages = exportPages, extracting = extractingPDFPages
         invalidateEstimate(); showExport = false
         let destination: URL?
         if options.format != .pdf, pages.count > 1 {
@@ -306,10 +307,17 @@ extension Workspace {
             panel.message = "将在所选位置新建文件夹，每页保存一张图片。"
             destination = panel.runModal() == .OK ? panel.url : nil
         } else {
-            let name = options.format == .pdf ? nil : title+"-第"+String((pages.first ?? 0)+1)+"页"
+            let name = options.format == .pdf ? (extracting ? title + "-提取页面" : nil) : title+"-第"+String((pages.first ?? 0)+1)+"页"
             destination = saveURL(type:options.type,suffix:options.suffix,name:name)
         }
         guard let destination else { return }
+        if extracting {
+            let target = ReadingProgress.canonicalPath(destination.path)
+            guard ![sourceURL, projectURL].compactMap({ $0 }).contains(where: { ReadingProgress.canonicalPath($0.path) == target }) else {
+                error = "请选择新的文件名或位置来保存提取的页面。"
+                return
+            }
+        }
         runJob(JobSpec(operation: .configured, source: data, pages: pages, destination: destination, revision: revision, exportOptions: options))
     }
 }

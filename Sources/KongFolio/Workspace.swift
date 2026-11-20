@@ -8,6 +8,8 @@ import UniformTypeIdentifiers
     // MARK: Reading
     @Published var sidebarTab = SidebarTab.pages
     @Published var pageEditing053 = false
+    @Published var showsPageThumbnails = false
+    var extractingPDFPages = false
     @Published var pdfSearchFocusRequest = UUID()
     @Published var readingLayout = ReadingLayout.continuous { didSet { if readingLayout != oldValue { scheduleReadingRecord() } } }
     @Published var bookmarks: [PageBookmark] = []
@@ -773,6 +775,7 @@ import UniformTypeIdentifiers
         displayCache = nil; copiedAnnotations.removeAll()
         signatureLayers.removeAll(); movingSignature = nil; moveSnapshot = nil; placingSignature = nil; pageImageTarget = nil; pageImageWidthPoints = nil
         drawingInProgress = false; pendingReveal = nil; deferredOpen = nil
+        if !keepingSource { showsPageThumbnails = false }
         if let path = rulerPath { try? readingRuler.save(path:path,storage:storage) }
         rulerTask?.cancel(); rulerPath = nil
         document = PDFDocument(); emptyCreationPDF = nil; cachedPDF = nil; incrementalBase = nil; incrementalPages = []
@@ -1105,12 +1108,13 @@ import UniformTypeIdentifiers
 
     // MARK: Pages
 
-    func selectPage(_ index: Int, modifiers: NSEvent.ModifierFlags = [], readingReference: Bool = false) {
+    func selectPage(_ index: Int, modifiers: NSEvent.ModifierFlags = [], readingReference: Bool = false, rangeAnchor: Int? = nil) {
         guard index >= 0, index < count else { return }
         if readingReference { beginReadingReference() }
         else { browsingReadingReference = false }
         if modifiers.contains(.shift) {
-            selectedPages = Set(min(selection, index)...max(selection, index))
+            let anchor = rangeAnchor ?? selection
+            selectedPages = Set(min(anchor, index)...max(anchor, index))
         } else if modifiers.contains(.command) {
             if selectedPages.contains(index) && selectedPages.count > 1 { selectedPages.remove(index) } else { selectedPages.insert(index) }
         } else {
@@ -1170,17 +1174,20 @@ import UniformTypeIdentifiers
         rebuild(order: order, selected: Set(selected.map { $0 + delta }))
     }
 
-    func movePages(before target: Int, dragged: Int) {
-        guard !readingLocked else { status = "请先切换到编辑模式";return }
-        guard (0...count).contains(target), (0..<count).contains(dragged) else { return }
-        let moving = selectedPages.contains(dragged) ? effectivePages : [dragged]
-        guard !moving.contains(target) else { return }
-        var order = (0..<count).filter { !moving.contains($0) }
-        let insertion = min(order.count, target - moving.filter { $0 < target }.count)
-        order.insert(contentsOf: moving, at: max(0, insertion))
-        guard order != Array(0..<count) else { return }
+    @discardableResult func movePages(_ pages: [Int], before target: Int) -> Bool {
+        guard !readingLocked, !busy, placingSignature == nil else { return false }
+        let moving = pages.sorted()
+        let chosen = Set(moving)
+        let original = Array(0..<count)
+        guard (0...count).contains(target), !moving.isEmpty, chosen.count == moving.count,
+              moving.allSatisfy({ (0..<count).contains($0) }) else { return false }
+        var order = original.filter { !chosen.contains($0) }
+        let insertion = target - moving.prefix(while: { $0 < target }).count
+        order.insert(contentsOf: moving, at: insertion)
+        guard order != original else { return false }
         checkpoint()
         rebuild(order: order, selected: Set(insertion..<(insertion + moving.count)))
+        return true
     }
 
     func duplicatePages() {

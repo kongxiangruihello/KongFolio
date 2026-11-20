@@ -6,7 +6,7 @@ enum ReaderToolbarContext {
 
     func supports(_ action: FileToolbarAction) -> Bool {
         switch action {
-        case .search,.annotate,.pdfPages: return self == .pdf
+        case .search,.annotate,.pdfPages,.navigation,.pageThumbnails,.zoom: return self == .pdf
         case .tools,.signature: return self != .text
         case .save,.export: return self != .empty
         default: return true
@@ -18,7 +18,9 @@ struct ReaderToolbarProfile:Codable,Equatable {
     static let key = "KongFolio.readerToolbar048"
     static let defaultActions:[FileToolbarAction] = FileToolbarAction.allCases
     var order:[String] = Self.defaultActions.map(\.rawValue)
-    private static let defaultPins: [FileToolbarAction] = [.newFile,.open,.search,.annotate,.sidebar,.export]
+    private static let defaultPins: Set<FileToolbarAction> = [.navigation,.pageThumbnails,.zoom,.search,.annotate,.excerpt,.note,.library]
+    private static let previousDefaultPins: Set<FileToolbarAction> = [.newFile,.open,.search,.annotate,.sidebar,.export]
+    static let pageControlWidth: Double = 128
     var pinned:Set<String> = Set(Self.defaultPins.map(\.rawValue))
     var actions:[FileToolbarAction] {
         var seen = Set<FileToolbarAction>()
@@ -32,22 +34,39 @@ struct ReaderToolbarProfile:Codable,Equatable {
         }
     }
     private var unifiedPins:Set<FileToolbarAction> { Set(pinned.compactMap{FileToolbarAction(rawValue:$0)?.unified}) }
+    func pins(in context: ReaderToolbarContext) -> Set<FileToolbarAction> {
+        if context != .pdf, unifiedPins == Self.defaultPins { return Self.previousDefaultPins }
+        return unifiedPins
+    }
+    mutating func pin(_ action: FileToolbarAction, enabled: Bool, context: ReaderToolbarContext) {
+        pinned = Set(pins(in: context).map(\.rawValue))
+        if enabled { pinned.insert(action.rawValue) } else { pinned.remove(action.rawValue) }
+    }
     func visible(width:Double, context:ReaderToolbarContext = .pdf)->[FileToolbarAction] {
-        let pins = unifiedPins
+        let pins = pins(in: context)
         let available = actions.filter { pins.contains($0) && context.supports($0) }
-        let capacity = SingleRowToolbarPolicy.visibleCount(width:width)
-        guard available.count > capacity else { return available }
-        let primary: Set<FileToolbarAction> = [.search,.annotate,.sidebar]
-        let priority = available.filter { primary.contains($0) }
-        let secondary = available.filter { !primary.contains($0) }
-        let retained = Set((priority+secondary).prefix(capacity))
+        let reserved = context == .pdf ? Self.pageControlWidth : 0
+        let capacity = SingleRowToolbarPolicy.visibleCount(width: width - reserved)
+        // Keep room for the pinned navigation tools even at the compact window minimum.
+        let slots = context == .pdf && width.isFinite && width >= 300 ? max(3, capacity) : capacity
+        guard available.count > slots else { return available }
+        let priority: [FileToolbarAction] = [.navigation,.search,.pageThumbnails,.annotate,.excerpt,.sidebar]
+        let ranked = priority.filter { available.contains($0) }
+        let retained = Set((ranked + available.filter { !priority.contains($0) }).prefix(slots))
         return available.filter { retained.contains($0) }
     }
     func hidden(width:Double, context:ReaderToolbarContext = .pdf)->[FileToolbarAction] {
         let selected = Set(visible(width:width,context:context))
         return actions.filter { !selected.contains($0) }
     }
-    static func decode(_ data:Data?)->Self { guard let data,var p = try? JSONDecoder().decode(Self.self,from:data) else { return Self() };p.order = p.actions.map(\.rawValue);p.pinned = Set(p.pinned.compactMap{FileToolbarAction(rawValue:$0)?.unified.rawValue});return p }
+    static func decode(_ data: Data?) -> Self {
+        guard let data, var profile = try? JSONDecoder().decode(Self.self, from: data) else { return Self() }
+        let oldOrder = ["newFile","open","search","annotate","sidebar","export","pdfPages","excerpt","note","library","save","books","tools","signature","jobs"]
+        if profile.order == oldOrder, profile.unifiedPins == Self.previousDefaultPins { return Self() }
+        profile.order = profile.actions.map(\.rawValue)
+        profile.pinned = Set(profile.unifiedPins.map(\.rawValue))
+        return profile
+    }
     static func load(_ defaults:UserDefaults = .standard)->Self { decode(defaults.data(forKey:key)) }
     func save(_ defaults:UserDefaults = .standard) { if let data = try? JSONEncoder().encode(self) { defaults.set(data,forKey:Self.key) } }
     mutating func move(_ action:FileToolbarAction,by delta:Int) { order = actions.map(\.rawValue);guard let i = order.firstIndex(of:action.rawValue),order.indices.contains(i+delta) else { return };order.swapAt(i,i+delta) }

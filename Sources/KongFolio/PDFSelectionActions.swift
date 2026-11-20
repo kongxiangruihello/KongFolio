@@ -28,7 +28,7 @@ struct PDFSelectionActions: View {
             action("复制",icon:"doc.on.doc",help:"按上次选择的格式复制",perform:copy)
             if let copyAs {
                 Menu {
-                    ForEach(ReadingExcerptCopyFormat.allCases,id:\.self) { format in
+                    ForEach([ReadingExcerptCopyFormat.citation, .text, .markdown],id:\.self) { format in
                         Button(format.rawValue) { copyAs(format) }
                     }
                 } label: { Image(systemName:"chevron.down").font(.system(size:8,weight:.semibold)) }
