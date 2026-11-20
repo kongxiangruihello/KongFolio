@@ -224,7 +224,7 @@ final class VersionFourTests: XCTestCase {
     @MainActor func testPageMetaFollowsPages() throws {
         let w = Workspace(); w.document = fixture()
         w.ocrRegions[2] = [RecognizedLine(text: "x", box: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.1))]
-        w.selectedPages = [2]; w.selection = 2; w.movePages(before: 0, dragged: 2)
+        w.selectedPages = [2]; w.selection = 2; w.movePages([2], before: 0)
         XCTAssertTrue(w.ocrRegions[0] != nil); XCTAssertEqual(w.pageMeta.count, 3)
         w.remove(); XCTAssertEqual(w.pageMeta.count, 2); XCTAssertTrue(w.ocrRegions.isEmpty)
     }

@@ -96,7 +96,7 @@ struct ContentView: View {
             if workspace.saveConflict { SaveConflictBanner(copy: workspace.chooseConflictCopy, reload: workspace.reloadAfterConflict) }
             Divider()
             HSplitView {
-                if !isHome, workspace.pageEditing053 {
+                if !isHome, !workspace.showsPageThumbnails, workspace.pageEditing053 {
                     VStack(spacing:0) {
                         HStack {
                             Text("PDF 页面编辑").font(.headline)
@@ -106,7 +106,7 @@ struct ContentView: View {
                         Divider()
                         PDFPageEditor053(workspace:workspace)
                     }.frame(minWidth:180,idealWidth:240,maxWidth:300)
-                } else if !isHome, LayoutMetrics.showsInspector(preferred:!readingMode && showInspector,width:width,boardShown:boardShown(width:width),splitShown:splitShown(width:width)) {
+                } else if !isHome, !workspace.showsPageThumbnails, LayoutMetrics.showsInspector(preferred:!readingMode && showInspector,width:width,boardShown:boardShown(width:width),splitShown:splitShown(width:width)) {
                     VStack(spacing:0) {
                         HStack {
                             Text("PDF 属性与标注").font(.headline)
@@ -116,12 +116,20 @@ struct ContentView: View {
                         Divider()
                         inspector
                     }.frame(minWidth:220,idealWidth:290,maxWidth:340)
-                } else if !isHome, LayoutMetrics.showsSidebar(preferred:showSidebar,width:width) {
+                } else if !isHome, !workspace.showsPageThumbnails, LayoutMetrics.showsSidebar(preferred:showSidebar,width:width) {
                     sidebar.frame(minWidth:180,idealWidth:240,maxWidth:300)
                 }
-                if !isHome, boardShown(width: width), let board = workspace.store?.board { BoardView(board: board, workspace: workspace).frame(minWidth: 280, idealWidth: 380, maxWidth: .infinity) }
-                canvas.frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
-                if !isHome, splitShown(width: width), let partner = workspace.splitPartner {
+                if !isHome, !workspace.showsPageThumbnails, boardShown(width: width), let board = workspace.store?.board { BoardView(board: board, workspace: workspace).frame(minWidth: 280, idealWidth: 380, maxWidth: .infinity) }
+                ZStack {
+                    canvas
+                        .opacity(workspace.showsPageThumbnails ? 0 : 1)
+                        .allowsHitTesting(!workspace.showsPageThumbnails)
+                        .accessibilityHidden(workspace.showsPageThumbnails)
+                    if !isHome && workspace.showsPageThumbnails {
+                        PDFThumbnailGrid(workspace: workspace)
+                    }
+                }.frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
+                if !isHome, !workspace.showsPageThumbnails, splitShown(width: width), let partner = workspace.splitPartner {
                     SplitPane(primary: workspace, partner: partner) { workspace.splitPartner = nil }
                         .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -140,7 +148,7 @@ struct ContentView: View {
             Spacer(minLength: 0)
             if workspace.count > 0 {
                 Text("\(workspace.selection + 1) / \(workspace.count) 页").lineLimit(1).fixedSize()
-                if width >= 560, let page = workspace.page, let label = ReadingServices.pageLabel(page, index: workspace.selection) {
+                if width >= 560, let label = workspace.printedPageLabel(workspace.selection) {
                     Text("印刷页码 \(label)").foregroundStyle(.secondary).lineLimit(1)
                 }
             }
@@ -437,7 +445,7 @@ struct ContentView: View {
     }
 
     private func thumbnailCaption(_ index: Int) -> String {
-        guard let page = workspace.document.page(at: index), let label = ReadingServices.pageLabel(page, index: index) else { return "\(index + 1)" }
+        guard let label = workspace.printedPageLabel(index) else { return "\(index + 1)" }
         return "\(index + 1) · p.\(label)"
     }
 
@@ -746,17 +754,29 @@ struct ContentView: View {
     let workspace: Workspace
     var insertion: Int?
     var targeted: (Bool) -> Void = { _ in }
+    var horizontalMidpoint: CGFloat?
+    var insertionChanged: (Int?) -> Void = { _ in }
+
+    private func insertsAfter(_ info: DropInfo) -> Bool {
+        horizontalMidpoint.map { info.location.x >= $0 } ?? false
+    }
+    private func showInsertion(_ info: DropInfo) {
+        guard horizontalMidpoint != nil, let insertion else { return }
+        insertionChanged(insertion * 2 + (insertsAfter(info) ? 1 : 0))
+    }
     func validateDrop(info: DropInfo) -> Bool { !workspace.busy && info.hasItemsConforming(to: [.utf8PlainText]) }
-    func dropEntered(info: DropInfo) { targeted(true) }
-    func dropExited(info: DropInfo) { targeted(false) }
-    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .copy) }
+    func dropEntered(info: DropInfo) { targeted(true); showInsertion(info) }
+    func dropExited(info: DropInfo) { targeted(false); insertionChanged(nil) }
+    func dropUpdated(info: DropInfo) -> DropProposal? { showInsertion(info); return DropProposal(operation: .copy) }
     func performDrop(info: DropInfo) -> Bool {
         targeted(false)
+        insertionChanged(nil)
+        let destination = insertion.map { $0 + (insertsAfter(info) ? 1 : 0) }
         guard let provider = info.itemProviders(for: [.utf8PlainText]).first else { return false }
         _ = provider.loadObject(ofClass: NSString.self) { object, _ in
             guard let value = object as? String else { return }
             Task { @MainActor in
-                if let insertion { _ = workspace.receivePageDrag(value, before: insertion) }
+                if let destination { _ = workspace.receivePageDrag(value, before: destination) }
                 else if let drag = PageDrag.decode(value), drag.source != workspace.id {
                     guard let store = workspace.store else { return }
                     store.select(workspace.id)

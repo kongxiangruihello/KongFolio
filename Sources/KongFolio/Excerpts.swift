@@ -180,6 +180,7 @@ extension Workspace {
     /// Scrolls to a place in the document and marks it for a moment.
     func go(to position: ViewPosition, highlighting rects: [CGRect] = [], anchor: String? = nil, keep: Bool = false) {
         guard count > 0 else { pendingView = position; return }
+        showsPageThumbnails = false
         var target = position
         var marks = rects
         if rects.isEmpty, let anchor, let found = locate(anchor:anchor,near:position.selection), let first = found.rects.first {

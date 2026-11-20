@@ -13,9 +13,14 @@ extension Workspace {
         if let cached = journalSourceIdentity,cached.raw == path { return cached.canonical }
         let canonical = ReadingProgress.canonicalPath(path); journalSourceIdentity = (path,canonical); return canonical
     }
+    func printedPageLabel(_ index: Int) -> String? {
+        let embedded = document.page(at: index).flatMap { ReadingServices.pageLabel($0, index: index) }
+        let label = store?.research.displayLabel(path: displayPath ?? "", page: index, fallback: embedded ?? "") ?? embedded ?? ""
+        return label.isEmpty ? nil : label
+    }
     func readingCitation(page index:Int? = nil,rects:[CGRect] = [],anchor:String? = nil,trackVisual:Bool = true) -> ReadingCitation {
         let i = index ?? selection
-        let label = store?.research.displayLabel(path:displayPath ?? "",page:i,fallback:ReadingServices.pageLabel(document.page(at:i) ?? PDFPage(),index:i) ?? String(i+1))
+        let label = printedPageLabel(i) ?? (store == nil ? nil : String(i + 1))
         var citation=ReadingCitation(source:SourceRef(path:readingJournalPath ?? "",fileName:displayName,page:max(0,i),pageLabel:label,fingerprint:fileBaseline?.digest,rects:rects,anchor:anchor),title:bibliography.title.isEmpty ? title : bibliography.title,author:bibliography.author,edition:bibliography.edition.isEmpty ? nil : bibliography.edition)
         if let path = readingJournalPath {
             let researched = store?.research.state.periodicals[path] ?? displayPath.flatMap { store?.research.state.periodicals[$0] }

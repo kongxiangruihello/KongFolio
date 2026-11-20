@@ -16,7 +16,7 @@ final class ToolbarSelection0533Tests: XCTestCase {
     }
     func testSlimDefaultsAndDocumentContext() {
         let profile = ReaderToolbarProfile()
-        XCTAssertEqual(profile.visible(width:1280),[.newFile,.open,.search,.annotate,.sidebar,.export])
+        XCTAssertEqual(profile.visible(width:1280),[.navigation,.pageThumbnails,.zoom,.search,.annotate,.excerpt,.note,.library])
         XCTAssertEqual(profile.visible(width:1280,context:.empty),[.newFile,.open,.sidebar])
         XCTAssertEqual(profile.visible(width:1280,context:.text),[.newFile,.open,.sidebar,.export])
     }

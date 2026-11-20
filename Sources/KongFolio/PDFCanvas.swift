@@ -75,6 +75,7 @@ struct PDFCanvas: NSViewRepresentable {
                 guard !Task.isCancelled, let self else { return }
                 self.positionTask = nil
                 guard let view, let workspace,
+                      !workspace.showsPageThumbnails,
                       workspace.pdfView === view, view.document === workspace.document,
                       let page = view.currentPage else { return }
                 let index = workspace.document.index(for: page)
