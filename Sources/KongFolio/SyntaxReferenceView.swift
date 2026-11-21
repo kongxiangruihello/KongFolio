@@ -59,7 +59,7 @@ struct SyntaxReferenceView: View {
     var body: some View {
         VStack(alignment:.leading,spacing:14) {
             HStack {
-                Label(format.rawValue + " 语法手册",systemImage:"book").font(.title2.bold())
+                Label(format.rawValue + " 语法手册",appIcon:"book").font(.title2.bold())
                 Spacer()
                 Button("完成") { dismiss() }.keyboardShortcut(.cancelAction)
             }

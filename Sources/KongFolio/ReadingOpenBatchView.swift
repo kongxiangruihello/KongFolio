@@ -15,7 +15,7 @@ struct ReadingOpenBatchView: View {
                 Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
             }
             if entries.isEmpty {
-                ContentUnavailableView("还没有批阅记录",systemImage:"books.vertical",description:Text("一次打开多份 PDF 或 KongFolio 项目后，就能在这里接着读。"))
+                AppEmptyState("还没有批阅记录",appIcon:"books.vertical",description:Text("一次打开多份 PDF 或 KongFolio 项目后，就能在这里接着读。"))
             } else {
                 Picker("批次",selection:Binding(
                     get:{ store.readingBatch?.id },

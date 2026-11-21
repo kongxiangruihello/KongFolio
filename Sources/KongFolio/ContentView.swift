@@ -74,7 +74,7 @@ struct ContentView: View {
                 Button("关闭并排阅读") { workspace.splitPartner = nil }
             }
         } label: {
-            if iconOnly { Image(systemName: "rectangle.split.2x1") } else { Label("并排", systemImage: "rectangle.split.2x1") }
+            if iconOnly { AppIcon("rectangle.split.2x1") } else { Label("并排", appIcon: "rectangle.split.2x1") }
         }
         .menuIndicator(.hidden)
         .fixedSize()
@@ -101,7 +101,7 @@ struct ContentView: View {
                         HStack {
                             Text("PDF 页面编辑").font(.headline)
                             Spacer()
-                            Button { workspace.pageEditing053=false } label:{ Image(systemName:"xmark") }.help("关闭页面编辑")
+                            Button { workspace.pageEditing053=false } label:{ AppIcon("xmark") }.help("关闭页面编辑")
                         }.padding(10)
                         Divider()
                         PDFPageEditor053(workspace:workspace)
@@ -111,7 +111,7 @@ struct ContentView: View {
                         HStack {
                             Text("PDF 属性与标注").font(.headline)
                             Spacer()
-                            Button { showInspector = false } label:{ Image(systemName:"xmark") }.help("关闭 PDF 属性与标注")
+                            Button { showInspector = false } label:{ AppIcon("xmark") }.help("关闭 PDF 属性与标注")
                         }.padding(10)
                         Divider()
                         inspector
@@ -153,14 +153,14 @@ struct ContentView: View {
                 }
             }
             if width >= 760 { Text(workspace.savePhase.isEmpty ? workspace.recoveryStatus : workspace.savePhase + " \(Int(workspace.saveProgress*100))%").foregroundStyle(.secondary).lineLimit(1) }
-            if workspace.count > 0 { Button { workspace.showSaveDetails = true } label:{ Image(systemName:workspace.saveConflict || workspace.error != nil ? "exclamationmark.circle" : (workspace.saving || workspace.dirty ? "clock" : "checkmark.circle")) }.buttonStyle(.plain).help("保存状态与重试").sheet(isPresented:$workspace.showSaveDetails) { DocumentSaveDetails(workspace:workspace) } }
+            if workspace.count > 0 { Button { workspace.showSaveDetails = true } label:{ AppIcon(workspace.saveConflict || workspace.error != nil ? "exclamationmark.circle" : (workspace.saving || workspace.dirty ? "clock" : "checkmark.circle")) }.buttonStyle(.plain).help("保存状态与重试").sheet(isPresented:$workspace.showSaveDetails) { DocumentSaveDetails(workspace:workspace) } }
             if let store = workspace.store {
                 if store.activeWorkspace === workspace, store.nextAfterFinishing(workspace) != nil {
                     Button {
                         Task { await store.finishReadingAndOpenNext(workspace) }
                     } label: {
-                        if width >= 650 { Label("读完并打开下一份",systemImage:"arrow.right.circle") }
-                        else { Image(systemName:"arrow.right.circle").accessibilityLabel("读完并打开下一份") }
+                        if width >= 650 { Label("读完并打开下一份",appIcon:"arrow.right.circle") }
+                        else { AppIcon("arrow.right.circle").accessibilityLabel("读完并打开下一份") }
                     }.help("标记本份已读完，打开本批下一份")
                 }
                 DocumentTaskButton(queue:store.documentTasks,store:store,onlyWhileRunning:true)
@@ -208,11 +208,11 @@ struct ContentView: View {
         let boardIsShown = boardShown(width: width)
         return VStack(spacing: 6) {
         HStack(spacing: style == .full ? 12 : 8) {
-            Button { showSidebar.toggle() } label: { Image(systemName: "sidebar.left") }
+            Button { showSidebar.toggle() } label: { AppIcon("sidebar.left") }
                 .buttonStyle(.borderless)
                 .foregroundStyle(showSidebar && !sidebarShown ? .tertiary : .primary)
                 .help(sidebarShown ? "隐藏左侧栏（⌥⌘1）" : (showSidebar ? "窗口太窄，放宽后显示左侧栏" : "显示左侧栏（⌥⌘1）"))
-            if style != .minimal { Image(systemName: "square.stack.3d.up.fill").font(.title2).foregroundStyle(Brand.accent) }
+            if style != .minimal { AppIcon("square.stack.3d.up.fill").font(.title2).foregroundStyle(Brand.accent) }
             VStack(alignment: .leading, spacing: 2) {
                 if style != .minimal { Text("KongFolio").font(.headline).lineLimit(1) }
                 Text(workspace.displayName + (workspace.dirty && workspace.count > 0 ? " •" : "")).font(style == .minimal ? .callout : .caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
@@ -234,11 +234,11 @@ struct ContentView: View {
                     toolbarAction(action, iconOnly: style != .full || ToolbarPreferences.decode(toolbarSaved).iconsOnly || action.isNewFile)
                 }
             } else if !twoRows { compactToolbar }
-            Button { showBoard.toggle() } label: { Image(systemName: "rectangle.3.group") }
+            Button { showBoard.toggle() } label: { AppIcon("rectangle.3.group") }
                 .buttonStyle(.borderless)
                 .foregroundStyle(showBoard && !boardIsShown ? .tertiary : .primary)
                 .help(boardIsShown ? "隐藏工作区（⌥⌘4）" : (showBoard ? "窗口太窄，放宽后显示工作区" : "显示工作区（⌥⌘4）：摘录、笔记和连线"))
-            Button { showInspector.toggle() } label: { Image(systemName: "sidebar.right") }
+            Button { showInspector.toggle() } label: { AppIcon("sidebar.right") }
                 .buttonStyle(.borderless)
                 .foregroundStyle(showInspector && !inspectorShown ? .tertiary : .primary)
                 .help(inspectorShown ? "隐藏右侧栏（⌥⌘2）" : (showInspector ? "窗口太窄，放宽后显示右侧栏" : "显示右侧栏（⌥⌘2）"))
@@ -261,7 +261,7 @@ struct ContentView: View {
                     }
                     Divider()
                     Button("自定工具栏…") { showToolbarSettings = true }
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: { AppIcon("ellipsis.circle") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28).help("更多操作与自定工具栏")
             }.controlSize(.regular).frame(height: 30)
     }
@@ -288,8 +288,8 @@ struct ContentView: View {
                 default: break
                 }
             } label: {
-                if iconOnly { Image(systemName: action.symbol).frame(width: 28, height: 28) }
-                else { Label(action.title, systemImage: action.symbol) }
+                if iconOnly { AppIcon(action.symbol).frame(width: 28, height: 28) }
+                else { Label(action.title, appIcon: action.symbol) }
             }.buttonStyle(.borderless).foregroundStyle(Brand.accent).help(action.title).accessibilityLabel(action.title)
                 .disabled((action == .ocr || action == .print) && workspace.count == 0)
         }
@@ -298,7 +298,7 @@ struct ContentView: View {
     /// Always in the top bar, so the annotation tools are one click away without being open on every document.
     @ViewBuilder private func annotateButton(iconOnly: Bool) -> some View {
         Button { workspace.showAnnotationBar.toggle() } label: {
-            if iconOnly { Image(systemName: "pencil.tip.crop.circle") } else { Label("标注", systemImage: "pencil.tip.crop.circle") }
+            if iconOnly { AppIcon("pencil.tip.crop.circle") } else { Label("标注", appIcon: "pencil.tip.crop.circle") }
         }
         .accessibilityLabel("标注")
         .foregroundStyle(workspace.showAnnotationBar ? Brand.accent : Color.primary)
@@ -308,7 +308,7 @@ struct ContentView: View {
 
     @ViewBuilder private func toolsButton(iconOnly: Bool) -> some View {
         Button { workspace.showTools = true } label: {
-            if iconOnly { Image(systemName: "square.grid.2x2") } else { Label("快捷工具", systemImage: "square.grid.2x2") }
+            if iconOnly { AppIcon("square.grid.2x2") } else { Label("快捷工具", appIcon: "square.grid.2x2") }
         }.help("快捷工具").accessibilityLabel("快捷工具")
     }
 
@@ -325,7 +325,7 @@ struct ContentView: View {
 
     private func openMenu(iconOnly: Bool) -> some View {
         Menu { openItems } label: {
-            if iconOnly { Image(systemName: "folder") } else { Label("打开", systemImage: "folder") }
+            if iconOnly { AppIcon("folder") } else { Label("打开", appIcon: "folder") }
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -334,14 +334,14 @@ struct ContentView: View {
 
     @ViewBuilder private func saveButton(iconOnly: Bool) -> some View {
         Button { if workspace.historySource != nil { Task { _ = await workspace.saveInBackground(automatic: false, includePrivateData: true) } } else { workspace.saveDirectly() } } label: {
-            if iconOnly { Image(systemName: "square.and.arrow.down") } else { Text("保存") }
+            if iconOnly { AppIcon("square.and.arrow.down") } else { Text("保存") }
         }
         .disabled(workspace.count == 0).help("保存当前文件（⌘S）；已有 PDF 自动保存标注")
     }
 
     @ViewBuilder private func closeButton(iconOnly: Bool) -> some View {
         Button { workspace.closeTab() } label: {
-            if iconOnly { Image(systemName: "xmark.circle") } else { Text("关闭") }
+            if iconOnly { AppIcon("xmark.circle") } else { Text("关闭") }
         }
         .disabled(workspace.count == 0 || workspace.busy).help("关闭当前文档（⇧⌘W）")
     }
@@ -375,7 +375,7 @@ struct ContentView: View {
 
     private func exportMenu(iconOnly: Bool) -> some View {
         Menu { exportItems } label: {
-            if iconOnly { Image(systemName: "square.and.arrow.up") } else { Label("导出", systemImage: "square.and.arrow.up") }
+            if iconOnly { AppIcon("square.and.arrow.up") } else { Label("导出", appIcon: "square.and.arrow.up") }
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -433,10 +433,10 @@ struct ContentView: View {
                 }
             }
             HStack {
-                Button { workspace.move(-1) } label: { Image(systemName: "arrow.up") }.disabled(workspace.effectivePages.first == 0)
-                Button { workspace.move(1) } label: { Image(systemName: "arrow.down") }.disabled(workspace.effectivePages.last == workspace.count - 1)
+                Button { workspace.move(-1) } label: { AppIcon("arrow.up") }.disabled(workspace.effectivePages.first == 0)
+                Button { workspace.move(1) } label: { AppIcon("arrow.down") }.disabled(workspace.effectivePages.last == workspace.count - 1)
                 Spacer()
-                Button { workspace.open(insert: true) } label: { Image(systemName: "plus") }
+                Button { workspace.open(insert: true) } label: { AppIcon("plus") }
             }
             .padding(12)
         }
@@ -452,7 +452,7 @@ struct ContentView: View {
         if workspace.count == 0, workspace.displayPath != nil {
             // A tab whose file has not been read yet (opened with many others, restored, or released to save memory).
             VStack(spacing: 14) {
-                Image(systemName: "doc.richtext").font(.system(size: 48, weight: .ultraLight)).foregroundStyle(Brand.accent)
+                AppIcon("doc.richtext").font(.system(size: 48, weight: .ultraLight)).foregroundStyle(Brand.accent)
                 Text(workspace.displayName).font(.title3.weight(.medium))
                 Text(workspace.displayPath ?? "").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 if workspace.busy { Text("正在读取…").foregroundStyle(.secondary) }
@@ -485,8 +485,8 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 18) {
                 Text("文档属性").font(.headline)
                 HStack {
-                    Button { workspace.undo() } label: { Label("撤销", systemImage: "arrow.uturn.backward") }.disabled(!workspace.canUndo)
-                    Button { workspace.redo() } label: { Image(systemName: "arrow.uturn.forward") }.disabled(!workspace.canRedo)
+                    Button { workspace.undo() } label: { Label("撤销", appIcon: "arrow.uturn.backward") }.disabled(!workspace.canUndo)
+                    Button { workspace.redo() } label: { AppIcon("arrow.uturn.forward") }.disabled(!workspace.canRedo)
                 }
                 documentControls
                 Divider()
@@ -556,7 +556,7 @@ struct ContentView: View {
             HStack {
                 Button("上一页") { workspace.selectPage(workspace.selection - 1) }.disabled(workspace.selection == 0)
                 Button("下一页") { workspace.selectPage(workspace.selection + 1) }.disabled(workspace.selection >= workspace.count - 1)
-                Button { workspace.addBookmark() } label: { Image(systemName: "bookmark") }
+                Button { workspace.addBookmark() } label: { AppIcon("bookmark") }
             }
             Button("搜索 PDF 正文…") { workspace.store?.openPDFSearch() }
                 .disabled(workspace.store?.canSearchPDF != true)
@@ -619,7 +619,7 @@ struct ContentView: View {
                     ForEach(Array(workspace.currentAnnotations.enumerated()), id: \.offset) { index, annotation in
                         Button { workspace.tool = .edit; workspace.selectAnnotation(annotation) } label: {
                             HStack {
-                                Image(systemName: workspace.selectedAnnotation === annotation ? "checkmark.circle.fill" : "circle")
+                                AppIcon(workspace.selectedAnnotation === annotation ? "checkmark.circle.fill" : "circle")
                                 Text("\(index + 1). \(annotation.contents?.prefix(24) ?? Substring(annotation.type ?? "标注"))").lineLimit(1)
                                 Spacer()
                             }
@@ -640,9 +640,9 @@ struct ContentView: View {
                             ForEach(workspace.allSignaturePositions) { position in
                                 Button(position.name) { workspace.placeSignature(template, at: position) }
                             }
-                        } label: { Image(systemName: "scope") }
+                        } label: { AppIcon("scope") }
                         .menuStyle(.borderlessButton).fixedSize().help("放到已记住的位置")
-                        Button { workspace.removeSignature(template.id) } label: { Image(systemName: "trash") }
+                        Button { workspace.removeSignature(template.id) } label: { AppIcon("trash") }
                     }
                 }
             }

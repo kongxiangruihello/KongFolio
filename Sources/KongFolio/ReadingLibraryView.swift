@@ -188,7 +188,7 @@ struct ReadingLibraryView: View {
                     Button("待查问题…") { showFollowUps = true }
                 }
                 Spacer(minLength:0)
-                Menu { libraryActions;Divider();organizationMenu } label:{Label("操作",systemImage:"ellipsis.circle")}
+                Menu { libraryActions;Divider();organizationMenu } label:{Label("操作",appIcon:"ellipsis.circle")}
             }
             if let status = options053.triage {
                 HStack {
@@ -231,7 +231,7 @@ struct ReadingLibraryView: View {
             .overlay {
                 if !searching053,!query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,items.isEmpty {
                     VStack(spacing:8) {
-                        Image(systemName:"magnifyingglass").font(.title2).foregroundStyle(.secondary)
+                        AppIcon("magnifyingglass").font(.title2).foregroundStyle(.secondary)
                         Text("未找到匹配的阅读资料").font(.headline)
                         Text("试试其他关键词，或展开“筛选与整理”检查条件。").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }.padding().allowsHitTesting(false)
@@ -303,7 +303,7 @@ struct ReadingLibraryView: View {
                     .textFieldStyle(.roundedBorder).focused($librarySearchFocused)
                     .accessibilityLabel("阅读资料关键词").onSubmit(submitLibrarySearch)
                 if !query.isEmpty {
-                    Button { query="";librarySearchFocused=true } label:{Image(systemName:"xmark.circle.fill")}
+                    Button { query="";librarySearchFocused=true } label:{AppIcon("xmark.circle.fill")}
                         .buttonStyle(.borderless).help("清空阅读资料搜索").accessibilityLabel("清空阅读资料搜索")
                 }
                 Button("搜索",action:submitLibrarySearch).buttonStyle(.borderedProminent)

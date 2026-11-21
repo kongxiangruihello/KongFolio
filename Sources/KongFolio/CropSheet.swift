@@ -24,9 +24,9 @@ struct CropSheet: View {
                     Toggle("逐页微调", isOn: Binding(get: { workspace.cropSingle }, set: { workspace.setCropSingle($0) }))
                     if workspace.cropSingle {
                         HStack {
-                            Button { workspace.stepCropPage(-1) } label: { Image(systemName: "chevron.left") }.disabled(workspace.selection == 0)
+                            Button { workspace.stepCropPage(-1) } label: { AppIcon("chevron.left") }.disabled(workspace.selection == 0)
                             Text("第 \(workspace.selection + 1) / \(workspace.count) 页").font(.callout.monospacedDigit())
-                            Button { workspace.stepCropPage(1) } label: { Image(systemName: "chevron.right") }.disabled(workspace.selection >= workspace.count - 1)
+                            Button { workspace.stepCropPage(1) } label: { AppIcon("chevron.right") }.disabled(workspace.selection >= workspace.count - 1)
                             Spacer()
                             Button("裁这一页") { workspace.applyCropToCurrentPage() }
                         }

@@ -78,7 +78,7 @@ struct ReadingExcerptVersionsSheet: View {
                     Button("完成") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
             } else {
-                ContentUnavailableView("有一个版本暂不可用",systemImage:"doc.text")
+                AppEmptyState("有一个版本暂不可用",appIcon:"doc.text")
                 Button("关闭") { dismiss() }
             }
         }.padding(20).adaptiveSheet(width:820,height:550,minimumWidth:520)
@@ -197,7 +197,7 @@ struct ReadingFollowUpsView: View {
                 Button("完成") { dismiss() }
             }
             if visible.isEmpty {
-                ContentUnavailableView("暂无待查问题",systemImage:"checkmark.circle")
+                AppEmptyState("暂无待查问题",appIcon:"checkmark.circle")
             } else {
                 ScrollView {
                     LazyVStack(alignment:.leading,spacing:12) {

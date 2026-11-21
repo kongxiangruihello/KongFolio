@@ -37,12 +37,12 @@ struct WelcomeActions: View {
             Group {
                 if compact {
                     VStack(spacing:3) {
-                        Image(systemName:item.symbol)
+                        AppIcon(item.symbol)
                         Text(title)
                     }
                     .frame(minWidth:58)
                 } else {
-                    Label(title,systemImage:item.symbol).labelStyle(.titleAndIcon)
+                    Label(title,appIcon:item.symbol).labelStyle(.titleAndIcon)
                 }
             }
                 .accessibilityLabel(title)

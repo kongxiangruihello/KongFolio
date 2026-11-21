@@ -48,7 +48,7 @@ struct ReadingSearchScopeMenu: View {
             Button("当前书的笔记") { store.searchCurrentBook(.notes) }.disabled(!hasBook)
             Button("全部资料库") { store.showReadingPanel(.search) }
         } label: {
-            Label(title,systemImage:"magnifyingglass")
+            Label(title,appIcon:"magnifyingglass")
         }
         .accessibilityLabel("搜索范围 · "+title)
     }

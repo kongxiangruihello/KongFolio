@@ -15,7 +15,7 @@ struct PDFPageEditor053:View {
                 Menu {
                     Button("放到当前页面…") { workspace.choosePageImage() }
                     Button("插入为新页面…") { workspace.open(insert:true,imagesOnly:true) }
-                } label: { Label("导入图片",systemImage:"photo.badge.plus") }
+                } label: { Label("导入图片",appIcon:"photo.badge.plus") }
                 Menu("增加页面") {
                     Button("在当前页后增加空白页") { workspace.insertBlankPage() }
                     Button("在当前页前增加空白页") { workspace.insertBlankPage(before:true) }
@@ -47,7 +47,7 @@ struct PDFPageEditor053:View {
                             if workspace.selectedPages.contains(i) { workspace.selectedPages.remove(i) } else { workspace.selectedPages.insert(i) }
                             if workspace.selectedPages.isEmpty { workspace.selectedPages=[i] }
                         } else { workspace.selectPage(i);workspace.selectedPages=[i] }
-                    } label:{ HStack { Image(systemName:workspace.selectedPages.contains(i) ? "checkmark.circle.fill":"circle");Text("第 \(i+1) 页");Spacer();if i==workspace.selection { Image(systemName:"eye") } } }.buttonStyle(.plain)
+                    } label:{ HStack { AppIcon(workspace.selectedPages.contains(i) ? "checkmark.circle.fill":"circle");Text("第 \(i+1) 页");Spacer();if i==workspace.selection { AppIcon("eye") } } }.buttonStyle(.plain)
                 }
             }.disabled(workspace.placingSignature?.isPageImage == true)
         }.padding(10)

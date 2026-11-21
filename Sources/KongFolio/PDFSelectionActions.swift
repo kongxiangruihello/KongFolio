@@ -32,7 +32,7 @@ struct PDFSelectionActions: View {
                     ForEach([ReadingExcerptCopyFormat.citation, .text, .markdown],id:\.self) { format in
                         Button(format.rawValue) { copyAs(format) }
                     }
-                } label: { Image(systemName:"chevron.down").font(.system(size:8,weight:.semibold)) }
+                } label: { AppIcon("chevron.down").font(.system(size:8,weight:.semibold)) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 .help("选择复制格式").accessibilityLabel("选择复制格式")
             }
@@ -44,7 +44,7 @@ struct PDFSelectionActions: View {
                 Button { showMarkup.toggle() } label: {
                     HStack(spacing:4) {
                         caption("标注", icon:"highlighter", showText:!compact)
-                        Image(systemName:"chevron.down").font(.system(size:8,weight:.semibold))
+                        AppIcon("chevron.down").font(.system(size:8,weight:.semibold))
                     }
                 }
                 .buttonStyle(PDFSelectionActionStyle(primary:false))
@@ -85,7 +85,7 @@ struct PDFSelectionActions: View {
 
     private func markupOption(_ title:String,icon:String,style:MarkupStyle,annotate:Bool = false) -> some View {
         Button { applyMarkup(style,annotate:annotate) } label: {
-            Label(title,systemImage:icon).frame(maxWidth:.infinity,alignment:.leading)
+            Label(title,appIcon:icon).frame(maxWidth:.infinity,alignment:.leading)
         }.buttonStyle(.borderless).padding(.vertical,3)
     }
 
@@ -97,16 +97,16 @@ struct PDFSelectionActions: View {
     private func action(_ title: String, icon: String, help: String, primary: Bool = false,
                         perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
-            caption(title, icon: icon, showText: primary || !compact)
+            caption(title, icon: icon, showText: primary || !compact, tone: primary ? AppIcon.onAccent : nil)
         }
         .buttonStyle(PDFSelectionActionStyle(primary: primary))
         .accessibilityLabel(title)
         .help(help)
     }
 
-    private func caption(_ title: String, icon: String, showText: Bool) -> some View {
+    private func caption(_ title: String, icon: String, showText: Bool, tone: Color? = nil) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: icon)
+            AppIcon(icon, tone: tone)
             if showText { Text(title) }
         }
         .lineLimit(1)

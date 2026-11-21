@@ -45,7 +45,7 @@ struct DocumentTaskButton: View {
     var body: some View {
         if !onlyWhileRunning || queue.running {
             Button { store.showBackgroundJobs = true } label: {
-                Image(systemName:queue.running ? "clock.arrow.circlepath" : "checklist")
+                AppIcon(queue.running ? "clock.arrow.circlepath" : "checklist")
                 if queue.running { Text("\(queue.activeCount)").font(.caption) }
             }.buttonStyle(.plain).help("后台任务：查看进度、取消处理和打开结果")
                 .accessibilityLabel("后台任务").padding(.horizontal,6)

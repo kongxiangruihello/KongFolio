@@ -161,7 +161,7 @@ struct SignatureThumbnail: View {
             if let image = NSImage(data:template.image ?? template.pdf) {
                 Image(nsImage: image).resizable().scaledToFit().padding(3)
             } else {
-                Image(systemName: "signature").foregroundStyle(.secondary)
+                AppIcon("signature").foregroundStyle(.secondary)
             }
         }
         .frame(width: 64, height: 32)

@@ -64,7 +64,7 @@ struct ReadingHistorySheet: View {
         return Button {
             store.libraryTab = destination.rawValue
         } label: {
-            Label(destination.title,systemImage:destination.icon)
+            Label(destination.title,appIcon:destination.icon)
                 .font(.callout.weight(selected ? .semibold : .regular))
                 .lineLimit(1)
                 .fixedSize()

@@ -30,7 +30,7 @@ struct EditorReplaceView: View {
                                 Text(hit.context).font(.caption)
                                 HStack(spacing:8) {
                                     Text((source as NSString).substring(with:hit.range)).foregroundStyle(.red)
-                                    Image(systemName:"arrow.right").foregroundStyle(.secondary)
+                                    AppIcon("arrow.right").foregroundStyle(.secondary)
                                     Text(replacement.isEmpty ? "删除匹配文字" : replacement).foregroundStyle(.green)
                                 }.font(.caption.weight(.medium)).textSelection(.enabled)
                             }.padding(.vertical,3)

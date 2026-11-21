@@ -126,9 +126,9 @@ struct ComparisonViewer: View {
     var body: some View {
         VStack(spacing:8) {
             PanelRow {
-                Button { step(-1) } label:{ Image(systemName:"chevron.left") }.disabled(visible.first?.id==selection || visible.isEmpty)
+                Button { step(-1) } label:{ AppIcon("chevron.left") }.disabled(visible.first?.id==selection || visible.isEmpty)
                 Picker("页面",selection:$selection) { ForEach(visible) { Text($0.title).tag($0.id) } }.frame(maxWidth:390)
-                Button { step(1) } label:{ Image(systemName:"chevron.right") }.disabled(visible.last?.id==selection || visible.isEmpty)
+                Button { step(1) } label:{ AppIcon("chevron.right") }.disabled(visible.last?.id==selection || visible.isEmpty)
                 Toggle("只看差异",isOn:$changedOnly).onChange(of:changedOnly) { _,_ in if !visible.contains(where:{$0.id==selection}),let first=visible.first { selection=first.id } }
                 Spacer()
                 Button("适合页面") { zoom=1 }
@@ -181,7 +181,7 @@ struct ComparisonViewer: View {
                 }
                 if !detailMessage.isEmpty { Text(detailMessage).font(.caption) }
                 Text(row.title).font(.caption).foregroundStyle(.secondary)
-            } else { ContentUnavailableView("没有差异页面",systemImage:"doc.on.doc").frame(maxWidth:.infinity,maxHeight:.infinity) }
+            } else { AppEmptyState("没有差异页面",appIcon:"doc.on.doc").frame(maxWidth:.infinity,maxHeight:.infinity) }
         }.task(id: detailKey) { await details() }
     }
     private func stepChunk(_ delta: Int) {

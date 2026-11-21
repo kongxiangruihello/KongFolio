@@ -21,7 +21,7 @@ struct ThumbnailView: View {
     var body: some View {
         Group {
             if let image = state.image { Image(nsImage: image).resizable().scaledToFit() }
-            else { Rectangle().fill(.quaternary).overlay(Image(systemName: "doc").foregroundStyle(.secondary)) }
+            else { Rectangle().fill(.quaternary).overlay(AppIcon("doc").foregroundStyle(.secondary)) }
         }.frame(height: height).shadow(color: .black.opacity(0.1), radius: 3)
         .task(id: workspace.thumbnailKey(index)) {
             // Keyed per page: an annotation edit re-renders only its own page's thumbnail.

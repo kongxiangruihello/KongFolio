@@ -55,15 +55,15 @@ struct OutlineEditorView: View {
             HStack {
                 Text("\(note.pageDescription) · \(note.kind)").font(.caption.bold()).foregroundStyle(Brand.accent)
                 Spacer()
-                Button { draft.move(note.id, by: -1) } label: { Image(systemName: "arrow.up") }.buttonStyle(.plain).help("上移")
-                Button { draft.move(note.id, by: 1) } label: { Image(systemName: "arrow.down") }.buttonStyle(.plain).help("下移")
+                Button { draft.move(note.id, by: -1) } label: { AppIcon("arrow.up") }.buttonStyle(.plain).help("上移")
+                Button { draft.move(note.id, by: 1) } label: { AppIcon("arrow.down") }.buttonStyle(.plain).help("下移")
                 Menu {
                     ForEach(Array(draft.sections.enumerated()), id: \.offset) { index, section in
                         if index != sectionIndex { Button(section.title) { draft.move(note.id, toSection: index) } }
                     }
-                } label: { Image(systemName: "arrow.right.square") }
+                } label: { AppIcon("arrow.right.square") }
                     .menuStyle(.borderlessButton).fixedSize().help("移到别的章节")
-                Button { draft.remove(note.id) } label: { Image(systemName: "trash") }.buttonStyle(.plain).help("从大纲中去掉")
+                Button { draft.remove(note.id) } label: { AppIcon("trash") }.buttonStyle(.plain).help("从大纲中去掉")
             }
             if !note.quote.isEmpty { Text(note.quote).font(.callout).lineLimit(3) }
             if !note.note.isEmpty { Text(note.note).font(.caption).foregroundStyle(.secondary).lineLimit(3) }

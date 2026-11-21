@@ -40,7 +40,7 @@ struct PDFReaderPageControls: View {
 
     private func step(_ offset: Int, title: String, symbol: String) -> some View {
         Button { workspace.selectPage(workspace.selection + offset) } label: {
-            Image(systemName: symbol).font(.caption).frame(width: 15, height: 26)
+            AppIcon(symbol).font(.caption).frame(width: 15, height: 26)
         }
         .help(title).accessibilityLabel(title)
         .disabled(!(0..<workspace.count).contains(workspace.selection + offset))

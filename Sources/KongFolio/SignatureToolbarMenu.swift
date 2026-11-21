@@ -24,8 +24,8 @@ struct SignatureToolbarMenu: View {
             }
             if workspace.readingLocked { Text("放置签名前请切换到编辑模式") }
         } label:{
-            if showTitle { Label("签名",systemImage:"signature") }
-            else { Image(systemName:"signature").frame(width:28,height:28) }
+            if showTitle { Label("签名",appIcon:"signature") }
+            else { AppIcon("signature").frame(width:28,height:28) }
         }
         .menuStyle(.borderlessButton).menuIndicator(.hidden)
         .help("签名：手写、导入图片、放置和管理")

@@ -87,20 +87,20 @@ struct RightReadingPanelLayout<Content: View>: View {
                 panelTab("笔记",selected:!showsPageRecords && isSelected(.notes)) { showsPageRecords = false;store.showReadingPanel(.notes) }
                 panelTab("全部资料",selected:!showsPageRecords && isSelected(.search)) { showsPageRecords = false;store.showReadingPanel(.search) }
                 Button { showsPageRecords.toggle(); reviewing = false } label: {
-                    Image(systemName:"doc.text.magnifyingglass").foregroundStyle(showsPageRecords ? Color.accentColor : Color.secondary)
+                    AppIcon("doc.text.magnifyingglass").foregroundStyle(showsPageRecords ? Color.accentColor : Color.secondary)
                 }.buttonStyle(.borderless).help("查看本页已有记录").accessibilityLabel("查看本页已有记录")
                     .disabled(store.commandWorkspace?.readingJournalPath == nil || !store.canSearchPDF)
                 Spacer(minLength:0)
                 if !showsPageRecords && store.showReadingDesk && store.readingDeskSection == .notes {
-                    Button { store.newReadingNote() } label: { Image(systemName:"plus") }
+                    Button { store.newReadingNote() } label: { AppIcon("plus") }
                         .buttonStyle(.borderless).help("新建笔记").accessibilityLabel("新建笔记")
                         .disabled(store.journal.unreadable)
                 }
                 if store.showReadingDesk {
-                    Button { store.openReadingDesk(store.readingDeskSection,window:true) } label: { Image(systemName:"arrow.up.left.and.arrow.down.right") }
+                    Button { store.openReadingDesk(store.readingDeskSection,window:true) } label: { AppIcon("arrow.up.left.and.arrow.down.right") }
                         .buttonStyle(.borderless).help("在独立窗口打开阅读资料").accessibilityLabel("在独立窗口打开阅读资料")
                 }
-                Button { store.closeRightReadingPanel() } label: { Image(systemName:"xmark") }
+                Button { store.closeRightReadingPanel() } label: { AppIcon("xmark") }
                     .buttonStyle(.borderless).help("隐藏右侧面板").accessibilityLabel("隐藏右侧面板")
             }.font(.system(size:12)).padding(.horizontal,8).padding(.vertical,9).background(.bar)
             Divider()
@@ -138,7 +138,7 @@ struct RightReadingPanelLayout<Content: View>: View {
                 Spacer()
             }.padding(.horizontal,10).padding(.top,8)
             if store.acceptsPDFExcerptDrop && store.canSearchPDF {
-                Label(excerptDropTargeted ? "松手保存摘录" : "把 PDF 选中的文字拖到这里",systemImage:"text.quote")
+                Label(excerptDropTargeted ? "松手保存摘录" : "把 PDF 选中的文字拖到这里",appIcon:"text.quote")
                     .font(.caption)
                     .foregroundStyle(excerptDropTargeted ? Color.accentColor : Color.secondary)
                     .frame(maxWidth:.infinity)

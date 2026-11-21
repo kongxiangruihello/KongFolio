@@ -56,14 +56,14 @@ struct WritingToolbar: View {
                 ScrollView(.horizontal,showsIndicators:false) {
                     HStack(spacing:9) {
                         if formatting {
-                            Button { session.wrap("**","**",placeholder:"粗体") } label:{Image(systemName:"bold")}.help("加粗选中文字（⌘B）")
-                            Button { session.wrap("*","*",placeholder:"斜体") } label:{Image(systemName:"italic")}.help("斜体（⌘I）")
-                            Menu { ForEach(1...3,id:\.self) { level in Button("\(level) 级标题") { session.prefix(String(repeating:"#",count:level)+" ") } } } label:{Image(systemName:"textformat.size")}.help("设置标题")
-                            Button { session.prefix("> ") } label:{Image(systemName:"text.quote")}.help("引用段落")
-                            Button { session.wrap("[","](https://)",placeholder:"链接文字") } label:{Image(systemName:"link")}.help("插入链接")
+                            Button { session.wrap("**","**",placeholder:"粗体") } label:{AppIcon("bold")}.help("加粗选中文字（⌘B）")
+                            Button { session.wrap("*","*",placeholder:"斜体") } label:{AppIcon("italic")}.help("斜体（⌘I）")
+                            Menu { ForEach(1...3,id:\.self) { level in Button("\(level) 级标题") { session.prefix(String(repeating:"#",count:level)+" ") } } } label:{AppIcon("textformat.size")}.help("设置标题")
+                            Button { session.prefix("> ") } label:{AppIcon("text.quote")}.help("引用段落")
+                            Button { session.wrap("[","](https://)",placeholder:"链接文字") } label:{AppIcon("link")}.help("插入链接")
                             if prominent {
-                                Button { session.prefix("- ") } label:{Image(systemName:"list.bullet")}.help("无序列表")
-                                Button { session.prefix("1. ") } label:{Image(systemName:"list.number")}.help("有序列表")
+                                Button { session.prefix("- ") } label:{AppIcon("list.bullet")}.help("无序列表")
+                                Button { session.prefix("1. ") } label:{AppIcon("list.number")}.help("有序列表")
                             }
                             if !prominent { Button("清除格式") { session.clearFormatting() } }
                         }
@@ -157,7 +157,7 @@ struct WritingToolbar: View {
                 }
                 if visibleCount < commands.count { Divider() }
                 documentOptions
-            } label: { Image(systemName:"ellipsis.circle") }
+            } label: { AppIcon("ellipsis.circle") }
                 .help("更多编辑").accessibilityLabel("更多编辑")
         }
     }
@@ -206,7 +206,7 @@ struct WritingToolbar: View {
                     Divider()
                     documentOptions
                 }
-            } label: { Image(systemName:"ellipsis.circle") }
+            } label: { AppIcon("ellipsis.circle") }
                 .help("更多编辑").accessibilityLabel("更多编辑")
         }
     }
@@ -253,7 +253,7 @@ struct WritingToolbar: View {
     private func insertCode() { session.wrap("`","`",placeholder:"代码") }
 
     private func insertionMenu(_ note:MarkdownNote) -> some View {
-        Menu { insertionCommands(note) } label: { Image(systemName:"plus") }
+        Menu { insertionCommands(note) } label: { AppIcon("plus") }
             .help("插入").accessibilityLabel("插入")
     }
 
@@ -266,7 +266,7 @@ struct WritingToolbar: View {
     }
 
     private var listMenu: some View {
-        Menu { listCommands } label: { Image(systemName:"list.bullet") }
+        Menu { listCommands } label: { AppIcon("list.bullet") }
             .help("列表").accessibilityLabel("列表")
     }
 
@@ -286,7 +286,7 @@ struct WritingToolbar: View {
     }
 
     private var outlineMenu: some View {
-        Menu { outlineCommands } label: { Image(systemName:"list.bullet.indent") }
+        Menu { outlineCommands } label: { AppIcon("list.bullet.indent") }
             .help("文章大纲").accessibilityLabel("文章大纲")
     }
 
@@ -305,7 +305,7 @@ struct WritingToolbar: View {
     }
 
     private func tool(_ name:String,_ symbol:String,action:@escaping () -> Void) -> some View {
-        Button(action:action) { Image(systemName:symbol) }.help(name).accessibilityLabel(name)
+        Button(action:action) { AppIcon(symbol) }.help(name).accessibilityLabel(name)
     }
 }
 /// Advertise the compact width to ViewThatFits, then distribute the chosen buttons in the offered space.
@@ -403,9 +403,9 @@ struct WritingFindBar: View {
         VStack(alignment:.leading,spacing:6) {
             HStack {
                 TextField("查找文字",text:$query).focused($focused).onSubmit { session.find(query) }
-                Button { session.find(query,backward:true) } label: { Image(systemName:"chevron.up") }.help("上一处").accessibilityLabel("上一处")
-                Button { session.find(query) } label: { Image(systemName:"chevron.down") }.help("下一处").accessibilityLabel("下一处")
-                Button(action:close) { Image(systemName:"xmark") }.help("关闭查找并返回编辑").accessibilityLabel("关闭查找")
+                Button { session.find(query,backward:true) } label: { AppIcon("chevron.up") }.help("上一处").accessibilityLabel("上一处")
+                Button { session.find(query) } label: { AppIcon("chevron.down") }.help("下一处").accessibilityLabel("下一处")
+                Button(action:close) { AppIcon("xmark") }.help("关闭查找并返回编辑").accessibilityLabel("关闭查找")
             }
             HStack {
                 TextField("替换为",text:$replacement)

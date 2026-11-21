@@ -206,7 +206,7 @@ struct ReadingDeskView: View {
                 case .essay(let essay):
                     Button { rememberHomeDeskSearch(target:.essay(essay.id));journal.selectEssay(essay.id);section = .essays } label: {
                         VStack(alignment:.leading,spacing:3) {
-                            Label(essay.title,systemImage:"doc.text").lineLimit(2).help(essay.title)
+                            Label(essay.title,appIcon:"doc.text").lineLimit(2).help(essay.title)
                             let source = ReadingLibraryItem.essay(essay).citations053.first?.display ?? "独立笔记"
                             Text(source).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(source)
                         }
@@ -229,7 +229,7 @@ struct ReadingDeskView: View {
             HStack {
                 Text(feedback.message).lineLimit(1).help(feedback.message)
                 Spacer(minLength:0)
-                Button { store.readingExcerptFeedback = nil } label: { Image(systemName:"xmark") }.help("关闭摘录提示")
+                Button { store.readingExcerptFeedback = nil } label: { AppIcon("xmark") }.help("关闭摘录提示")
             }
             HStack(spacing:10) {
                 if let excerpt = journal.record(feedback.recordID) {

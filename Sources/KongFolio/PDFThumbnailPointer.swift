@@ -43,7 +43,9 @@ struct PDFThumbnailPointer: NSViewRepresentable {
             guard let drag = actions?.drag() else { return }
 
             let item = NSDraggingItem(pasteboardWriter: drag.payload as NSString)
-            let image = drag.image ?? NSImage(systemSymbolName: "doc", accessibilityDescription: nil) ?? NSImage(size: bounds.size)
+            let fallback = NSImage(systemSymbolName: "doc", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(paletteColors: [.systemBlue, .systemCyan]))
+            let image = drag.image ?? fallback ?? NSImage(size: bounds.size)
             let scale = min(1, 100 / max(1, image.size.width), 125 / max(1, image.size.height))
             let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
             item.setDraggingFrame(NSRect(x: point.x - size.width / 2, y: point.y - size.height / 2,

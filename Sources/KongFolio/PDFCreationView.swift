@@ -64,14 +64,14 @@ struct PDFCreationView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Label("新建 PDF", systemImage: "doc.badge.plus").font(.title2.bold())
+                Label("新建 PDF", appIcon: "doc.badge.plus").font(.title2.bold())
                 Spacer()
                 if busy { ProgressView().controlSize(.small); Text("正在创建…").foregroundStyle(.secondary) }
             }.padding(22)
             HStack(spacing: 6) {
                 ForEach(PDFCreationSource.allCases) { item in
                     Button { source = item } label: {
-                        Label(item.rawValue, systemImage: item.symbol)
+                        Label(item.rawValue, appIcon: item.symbol)
                             .font(.system(size: 13, weight: .medium))
                             .padding(.horizontal, 12).frame(height: 36)
                             .foregroundStyle(source == item ? Color.white : Color.primary)
@@ -214,8 +214,8 @@ struct PDFCreationView: View {
             Picker("方向", selection: Binding(get: { options.width > options.height }, set: { landscape in
                 if landscape != (options.width > options.height) { rotatePaper() }
             })) {
-                Label("纵向", systemImage: "rectangle.portrait").tag(false)
-                Label("横向", systemImage: "rectangle").tag(true)
+                Label("纵向", appIcon: "rectangle.portrait").tag(false)
+                Label("横向", appIcon: "rectangle").tag(true)
             }.pickerStyle(.segmented)
             HStack {
                 dimensionField("宽", value: $options.width, custom: true)
@@ -267,25 +267,25 @@ struct PDFCreationView: View {
             VStack(spacing: 14) {
                 if let preview {
                     Image(nsImage: preview).resizable().scaledToFit().padding(28).shadow(color: .black.opacity(0.15), radius: 12, y: 4)
-                } else { Image(systemName: "doc").font(.system(size: 64)).foregroundStyle(.secondary) }
+                } else { AppIcon("doc").font(.system(size: 64)).foregroundStyle(.secondary) }
                 Text("\(options.width * 25.4 / 72, specifier: "%.1f") × \(options.height * 25.4 / 72, specifier: "%.1f") mm\(source == .web ? "" : " · \(options.pageCount) 页")")
                     .font(.callout).foregroundStyle(.secondary).padding(.bottom, 20)
                 if source == .web { Text("纸张预览，网页将在创建时载入").font(.caption).foregroundStyle(.secondary).padding(.bottom, 12) }
             }
         case .files:
             if inputs.isEmpty {
-                ContentUnavailableView("拖入文件开始创建", systemImage: "doc.on.doc", description: Text("支持将多份文档或图片合并为一个 PDF"))
+                AppEmptyState("拖入文件开始创建", appIcon: "doc.on.doc", description: Text("支持将多份文档或图片合并为一个 PDF"))
             } else {
                 ScrollView {
                     VStack(spacing: 8) {
                         ForEach(Array(inputs.enumerated()), id: \.element.id) { index, input in
                             HStack(spacing: 10) {
-                                Image(systemName: "line.3.horizontal").foregroundStyle(.secondary)
+                                AppIcon("line.3.horizontal").foregroundStyle(.secondary)
                                 Text("\(index+1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 22)
                                 Text(input.url.lastPathComponent).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading).help(input.url.path)
-                                Button { inputs.swapAt(index, index-1) } label: { Image(systemName: "chevron.up") }.disabled(index == 0).help("上移")
-                                Button { inputs.swapAt(index, index+1) } label: { Image(systemName: "chevron.down") }.disabled(index == inputs.count-1).help("下移")
-                                Button { inputs.removeAll { $0.id == input.id } } label: { Image(systemName: "xmark") }.help("移除")
+                                Button { inputs.swapAt(index, index-1) } label: { AppIcon("chevron.up") }.disabled(index == 0).help("上移")
+                                Button { inputs.swapAt(index, index+1) } label: { AppIcon("chevron.down") }.disabled(index == inputs.count-1).help("下移")
+                                Button { inputs.removeAll { $0.id == input.id } } label: { AppIcon("xmark") }.help("移除")
                             }
                             .padding(12).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
                             .contentShape(Rectangle())
@@ -302,15 +302,15 @@ struct PDFCreationView: View {
                     case .image(let data):
                         if let image = NSImage(data: data) { Image(nsImage: image).resizable().scaledToFit().padding(20) }
                     case .text(let text): Text(String(text.prefix(1200))).font(.system(size: 18)).frame(maxWidth: .infinity, alignment: .topLeading).padding(28)
-                    default: Image(systemName: "doc.on.clipboard").font(.system(size: 64)).foregroundStyle(Brand.accent)
+                    default: AppIcon("doc.on.clipboard").font(.system(size: 64)).foregroundStyle(Brand.accent)
                     }
                     Text(clipboard.summary).foregroundStyle(.secondary).padding(.bottom, 24)
                 }
-            } else { ContentUnavailableView("先复制内容", systemImage: "clipboard", description: Text("复制截图、文本或 PDF 后，可在这里创建文档")) }
+            } else { AppEmptyState("先复制内容", appIcon: "clipboard", description: Text("复制截图、文本或 PDF 后，可在这里创建文档")) }
         case .scanner:
             if let device = scanner.selected {
                 PDFScannerView(device: device, directory: scanner.directory, onFile: { url in _ = addFiles([url], switchSource: false) }, onError: { message = $0 })
-            } else { ContentUnavailableView("连接扫描仪", systemImage: "scanner", description: Text("支持 macOS 图像捕捉可识别的扫描设备")) }
+            } else { AppEmptyState("连接扫描仪", appIcon: "scanner", description: Text("支持 macOS 图像捕捉可识别的扫描设备")) }
         }
     }
 

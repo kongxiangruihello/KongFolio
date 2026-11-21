@@ -44,7 +44,7 @@ struct SignatureManagerSheet: View {
             if !loaded {
                 ProgressView("正在读取签名…").frame(maxWidth:.infinity,minHeight:130)
             } else if readable && templates.isEmpty {
-                ContentUnavailableView("还没有保存的签名",systemImage:"signature",
+                AppEmptyState("还没有保存的签名",appIcon:"signature",
                                        description:Text("可保存 PDF 上的手写签名，也可从图片或剪贴板导入。"))
                     .frame(maxWidth:.infinity,minHeight:160)
             } else if readable {

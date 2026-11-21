@@ -22,8 +22,8 @@ struct ShortcutManagerView: View {
                         Button("另存快捷方式…") { export(item, existing: false) }
                         if let file = item.file {
                             Button("更新原快捷方式") { export(item, existing: true) }.help("保留原路径；Dock 中的入口继续可用，外部修改过的文件会停止更新")
-                            Button { NSWorkspace.shared.activateFileViewerSelecting([file]) } label: { Image(systemName: "folder") }.help("在访达中显示，可拖到 Dock 右侧")
-                            Image(systemName: "book.closed").onDrag { NSItemProvider(object: file as NSURL) }.help("拖动到 Dock 分隔线后、废纸篓旁")
+                            Button { NSWorkspace.shared.activateFileViewerSelecting([file]) } label: { AppIcon("folder") }.help("在访达中显示，可拖到 Dock 右侧")
+                            AppIcon("book.closed").onDrag { NSItemProvider(object: file as NSURL) }.help("拖动到 Dock 分隔线后、废纸篓旁")
                         }
                         Button("移除记录") { perform { try library.removeShortcut(item.id) } }.help("只移除管理记录，原文件和导出的快捷方式保留")
                     }

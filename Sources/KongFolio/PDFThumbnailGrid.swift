@@ -50,7 +50,7 @@ struct PDFThumbnailGrid: View {
 
     private var closeButton: some View {
         Button { workspace.showsPageThumbnails = false } label: {
-            Image(systemName: "chevron.left")
+            AppIcon("chevron.left")
         }.help("返回 PDF 阅读").accessibilityLabel("返回 PDF 阅读")
     }
 

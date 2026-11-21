@@ -77,13 +77,13 @@ private struct ReadingOCRImagePane: View {
             HStack {
                 Text("原始图片").font(.headline)
                 Spacer()
-                Button { zoom = max(1,zoom-0.5) } label:{Image(systemName:"minus.magnifyingglass")}
+                Button { zoom = max(1,zoom-0.5) } label:{AppIcon("minus.magnifyingglass")}
                     .help("缩小原图").accessibilityLabel("缩小原图").disabled(zoom <= 1)
                 Button { zoom = 1;turns = 0 } label:{Text("\(Int(zoom*100))%").monospacedDigit()}
                     .help("恢复适合窗口和原始方向")
-                Button { zoom = min(4,zoom+0.5) } label:{Image(systemName:"plus.magnifyingglass")}
+                Button { zoom = min(4,zoom+0.5) } label:{AppIcon("plus.magnifyingglass")}
                     .help("放大原图").accessibilityLabel("放大原图").disabled(zoom >= 4)
-                Button { turns = (turns+1)%4 } label:{Image(systemName:"rotate.right")}
+                Button { turns = (turns+1)%4 } label:{AppIcon("rotate.right")}
                     .help("顺时针旋转 90°").accessibilityLabel("旋转原图")
             }.buttonStyle(.borderless)
             if let image {

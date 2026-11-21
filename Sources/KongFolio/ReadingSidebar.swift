@@ -109,7 +109,7 @@ struct ReadingSidebar: View {
                         }
                         .buttonStyle(.plain)
                         Spacer()
-                        Button { workspace.deleteBookmark(bookmark.id) } label: { Image(systemName: "trash") }.buttonStyle(.plain)
+                        Button { workspace.deleteBookmark(bookmark.id) } label: { AppIcon("trash") }.buttonStyle(.plain)
                     }
                 }
             }
@@ -123,7 +123,7 @@ struct ReadingSidebar: View {
             }
             HStack {
                 TextField("搜索当前 PDF 正文（简繁通查）", text: $workspace.search).focused($searchFocused053).onSubmit { workspace.find() }.accessibilityLabel("PDF 正文关键词")
-                Button { workspace.find() } label: { Image(systemName: "magnifyingglass") }
+                Button { workspace.find() } label: { AppIcon("magnifyingglass") }
             }
             .padding(.horizontal, 10)
             .onAppear { workspace.resumePDFSearchIfNeeded(); searchFocused053=true }
@@ -219,7 +219,7 @@ struct ReadingSidebar: View {
                     ForEach(shownNotes) { entry in
                         HStack(alignment: .top, spacing: 6) {
                         Button { workspace.toggleNote(entry.id) } label: {
-                            Image(systemName: workspace.selectedNoteIDs.contains(entry.id) ? "checkmark.square.fill" : "square").padding(.top, 10)
+                            AppIcon(workspace.selectedNoteIDs.contains(entry.id) ? "checkmark.square.fill" : "square").padding(.top, 10)
                         }
                         .buttonStyle(.plain)
                         .help("勾选，用于批量删除或改色")
