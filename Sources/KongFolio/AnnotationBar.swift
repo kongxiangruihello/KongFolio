@@ -24,7 +24,7 @@ struct AnnotationBar: View {
         Entry(id: "rectangle", tool: .rectangle, highlighter: false, symbol: "rectangle", help: "矩形（按住 Shift 画正方形）（快捷键 R）"),
         Entry(id: "ellipse", tool: .ellipse, highlighter: false, symbol: "circle", help: "椭圆（按住 Shift 画圆）（快捷键 O）"),
         Entry(id: "text", tool: .textBox, highlighter: false, symbol: "textformat", help: "文字框：点一下页面，输入文字（快捷键 T）"),
-        Entry(id: "note", tool: .note, highlighter: false, symbol: "note.text", help: "评论：点一下页面输入，双击评论继续编辑（快捷键 N）"),
+        Entry(id: "note", tool: .note, highlighter: false, symbol: "note.text", help: "评论：点一下页面输入，单击评论继续编辑（快捷键 N）"),
         Entry(id: "edit", tool: .edit, highlighter: false, symbol: "pencil.and.outline", help: "编辑标注：点选后拖动、点颜色改色、按 Delete 删除（快捷键 E）"),
         Entry(id: "eraser", tool: .eraser, highlighter: false, symbol: "eraser", help: "橡皮：点一下标注就删除（可撤销）（快捷键 X）"),
     ]

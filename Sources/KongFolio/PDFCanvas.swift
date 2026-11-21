@@ -177,7 +177,8 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     /// Rubber band of the region excerpt tool.
     private var regionStart: CGPoint?
     private weak var regionPage: PDFPage?
-    private var commentEditor: NSPopover?
+    private(set) var commentEditor: NSPopover?
+    private var pressedComment: (page: PDFPage, annotation: PDFAnnotation)?
     private lazy var regionView: NSView = {
         let view = NSView()
         view.wantsLayer = true
@@ -202,7 +203,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     func releaseReadingResources() {
         endSignaturePlacement(); hideSelectionToolbar(); clearSourceHighlight(); dismissCommentEditor()
         points.removeAll(); drawingPage = nil; provisional = nil; moving = nil
-        pendingMove.removeAll(); contextSignature = nil; regionStart = nil; regionPage = nil
+        pendingMove.removeAll(); contextSignature = nil; regionStart = nil; regionPage = nil; pressedComment = nil
         excerptDragStart = nil; excerptDragSource = nil
         strokePreview.annotation = nil; strokePreview.page = nil
         strokePreview.removeFromSuperview(); regionView.removeFromSuperview(); readingGuide.removeFromSuperview()
@@ -442,11 +443,13 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         let popover = NSPopover()
         popover.behavior = .applicationDefined
         popover.contentViewController = NSHostingController(rootView: PDFInlineCommentEditor(
-            text: existing?.contents ?? "", editing: existing != nil,
-            save: { [weak self, weak workspace] text in
+            text: existing?.contents ?? "",
+            style: existing.map(PDFInlineComment.style(of:)) ?? PDFCommentStyle(),
+            editing: existing != nil, supportsStyle: existing.map(PDFInlineComment.isCard) ?? true,
+            save: { [weak self, weak workspace] text, style in
                 guard let self, let workspace, self.workspace === workspace else { return }
                 if workspace.saveInlineComment(text, page: page, anchor: anchor, quote: quote,
-                                               existing: existing, highlight: highlight) {
+                                               existing: existing, highlight: highlight, style: style) {
                     self.dismissCommentEditor()
                     self.clearSelection()
                     self.documentView?.needsDisplay = true
@@ -463,6 +466,13 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         guard !visible.isNull, !visible.isEmpty else { return }
         commentEditor = popover
         popover.show(relativeTo: visible, of: self, preferredEdge: .maxX)
+    }
+
+    private func openClickedComment(_ annotation: PDFAnnotation, on page: PDFPage, event: NSEvent) {
+        guard annotation.page === page, let anchor = PDFInlineComment.anchor(of: annotation) else { return }
+        let position = convert(event.locationInWindow, from: nil)
+        guard annotation.bounds.contains(convert(position, to: page)) else { return }
+        openCommentEditor(page: page, anchor: anchor, existing: annotation)
     }
 
     func dismissCommentEditor() {
@@ -545,6 +555,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func mouseDown(with event: NSEvent) {
+        pressedComment = nil
         excerptDragStart = nil
         hideSelectionToolbar()
         if let workspace { workspace.store?.focus(workspace) }
@@ -570,11 +581,18 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         let point = convert(location, to: page)
         if placement == nil, workspace.tool == .select || workspace.tool == .edit || workspace.tool == .note,
            let hit = comment(at: point, on: page) {
-            if event.clickCount == 2 {
-                openCommentEditor(page: page, anchor: PDFInlineComment.anchor(of: hit) ?? hit.bounds, existing: hit)
-                return
+            if PDFInlineComment.isCard(hit) {
+                if workspace.tool != .edit {
+                    pressedComment = (page, hit)
+                    return
+                }
+            } else {
+                if event.clickCount == 2 {
+                    openCommentEditor(page: page, anchor: hit.bounds, existing: hit)
+                    return
+                }
+                if workspace.tool == .note { return }
             }
-            if workspace.tool == .note { return }
         }
         switch workspace.tool {
         case .select:
@@ -639,6 +657,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if pressedComment != nil { return }
         if let start = excerptDragStart {
             let point = convert(event.locationInWindow,from:nil)
             if hypot(point.x-start.x,point.y-start.y) >= 5 {
@@ -657,8 +676,13 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             return
         }
         if let moving, let page = drawingPage, let workspace {
-            if !didMove { pendingMove = workspace.beginAnnotationEdit([moving]); didMove = true }
             let point = convert(convert(event.locationInWindow, from: nil), to: page)
+            if !didMove {
+                let distance = hypot(point.x - moveStart.x, point.y - moveStart.y) * scaleFactor
+                if PDFInlineComment.isCard(moving), distance < 3 { return }
+                pendingMove = workspace.beginAnnotationEdit([moving])
+                didMove = true
+            }
             moving.bounds.origin = CGPoint(x: originalOrigin.x + point.x - moveStart.x, y: originalOrigin.y + point.y - moveStart.y)
             needsDisplay = true
             return
@@ -681,6 +705,11 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func mouseUp(with event: NSEvent) {
+        if let pressedComment {
+            self.pressedComment = nil
+            openClickedComment(pressedComment.annotation, on: pressedComment.page, event: event)
+            return
+        }
         if excerptDragStart != nil {
             excerptDragStart = nil
             clearSelection()
@@ -704,12 +733,17 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             if let page { captureRegion(rect, on: page) }
             return
         }
-        if moving != nil {
-            if didMove { workspace?.commitAnnotationEdit(pendingMove) }
-            moving = nil
+        if let moving {
+            let completedDrag = didMove
+            let page = drawingPage
+            if completedDrag { workspace?.commitAnnotationEdit(pendingMove) }
+            self.moving = nil
             pendingMove = []
             drawingPage = nil
             didMove = false
+            if !completedDrag, let page, PDFInlineComment.isCard(moving) {
+                openClickedComment(moving, on: page, event: event)
+            }
             return
         }
         if drawingPage != nil {
