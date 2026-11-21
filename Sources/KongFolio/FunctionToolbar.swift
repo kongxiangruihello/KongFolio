@@ -456,6 +456,8 @@ private struct PDFToolbarToolsMenu: View {
 
     var body: some View {
         Menu {
+            PDFPageToolButtons(workspace: workspace)
+            Divider()
             Menu("页面编辑") {
                 if showPages {
                     Button("编辑 PDF 页面") {
@@ -478,6 +480,6 @@ private struct PDFToolbarToolsMenu: View {
             if showTitle { Label("PDF 工具",appIcon:"square.grid.2x2") }
             else { AppIcon("square.grid.2x2").frame(width:28,height:28) }
         }.menuStyle(.borderlessButton).menuIndicator(.hidden)
-            .help("PDF 工具：页面编辑、压缩与转换").accessibilityLabel("PDF 工具")
+            .help("PDF 工具：拆分、裁剪、清除空白边、压缩与转换").accessibilityLabel("PDF 工具")
     }
 }

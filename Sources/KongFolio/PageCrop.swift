@@ -140,13 +140,18 @@ extension Workspace {
     /// The pages a crop would change, in order.
     var cropTargets: [Int] { cropScope == .all ? Array(0..<count) : effectivePages }
 
-    func openCrop() {
-        guard count > 0 else { return }
+    func openCrop(detectingBlankEdges: Bool = false) {
+        guard count > 0, !busy, !readingLocked else { return }
+        cropAutoPreview = detectingBlankEdges
+        if detectingBlankEdges { setCropSingle(false); cropScope = .selected }
+        if cropSingle { cropPage = currentCrop(of: selection) }
+        cropMessage = ""
         if let page = document.page(at: selection) {
             let current = PageCrop.margins(of: page.bounds(for: .cropBox), mediaBox: page.bounds(for: .mediaBox), rotation: page.rotation)
             if !current.isZero, cropOdd.isZero, cropEven.isZero { cropOdd = current; cropEven = current }
         }
         showCrop = true
+        if detectingBlankEdges { detectCrop() }
     }
 
     /// Cuts the chosen pages. The pages themselves are untouched (only the visible area changes), so the cut can be
@@ -244,8 +249,14 @@ extension Workspace {
 
     /// Looks at the pages to cut and proposes margins (one setting for odd pages, one for even pages).
     func detectCrop() {
-        guard count > 0, !cropDetecting, let data = try? pdfData() else { return }
+        guard count > 0, !busy, !readingLocked, !cropDetecting else { return }
         let targets = cropTargets
+        guard !targets.isEmpty else { return }
+        guard let data = try? pdfData() else {
+            cropMessage = "无法读取 PDF 以检测空白边。"
+            return
+        }
+        let revisionAtStart = revision
         cropDetecting = true
         cropMessage = ""
         Task {
@@ -262,6 +273,10 @@ extension Workspace {
                 return (odd.isEmpty ? evenCommon : oddCommon, even.isEmpty ? oddCommon : evenCommon, odd.count + even.count)
             }.value
             cropDetecting = false
+            guard revision == revisionAtStart, cropTargets == targets else {
+                cropMessage = "页面或范围已变化，请重新检测。"
+                return
+            }
             guard let result else { cropMessage = "没有在这些页面上找到可识别的内容。"; return }
             cropOdd = result.odd
             cropEven = result.even

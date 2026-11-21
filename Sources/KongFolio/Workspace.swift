@@ -112,6 +112,7 @@ import UniformTypeIdentifiers
     @Published var annotationColor = Color.blue { didSet { rememberDrawingStyle() } }
     @Published var showCompress = false
     @Published var showCrop = false
+    @Published var cropAutoPreview = false
     var pendingWordPreviewPage: Int?
     @Published var showWordExport = false
     @Published var showBatch = false
@@ -206,6 +207,7 @@ import UniformTypeIdentifiers
     var spilledSession: URL?
     var drawingInProgress = false
     @Published var showScanWorkshop = false
+    @Published var showPageSplit = false
     @Published var signatures: [SignatureTemplate] = []
     @Published var signaturePositions: [SignaturePosition] = []
     @Published var placingSignature: SignatureTemplate?
