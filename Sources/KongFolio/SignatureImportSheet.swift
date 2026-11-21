@@ -7,7 +7,7 @@ struct SignatureImportSheet: View {
     private let onSave: (CGImage,String?,Bool) throws -> Void
 
     init(workspace: Workspace) {
-        canPlace = workspace.count > 0 && !workspace.readingLocked
+        canPlace = workspace.canSignCurrentPage
         onSave = { image,name,place in
             guard let template = workspace.addSignatureImage(image,name:name) else {
                 let failure = FolioError(message:workspace.error ?? "保存失败，请重试")
@@ -15,7 +15,11 @@ struct SignatureImportSheet: View {
                 throw failure
             }
             if place {
-                DispatchQueue.main.async { workspace.beginPlacing(template) }
+                DispatchQueue.main.async {
+                    guard workspace.canSignCurrentPage else { return }
+                    workspace.showsPageThumbnails = false
+                    workspace.beginPlacing(template)
+                }
             }
         }
     }

@@ -60,12 +60,14 @@ final class Release045Tests: XCTestCase {
         }
         let image = try XCTUnwrap(workspace.addSignatureImage(SignaturePositionTests().square(), name: "图片"))
         XCTAssertTrue(workspace.hasHandwrittenSignature)
-        XCTAssertTrue(workspace.saveSignature())
-        let library = try store.editManagedSignatures { $0[1].name = "手写" }
+        guard workspace.saveSignature() else { return XCTFail("未能保存手写签名") }
+        let library = try store.editManagedSignatures {
+            if let index = $0.firstIndex(where: { $0.image == nil }) { $0[index].name = "手写" }
+        }
         XCTAssertEqual(library.map(\.name), ["图片", "手写"])
         XCTAssertEqual(library.first?.id, image.id)
-        XCTAssertNil(library[1].image)
-        let saved = try XCTUnwrap(PDFDocument(data: library[1].pdf))
+        let handwritten = try XCTUnwrap(library.first { $0.image == nil })
+        let saved = try XCTUnwrap(PDFDocument(data: handwritten.pdf))
         XCTAssertEqual(saved.page(at: 0)?.annotations.count, 1)
         XCTAssertEqual(workspace.signatures.map(\.name), library.map(\.name))
     }
