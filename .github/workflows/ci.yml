@@ -73,7 +73,7 @@ jobs:
         if: always()
         run: ./scripts/ci-summary.sh ci-logs ${{ matrix.os }}
 
-  release-v06035:
+  release-v06036:
     needs: macos
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: macos-15
@@ -81,12 +81,12 @@ jobs:
     permissions:
       contents: write
     concurrency:
-      group: release-v0.60.35
+      group: release-v0.60.36
       cancel-in-progress: false
     env:
-      TAG: v0.60.35
-      VERSION: 0.60.35
-      BUILD_NUMBER: 122
+      TAG: v0.60.36
+      VERSION: 0.60.36
+      BUILD_NUMBER: 123
     steps:
       - uses: actions/checkout@v4
       - name: Check release version and tag
