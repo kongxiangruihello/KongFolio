@@ -236,6 +236,23 @@ struct FunctionToolbar: View {
                                     showPages:!profile.visible(width:toolbarWidth,context:context).contains(.pdfPages),
                                     showSignature:context == .empty && !profile.visible(width:toolbarWidth,context:context).contains(.signature))
             }
+        case .pageThumbnails:
+            if let active = store.activeWorkspace {
+                if menu {
+                    Menu { thumbnailActions(active, includeGrid: true) } label: { label(action, menu: true) }
+                } else {
+                    HStack(spacing: 0) {
+                        Button { perform(action) } label: { label(action, menu: false) }
+                            .help(action.title).accessibilityLabel(action.title)
+                            .disabled(unavailable(action))
+                        Menu { thumbnailActions(active, includeGrid: false) } label: {
+                            Image(systemName: "chevron.down").font(.system(size: 8)).frame(width: 14, height: 28)
+                        }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                        .help("页面操作").accessibilityLabel("页面操作")
+                    }
+                }
+            }
         case .zoom:
             if let workspace {
                 Menu { PDFReaderZoomActions(workspace: workspace) } label: { label(action, menu: menu) }
@@ -284,6 +301,18 @@ struct FunctionToolbar: View {
                 .accessibilityLabel(action == .sidebar ? rightPanelTitle : action.title)
                 .disabled(unavailable(action))
         }
+    }
+
+    @ViewBuilder private func thumbnailActions(_ active: Workspace, includeGrid: Bool) -> some View {
+        if includeGrid {
+            Button(active.showsPageThumbnails ? "返回 PDF 阅读" : "打开页面缩略图") {
+                perform(.pageThumbnails)
+            }.disabled(unavailable(.pageThumbnails))
+        }
+        Button("提取选中页面…") {
+            active.openExport(scope: .selected, extractingPages: true)
+        }
+        .disabled(active.busy || active.placingSignature != nil || active.drawingInProgress || active.effectivePages.isEmpty)
     }
 
     private func isSelected(_ action: FileToolbarAction) -> Bool {
