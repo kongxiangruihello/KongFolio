@@ -16,7 +16,8 @@ struct ToolbarSettingsView: View {
                 ForEach(preferences.order) { action in
                     PanelRow {
                         Toggle(isOn: Binding(get: { !preferences.hidden.contains(action) || action.pinned }, set: { on in update { if on { $0.hidden.remove(action) } else { $0.hidden.insert(action) } } })) {
-                            Label(action.title, systemImage: action.symbol)
+                            if action == .pageThumbnails { action.label(action.title) }
+                            else { Label(action.title, systemImage: action.symbol) }
                         }.disabled(action.pinned)
                         Spacer()
                         if action.pinned { Text("固定").font(.caption).foregroundStyle(.secondary) }
