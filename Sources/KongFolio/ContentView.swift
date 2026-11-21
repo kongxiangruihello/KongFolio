@@ -270,6 +270,7 @@ struct ContentView: View {
         switch action {
         case .split: splitMenu(iconOnly: iconOnly)
         case .annotate: annotateButton(iconOnly: iconOnly)
+        case .signature: SignatureToolbarMenu(workspace: workspace, showTitle: !iconOnly)
         case .tools: toolsButton(iconOnly: iconOnly)
         case .open: openMenu(iconOnly: iconOnly)
         case .save: saveButton(iconOnly: iconOnly)
@@ -283,7 +284,6 @@ struct ContentView: View {
                 case .newText: workspace.store?.newNote(format: .plain)
                 case .newHTML: workspace.store?.newNote(format: .html)
                 case .ocr: workspace.ocr(selectedOnly: false)
-                case .signature: workspace.showSignatureImport = true
                 case .print: workspace.store?.printActive()
                 default: break
                 }
@@ -314,7 +314,6 @@ struct ContentView: View {
 
     @ViewBuilder private var openItems: some View {
         Button("打开文档或项目…（可多选，各占一个标签页）") { workspace.open() }
-        Button("导入图片签名…") { workspace.showSignatureImport = true }
         Button("合并多个文件为一个文档…") { workspace.open(merge: true) }
         if !workspace.recentFiles.isEmpty {
             Divider()
@@ -631,8 +630,7 @@ struct ContentView: View {
                 }
             }
             DisclosureGroup("本地签名库") {
-                Button("导入图片签名…") { workspace.showSignatureImport = true }
-                Button("保存本页手写签名") { workspace.saveSignature() }
+                SignatureToolbarMenu(workspace: workspace, showTitle: true)
                 ForEach(workspace.signatures) { template in
                     HStack {
                         SignatureThumbnail(template: template)
@@ -754,29 +752,17 @@ struct ContentView: View {
     let workspace: Workspace
     var insertion: Int?
     var targeted: (Bool) -> Void = { _ in }
-    var horizontalMidpoint: CGFloat?
-    var insertionChanged: (Int?) -> Void = { _ in }
-
-    private func insertsAfter(_ info: DropInfo) -> Bool {
-        horizontalMidpoint.map { info.location.x >= $0 } ?? false
-    }
-    private func showInsertion(_ info: DropInfo) {
-        guard horizontalMidpoint != nil, let insertion else { return }
-        insertionChanged(insertion * 2 + (insertsAfter(info) ? 1 : 0))
-    }
     func validateDrop(info: DropInfo) -> Bool { !workspace.busy && info.hasItemsConforming(to: [.utf8PlainText]) }
-    func dropEntered(info: DropInfo) { targeted(true); showInsertion(info) }
-    func dropExited(info: DropInfo) { targeted(false); insertionChanged(nil) }
-    func dropUpdated(info: DropInfo) -> DropProposal? { showInsertion(info); return DropProposal(operation: .copy) }
+    func dropEntered(info: DropInfo) { targeted(true) }
+    func dropExited(info: DropInfo) { targeted(false) }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .copy) }
     func performDrop(info: DropInfo) -> Bool {
         targeted(false)
-        insertionChanged(nil)
-        let destination = insertion.map { $0 + (insertsAfter(info) ? 1 : 0) }
         guard let provider = info.itemProviders(for: [.utf8PlainText]).first else { return false }
         _ = provider.loadObject(ofClass: NSString.self) { object, _ in
             guard let value = object as? String else { return }
             Task { @MainActor in
-                if let destination { _ = workspace.receivePageDrag(value, before: destination) }
+                if let insertion { _ = workspace.receivePageDrag(value, before: insertion) }
                 else if let drag = PageDrag.decode(value), drag.source != workspace.id {
                     guard let store = workspace.store else { return }
                     store.select(workspace.id)

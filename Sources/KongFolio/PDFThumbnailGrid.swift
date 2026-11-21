@@ -1,5 +1,5 @@
 import SwiftUI
-import UniformTypeIdentifiers
+import AppKit
 
 struct PDFThumbnailGrid: View {
     @ObservedObject var workspace: Workspace
@@ -98,10 +98,7 @@ struct PDFThumbnailGrid: View {
         let selected = workspace.selectedPages.contains(index)
         let caption = workspace.printedPageLabel(index)
         let card = Button {
-            let modifiers = NSEvent.modifierFlags
-            let rangeStart = modifiers.contains(.shift) ? workspace.selection : index
-            workspace.selectPage(index, modifiers: modifiers, rangeAnchor: anchor)
-            if !modifiers.contains(.shift) || anchor == nil { anchor = rangeStart }
+            select(index, modifiers: NSEvent.modifierFlags)
         } label: {
             VStack(spacing: 8) {
                 ThumbnailView(workspace: workspace, index: index, height: 156)
@@ -121,32 +118,62 @@ struct PDFThumbnailGrid: View {
         .buttonStyle(.plain)
         .accessibilityLabel("第 \(index + 1) 页")
         .accessibilityAddTraits(selected ? [.isSelected] : [])
-        .help("双击打开原页 · ⌘ 多选 · ⇧ 连选")
+        .help(canEdit ? "拖动重排 · 双击打开 · ⌘ 多选 · ⇧ 连选" : "双击打开 · ⌘ 多选 · ⇧ 连选")
         .simultaneousGesture(TapGesture(count: 2).onEnded {
-            workspace.selectPage(index)
-            workspace.showsPageThumbnails = false
+            open(index)
         })
         .contextMenu {
-            Button("打开第 \(index + 1) 页") {
-                workspace.selectPage(index)
-                workspace.showsPageThumbnails = false
-            }
-            Button("提取选中页面…") {
-                if !selected { workspace.selectPage(index) }
-                workspace.openExport(scope: .selected, extractingPages: true)
-            }.disabled(workspace.placingSignature != nil)
+            Button("打开第 \(index + 1) 页") { open(index) }
+            Button("提取选中页面…") { extract(index) }.disabled(workspace.placingSignature != nil)
         }
         if canEdit {
             card
-                .onDrag { NSItemProvider(object: workspace.pageDrag(index) as NSString) }
-                .onDrop(of: [.utf8PlainText], delegate: PageDropDelegate(
-                    workspace: workspace, insertion: index,
-                    horizontalMidpoint: cardWidth / 2,
-                    insertionChanged: { boundary in dropIndicator = boundary }
-                ))
+                .overlay {
+                    PDFThumbnailPointer(
+                        click: { event in
+                            if event.clickCount == 2 { open(index) }
+                            else { select(index, modifiers: event.modifierFlags) }
+                        },
+                        drag: {
+                            guard canEdit else { return nil }
+                            if !workspace.selectedPages.contains(index) { select(index) }
+                            return (workspace.pageDrag(index),
+                                    workspace.thumbnails.image(for: workspace.thumbnailKey(index)))
+                        },
+                        propose: { drag in
+                            guard canEdit else { return [] }
+                            if drag.source != workspace.id { return .copy }
+                            return drag.revision == workspace.revision ? .move : []
+                        },
+                        hover: { after in
+                            if let after { dropIndicator = index * 2 + (after ? 1 : 0) }
+                            else if dropIndicator == index * 2 || dropIndicator == index * 2 + 1 { dropIndicator = nil }
+                        },
+                        drop: { payload, after in workspace.receivePageDrag(payload, before: index + (after ? 1 : 0)) },
+                        open: { open(index) },
+                        extract: { extract(index) }
+                    )
+                    .accessibilityHidden(true)
+                }
                 .overlay(alignment: .leading) { insertionLine(index * 2) }
                 .overlay(alignment: .trailing) { insertionLine(index * 2 + 1) }
         } else { card }
+    }
+
+    private func select(_ index: Int, modifiers: NSEvent.ModifierFlags = []) {
+        let rangeStart = modifiers.contains(.shift) ? workspace.selection : index
+        workspace.selectPage(index, modifiers: modifiers, rangeAnchor: anchor)
+        if !modifiers.contains(.shift) || anchor == nil { anchor = rangeStart }
+    }
+
+    private func open(_ index: Int) {
+        workspace.selectPage(index)
+        workspace.showsPageThumbnails = false
+    }
+
+    private func extract(_ index: Int) {
+        if !workspace.selectedPages.contains(index) { workspace.selectPage(index) }
+        workspace.openExport(scope: .selected, extractingPages: true)
     }
 
     @ViewBuilder private func insertionLine(_ boundary: Int) -> some View {

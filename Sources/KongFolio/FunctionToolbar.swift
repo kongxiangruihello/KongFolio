@@ -169,7 +169,11 @@ struct FunctionToolbar: View {
             overflowControls(overflow,actions:[.newFile,.open,.save,.export])
             Button("在访达中浏览…") { store.browseFilesInFinder() }
             if store.canSave { Button("另存为…") { store.saveActive(asNew:true) } }
-            Button("签名管理…") { store.showSignatureManager = true }
+            if context == .pdf {
+                overflowControls(overflow, actions: [.signature])
+            } else {
+                Button("签名管理…") { store.showSignatureManager = true }
+            }
             Button("打印…") { store.printActive() }.disabled(!store.canSave)
             if context == .pdf, let workspace {
                 Button("创建独立 PDF 编辑副本…") { workspace.createEditingCopy() }
