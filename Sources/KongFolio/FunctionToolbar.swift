@@ -7,7 +7,6 @@ struct FunctionToolbar: View {
     @AppStorage(ReaderToolbarProfile.key) private var profileData = Data()
     @State private var showToolbarSettings = false
     @State private var toolbarWidth: CGFloat = 800
-    @State private var toolbarID = UUID()
     @State private var toolbarDrop: ReaderToolDropPosition?
     @State private var homeRecentFiles: [String] = []
     @AppStorage(LayoutKeys.sidebar) private var showNavigation = true
@@ -105,15 +104,7 @@ struct FunctionToolbar: View {
                 if let workspace, context == .pdf {
                     PDFReaderPageControls(workspace: workspace).id(workspace.id)
                 }
-                ForEach(visible) { action in
-                    ToolbarControlSurface(selected:isSelected(action)) {
-                        control(action,menu:false)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .modifier(DraggableReaderTool(action: action, toolbarID: toolbarID, insertion: $toolbarDrop) { source, target, after in
-                        reorder(source, relativeTo: target, after: after, availableWidth: availableWidth)
-                    })
-                }
+                ForEach(visible) { action in draggableTool(action) }
                 if let issueInfo {
                     ToolbarControlSurface {
                         Menu {
@@ -142,6 +133,16 @@ struct FunctionToolbar: View {
                         .help("更多工具").accessibilityLabel("更多工具")
                 }.frame(maxWidth:visible.isEmpty ? nil : .infinity)
             }
+            .coordinateSpace(name: ReaderToolFrames.space)
+            .backgroundPreferenceValue(ReaderToolFrames.self) { frames in
+                ReaderToolbarPointer(frames: frames, preview: { position in
+                    if toolbarDrop != position { toolbarDrop = position }
+                }, move: { source, position in
+                    reorder(source, relativeTo: position.action, after: position.after, availableWidth: availableWidth)
+                })
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
             .buttonStyle(.borderless)
             .font(.system(size:16,weight:.medium))
             .foregroundStyle(Color(nsColor:.secondaryLabelColor))
@@ -163,6 +164,26 @@ struct FunctionToolbar: View {
             )
         }
         .popover(isPresented:$store.showQuickReadingNote) { QuickReadingNote(store:store) }
+    }
+
+    private func draggableTool(_ action: FileToolbarAction) -> some View {
+        ToolbarControlSurface(selected: isSelected(action)) {
+            control(action, menu: false)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            GeometryReader { cell in
+                Color.clear.preference(key: ReaderToolFrames.self, value: [
+                    action: cell.frame(in: .named(ReaderToolFrames.space))
+                ])
+            }
+        }
+        .overlay(alignment: toolbarDrop?.after == true ? .trailing : .leading) {
+            if toolbarDrop?.action == action {
+                Capsule().fill(Color.accentColor).frame(width: 3, height: 28)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     private func reorder(_ source: FileToolbarAction, relativeTo target: FileToolbarAction, after: Bool, availableWidth: CGFloat) {

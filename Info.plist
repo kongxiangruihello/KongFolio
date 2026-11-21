@@ -165,16 +165,6 @@
 			<key>UTTypeIdentifier</key>
 			<string>com.kongfolio.pdf-excerpt-drag</string>
 		</dict>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>UTTypeDescription</key>
-			<string>KongFolio Toolbar Item</string>
-			<key>UTTypeIdentifier</key>
-			<string>com.kongfolio.toolbar-item</string>
-		</dict>
 	</array>
 </dict>
 </plist>
