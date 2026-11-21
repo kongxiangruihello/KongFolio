@@ -378,17 +378,19 @@ struct BookLibraryView: View {
             ScrollView(.horizontal,showsIndicators:false) {
                 HStack(spacing:8) {
                     ForEach(books) { book in
-                        HStack(spacing:8) {
-                            LibraryCover(path:book.path).frame(width:34,height:44)
-                            VStack(alignment:.leading,spacing:4) {
-                                Button { open(book) } label: {
-                                    Text(book.title).font(.callout.weight(.semibold)).lineLimit(1)
-                                }.buttonStyle(.plain).help(book.title)
-                                bookReadingStatus(book)
-                                if let line = progressLine(book) {
-                                    Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                            }
+                        VStack(alignment:.leading,spacing:4) {
+                            Button { open(book) } label: {
+                                HStack(spacing:8) {
+                                    LibraryCover(path:book.path).frame(width:34,height:44)
+                                    VStack(alignment:.leading,spacing:4) {
+                                        Text(book.title).font(.callout.weight(.semibold)).lineLimit(1)
+                                        if let line = progressLine(book) {
+                                            Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                    }
+                                }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+                            }.buttonStyle(.plain).help(book.title)
+                            bookReadingStatus(book)
                         }.padding(8).frame(width:172,alignment:.leading)
                             .background(.quaternary.opacity(0.55),in:RoundedRectangle(cornerRadius:8))
                             .contextMenu { bookActions(book) }
