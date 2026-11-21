@@ -288,7 +288,7 @@ struct ContentView: View {
                 default: break
                 }
             } label: {
-                if iconOnly { (action == .pageThumbnails ? action.icon : Image(systemName: action.symbol)).frame(width: 28, height: 28) }
+                if iconOnly { Image(systemName: action.symbol).frame(width: 28, height: 28) }
                 else { Label(action.title, systemImage: action.symbol) }
             }.buttonStyle(.borderless).foregroundStyle(Brand.accent).help(action.title).accessibilityLabel(action.title)
                 .disabled((action == .ocr || action == .print) && workspace.count == 0)
