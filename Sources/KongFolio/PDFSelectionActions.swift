@@ -10,6 +10,7 @@ struct PDFSelectionActions: View {
     let copy: () -> Void
     var copyAs: ((ReadingExcerptCopyFormat) -> Void)? = nil
     var openExisting: (() -> Void)? = nil
+    var comment: (() -> Void)? = nil
     let mark: (MarkupStyle, MarkupColor?, Bool) -> Void
 
     @State private var showMarkup = false
@@ -36,6 +37,9 @@ struct PDFSelectionActions: View {
                 .help("选择复制格式").accessibilityLabel("选择复制格式")
             }
             if editable {
+                if let comment {
+                    action("评论", icon: "text.bubble", help: "在所选文字旁添加 PDF 评论", perform: comment)
+                }
                 Divider().frame(height: 19).padding(.horizontal, 3)
                 Button { showMarkup.toggle() } label: {
                     HStack(spacing:4) {

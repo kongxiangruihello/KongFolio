@@ -47,7 +47,7 @@ enum ReadingPDFCapture {
         guard !["Link","Widget","Popup","Ink"].contains(a.type ?? "") else { return nil }
         let type = a.type ?? "Unknown",id = identity(a,on:page,index:index)
         let markup = ["Highlight","Underline","StrikeOut"].contains(type)
-        let bounds = a.bounds
+        let bounds = PDFInlineComment.anchor(of: a) ?? a.bounds
         let valid = [bounds.minX,bounds.minY,bounds.width,bounds.height].allSatisfy{$0.isFinite} && bounds.width >= 0 && bounds.height >= 0
         let quote = a.value(forAnnotationKey:ReadingServices.quoteKey) as? String ?? (markup && valid ? page.selection(for:bounds)?.string ?? "" : "")
         let origin = ReadingPDFOrigin(annotationID:id,type:ReadingServices.kindName(for:type),contents:a.contents ?? "",author:a.userName,originalCreated:originalCreated(a),originalCreatedRaw:a.value(forAnnotationKey:PDFAnnotationKey(rawValue:"CreationDate")) as? String,originalModified:a.modificationDate,color053:ReadingColorSemantics053.code(a.color))

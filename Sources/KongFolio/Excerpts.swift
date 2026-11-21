@@ -224,7 +224,10 @@ extension Workspace {
 
 extension WorkspaceStore {
     func startReadingRegionCapture(ocr: ReadingImageOCRMode? = nil) {
-        guard canSearchPDF, let workspace = commandWorkspace else { return }
+        guard canSearchPDF, let workspace = commandWorkspace, workspace.placingSignature == nil else { return }
+        workspace.showsPageThumbnails = false
+        workspace.pdfView?.clearSelection()
+        (workspace.pdfView as? DrawingPDFView)?.hideSelectionToolbar()
         showReadingPanel(.excerpts)
         multiRegionTarget053 = nil
         if let pinned = journal.record(pinnedReadingID), pinned.kind != .note { pinnedReadingID = nil }

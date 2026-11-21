@@ -1278,9 +1278,21 @@ import UniformTypeIdentifiers
     func mark(style: MarkupStyle, color: MarkupColor, note text: String = "", annotate: Bool = false) -> [PDFAnnotation] {
         guard !readingLocked else { status = "请先切换到编辑模式";return [] }
         guard let selected = pdfView?.currentSelection, !(selected.string ?? "").isEmpty else { error = "请先在 PDF 中选中文字。扫描页需先 OCR。"; return [] }
+        let added = addMarkup(selected, style: style, color: color, note: text)
+        recordAnnotationsAdded(added)
+        pdfView?.clearSelection()
+        if annotate, let first = added.first {
+            selectAnnotation(first)
+            status = "已标记，可在右侧输入批注"
+        }
+        return added
+    }
+
+    func addMarkup(_ selected: PDFSelection, style: MarkupStyle, color: MarkupColor, note text: String) -> [PDFAnnotation] {
         var added: [PDFAnnotation] = []
         for line in selected.selectionsByLine() {
             for page in line.pages {
+                guard page.document === document else { continue }
                 let annotation = PDFAnnotation(bounds: line.bounds(for: page), forType: style.subtype, withProperties: nil)
                 annotation.color = style == .highlight ? color.nsColor.withAlphaComponent(0.4) : color.nsColor
                 annotation.contents = text
@@ -1288,12 +1300,6 @@ import UniformTypeIdentifiers
                 page.addAnnotation(annotation)
                 added.append(annotation)
             }
-        }
-        recordAnnotationsAdded(added)
-        pdfView?.clearSelection()
-        if annotate, let first = added.first {
-            selectAnnotation(first)
-            status = "已标记，可在右侧输入批注"
         }
         return added
     }
