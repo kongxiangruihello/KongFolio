@@ -74,6 +74,44 @@ struct HomePinnedFolder: Codable, Identifiable, Equatable {
     }
 }
 
+enum HomeReadingDisplay {
+    static func documentTitle(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suffix = (trimmed as NSString).pathExtension
+        let stem = ["pdf", "kongfolio"].contains(suffix.lowercased())
+            ? (trimmed as NSString).deletingPathExtension
+            : trimmed
+        // Some imported file names append a catalog export with contributor roles and duplicate names.
+        let parts = stem.components(separatedBy: " -- ")
+        let catalog = parts.dropFirst().joined(separator: " -- ")
+        if let first = parts.first, !first.isEmpty,
+           catalog.range(of: #"(?i)(?:^|[-,]\s*)author\b"#, options: .regularExpression) != nil {
+            return first
+        }
+        return stem.isEmpty ? raw : stem
+    }
+
+    static func pagePosition(_ progress: ReadingProgress, printedLabel: String?) -> String {
+        let current = progress.last + 1
+        let total = progress.pages >= current ? " / \(progress.pages)" : ""
+        var value = "PDF 第 \(current)\(total) 页"
+        if let printedLabel, !printedLabel.isEmpty, printedLabel != String(current) {
+            value += " · 印刷页码 " + printedLabel
+        }
+        return value
+    }
+
+    static func folderLocation(_ url: URL) -> String {
+        let parent = url.deletingLastPathComponent()
+        let components = parent.pathComponents
+        if let root = components.firstIndex(of: "com~apple~CloudDocs") {
+            return (["iCloud 云盘"] + Array(components.suffix(from: root + 1).suffix(2))).joined(separator: " / ")
+        }
+        if parent.path == NSHomeDirectory() { return "个人文件夹" }
+        return parent.lastPathComponent.isEmpty ? parent.path : parent.lastPathComponent
+    }
+}
+
 extension ReadingLibraryItem {
     static func latestHomeNote(_ state: ReadingJournalState) -> Self? {
         let record = state.records.lazy.filter { $0.kind == .note && $0.removed == nil && $0.hasContent }
