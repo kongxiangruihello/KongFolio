@@ -235,12 +235,12 @@ struct ReadingSourceReviewSheet: View {
                         }
                         if let inspectedPage {
                             if !inspectedPage.passage.isEmpty {
-                                Label("已找到唯一匹配的原句，返回时会高亮。",systemImage:"checkmark.circle")
+                                Label("已找到唯一匹配的原句，返回时会高亮。",appIcon:"checkmark.circle")
                                     .font(.caption).foregroundStyle(.secondary)
                             } else if !request.citation.source.rects.isEmpty,
                                       let fingerprint = inspectedPage.fingerprint,
                                       fingerprint == request.citation.tracking?.visualFingerprint {
-                                Label("与原页图像一致，返回时会标出原选区。",systemImage:"checkmark.circle")
+                                Label("与原页图像一致，返回时会标出原选区。",appIcon:"checkmark.circle")
                                     .font(.caption).foregroundStyle(.secondary)
                             } else {
                                 Text("确认后会返回此页。").font(.caption).foregroundStyle(.secondary)

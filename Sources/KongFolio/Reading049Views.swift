@@ -79,10 +79,10 @@ struct ReadingQuoteCorrectionView: View {
                 if hasChanges { Text("有未采用的校订").font(.caption).foregroundStyle(.secondary) }
             }
             HStack {
-                Button("上一处",systemImage:"chevron.left") { active -= 1 }.disabled(change == nil || active == 0)
+                Button { active -= 1 } label: { Label("上一处", appIcon: "chevron.left") }.disabled(change == nil || active == 0)
                 Text(change == nil ? (text == original ? "与原文一致" : "正在对照…") : "第 \(active+1) / \(differences?.changes.count ?? 0) 处")
                     .monospacedDigit().foregroundStyle(.secondary)
-                Button("下一处",systemImage:"chevron.right") { active += 1 }.disabled(change == nil || active+1 >= (differences?.changes.count ?? 0))
+                Button { active += 1 } label: { Label("下一处", appIcon: "chevron.right") }.disabled(change == nil || active+1 >= (differences?.changes.count ?? 0))
                 Spacer()
                 Button(differences?.coarse == true ? "恢复差异区段" : "恢复这一处原文",action:restoreChange).disabled(change == nil)
             }.font(.callout)
@@ -204,7 +204,7 @@ struct ReadingQuoteCorrectionView: View {
                 })) {
                     HStack {
                         differenceText(change.original.debugDescription,empty:"无",color:.orange)
-                        Image(systemName:"arrow.right")
+                        AppIcon("arrow.right")
                         differenceText(change.revised.debugDescription,empty:"无",color:.blue)
                     }
                 }

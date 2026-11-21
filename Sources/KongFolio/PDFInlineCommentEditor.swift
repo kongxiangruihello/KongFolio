@@ -32,7 +32,7 @@ struct PDFInlineCommentEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(editing ? "编辑评论" : "添加评论", systemImage: "text.bubble")
+            Label(editing ? "编辑评论" : "添加评论", appIcon: "text.bubble")
                 .font(.headline)
             if supportsStyle { typography }
             TextEditor(text: $text)
@@ -77,11 +77,11 @@ struct PDFInlineCommentEditor: View {
                 Stepper("\(style.fontSize) pt", value: $style.fontSize, in: 8...72)
                     .fixedSize()
                     .accessibilityLabel("字号")
-                Toggle(isOn: $style.bold) { Image(systemName: "bold") }
+                Toggle(isOn: $style.bold) { AppIcon("bold") }
                     .toggleStyle(.button)
                     .help("粗体")
                     .accessibilityLabel("粗体")
-                Toggle(isOn: $style.italic) { Image(systemName: "italic") }
+                Toggle(isOn: $style.italic) { AppIcon("italic") }
                     .toggleStyle(.button)
                     .help("斜体")
                     .accessibilityLabel("斜体")

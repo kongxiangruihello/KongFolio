@@ -82,15 +82,15 @@ struct TabBar: View {
             Menu {
                 ForEach(store.tabs) { tab in
                     Button { store.select(tab.id) } label: {
-                        if tab.id == store.selectedID { Label(tab.switcherTitle, systemImage: "checkmark") } else { Text(tab.switcherTitle) }
+                        if tab.id == store.selectedID { Label(tab.switcherTitle, appIcon: "checkmark") } else { Text(tab.switcherTitle) }
                     }
                 }
-            } label: { Image(systemName: "list.bullet") }
+            } label: { AppIcon("list.bullet") }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .frame(width: 28)
             .help("所有已打开的文件（共 \(store.tabs.count) 个）")
-            Button { store.addWorkspace() } label: { Image(systemName:"plus") }
+            Button { store.addWorkspace() } label: { AppIcon("plus") }
             .buttonStyle(.borderless).frame(width:28).help("新建空白标签页")
             .padding(.trailing, 8)
         }
@@ -171,10 +171,10 @@ private struct TabChip: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: icon).foregroundStyle(.secondary)
+            AppIcon(icon).foregroundStyle(.secondary)
             Text(title + (dirty ? " •" : "")).lineLimit(1).truncationMode(.middle).frame(maxWidth: compact ? 130 : 200, alignment: .leading)
                 .foregroundStyle(dimmed ? .secondary : .primary)
-            Button(action: close) { Image(systemName: "xmark").font(.caption2) }
+            Button(action: close) { AppIcon("xmark").font(.caption2) }
                 .buttonStyle(.plain)
                 .help("关闭此标签页")
         }

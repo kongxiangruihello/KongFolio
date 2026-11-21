@@ -71,7 +71,7 @@ struct ShelfPeriodicalOverview: View {
                 Button("完成") { dismiss() }.keyboardShortcut(.cancelAction)
             }
             if index.groups.isEmpty {
-                ContentUnavailableView("尚无可排序的期次",systemImage:"newspaper")
+                AppEmptyState("尚无可排序的期次",appIcon:"newspaper")
             } else {
                 Picker("跳到年代和卷册",selection:$selectedGroup) {
                     ForEach(index.groups) { group in Text(group.title).tag(Optional(group.id)) }

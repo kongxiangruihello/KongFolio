@@ -19,7 +19,7 @@ struct ReadingBrowserLayout<Browser:View,Editor:View>:View {
             } else if hasEditor {
                 VStack(alignment:.leading,spacing:10) {
                     deskHeader
-                    Button(action:onBack) { Label("返回记录列表",systemImage:"chevron.left") }.buttonStyle(.borderless)
+                    Button(action:onBack) { Label("返回记录列表",appIcon:"chevron.left") }.buttonStyle(.borderless)
                     editorArea
                 }
             } else { browserArea }
@@ -39,7 +39,7 @@ struct ReadingBrowserLayout<Browser:View,Editor:View>:View {
     @ViewBuilder private var editorArea:some View {
         if hasEditor { VStack(alignment:.leading,spacing:8) { editor() }.padding(.leading,8) }
         else {
-            ContentUnavailableView("选择一条记录开始编辑",systemImage:"square.and.pencil",description:Text("在左侧查找摘录、标注、评论和笔记，或点“新增”开始记录。"))
+            AppEmptyState("选择一条记录开始编辑",appIcon:"square.and.pencil",description:Text("在左侧查找摘录、标注、评论和笔记，或点“新增”开始记录。"))
                 .frame(maxWidth:.infinity,maxHeight:.infinity)
         }
     }

@@ -20,7 +20,7 @@ struct PrintedPagesEditor: View {
                     Picker("样式",selection:$row.style) { ForEach(PrintedPageSegment.Style.allCases,id:\.self) { Text($0.rawValue).tag($0) } }.labelsHidden().frame(width:130)
                     TextField("如 卷一-",text:$row.prefix).frame(width:100)
                     Text(row.preview).font(.caption).lineLimit(1)
-                    Spacer(); Button { rows.removeAll { $0.id == row.id } } label:{ Image(systemName:"minus.circle") }.help("删除这一段")
+                    Spacer(); Button { rows.removeAll { $0.id == row.id } } label:{ AppIcon("minus.circle") }.help("删除这一段")
                 }
             }
             HStack {

@@ -56,14 +56,14 @@ struct MarkdownEditorView: View {
         }) {
             VStack(spacing:0) {
                 HStack {
-                    Label("排版预览",systemImage:"doc.richtext").font(.headline)
+                    Label("排版预览",appIcon:"doc.richtext").font(.headline)
                     Spacer()
                     Button("完成") { showPreviewSheet = false }.keyboardShortcut(.cancelAction)
                 }.padding()
                 if !note.previewMessage.isEmpty {
                     Text(note.previewMessage).font(.caption).foregroundStyle(.orange).padding(8)
                 } else if note.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
-                    ContentUnavailableView("还没有可预览的内容",systemImage:"doc.text")
+                    AppEmptyState("还没有可预览的内容",appIcon:"doc.text")
                 } else if note.preview == nil {
                     ProgressView("正在生成预览…").frame(maxHeight:.infinity)
                 } else {
@@ -92,8 +92,8 @@ struct MarkdownEditorView: View {
                 .layoutPriority(-1)
             if note.readOnly, !focusedWriting {
                 Button { note.toggleReadOnly() } label: {
-                    if width >= 540 { Label("编辑",systemImage:"pencil") }
-                    else { Image(systemName:"pencil") }
+                    if width >= 540 { Label("编辑",appIcon:"pencil") }
+                    else { AppIcon("pencil") }
                 }.help("退出只读并编辑文件").accessibilityLabel("切换为编辑模式")
             }
             if note.format != .plain, !focusedWriting {
@@ -101,16 +101,16 @@ struct MarkdownEditorView: View {
                 if showsOptions { previewButton(width:width,showsLabel:fullControls && (width >= 1120 || (note.readOnly && width >= 540))) }
             }
             if !showsPrimaryToolbar && (showsOptions || focusedWriting) {
-                Button { note.save() } label:{ Image(systemName:"square.and.arrow.down") }
+                Button { note.save() } label:{ AppIcon("square.and.arrow.down") }
                     .help("保存当前文件（⌘S）").accessibilityLabel("保存当前文件")
             }
             if !focusedWriting {
                 if showsOptions {
-                    Button { showDisplay = true } label:{ if fullControls && (width >= 1120 || (note.readOnly && width >= 540)) { Label("显示设置",systemImage:"textformat.size") } else { Image(systemName:"textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
+                    Button { showDisplay = true } label:{ if fullControls && (width >= 1120 || (note.readOnly && width >= 540)) { Label("显示设置",appIcon:"textformat.size") } else { AppIcon("textformat.size") } }.help("编辑区字号、字体、行宽与间距；只影响屏幕显示").accessibilityLabel("编辑区显示设置")
                     Menu { editorOptions } label: {
                         if fullControls && (width >= 1120 || (note.readOnly && width >= 540)) {
-                            Label("更多编辑",systemImage:"ellipsis.circle")
-                        } else { Image(systemName:"ellipsis.circle") }
+                            Label("更多编辑",appIcon:"ellipsis.circle")
+                        } else { AppIcon("ellipsis.circle") }
                     }.menuStyle(.borderlessButton).fixedSize().help("更多编辑").accessibilityLabel("更多编辑")
                 }
             } else {
@@ -130,8 +130,8 @@ struct MarkdownEditorView: View {
                 note.showPreview.toggle()
             }
         } label: {
-            if showsLabel { Label("预览",systemImage:"rectangle.split.2x1") }
-            else { Image(systemName:"rectangle.split.2x1") }
+            if showsLabel { Label("预览",appIcon:"rectangle.split.2x1") }
+            else { AppIcon("rectangle.split.2x1") }
         }
         .tint(note.showPreview ? .accentColor : nil)
         .help(note.showPreview ? "隐藏排版预览" : "查看排版预览")
@@ -182,7 +182,7 @@ struct MarkdownEditorView: View {
             Menu {
                 Button("正文编辑") { setParagraphEditing(false) }
                 Button("段落编辑") { setParagraphEditing(true) }
-            } label: { Image(systemName:note.cleanEditing ? "text.alignleft" : "pencil") }
+            } label: { AppIcon(note.cleanEditing ? "text.alignleft" : "pencil") }
                 .menuStyle(.borderlessButton).fixedSize()
                 .help(note.cleanEditing ? "段落编辑" : "正文编辑").accessibilityLabel("编辑方式")
         }
@@ -203,14 +203,14 @@ struct MarkdownEditorView: View {
     private var toolbarButtons: some View {
         HStack(spacing: 6) {
             HStack(spacing: 8) {
-                Image(systemName: "square.stack.3d.up.fill").font(.title2).foregroundStyle(Brand.accent)
+                AppIcon("square.stack.3d.up.fill").font(.title2).foregroundStyle(Brand.accent)
                 Text("KongFolio").font(.headline)
                 NewFileIcons(store: store)
             }
             Divider().frame(height: 18)
             Button("保存") { note.save() }.help("保存当前文件（⌘S）")
             Button("另存为…") { note.save(asNew: true) }
-            Button { note.showVersionHistory = true } label: { Image(systemName: "clock.arrow.circlepath") }.help("查看和恢复文本文件的历史版本").disabled(note.fileURL == nil)
+            Button { note.showVersionHistory = true } label: { AppIcon("clock.arrow.circlepath") }.help("查看和恢复文本文件的历史版本").disabled(note.fileURL == nil)
             Text(note.format.rawValue).font(.caption).foregroundStyle(.secondary)
             Button("打印…") { do { DocumentPrinting.printDocument(try note.renderDocument()) } catch { note.error = error.localizedDescription } }
             Divider().frame(height: 18)
@@ -220,17 +220,17 @@ struct MarkdownEditorView: View {
                 Button("二级标题") { note.prefixLines("## ") }
                 Button("三级标题") { note.prefixLines("### ") }
             }.frame(width: 70)
-            Button { note.wrap("**", "**", placeholder: "粗体") } label: { Image(systemName: "bold") }.help("粗体")
-            Button { note.wrap("*", "*", placeholder: "斜体") } label: { Image(systemName: "italic") }.help("斜体")
-            Button { note.wrap("`", "`", placeholder: "代码") } label: { Image(systemName: "chevron.left.forwardslash.chevron.right") }.help("行内代码")
-            Button { note.wrap("[", "](https://)", placeholder: "链接文字") } label: { Image(systemName: "link") }.help("链接")
-            Button { note.prefixLines("- ") } label: { Image(systemName: "list.bullet") }.help("无序列表")
-            Button { note.prefixLines("1. ") } label: { Image(systemName: "list.number") }.help("有序列表")
-            Button { note.prefixLines("> ") } label: { Image(systemName: "text.quote") }.help("引用")
-            Button { note.wrap("```\n", "\n```", placeholder: "代码") } label: { Image(systemName: "curlybraces") }.help("代码块")
+            Button { note.wrap("**", "**", placeholder: "粗体") } label: { AppIcon("bold") }.help("粗体")
+            Button { note.wrap("*", "*", placeholder: "斜体") } label: { AppIcon("italic") }.help("斜体")
+            Button { note.wrap("`", "`", placeholder: "代码") } label: { AppIcon("chevron.left.forwardslash.chevron.right") }.help("行内代码")
+            Button { note.wrap("[", "](https://)", placeholder: "链接文字") } label: { AppIcon("link") }.help("链接")
+            Button { note.prefixLines("- ") } label: { AppIcon("list.bullet") }.help("无序列表")
+            Button { note.prefixLines("1. ") } label: { AppIcon("list.number") }.help("有序列表")
+            Button { note.prefixLines("> ") } label: { AppIcon("text.quote") }.help("引用")
+            Button { note.wrap("```\n", "\n```", placeholder: "代码") } label: { AppIcon("curlybraces") }.help("代码块")
             }.disabled(note.format != .markdown)
-            Button { note.chooseImage() } label: { Image(systemName: "photo.badge.plus") }.help("插入本地图片（也可粘贴截图或拖入图片）").disabled(note.format == .plain)
-            Button { note.insertTable() } label: { Image(systemName: "tablecells") }.help("插入表格").disabled(note.format == .plain)
+            Button { note.chooseImage() } label: { AppIcon("photo.badge.plus") }.help("插入本地图片（也可粘贴截图或拖入图片）").disabled(note.format == .plain)
+            Button { note.insertTable() } label: { AppIcon("tablecells") }.help("插入表格").disabled(note.format == .plain)
             Button("排版…") { showLayout = true }.help("字体、行距与页边距；用于预览、导出和打印")
             Spacer()
             if note.format != .plain { Toggle("预览", isOn: $note.showPreview).toggleStyle(.switch).controlSize(.small) }

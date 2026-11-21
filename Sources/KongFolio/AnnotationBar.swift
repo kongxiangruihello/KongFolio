@@ -67,7 +67,7 @@ struct AnnotationBar: View {
                     }
                 }
             }
-        } label: { Image(systemName: "star.square") }
+        } label: { AppIcon("star.square") }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 34).hint("样式预设：颜色、线宽、虚线、填充一键套用", $hovered)
     }
 
@@ -87,7 +87,7 @@ struct AnnotationBar: View {
                 Button("细（1 磅）") { workspace.styleTextBoxes(border: 1) }
                 Button("粗（2 磅）") { workspace.styleTextBoxes(border: 2) }
             }
-        } label: { Image(systemName: "textformat.size") }
+        } label: { AppIcon("textformat.size") }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 34).hint("文字框样式：先用“编辑标注”点选一个文字框，或在标注列表里勾选", $hovered)
     }
 
@@ -100,7 +100,7 @@ struct AnnotationBar: View {
             }
             Divider()
             Button("全部显示") { workspace.showAllLayers() }.disabled(workspace.hiddenKinds.isEmpty)
-        } label: { Image(systemName: workspace.hiddenKinds.isEmpty ? "square.3.layers.3d" : "square.3.layers.3d.slash") }
+        } label: { AppIcon(workspace.hiddenKinds.isEmpty ? "square.3.layers.3d" : "square.3.layers.3d.slash") }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 34).hint("按类型隐藏或显示标注（只影响显示，保存和导出时一律完整）", $hovered)
     }
 
@@ -136,7 +136,7 @@ struct AnnotationBar: View {
                 Button {
                     workspace.selectTool(entry.tool, highlighter: entry.highlighter)
                 } label: {
-                    Image(systemName: entry.symbol).frame(width: 26, height: 24)
+                    AppIcon(entry.symbol).frame(width: 26, height: 24)
                         .background(active(entry) ? Color.accentColor.opacity(0.28) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.plain)
@@ -162,16 +162,16 @@ struct AnnotationBar: View {
                 ForEach([1.0, 2.0, 3.0, 5.0, 8.0], id: \.self) { width in
                     Button("\(Int(width)) 磅") { workspace.penWidth = width }
                 }
-            } label: { Image(systemName: "lineweight") }
+            } label: { AppIcon("lineweight") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 34).hint(String(format: "线宽（现在 %.1f 磅）", workspace.penWidth), $hovered)
-            Toggle(isOn: $workspace.shapeFill) { Image(systemName: "square.fill") }
+            Toggle(isOn: $workspace.shapeFill) { AppIcon("square.fill") }
                 .toggleStyle(.button).buttonStyle(.plain).hint("矩形、椭圆填充半透明颜色", $hovered)
-            Toggle(isOn: $workspace.lineDashed) { Image(systemName: "line.3.horizontal") }
+            Toggle(isOn: $workspace.lineDashed) { AppIcon("line.3.horizontal") }
                 .toggleStyle(.button).buttonStyle(.plain).hint("虚线（直线、箭头、矩形、椭圆）", $hovered)
             Divider().frame(height: 20)
-            Button { workspace.undo() } label: { Image(systemName: "arrow.uturn.backward") }.buttonStyle(.plain).disabled(!workspace.canUndo).hint("撤销（⌘Z）", $hovered)
-            Button { workspace.redo() } label: { Image(systemName: "arrow.uturn.forward") }.buttonStyle(.plain).disabled(!workspace.canRedo).hint("重做（⇧⌘Z）", $hovered)
-            Button { workspace.showAnnotationBar = false } label: { Image(systemName: "xmark") }.buttonStyle(.plain).hint("收起工具栏，回到阅读", $hovered)
+            Button { workspace.undo() } label: { AppIcon("arrow.uturn.backward") }.buttonStyle(.plain).disabled(!workspace.canUndo).hint("撤销（⌘Z）", $hovered)
+            Button { workspace.redo() } label: { AppIcon("arrow.uturn.forward") }.buttonStyle(.plain).disabled(!workspace.canRedo).hint("重做（⇧⌘Z）", $hovered)
+            Button { workspace.showAnnotationBar = false } label: { AppIcon("xmark") }.buttonStyle(.plain).hint("收起工具栏，回到阅读", $hovered)
     }
 }
 

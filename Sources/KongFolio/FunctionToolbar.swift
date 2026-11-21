@@ -47,7 +47,7 @@ struct FunctionToolbar: View {
                         Text("暂无最近文件")
                     }
                 } label: {
-                    Image(systemName: "clock.arrow.circlepath").frame(width: 28, height: 28)
+                    AppIcon("clock.arrow.circlepath").frame(width: 28, height: 28)
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden)
                 .help("最近文件").accessibilityLabel("最近文件")
@@ -58,7 +58,7 @@ struct FunctionToolbar: View {
                     Button("启动恢复与阅读内存…") { store.showReadingSettings = true }
                     Button("检查更新…") { AppUpdateWindow.shared.show() }
                 } label: {
-                    Image(systemName: "ellipsis.circle").frame(width: 28, height: 28)
+                    AppIcon("ellipsis.circle").frame(width: 28, height: 28)
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden)
                 .help("更多").accessibilityLabel("更多")
@@ -82,7 +82,7 @@ struct FunctionToolbar: View {
         ToolbarControlSurface {
             Button(action: action) {
                 ZStack {
-                    Image(systemName: symbol).font(.system(size: 22, weight: .regular))
+                    AppIcon(symbol).font(.system(size: 22, weight: .regular))
                     if let badge {
                         Text(badge).font(.system(size: badge == "PDF" ? 6 : 8, weight: .bold))
                             .offset(y: 3)
@@ -109,7 +109,7 @@ struct FunctionToolbar: View {
                     ToolbarControlSurface {
                         Menu {
                             ShelfIssueActions(info:issueInfo,store:store)
-                        } label: { Image(systemName:"newspaper").frame(width:28,height:28) }
+                        } label: { AppIcon("newspaper").frame(width:28,height:28) }
                             .menuStyle(.borderlessButton).menuIndicator(.hidden)
                             .help(issueInfo.heading).accessibilityLabel("刊物期次")
                     }.frame(width:40)
@@ -117,7 +117,7 @@ struct FunctionToolbar: View {
                 if showsQueue {
                     ToolbarControlSurface {
                         Button { store.continueShelfQueue() } label:{
-                            Image(systemName:"forward.end").frame(width:28,height:28)
+                            AppIcon("forward.end").frame(width:28,height:28)
                         }
                         .disabled(store.shelfQueueOpening || store.library.nextShelfQueueBook() == nil)
                         .help(store.library.nextShelfQueueBook() == nil ? "已到待读队列末尾" : "打开待读队列的下一份")
@@ -128,7 +128,7 @@ struct FunctionToolbar: View {
                     Menu {
                         moreActions(overflow)
                     } label: {
-                        Image(systemName:"ellipsis.circle").frame(width:28,height:28)
+                        AppIcon("ellipsis.circle").frame(width:28,height:28)
                     }.menuStyle(.borderlessButton).menuIndicator(.hidden)
                         .help("更多工具").accessibilityLabel("更多工具")
                 }.frame(maxWidth:visible.isEmpty ? nil : .infinity)
@@ -284,7 +284,7 @@ struct FunctionToolbar: View {
                     ocrActions(workspace)
                 } label: {
                     if menu { label(action, menu: true) }
-                    else { Text("OCR").font(.system(size: 11, weight: .semibold)).frame(width: 28, height: 28) }
+                    else { Text("OCR").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color(nsColor: .systemTeal)).frame(width: 28, height: 28) }
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden)
                 .help(action.title).accessibilityLabel(action.title)
@@ -314,7 +314,7 @@ struct FunctionToolbar: View {
                     .help("摘录所选文字；未选文字时框选图片").accessibilityLabel("摘录文字或图片")
                     Menu {
                         ReadingExcerptActions(store: store)
-                    } label: { Image(systemName: "chevron.down").font(.system(size: 8)).frame(width: 14, height: 28) }
+                    } label: { AppIcon("chevron.down").font(.system(size: 8)).frame(width: 14, height: 28) }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden)
                     .help("摘录方式").accessibilityLabel("摘录方式")
                 }.disabled(workspace.busy || workspace.showsPageThumbnails)
@@ -475,8 +475,8 @@ private struct PDFToolbarToolsMenu: View {
             if showSignature { SignatureToolbarMenu(workspace:workspace,showTitle:true) }
             Button("打开 PDF 工具窗口…") { workspace.showTools = true }.disabled(workspace.readingLocked)
         } label: {
-            if showTitle { Label("PDF 工具",systemImage:"square.grid.2x2") }
-            else { Image(systemName:"square.grid.2x2").frame(width:28,height:28) }
+            if showTitle { Label("PDF 工具",appIcon:"square.grid.2x2") }
+            else { AppIcon("square.grid.2x2").frame(width:28,height:28) }
         }.menuStyle(.borderlessButton).menuIndicator(.hidden)
             .help("PDF 工具：页面编辑、压缩与转换").accessibilityLabel("PDF 工具")
     }

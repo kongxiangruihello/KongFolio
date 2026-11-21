@@ -87,7 +87,7 @@ struct LibraryCover: View {
     var body:some View {
         Group {
             if let cover { Image(nsImage:cover).resizable().scaledToFit() }
-            else { Image(systemName:"book.closed").font(.largeTitle).foregroundStyle(.blue).frame(maxWidth:.infinity,maxHeight:.infinity).background(.quaternary,in:RoundedRectangle(cornerRadius:5)) }
+            else { AppIcon("book.closed").font(.largeTitle).foregroundStyle(.blue).frame(maxWidth:.infinity,maxHeight:.infinity).background(.quaternary,in:RoundedRectangle(cornerRadius:5)) }
         }.task(id:path) { do { let data = try await LibraryCoverLoader.shared.load(URL(fileURLWithPath:path)); try Task.checkCancellation(); cover = data.flatMap(NSImage.init(data:)) } catch { cover = nil } }
     }
 }

@@ -41,7 +41,7 @@ struct ShelfImportReview: View {
                 Button("应用到所选") { applyBatch() }.disabled(chosen.isEmpty || (batchPeriodical.isEmpty && batchTopic.isEmpty))
             }
             if !warnings.isEmpty {
-                Label("\(warnings.count) 份需要核对",systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                Label("\(warnings.count) 份需要核对",appIcon:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
             }
             List(Array(pagination.range),id:\.self) { index in
                 let id = drafts[index].id

@@ -28,13 +28,15 @@ struct LibraryRecordDetail: View {
             VStack(alignment:.leading,spacing:10) {
                 HStack {
                     Spacer()
-                    Button(focusedWriting ? "退出专注写作" : "专注写作",
-                           systemImage:focusedWriting ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") {
+                    Button {
                         focusedWriting.toggle()
                         if focusedWriting {
                             DispatchQueue.main.async { proxy.scrollTo("focus-writing-header",anchor:.top) }
                             writingFocusRequest = UUID()
                         }
+                    } label: {
+                        Label(focusedWriting ? "退出专注写作" : "专注写作",
+                              appIcon: focusedWriting ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                     }.buttonStyle(.borderless)
                 }.id("focus-writing-header")
                 if !focusedWriting {
@@ -256,7 +258,7 @@ struct LibraryRecordDetail: View {
         }
     }
     private var noteSourceLabel: some View {
-        Label(current.noteSourceSummary,systemImage:"link")
+        Label(current.noteSourceSummary,appIcon:"link")
             .lineLimit(1).help(current.noteSourceSummary)
     }
     private func changeSource(_ source: ReadingNoteSource) {

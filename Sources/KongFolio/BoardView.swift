@@ -56,14 +56,14 @@ struct BoardView: View {
             HStack(spacing: 8) {
                 Text(board.displayTitle + (board.dirty && board.hasContent ? " •" : "")).font(.headline).lineLimit(1)
                 Divider().frame(height: 16)
-                Button { workspace.excerptSelection() } label: { Label("摘录选中文字", systemImage: "text.quote") }
+                Button { workspace.excerptSelection() } label: { Label("摘录选中文字", appIcon: "text.quote") }
                     .help("把选中的文字放进工作区（⌥⌘E）")
                     .disabled(workspace.count == 0)
-                Button { workspace.tool = .region } label: { Label("区域摘录", systemImage: "viewfinder") }
+                Button { workspace.tool = .region } label: { Label("区域摘录", appIcon: "viewfinder") }
                     .help("在页面上框选一块区域（图表、表格）放进工作区")
                     .disabled(workspace.count == 0)
-                Button { board.addNote() } label: { Label("便签", systemImage: "note.text.badge.plus") }.help("新建一张自由笔记")
-                Toggle(isOn: $connecting) { Label("连线", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
+                Button { board.addNote() } label: { Label("便签", appIcon: "note.text.badge.plus") }.help("新建一张自由笔记")
+                Toggle(isOn: $connecting) { Label("连线", appIcon: "point.topleft.down.to.point.bottomright.curvepath") }
                     .toggleStyle(.button).help("在两张卡片之间画线")
                 Button("生成笔记…") { showNotebook = true }.disabled(!board.hasContent)
                 Menu {
@@ -78,7 +78,7 @@ struct BoardView: View {
                     Button("打开工作区…") { board.openPanel() }
                     Button("保存工作区") { board.save() }.disabled(!board.hasContent)
                     Button("工作区另存为…") { board.save(asNew: true) }.disabled(!board.hasContent)
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: { AppIcon("ellipsis.circle") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 30)
             }
             .labelStyle(.titleAndIcon)
@@ -127,7 +127,7 @@ private struct CardView: View {
             Spacer(minLength: 0)
             if let source = card.source {
                 Button { store?.reveal(source) } label: {
-                    Label("\(source.fileName) · \(source.pageDescription)", systemImage: "arrow.turn.up.left").font(.caption2).lineLimit(1)
+                    Label("\(source.fileName) · \(source.pageDescription)", appIcon: "arrow.turn.up.left").font(.caption2).lineLimit(1)
                 }
                 .buttonStyle(.link).help("回到原文位置")
             }
@@ -166,14 +166,14 @@ private struct CardView: View {
     /// The strip at the top of the card: grab it to move the card.
     private var handle: some View {
         HStack(spacing: 6) {
-            Image(systemName: card.kind == .image ? "photo" : (card.kind == .note ? "note.text" : "text.quote")).foregroundStyle(tint)
+            AppIcon(card.kind == .image ? "photo" : (card.kind == .note ? "note.text" : "text.quote"), tone: tint)
             Spacer(minLength: 0)
             if let source = card.source {
-                Button { store?.reveal(source) } label: { Image(systemName: "arrow.turn.up.left") }
+                Button { store?.reveal(source) } label: { AppIcon("arrow.turn.up.left") }
                     .buttonStyle(.plain).font(.caption2).foregroundStyle(Color.accentColor).help("回到原文位置（双击卡片也可以）")
             }
-            Button { board.remove(card.id) } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain).font(.caption2).foregroundStyle(.secondary).help("删除这张卡片（原文的着色也会取消）")
+            Button { board.remove(card.id) } label: { AppIcon("xmark", tone: .red) }
+                .buttonStyle(.plain).font(.caption2).help("删除这张卡片（原文的着色也会取消）")
         }
         .frame(height: 16)
         .contentShape(Rectangle())
@@ -202,7 +202,7 @@ private struct CardView: View {
     }
 
     private var resizeHandle: some View {
-        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 9)).foregroundStyle(.secondary)
+        AppIcon("arrow.up.left.and.arrow.down.right").font(.system(size: 9)).foregroundStyle(.secondary)
             .padding(4)
             .contentShape(Rectangle())
             .gesture(

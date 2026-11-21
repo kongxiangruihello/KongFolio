@@ -39,7 +39,7 @@ struct SplitPane: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "doc.richtext").foregroundStyle(.secondary)
+            AppIcon("doc.richtext").foregroundStyle(.secondary)
             Text(partner.displayName).font(.caption.bold()).lineLimit(1).truncationMode(.middle)
                 .help(partner.displayPath ?? "")
             if partner.count > 0 { Text("\(partner.selection + 1) / \(partner.count) 页").font(.caption).foregroundStyle(.secondary).fixedSize() }
@@ -52,7 +52,7 @@ struct SplitPane: View {
             .toggleStyle(.checkbox)
             .font(.caption)
             .help("开启后，翻其中一份文档时另一份跟着翻，保持开启时的页码差")
-            Button { close() } label: { Image(systemName: "xmark") }
+            Button { close() } label: { AppIcon("xmark") }
                 .buttonStyle(.borderless)
                 .help("关闭并排阅读")
         }

@@ -104,7 +104,7 @@ struct LibraryEssayBlockView: View {
             HStack {
                 Text(block.record == nil ? "我的论述" : "原文引用与我的论述").font(.system(size:13,weight:.medium)).onDrag { NSItemProvider(object:block.id.uuidString as NSString) }
                 Spacer()
-                Menu { Button("上移") { journal.editEssay(essayID) { $0.move(block.id,delta:-1) } };Button("下移") { journal.editEssay(essayID) { $0.move(block.id,delta:1) } };Button("移除段落",role:.destructive) { journal.editEssay(essayID) { $0.blocks.removeAll{$0.id == block.id} } } } label:{Image(systemName:"ellipsis.circle")}.help("段落操作")
+                Menu { Button("上移") { journal.editEssay(essayID) { $0.move(block.id,delta:-1) } };Button("下移") { journal.editEssay(essayID) { $0.move(block.id,delta:1) } };Button("移除段落",role:.destructive) { journal.editEssay(essayID) { $0.blocks.removeAll{$0.id == block.id} } } } label:{AppIcon("ellipsis.circle")}.help("段落操作")
             }
             if !focusMode, let record = block.record {
                 VStack(alignment:.leading,spacing:6) {

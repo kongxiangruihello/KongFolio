@@ -48,7 +48,7 @@ struct TabSwitcherView: View {
 
     private func row(_ tab: OpenTab, selected: Bool) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: tab.switcherIcon).foregroundStyle(.secondary).frame(width: 18)
+            AppIcon(tab.switcherIcon).foregroundStyle(.secondary).frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(tab.switcherTitle).lineLimit(1).truncationMode(.middle)
                 if let detail = tab.switcherDetail {

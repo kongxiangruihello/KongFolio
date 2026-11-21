@@ -14,7 +14,8 @@ struct ExportReviewSheet: View {
                 ScrollView {
                     VStack(alignment:.leading,spacing:10) { ForEach(issues) { issue in
                         HStack(alignment:.top) {
-                            Image(systemName:issue.severity == .blocking ? "exclamationmark.circle.fill" : "info.circle").foregroundStyle(issue.severity == .blocking ? .red : .orange)
+                            AppIcon(issue.severity == .blocking ? "exclamationmark.circle.fill" : "info.circle",
+                                    tone: issue.severity == .blocking ? .red : .orange)
                             Text(issue.message).frame(maxWidth:.infinity,alignment:.leading).textSelection(.enabled)
                             Button("定位问题") { store.exportReview=nil;DispatchQueue.main.asyncAfter(deadline:.now()+0.25) { request.locate(issue) } }
                         }.padding(8).background(.secondary.opacity(0.06),in:RoundedRectangle(cornerRadius:6))

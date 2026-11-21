@@ -16,12 +16,12 @@ struct ToolbarSettingsView: View {
                 ForEach(preferences.order) { action in
                     PanelRow {
                         Toggle(isOn: Binding(get: { !preferences.hidden.contains(action) || action.pinned }, set: { on in update { if on { $0.hidden.remove(action) } else { $0.hidden.insert(action) } } })) {
-                            Label(action.title, systemImage: action.symbol)
+                            Label(action.title, appIcon: action.symbol)
                         }.disabled(action.pinned)
                         Spacer()
                         if action.pinned { Text("固定").font(.caption).foregroundStyle(.secondary) }
-                        Button { update { $0.move(action, by: -1) } } label: { Image(systemName: "arrow.up") }.help("上移 \(action.title)")
-                        Button { update { $0.move(action, by: 1) } } label: { Image(systemName: "arrow.down") }.help("下移 \(action.title)")
+                        Button { update { $0.move(action, by: -1) } } label: { AppIcon("arrow.up") }.help("上移 \(action.title)")
+                        Button { update { $0.move(action, by: 1) } } label: { AppIcon("arrow.down") }.help("下移 \(action.title)")
                     }
                 }.onMove { source, destination in update { $0.order.move(fromOffsets: source, toOffset: destination) } }
             }

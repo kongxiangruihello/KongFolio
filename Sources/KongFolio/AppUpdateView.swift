@@ -6,7 +6,7 @@ struct AppUpdateView: View {
     var install: () -> Void = {}
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Image(systemName: "arrow.down.app").font(.largeTitle).foregroundStyle(Brand.accent); VStack(alignment: .leading) { Text("KongFolio 更新").font(.title2.bold()); Text("当前版本 "+controller.current.description).foregroundStyle(.secondary) }; Spacer(); Button("返回阅读", action: returnToReading).keyboardShortcut(.cancelAction) }
+            HStack { AppIcon("arrow.down.app").font(.largeTitle).foregroundStyle(Brand.accent); VStack(alignment: .leading) { Text("KongFolio 更新").font(.title2.bold()); Text("当前版本 "+controller.current.description).foregroundStyle(.secondary) }; Spacer(); Button("返回阅读", action: returnToReading).keyboardShortcut(.cancelAction) }
             Text(controller.message).textSelection(.enabled).accessibilityLabel("更新状态").accessibilityValue(controller.message)
             if controller.phase == .downloading {
                 ProgressView(value: controller.progress.fraction).accessibilityLabel("更新下载进度")

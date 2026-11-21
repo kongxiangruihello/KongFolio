@@ -263,7 +263,7 @@ struct BookLibraryView: View {
                 if !library.shelfFilters.isEmpty {
                     Text("常用筛选").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top,8)
                     ForEach(library.shelfFilters) { filter in
-                        Button { applyFilter(filter) } label: { Label(filter.title,systemImage:"line.3.horizontal.decrease").lineLimit(1) }
+                        Button { applyFilter(filter) } label: { Label(filter.title,appIcon:"line.3.horizontal.decrease").lineLimit(1) }
                             .buttonStyle(.plain).padding(6).help(filter.title)
                             .contextMenu { Button("删除常用筛选",role:.destructive) { perform { try library.removeShelfFilter(filter.id) } } }
                     }
@@ -271,7 +271,7 @@ struct BookLibraryView: View {
                 HStack {
                     Text("专题").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     Spacer()
-                    Button { promptTopic() } label: { Image(systemName:"plus") }
+                    Button { promptTopic() } label: { AppIcon("plus") }
                         .buttonStyle(.borderless).help("新建专题").accessibilityLabel("新建专题")
                 }.padding(.top,14).padding(.bottom,4)
                 ForEach(library.shelfTopics,id:\.self) { topic in
@@ -291,7 +291,7 @@ struct BookLibraryView: View {
 
     private func scopeButton(_ key:String,_ title:String,_ icon:String) -> some View {
         Button { scope = key } label: {
-            Label(title,systemImage:icon).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading)
+            Label(title,appIcon:icon).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading)
                 .padding(.horizontal,8).padding(.vertical,6)
                 .background(scope == key ? Color.accentColor.opacity(0.15) : .clear,in:RoundedRectangle(cornerRadius:6))
         }.buttonStyle(.plain).help(title)
@@ -312,7 +312,7 @@ struct BookLibraryView: View {
                 Menu("常用筛选") { ForEach(library.shelfFilters) { filter in Button(filter.title) { applyFilter(filter) } } }
             }
             Button("新建专题…") { promptTopic() }
-        } label: { Label(heading,systemImage:"line.3.horizontal.decrease") }
+        } label: { Label(heading,appIcon:"line.3.horizontal.decrease") }
     }
 
     private func toolbar(_ books:[LibraryBook]) -> some View {
@@ -328,10 +328,10 @@ struct BookLibraryView: View {
                     }.disabled(store.currentPDFForShelf == nil)
                     Button("恢复旧版或已移出的书籍…") { pending = true }
                         .disabled((library.catalog.pendingBooks ?? []).isEmpty)
-                } label: { Label("添加",systemImage:"plus") }.fixedSize().disabled(addition.busy)
+                } label: { Label("添加",appIcon:"plus") }.fixedSize().disabled(addition.busy)
                 Picker("视图",selection:$grid) {
-                    Image(systemName:"list.bullet").accessibilityLabel("列表").tag(false)
-                    Image(systemName:"square.grid.2x2").accessibilityLabel("封面").tag(true)
+                    AppIcon("list.bullet").accessibilityLabel("列表").tag(false)
+                    AppIcon("square.grid.2x2").accessibilityLabel("封面").tag(true)
                 }.labelsHidden().pickerStyle(.segmented).fixedSize()
             }
             PanelRow {
@@ -415,7 +415,7 @@ struct BookLibraryView: View {
         let queue = library.readingQueue
         return List(books) { book in
             HStack(spacing:10) {
-                Image(systemName:"line.3.horizontal").foregroundStyle(.secondary)
+                AppIcon("line.3.horizontal").foregroundStyle(.secondary)
                     .onDrag { NSItemProvider(object:book.id.uuidString as NSString) }
                     .help("拖动调整待读顺序")
                 VStack(alignment:.leading,spacing:4) {
@@ -428,9 +428,9 @@ struct BookLibraryView: View {
                 }
                 Spacer()
                 if let index = queue.firstIndex(where:{$0.id == book.id}) {
-                    Button { perform { try library.moveShelfQueue(book.id,before:queue[index-1].id) } } label:{Image(systemName:"arrow.up")}
+                    Button { perform { try library.moveShelfQueue(book.id,before:queue[index-1].id) } } label:{AppIcon("arrow.up")}
                         .buttonStyle(.borderless).disabled(index == 0).help("上移").accessibilityLabel("上移")
-                    Button { perform { try library.moveShelfQueue(queue[index+1].id,before:book.id) } } label:{Image(systemName:"arrow.down")}
+                    Button { perform { try library.moveShelfQueue(queue[index+1].id,before:book.id) } } label:{AppIcon("arrow.down")}
                         .buttonStyle(.borderless).disabled(index+1 >= queue.count).help("下移").accessibilityLabel("下移")
                 }
                 if library.isShelfQueueDeferred(book.id) {
@@ -528,7 +528,7 @@ struct BookLibraryView: View {
 
     private func recordShortcut(_ label:String,item:ReadingLibraryItem,book:LibraryBook,action:@escaping ()->Void) -> some View {
         VStack(alignment:.leading,spacing:2) {
-            Button(action:action) { Label(label,systemImage:label == "继续上次笔记" ? "square.and.pencil" : "checkmark.seal") }
+            Button(action:action) { Label(label,appIcon:label == "继续上次笔记" ? "square.and.pencil" : "checkmark.seal") }
                 .buttonStyle(.link)
             Text(item.title).lineLimit(1).help(item.title)
             Text([citationForShelfRecord(item,book:book)?.display,
@@ -551,7 +551,7 @@ struct BookLibraryView: View {
     @ViewBuilder private func collection(_ books:[LibraryBook]) -> some View {
         if books.isEmpty {
             VStack(spacing:8) {
-                Image(systemName:"books.vertical").font(.largeTitle).foregroundStyle(.secondary)
+                AppIcon("books.vertical").font(.largeTitle).foregroundStyle(.secondary)
                 Text(library.books.isEmpty ? "书架为空" : "没有匹配的书籍").font(.headline)
                 if library.books.isEmpty { Text("通过「添加」或从访达拖入文献。").foregroundStyle(.secondary) }
             }.frame(maxWidth:.infinity,maxHeight:.infinity)
@@ -581,8 +581,8 @@ struct BookLibraryView: View {
                     LibraryCover(path:book.path).frame(width:36,height:48)
                     bookLabel(book,lines:1)
                     Spacer(minLength:6)
-                    if book.favorite { Image(systemName:"star.fill").foregroundStyle(.orange).accessibilityLabel("已收藏") }
-                    Button { open(book) } label: { Image(systemName:"arrow.right.circle") }
+                    if book.favorite { AppIcon("star.fill").foregroundStyle(.orange).accessibilityLabel("已收藏") }
+                    Button { open(book) } label: { AppIcon("arrow.right.circle") }
                         .buttonStyle(.borderless).help("继续阅读").accessibilityLabel("继续阅读")
                 }.padding(.vertical,4).frame(maxWidth:.infinity,alignment:.leading)
                  .modifier(ShelfRowGestures(single:{focused = book.id},double:{open(book)}))
@@ -624,7 +624,7 @@ struct BookLibraryView: View {
         return Menu {
             readingStatusActions([book.id], current: book.readingStatus)
         } label: {
-            Label(status.title, systemImage: status.symbol)
+            Label(status.title, appIcon: status.symbol)
                 .font(.caption)
                 .foregroundStyle(status == .unread ? Color.secondary : Color.accentColor)
         }
@@ -639,7 +639,7 @@ struct BookLibraryView: View {
             HStack {
                 Text(book.title).font(.headline).lineLimit(1).help(book.title)
                 Spacer()
-                Button { focused = nil } label: { Image(systemName:"xmark") }
+                Button { focused = nil } label: { AppIcon("xmark") }
                     .buttonStyle(.borderless).help("收起书籍详情")
             }
             PanelRow {
@@ -679,9 +679,9 @@ struct BookLibraryView: View {
         PanelRow {
             Text("\(pagination.total) 本").font(.caption).foregroundStyle(.secondary)
             Spacer()
-            Button { page = max(0,pagination.index-1) } label: { Image(systemName:"chevron.left") }.disabled(pagination.index == 0).help("上一页")
+            Button { page = max(0,pagination.index-1) } label: { AppIcon("chevron.left") }.disabled(pagination.index == 0).help("上一页")
             Text("\(pagination.index+1) / \(pagination.last+1)").font(.caption.monospacedDigit())
-            Button { page = pagination.index+1 } label: { Image(systemName:"chevron.right") }.disabled(pagination.index >= pagination.last).help("下一页")
+            Button { page = pagination.index+1 } label: { AppIcon("chevron.right") }.disabled(pagination.index >= pagination.last).help("下一页")
             Picker("每页",selection:$pageSize) { Text("20 本").tag(20);Text("50 本").tag(50) }.fixedSize()
         }
     }
@@ -783,7 +783,7 @@ struct BookLibraryView: View {
             Button {
                 change(ids, "更改阅读状态") { $0.readingStatus = status }
             } label: {
-                if current == status { Label(status.title, systemImage: "checkmark") }
+                if current == status { Label(status.title, appIcon: "checkmark") }
                 else { Text(status.title) }
             }
         }

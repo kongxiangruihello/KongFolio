@@ -12,7 +12,7 @@ struct DraftNoteTitle: View {
                     TextField("笔记名称",text:$name).textFieldStyle(.plain).focused($focused)
                         .onSubmit(commit).onExitCommand { name = note.title;focused = false }
                         .accessibilityLabel("笔记名称，回车确认")
-                    Image(systemName:"pencil").font(.system(size:12)).foregroundStyle(.secondary).opacity(hovering || focused ? 1 : 0).accessibilityHidden(true)
+                    AppIcon("pencil").font(.system(size:12)).foregroundStyle(.secondary).opacity(hovering || focused ? 1 : 0).accessibilityHidden(true)
                 }
                 .padding(.horizontal,5).padding(.vertical,3)
                 .background(hovering || focused ? Color.accentColor.opacity(0.08) : .clear,in:RoundedRectangle(cornerRadius:5))

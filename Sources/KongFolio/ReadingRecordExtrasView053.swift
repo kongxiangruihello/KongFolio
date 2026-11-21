@@ -127,7 +127,7 @@ private struct ReadingQuotationCard: View {
                 }.padding(20).adaptiveSheet(width:720,height:430,minimumWidth:460)
             } else {
                 VStack {
-                    ContentUnavailableView("原摘录暂不可用",systemImage:"doc.text")
+                    AppEmptyState("原摘录暂不可用",appIcon:"doc.text")
                     Button("关闭") { showReview = false }
                 }.padding(20)
             }

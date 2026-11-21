@@ -14,7 +14,7 @@ struct CleanWritingView: View {
                         StableTextEditor(text:Binding(get:{session.blocks.first{$0.id == block.id}?.source ?? block.source},set:{ value in note.text = session.edit(block.id,text:value) }),label:"正文段落",identity:"clean:"+note.id.uuidString+":"+block.id.uuidString,markdown:true,display:note.editorDisplay).frame(minHeight:120,maxHeight:360).disabled(note.readOnly)
                     case .image:
                         VStack(alignment:.leading) { CleanWritingImage(reference:block.reference,base:note.fileURL?.deletingLastPathComponent() ?? note.recoveryBaseURL);Text(block.title.isEmpty ? "图片" : block.title).font(.caption) }.padding(8).background(.quaternary.opacity(0.3))
-                    case .metadata:Label(block.title,systemImage:"text.badge.checkmark").font(.caption).foregroundStyle(.secondary)
+                    case .metadata:Label(block.title,appIcon:"text.badge.checkmark").font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }.frame(maxWidth:note.editorDisplay.width).padding(.horizontal,20).padding(.vertical,16).frame(maxWidth:.infinity) }

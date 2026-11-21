@@ -15,15 +15,15 @@ struct LibraryWritingEditor: View {
         VStack(alignment:.leading,spacing:5) {
             HStack(alignment:.top) {
                 LibraryWritingToolbar(session:session)
-                Button { showDisplay = true } label:{Image(systemName:"textformat.size")}.buttonStyle(.borderless).help("正文字号、行距与行宽").accessibilityLabel("正文显示设置")
+                Button { showDisplay = true } label:{AppIcon("textformat.size")}.buttonStyle(.borderless).help("正文字号、行距与行宽").accessibilityLabel("正文显示设置")
             }.padding(.horizontal,10).padding(.top,6)
             StableTextEditor(text:$text,label:label,identity:identity,session:session,markdown:true,onFocus:onFocus,display:display,onEscape:onEscape,continuesQuotes:continuesQuotes).frame(minHeight:220)
             HStack {
                 WritingCharacterCount(session:session)
                 Spacer()
-                Button { session.replayUndo() } label:{Image(systemName:"arrow.uturn.backward")}
+                Button { session.replayUndo() } label:{AppIcon("arrow.uturn.backward")}
                     .help("撤销本次编辑（⌘Z）").accessibilityLabel("撤销正文编辑")
-                Button { session.replayUndo(redo:true) } label:{Image(systemName:"arrow.uturn.forward")}
+                Button { session.replayUndo(redo:true) } label:{AppIcon("arrow.uturn.forward")}
                     .help("重做本次编辑（⇧⌘Z）").accessibilityLabel("重做正文编辑")
             }.buttonStyle(.borderless).font(.system(size:12)).foregroundStyle(.secondary).padding(.horizontal,12).padding(.bottom,8)
         }.background(Color(nsColor:.textBackgroundColor),in:RoundedRectangle(cornerRadius:10))
@@ -59,10 +59,10 @@ struct LibraryWritingToolbar: View {
         VStack(alignment:.leading,spacing:5) {
             ScrollView(.horizontal,showsIndicators:false) {
                 HStack(spacing:8) {
-                    Button { session.wrap("**","**",placeholder:"粗体") } label:{Image(systemName:"bold").frame(width:24,height:24)}.help("加粗（⌘B）")
-                    Button { session.wrap("*","*",placeholder:"斜体") } label:{Image(systemName:"italic").frame(width:24,height:24)}.help("斜体（⌘I）")
-                    Button { session.prefix("- ") } label:{Image(systemName:"list.bullet").frame(width:24,height:24)}.help("无序列表")
-                    Button { session.prefix("> ") } label:{Image(systemName:"text.quote").frame(width:24,height:24)}.help("引用段落")
+                    Button { session.wrap("**","**",placeholder:"粗体") } label:{AppIcon("bold").frame(width:24,height:24)}.help("加粗（⌘B）")
+                    Button { session.wrap("*","*",placeholder:"斜体") } label:{AppIcon("italic").frame(width:24,height:24)}.help("斜体（⌘I）")
+                    Button { session.prefix("- ") } label:{AppIcon("list.bullet").frame(width:24,height:24)}.help("无序列表")
+                    Button { session.prefix("> ") } label:{AppIcon("text.quote").frame(width:24,height:24)}.help("引用段落")
                     Menu("编辑") {
                         ForEach(1...3,id:\.self) { level in Button("\(level) 级标题") { session.prefix(String(repeating:"#",count:level)+" ") } }
                         Button("有序列表") { session.prefix("1. ") }

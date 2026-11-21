@@ -34,7 +34,7 @@ struct HomeReadingView: View {
                     header(wide: wide)
                     dashboard(wide: wide, compact: compact)
                     if lastRead == nil {
-                        Label("将 PDF、图片或文本文件拖入窗口即可打开", systemImage: "arrow.down.to.line")
+                        Label("将 PDF、图片或文本文件拖入窗口即可打开", appIcon: "arrow.down.to.line")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -92,13 +92,13 @@ struct HomeReadingView: View {
 
     @ViewBuilder private func shortcutButtons(compact: Bool) -> some View {
         Button { store.openReadingHistory(.bookshelf) } label: {
-            Label(compact ? "书架" : "个人书架", systemImage: "books.vertical")
+            Label(compact ? "书架" : "个人书架", appIcon: "books.vertical")
         }.buttonStyle(HomeWorkspaceButtonStyle(.quiet))
         Button { store.openReadingDesk(.search, window: true) } label: {
-            Label("资料库", systemImage: "tray.full")
+            Label("资料库", appIcon: "tray.full")
         }.buttonStyle(HomeWorkspaceButtonStyle(.quiet))
         Button { workspace.open() } label: {
-            Label("打开文件", systemImage: "folder")
+            Label("打开文件", appIcon: "folder")
         }.buttonStyle(HomeWorkspaceButtonStyle(lastRead == nil ? .accent : .quiet))
     }
 
@@ -123,7 +123,7 @@ struct HomeReadingView: View {
             ProgressView().controlSize(.small).accessibilityLabel("正在准备文件")
         }
         if !message.isEmpty {
-            Label(message, systemImage: "info.circle")
+            Label(message, appIcon: "info.circle")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -163,7 +163,7 @@ struct HomeReadingView: View {
         Label {
             Text(title)
         } icon: {
-            Image(systemName: symbol)
+            AppIcon(symbol)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(tint)
                 .frame(width: 26, height: 26)
@@ -279,7 +279,7 @@ struct HomeReadingView: View {
                 foldersExpanded = true
                 store.chooseHomeFolders()
             } label: {
-                Label("固定文件夹…", systemImage: "plus")
+                Label("固定文件夹…", appIcon: "plus")
             }.buttonStyle(HomeWorkspaceButtonStyle(.quiet))
         }
     }
@@ -299,7 +299,7 @@ struct HomeReadingView: View {
                     Button("取消固定", role: .destructive) {
                         store.updateHomeFolders(store.homePinnedFolders.filter { $0.id != folder.id })
                     }
-                } label: { Image(systemName: "ellipsis").frame(width: 24) }
+                } label: { AppIcon("ellipsis").frame(width: 24) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 .help("文件夹操作").accessibilityLabel("文件夹操作")
             }
@@ -320,7 +320,7 @@ struct HomeReadingView: View {
                         .accessibilityHidden(true)
                 }
                 VStack(alignment: .leading, spacing: 7) {
-                    Label("继续阅读", systemImage: "book")
+                    Label("继续阅读", appIcon: "book")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color(red: 0.76, green: 0.86, blue: 1))
                         .accessibilityAddTraits(.isHeader)
@@ -368,7 +368,7 @@ struct HomeReadingView: View {
                     Button("重新定位…") { chooseReplacement(item) }
                 default:
                     Button { resume(item, batch: batch) } label: {
-                        Label(phase == .ready ? "打开文件" : "继续阅读", systemImage: "arrow.right")
+                        Label(phase == .ready ? "打开文件" : "继续阅读", appIcon: "arrow.right")
                             .labelStyle(.titleAndIcon)
                     }
                 }
@@ -377,7 +377,7 @@ struct HomeReadingView: View {
                 if let batch { Button("查看本批") { showBatch(batch) } }
                 Button("重新定位原文件…") { chooseReplacement(item) }
             } label: {
-                Image(systemName: "ellipsis").foregroundStyle(.white)
+                AppIcon("ellipsis", tone: AppIcon.onAccent)
                     .frame(width: 30, height: 28)
                     .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
             }

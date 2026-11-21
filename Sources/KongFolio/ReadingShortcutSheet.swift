@@ -19,7 +19,7 @@ struct ReadingShortcutSheet: View {
                 Button("保存快捷方式…") { perform { if let url = try workspace.saveReadingShortcut(mode: mode) { saved = url; message = "已保存。点击“在访达中显示”，再把该文件拖到 Dock 右侧。" } } }.buttonStyle(.borderedProminent)
             }
             if let saved {
-                Label("将这本书的快捷方式拖到 Dock 右侧", systemImage: "book.closed")
+                Label("将这本书的快捷方式拖到 Dock 右侧", appIcon: "book.closed")
                     .padding(8).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
                     .onDrag { NSItemProvider(object: saved as NSURL) }
                     .help("拖到 Dock 分隔线后、废纸篓旁")
