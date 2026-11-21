@@ -15,7 +15,7 @@ struct SignatureManagerSheet: View {
 
     private var placementWorkspace: Workspace? {
         guard let workspace = store.commandWorkspace, workspace.count > 0,
-              !workspace.readingLocked, !workspace.busy, workspace.pdfView != nil else { return nil }
+              workspace.canSignCurrentPage, workspace.pdfView != nil else { return nil }
         return workspace
     }
 
@@ -27,14 +27,25 @@ struct SignatureManagerSheet: View {
                     if readable { Text("\(templates.count) 枚已保存签名").font(.caption).foregroundStyle(.secondary) }
                 }
                 Spacer()
-                Button("导入图片签名…") { showImport = true }.disabled(!readable)
+                Menu("添加签名") {
+                    Button("在当前页手写签名") {
+                        guard let workspace = placementWorkspace else { return }
+                        returnToPDF(workspace) { workspace.beginHandwrittenSignature() }
+                    }.disabled(placementWorkspace == nil)
+                    Button("保存本页手写签名") {
+                        guard let workspace = placementWorkspace else { return }
+                        if workspace.saveSignature() { load() }
+                        else { message = workspace.error ?? "未能保存手写签名。" }
+                    }.disabled(placementWorkspace?.hasHandwrittenSignature != true)
+                    Button("导入图片签名…") { showImport = true }
+                }.disabled(!readable)
             }
             if !message.isEmpty { Text(message).font(.callout).foregroundStyle(.red) }
             if !loaded {
                 ProgressView("正在读取签名…").frame(maxWidth:.infinity,minHeight:130)
             } else if readable && templates.isEmpty {
                 ContentUnavailableView("还没有保存的签名",systemImage:"signature",
-                                       description:Text("可从图片或剪贴板导入。"))
+                                       description:Text("可保存 PDF 上的手写签名，也可从图片或剪贴板导入。"))
                     .frame(maxWidth:.infinity,minHeight:160)
             } else if readable {
                 signatureRows
@@ -96,8 +107,11 @@ struct SignatureManagerSheet: View {
     private func signatureRow(_ template: SignatureTemplate) -> some View {
         HStack(spacing:10) {
             SignatureThumbnail(template:template)
-            Text(template.name).lineLimit(2).help(template.name)
-                .frame(maxWidth:.infinity,alignment:.leading)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(template.name).lineLimit(2).help(template.name)
+                Text(template.image == nil ? "手写签名" : "图片签名")
+                    .font(.caption).foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, alignment: .leading)
             Button("放置") { place(template) }.disabled(placementWorkspace == nil)
                 .help(placementWorkspace == nil ? "打开可编辑的 PDF 后即可放置" : "放置到当前 PDF")
                 .accessibilityLabel("放置 "+template.name)
@@ -129,10 +143,15 @@ struct SignatureManagerSheet: View {
 
     private func place(_ template: SignatureTemplate) {
         guard let workspace = placementWorkspace else { return }
+        returnToPDF(workspace) { workspace.beginPlacing(template) }
+    }
+
+    private func returnToPDF(_ workspace: Workspace, perform: @escaping () -> Void) {
         dismiss()
-        DispatchQueue.main.asyncAfter(deadline:.now()+0.25) {
-            guard store.commandWorkspace === workspace else { return }
-            workspace.beginPlacing(template)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            guard store.commandWorkspace === workspace, workspace.canSignCurrentPage else { return }
+            workspace.showsPageThumbnails = false
+            perform()
         }
     }
 }

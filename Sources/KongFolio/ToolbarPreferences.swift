@@ -17,7 +17,7 @@ enum ToolbarAction: String, Codable, CaseIterable, Identifiable {
         case .close: return "关闭"
         case .export: return "导出"
         case .ocr: return "OCR 识别"
-        case .signature: return "图片签名"
+        case .signature: return "签名"
         case .print: return "打印"
         }
     }

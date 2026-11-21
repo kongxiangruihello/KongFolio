@@ -41,6 +41,37 @@ final class Release045Tests: XCTestCase {
         XCTAssertEqual(try SignatureLibrary.read(storage:folder).map(\.id),[imported.id])
     }
 
+    @MainActor func testHandwrittenAndImportedSignaturesShareManagement() throws {
+        let folder = try root()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = WorkspaceStore(storage: folder)
+        let workspace = store.addWorkspace()
+        workspace.document = SignaturePositionTests().document(pages: 1)
+        let page = try XCTUnwrap(workspace.page)
+        let bounds = CGRect(x: 30, y: 30, width: 40, height: 20)
+        for author in ["一般批注", "KongFolio Signature"] {
+            let stroke = PDFAnnotation(bounds: bounds, forType: .ink, withProperties: nil)
+            let path = NSBezierPath()
+            path.move(to: CGPoint(x: 5, y: 5))
+            path.line(to: CGPoint(x: 35, y: 15))
+            stroke.add(path)
+            stroke.userName = author
+            page.addAnnotation(stroke)
+        }
+        let image = try XCTUnwrap(workspace.addSignatureImage(SignaturePositionTests().square(), name: "图片"))
+        XCTAssertTrue(workspace.hasHandwrittenSignature)
+        guard workspace.saveSignature() else { return XCTFail("未能保存手写签名") }
+        let library = try store.editManagedSignatures {
+            if let index = $0.firstIndex(where: { $0.image == nil }) { $0[index].name = "手写" }
+        }
+        XCTAssertEqual(library.map(\.name), ["图片", "手写"])
+        XCTAssertEqual(library.first?.id, image.id)
+        let handwritten = try XCTUnwrap(library.first { $0.image == nil })
+        let saved = try XCTUnwrap(PDFDocument(data: handwritten.pdf))
+        XCTAssertEqual(saved.page(at: 0)?.annotations.count, 1)
+        XCTAssertEqual(workspace.signatures.map(\.name), library.map(\.name))
+    }
+
     @MainActor func testSignatureImageReallyRemainsInSavedPDFWithoutLocalMetadata() throws {
         let folder = try root(),workspace = Workspace(storage:folder);workspace.document = SignaturePositionTests().document(pages:1)
         let image = SignaturePositionTests().square(),template = try XCTUnwrap(workspace.addSignatureImage(image,name:"持久签名")),view = SignaturePositionTests.StubView();workspace.pdfView = view

@@ -71,15 +71,40 @@ extension Workspace {
         commitAnnotationEdit(edit)
         selectedAnnotation = annotation
     }
-    func saveSignature() {
-        guard let page else { return }
-        let strokes = page.annotations.filter { $0.type == "Ink" && $0.userName == "KongFolio Signature" }
-        guard !strokes.isEmpty else { error = "请先使用签名工具手写签名。将保存当前页的所有签名笔画。"; return }
-        let doc = PDFDocument(); let blank = PDFPage(); blank.setBounds(page.bounds(for: .mediaBox), for: .mediaBox); doc.insert(blank, at: 0)
-        for stroke in strokes { if let copy = stroke.copy() as? PDFAnnotation { blank.addAnnotation(copy) } }
-        guard let data = doc.dataRepresentation() else { return }
-        let template = SignatureTemplate(name: "签名 \(signatures.count + 1)", pdf: data)
-        if updateSignatureLibrary({ $0.append(template) }) { status = "签名已保存在本机" }
+    var canSignCurrentPage: Bool {
+        count > 0 && !readingLocked && !busy && placingSignature == nil
+    }
+
+    private var handwrittenSignatureStrokes: [PDFAnnotation] {
+        page?.annotations.filter { $0.type == "Ink" && $0.userName == "KongFolio Signature" } ?? []
+    }
+
+    var hasHandwrittenSignature: Bool { !handwrittenSignatureStrokes.isEmpty }
+
+    func beginHandwrittenSignature() {
+        guard canSignCurrentPage else { return }
+        showsPageThumbnails = false
+        showAnnotationBar = true
+        selectTool(.signature)
+        status = "在页面上手写签名，然后在「签名」菜单中保存本页手写签名"
+    }
+
+    @discardableResult func saveSignature() -> Bool {
+        guard canSignCurrentPage, let page else { return false }
+        let strokes = handwrittenSignatureStrokes
+        guard !strokes.isEmpty else { error = "请先使用签名工具手写签名。将保存当前页的所有签名笔画。"; return false }
+        let doc = PDFDocument()
+        let blank = PDFPage()
+        blank.setBounds(page.bounds(for: .mediaBox), for: .mediaBox)
+        doc.insert(blank, at: 0)
+        for stroke in strokes {
+            if let copy = stroke.copy() as? PDFAnnotation { blank.addAnnotation(copy) }
+        }
+        guard let data = doc.dataRepresentation() else { return false }
+        let template = SignatureTemplate(name: "手写签名 \(signatures.count + 1)", pdf: data)
+        guard updateSignatureLibrary({ $0.append(template) }) else { return false }
+        status = "签名已保存在本机"
+        return true
     }
     func insertSignature(_ template: SignatureTemplate) {
         guard !readingLocked else { return }

@@ -1313,9 +1313,7 @@ import UniformTypeIdentifiers
         case .compress: compress()
         case .ocr: ocr()
         case .ocrCorrection: DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.showOCRBatchCorrection = true }
-        case .sign:
-            tool = .signature
-            status = "在页面上拖动手写签名；可将当前页墨迹保存到签名库"
+        case .sign: beginHandwrittenSignature()
         case .compare: compare()
         }
     }

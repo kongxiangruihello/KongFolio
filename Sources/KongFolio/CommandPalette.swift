@@ -36,7 +36,7 @@ enum FolioCommand: String, CaseIterable, Identifiable {
         case .removePages: return "删除选中页面"
         case .blankPage: return "插入空白页"
         case .annotation: return "显示或隐藏标注工具"
-        case .signature: return "放置图片签名"
+        case .signature: return "签名管理"
         case .tools: return "打开快捷工具"
         case .table: return "提取 PDF 表格"
         case .forms: return "填写 PDF 表单"
@@ -84,7 +84,7 @@ extension WorkspaceStore {
     func unavailableReason(_ command: FolioCommand) -> String? {
         let w = commandWorkspace
         switch command {
-        case .bookshelf, .shortcutManager, .historySettings: return nil
+        case .bookshelf, .shortcutManager, .historySettings, .signature: return nil
         case .bookNotebook: return w?.canCreateReadingShortcut == true ? nil : "请先打开或保存书籍"
         case .readingHistory, .recoveryCenter, .backgroundJobs, .open, .newPDF, .newMarkdown, .newHTML, .newText, .searchFiles, .compare, .tasks, .switchTabs: return nil
         case .exportCheck, .save, .saveAs, .exportPDF, .exportWord, .printDocument:
@@ -97,7 +97,6 @@ extension WorkspaceStore {
             guard let w, w.count > 0 else { return "请先打开 PDF 文档" }
             if w.busy { return "请等待当前任务完成" }
             if command == .history, w.historySource == nil { return "请先保存此文档" }
-            if command == .signature, w.signatures.isEmpty { return "请先在标注工具中导入图片签名" }
             if command == .removePages, w.effectivePages.count >= w.count { return "文档至少需要保留一页" }
             return nil
         }
@@ -138,7 +137,7 @@ extension WorkspaceStore {
         case .removePages: w?.remove()
         case .blankPage: w?.insertBlankPage()
         case .annotation: w?.showAnnotationBar.toggle()
-        case .signature: if let template = w?.signatures.first { w?.beginPlacing(template) }
+        case .signature: showSignatureManager = true
         case .tools: w?.showTools = true
         case .table: w?.showTableExtraction = true
         case .forms: w?.showPDFForms = true
