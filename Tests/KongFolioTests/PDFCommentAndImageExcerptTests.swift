@@ -46,6 +46,51 @@ final class PDFCommentAndImageExcerptTests: XCTestCase {
         XCTAssertEqual(reopened.annotations.first?.contents, "第一条评论")
     }
 
+    @MainActor func testStyleOnlyEditSurvivesUndoRedoAndPDFRoundTrip() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = Workspace(storage: root)
+        workspace.document = try document()
+        let page = try XCTUnwrap(workspace.document.page(at: 0))
+        let anchor = CGRect(x: 45, y: 175, width: 110, height: 16)
+        let text = "评论 Comment"
+        XCTAssertTrue(workspace.saveInlineComment(text, page: page, anchor: anchor, quote: "原文"))
+        let card = try XCTUnwrap(page.annotations.first)
+        let original = PDFInlineComment.style(of: card)
+        var style = original
+        style.typeface = .serif
+        style.fontSize = 20
+        style.bold = true
+        style.italic = true
+        style.alignment = .center
+        style.width = 260
+        style.height = 110
+        style.automaticHeight = false
+        style.frame = .dashed
+        style.textColor = 0x29384B
+        style.backgroundColor = 0xFFDDB2
+
+        XCTAssertTrue(workspace.saveInlineComment(text, page: page, anchor: anchor, existing: card, style: style))
+        XCTAssertEqual(card.bounds.size, CGSize(width: 260, height: 110))
+        XCTAssertEqual(card.alignment, .center)
+        XCTAssertEqual(card.border?.style, .dashed)
+        XCTAssertEqual(card.font?.pointSize, 20)
+        XCTAssertEqual(PDFCommentStyle.rgb(card.color), style.backgroundColor)
+        workspace.undo()
+        let previous = try XCTUnwrap(page.annotations.first)
+        XCTAssertEqual(PDFInlineComment.style(of: previous), original)
+        workspace.redo()
+        XCTAssertEqual(page.annotations.first.map(PDFInlineComment.style(of:)), style)
+
+        let data = try XCTUnwrap(workspace.document.dataRepresentation())
+        let reopened = try XCTUnwrap(PDFDocument(data: data))
+        let reloaded = try XCTUnwrap(reopened.page(at: 0)?.annotations.first)
+        XCTAssertEqual(PDFInlineComment.style(of: reloaded), style)
+        XCTAssertEqual(reloaded.bounds.size, CGSize(width: 260, height: 110))
+        XCTAssertEqual(PDFInlineComment.anchor(of: reloaded), anchor)
+        XCTAssertEqual(reloaded.contents, text)
+    }
+
     func testImageExcerptUsesCropBoxOriginAndPageRotation() {
         let box = CGRect(x: 10, y: 20, width: 128, height: 64)
         let region = CGRect(x: 42, y: 28, width: 16, height: 16)

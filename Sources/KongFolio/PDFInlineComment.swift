@@ -1,10 +1,9 @@
 import AppKit
 import PDFKit
-import SwiftUI
 
 enum PDFInlineComment {
     private static let anchorKey = PDFAnnotationKey(rawValue: "KFInlineCommentAnchor")
-    private static let fontSize: CGFloat = 12
+    private static let styleKey = PDFAnnotationKey(rawValue: "KFInlineCommentStyle")
 
     static func isCard(_ annotation: PDFAnnotation) -> Bool {
         annotation.type == "FreeText" && annotation.value(forAnnotationKey: anchorKey) is String
@@ -16,10 +15,35 @@ enum PDFInlineComment {
         return rect.isEmpty || rect.isInfinite ? nil : rect
     }
 
-    static func card(for text: String, anchor: CGRect, on page: PDFPage, quote: String?) -> PDFAnnotation {
+    static func style(of annotation: PDFAnnotation) -> PDFCommentStyle {
+        if let value = annotation.value(forAnnotationKey: styleKey) as? String,
+           let saved = try? JSONDecoder().decode(PDFCommentStyle.self, from: Data(value.utf8)) {
+            return saved.normalized
+        }
+        var style = PDFCommentStyle()
+        guard isCard(annotation) else { return style }
+        let width = annotation.bounds.width
+        if width.isFinite, width >= 80 { style.width = Int(min(width, 1200).rounded()) }
+        if let font = annotation.font, font.pointSize.isFinite {
+            style.fontSize = Int(min(max(font.pointSize, 8), 72).rounded())
+        }
+        if let ink = annotation.fontColor.flatMap(PDFCommentStyle.rgb) { style.textColor = ink }
+        if let fill = PDFCommentStyle.rgb(annotation.color) { style.backgroundColor = fill }
+        style.transparent = annotation.color.alphaComponent == 0
+        if let border = annotation.border, border.lineWidth > 0 {
+            style.frame = border.style == .dashed ? .dashed : .solid
+        } else {
+            style.frame = .none
+        }
+        return style
+    }
+
+    static func card(for text: String, anchor: CGRect, on page: PDFPage, quote: String?,
+                     style: PDFCommentStyle) -> PDFAnnotation {
         let box = page.bounds(for: .cropBox)
-        let width = min(220, max(1, box.width - 12))
-        let height = fittedHeight(text, width: width, pageHeight: box.height)
+        let size = cardSize(text, style: style, in: box)
+        let width = size.width
+        let height = size.height
         let gap: CGFloat = 10
         let canUseRight = anchor.maxX + gap + width <= box.maxX - 6
         let canUseLeft = anchor.minX - gap - width >= box.minX + 6
@@ -29,34 +53,53 @@ enum PDFInlineComment {
             : lowerEdge >= box.minY + 6 ? lowerEdge : anchor.maxY + gap
         let bounds = contained(CGRect(x: x, y: y, width: width, height: height), in: box)
         let annotation = PDFAnnotation(bounds: bounds, forType: .freeText, withProperties: nil)
-        annotation.contents = text
-        annotation.font = NSFont.systemFont(ofSize: fontSize)
-        annotation.fontColor = NSColor(srgbRed: 0.10, green: 0.15, blue: 0.22, alpha: 1)
-        annotation.color = NSColor(srgbRed: 0.91, green: 0.95, blue: 1, alpha: 1)
-        let border = PDFBorder()
-        border.lineWidth = 0.65
-        annotation.border = border
+        apply(style, text: text, to: annotation)
         annotation.setValue(NSStringFromRect(anchor), forAnnotationKey: anchorKey)
         if let quote, !quote.isEmpty { annotation.setValue(quote, forAnnotationKey: ReadingServices.quoteKey) }
         return annotation
     }
 
-    static func update(_ annotation: PDFAnnotation, text: String, on page: PDFPage) {
-        annotation.contents = text
-        guard isCard(annotation) else { return }
+    static func update(_ annotation: PDFAnnotation, text: String, style: PDFCommentStyle, on page: PDFPage) {
+        guard isCard(annotation) else { annotation.contents = text; return }
         let box = page.bounds(for: .cropBox)
         let old = annotation.bounds
-        let height = fittedHeight(text, width: old.width, pageHeight: box.height)
-        annotation.bounds = contained(CGRect(x: old.minX, y: old.maxY - height, width: old.width, height: height), in: box)
+        let size = cardSize(text, style: style, in: box)
+        annotation.bounds = contained(CGRect(x: old.minX, y: old.maxY - size.height,
+                                              width: size.width, height: size.height), in: box)
+        apply(style, text: text, to: annotation)
     }
 
-    private static func fittedHeight(_ text: String, width: CGFloat, pageHeight: CGFloat) -> CGFloat {
+    private static func apply(_ style: PDFCommentStyle, text: String, to annotation: PDFAnnotation) {
+        annotation.removeValue(forAnnotationKey: .appearanceDictionary)
+        annotation.contents = text
+        annotation.font = style.font
+        annotation.fontColor = style.ink
+        annotation.alignment = style.alignment.native
+        annotation.color = style.fill
+        let border = PDFBorder()
+        border.lineWidth = style.frame == .none ? 0 : 1
+        if style.frame == .dashed {
+            border.style = .dashed
+            border.dashPattern = [4, 3]
+        }
+        annotation.border = border
+        if let data = try? JSONEncoder().encode(style) {
+            annotation.setValue(String(decoding: data, as: UTF8.self), forAnnotationKey: styleKey)
+        }
+    }
+
+    private static func cardSize(_ text: String, style: PDFCommentStyle, in box: CGRect) -> CGSize {
+        let width = min(CGFloat(style.width), max(1, box.width - 12))
+        let availableHeight = max(1, box.height - 12)
+        if !style.automaticHeight {
+            return CGSize(width: width, height: min(CGFloat(style.height), availableHeight))
+        }
         let rect = (text as NSString).boundingRect(
             with: CGSize(width: max(1, width - 16), height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: NSFont.systemFont(ofSize: fontSize)]
+            attributes: [.font: style.font]
         )
-        return min(max(1, pageHeight - 12), max(28, ceil(rect.height) + 16))
+        return CGSize(width: width, height: min(availableHeight, max(28, ceil(rect.height) + 16)))
     }
 
     private static func contained(_ rect: CGRect, in page: CGRect) -> CGRect {
@@ -70,63 +113,27 @@ enum PDFInlineComment {
     }
 }
 
-struct PDFInlineCommentEditor: View {
-    @State var text: String
-    let editing: Bool
-    let save: (String) -> Void
-    let cancel: () -> Void
-    @FocusState private var focused: Bool
-
-    private var trimmedText: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            Label(editing ? "编辑评论" : "添加评论", systemImage: "text.bubble")
-                .font(.headline)
-            TextEditor(text: $text)
-                .font(.system(size: 14))
-                .scrollContentBackground(.hidden)
-                .frame(height: 126)
-                .padding(5)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 7).strokeBorder(Color.accentColor.opacity(focused ? 0.75 : 0.25))
-                        .allowsHitTesting(false)
-                }
-                .focused($focused)
-                .accessibilityLabel("评论内容")
-            HStack(spacing: 8) {
-                Spacer()
-                Button("取消", action: cancel).keyboardShortcut(.cancelAction)
-                Button("保存") { save(trimmedText) }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.return, modifiers: [.command])
-                    .disabled(trimmedText.isEmpty)
-            }
-        }
-        .padding(14)
-        .frame(width: 300)
-        .task { focused = true }
-    }
-}
-
 @MainActor extension Workspace {
     @discardableResult
     func saveInlineComment(_ text: String, page: PDFPage, anchor: CGRect, quote: String? = nil,
-                           existing: PDFAnnotation? = nil, highlight: PDFSelection? = nil) -> Bool {
+                           existing: PDFAnnotation? = nil, highlight: PDFSelection? = nil,
+                           style: PDFCommentStyle? = nil) -> Bool {
         let content = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty, !busy, !readingLocked, page.document === document else { return false }
         if let existing {
             guard existing.page === page else { return false }
-            if existing.contents != content {
+            let unchangedStyle = PDFInlineComment.style(of: existing)
+            let requested = style?.normalized ?? unchangedStyle
+            if existing.contents != content || (PDFInlineComment.isCard(existing) && requested != unchangedStyle) {
                 let edit = beginAnnotationEdit([existing])
                 guard !edit.isEmpty else { return false }
-                PDFInlineComment.update(existing, text: content, on: page)
+                PDFInlineComment.update(existing, text: content, style: requested, on: page)
                 commitAnnotationEdit(edit)
                 if selectedAnnotation === existing { note = content }
             }
         } else {
-            let comment = PDFInlineComment.card(for: content, anchor: anchor, on: page, quote: quote)
+            let comment = PDFInlineComment.card(for: content, anchor: anchor, on: page, quote: quote,
+                                                style: (style ?? PDFCommentStyle()).normalized)
             let highlights = highlight.map { addMarkup($0, style: .highlight, color: markupColor, note: "") } ?? []
             page.addAnnotation(comment)
             recordAnnotationsAdded(highlights + [comment])

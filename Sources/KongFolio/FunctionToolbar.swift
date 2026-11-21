@@ -269,13 +269,14 @@ struct FunctionToolbar: View {
             }
         case .pageThumbnails:
             if let active = store.activeWorkspace {
-                Menu {
-                    thumbnailActions(active)
-                } label: {
-                    label(action, menu: menu)
+                let title = active.showsPageThumbnails ? "返回 PDF 阅读" : "打开页面缩略图"
+                Button { perform(action) } label: {
+                    if menu { action.label(title) }
+                    else { label(action, menu: false) }
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden)
-                .help("页面缩略图与提取页面").accessibilityLabel("页面缩略图与提取页面")
+                .help(title)
+                .accessibilityLabel(title)
+                .disabled(unavailable(action))
             }
         case .ocr:
             if let workspace {
@@ -337,16 +338,6 @@ struct FunctionToolbar: View {
                 .accessibilityLabel(action == .sidebar ? rightPanelTitle : action.title)
                 .disabled(unavailable(action))
         }
-    }
-
-    @ViewBuilder private func thumbnailActions(_ active: Workspace) -> some View {
-        Button(active.showsPageThumbnails ? "返回 PDF 阅读" : "打开页面缩略图") {
-            perform(.pageThumbnails)
-        }.disabled(unavailable(.pageThumbnails))
-        Button("提取选中页面…") {
-            active.openExport(scope: .selected, extractingPages: true)
-        }
-        .disabled(active.busy || active.placingSignature != nil || active.drawingInProgress || active.effectivePages.isEmpty)
     }
 
     private func isSelected(_ action: FileToolbarAction) -> Bool {

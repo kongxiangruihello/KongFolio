@@ -14,26 +14,9 @@ struct PDFThumbnailGrid: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    closeButton
-                    pageCount
-                    Spacer(minLength: 12)
-                    editActions
-                    extractButton
-                }
-                HStack {
-                    closeButton
-                    pageCount
-                    Spacer(minLength: 0)
-                    Menu {
-                        editActions
-                    } label: { Image(systemName: "ellipsis.circle").accessibilityLabel("页面操作") }
-                    extractButton
-                }
-            }
-            .padding(10)
-            .background(.bar)
+            toolbar
+                .padding(10)
+                .background(.bar)
             Divider()
             if workspace.readingLocked {
                 Button("切换为编辑模式以排列页面") { workspace.toggleReadingLock() }
@@ -76,16 +59,59 @@ struct PDFThumbnailGrid: View {
             .font(.caption).monospacedDigit().fixedSize()
     }
 
-    @ViewBuilder private var editActions: some View {
-        Menu("插入页") {
-            Button("在当前页前插入空白页") { workspace.insertBlankPage(before: true) }
-            Button("在当前页后插入空白页") { workspace.insertBlankPage() }
-            Button("从 PDF 或图片插入…") { workspace.open(insert: true) }
-        }.disabled(!canEdit)
-        Button("旋转") { workspace.rotate() }.disabled(!canEdit)
-        Button("复制页") { workspace.duplicatePages() }.disabled(!canEdit)
-        Button("删除…", role: .destructive) { confirmingDeletion = true }
-            .disabled(!canEdit || workspace.effectivePages.count >= workspace.count)
+    private var toolbar: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                closeButton
+                pageCount
+                Spacer(minLength: 12)
+                insertionButtons
+                pageButtons
+                extractButton
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    closeButton
+                    pageCount
+                    Spacer(minLength: 4)
+                    extractButton
+                }
+                ScrollView(.horizontal) {
+                    HStack(spacing: 12) {
+                        insertionButtons
+                        pageButtons
+                    }
+                }
+                .scrollIndicators(.automatic)
+            }
+        }
+    }
+
+    private var insertionButtons: some View {
+        HStack(spacing: 6) {
+            Button("前插空白") { workspace.insertBlankPage(before: true) }
+                .help("在当前页前插入空白页")
+                .accessibilityLabel("在当前页前插入空白页")
+            Button("后插空白") { workspace.insertBlankPage() }
+                .help("在当前页后插入空白页")
+                .accessibilityLabel("在当前页后插入空白页")
+            Button("插入文件…") { workspace.open(insert: true) }
+                .help("从 PDF 或图片插入页面")
+                .accessibilityLabel("从 PDF 或图片插入")
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .disabled(!canEdit)
+    }
+
+    private var pageButtons: some View {
+        HStack(spacing: 6) {
+            Button("旋转") { workspace.rotate() }
+            Button("复制页") { workspace.duplicatePages() }
+            Button("删除…", role: .destructive) { confirmingDeletion = true }
+                .disabled(workspace.effectivePages.count >= workspace.count)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .disabled(!canEdit)
     }
 
     private var extractButton: some View {
