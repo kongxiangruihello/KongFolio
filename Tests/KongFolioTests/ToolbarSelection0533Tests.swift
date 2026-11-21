@@ -16,9 +16,21 @@ final class ToolbarSelection0533Tests: XCTestCase {
     }
     func testSlimDefaultsAndDocumentContext() {
         let profile = ReaderToolbarProfile()
-        XCTAssertEqual(profile.visible(width:1280),[.navigation,.pageThumbnails,.zoom,.search,.annotate,.excerpt,.note,.library])
+        XCTAssertEqual(profile.visible(width:1280),[.navigation,.pageThumbnails,.ocr,.zoom,.search,.annotate,.excerpt,.note,.library])
         XCTAssertEqual(profile.visible(width:1280,context:.empty),[.newFile,.open,.sidebar])
         XCTAssertEqual(profile.visible(width:1280,context:.text),[.newFile,.open,.sidebar,.export])
+    }
+
+    func testOCRIsPinnedOnUpgradeAndCanBeUnpinned() throws {
+        var previous = ReaderToolbarProfile()
+        previous.order.removeAll { $0 == "ocr" }
+        previous.pinned = ["pageThumbnails", "search", "annotate"]
+        let encoder = JSONEncoder()
+        var upgraded = ReaderToolbarProfile.decode(try encoder.encode(previous))
+        XCTAssertEqual(upgraded.visible(width: 320), [.pageThumbnails, .ocr, .search])
+        XCTAssertFalse(upgraded.visible(width: 1280, context: .text).contains(.ocr))
+        upgraded.pin(.ocr, enabled: false, context: .pdf)
+        XCTAssertFalse(ReaderToolbarProfile.decode(try encoder.encode(upgraded)).visible(width: 1280).contains(.ocr))
     }
 
     func testNarrowWindowPrioritizesSelectedReadingToolsAndRestoresCustomOrder() {

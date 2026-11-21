@@ -6,7 +6,7 @@ enum ReaderToolbarContext {
 
     func supports(_ action: FileToolbarAction) -> Bool {
         switch action {
-        case .search,.annotate,.pdfPages,.navigation,.pageThumbnails,.zoom: return self == .pdf
+        case .search,.annotate,.pdfPages,.navigation,.pageThumbnails,.ocr,.zoom: return self == .pdf
         case .tools,.signature: return self != .text
         case .save,.export: return self != .empty
         default: return true
@@ -18,7 +18,7 @@ struct ReaderToolbarProfile:Codable,Equatable {
     static let key = "KongFolio.readerToolbar048"
     static let defaultActions:[FileToolbarAction] = FileToolbarAction.allCases
     var order:[String] = Self.defaultActions.map(\.rawValue)
-    private static let defaultPins: Set<FileToolbarAction> = [.navigation,.pageThumbnails,.zoom,.search,.annotate,.excerpt,.note,.library]
+    private static let defaultPins: Set<FileToolbarAction> = [.navigation,.pageThumbnails,.ocr,.zoom,.search,.annotate,.excerpt,.note,.library]
     private static let previousDefaultPins: Set<FileToolbarAction> = [.newFile,.open,.search,.annotate,.sidebar,.export]
     static let pageControlWidth: Double = 128
     var pinned:Set<String> = Set(Self.defaultPins.map(\.rawValue))
@@ -28,6 +28,7 @@ struct ReaderToolbarProfile:Codable,Equatable {
         var upgraded=order.compactMap{FileToolbarAction(rawValue:$0)?.unified.rawValue}.filter{previous.insert($0).inserted}
         if !upgraded.contains("search") { upgraded.insert("search",at:upgraded.firstIndex(of:"open").map{$0+1} ?? min(upgraded.count,2)) }
         if !upgraded.contains("pdfPages") { upgraded.insert("pdfPages",at:upgraded.firstIndex(of:"search").map{$0+1} ?? min(upgraded.count,3)) }
+        if !upgraded.contains("ocr"), let i = upgraded.firstIndex(of: "pageThumbnails") { upgraded.insert("ocr", at: i + 1) }
         if !upgraded.contains("signature"),let i=upgraded.firstIndex(where:{FileToolbarAction(rawValue:$0)?.unified == .tools}) { upgraded.insert("signature",at:i+1) }
         return (upgraded+Self.defaultActions.map(\.rawValue)).compactMap { raw in
             guard let action = FileToolbarAction(rawValue:raw)?.unified,seen.insert(action).inserted else { return nil };return action
@@ -50,7 +51,7 @@ struct ReaderToolbarProfile:Codable,Equatable {
         // Keep room for the pinned navigation tools even at the compact window minimum.
         let slots = context == .pdf && width.isFinite && width >= 300 ? max(3, capacity) : capacity
         guard available.count > slots else { return available }
-        let priority: [FileToolbarAction] = [.navigation,.search,.pageThumbnails,.annotate,.excerpt,.sidebar]
+        let priority: [FileToolbarAction] = [.ocr,.pageThumbnails,.search,.navigation,.annotate,.excerpt,.sidebar]
         let ranked = priority.filter { available.contains($0) }
         let retained = Set((ranked + available.filter { !priority.contains($0) }).prefix(slots))
         return available.filter { retained.contains($0) }
@@ -63,6 +64,9 @@ struct ReaderToolbarProfile:Codable,Equatable {
         guard let data, var profile = try? JSONDecoder().decode(Self.self, from: data) else { return Self() }
         let oldOrder = ["newFile","open","search","annotate","sidebar","export","pdfPages","excerpt","note","library","save","books","tools","signature","jobs"]
         if profile.order == oldOrder, profile.unifiedPins == Self.previousDefaultPins { return Self() }
+        if profile.order.contains("pageThumbnails"), !profile.order.contains("ocr") {
+            profile.pinned.insert("ocr")
+        }
         profile.order = profile.actions.map(\.rawValue)
         profile.pinned = Set(profile.unifiedPins.map(\.rawValue))
         return profile
