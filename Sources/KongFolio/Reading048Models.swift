@@ -74,6 +74,20 @@ struct ReaderToolbarProfile:Codable,Equatable {
     static func load(_ defaults:UserDefaults = .standard)->Self { decode(defaults.data(forKey:key)) }
     func save(_ defaults:UserDefaults = .standard) { if let data = try? JSONEncoder().encode(self) { defaults.set(data,forKey:Self.key) } }
     mutating func move(_ action:FileToolbarAction,by delta:Int) { order = actions.map(\.rawValue);guard let i = order.firstIndex(of:action.rawValue),order.indices.contains(i+delta) else { return };order.swapAt(i,i+delta) }
+
+    @discardableResult
+    mutating func move(_ action: FileToolbarAction, relativeTo target: FileToolbarAction, after: Bool) -> Bool {
+        guard action != target else { return false }
+        let original = actions
+        var reordered = original
+        guard let source = reordered.firstIndex(of: action) else { return false }
+        reordered.remove(at: source)
+        guard let destination = reordered.firstIndex(of: target) else { return false }
+        reordered.insert(action, at: destination + (after ? 1 : 0))
+        guard reordered != original else { return false }
+        order = reordered.map(\.rawValue)
+        return true
+    }
 }
 struct ReadingCitationUpdate:Identifiable {
     var id:UUID { block };var essay:UUID;var block:UUID;var previous:ReadingRecord;var current:ReadingRecord
