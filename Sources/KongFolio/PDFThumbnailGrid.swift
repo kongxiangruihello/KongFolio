@@ -127,7 +127,7 @@ struct PDFThumbnailGrid: View {
             select(index, modifiers: NSEvent.modifierFlags)
         } label: {
             VStack(spacing: 8) {
-                ThumbnailView(workspace: workspace, index: index, height: 156)
+                ThumbnailView(workspace: workspace, index: index, height: 156, inPageGrid: true)
                 Text(caption.map { "\(index + 1) · p.\($0)" } ?? "\(index + 1)")
                     .font(.caption.monospacedDigit()).lineLimit(1)
             }

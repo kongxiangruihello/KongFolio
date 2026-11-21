@@ -1110,6 +1110,8 @@ import UniformTypeIdentifiers
 
     func selectPage(_ index: Int, modifiers: NSEvent.ModifierFlags = [], readingReference: Bool = false, rangeAnchor: Int? = nil) {
         guard index >= 0, index < count else { return }
+        if showsPageThumbnails, !readingReference, index == selection, selectedPages == [index],
+           modifiers.intersection([.shift, .command]).isEmpty { return }
         if readingReference { beginReadingReference() }
         else { browsingReadingReference = false }
         if modifiers.contains(.shift) {
@@ -1123,7 +1125,8 @@ import UniformTypeIdentifiers
         readingPoint = nil
         navigationToken = UUID()
         selection = index
-        saveReadingRecord(capture: false)
+        if showsPageThumbnails { scheduleReadingRecord() }
+        else { saveReadingRecord(capture: false) }
         selectedAnnotation = nil
         scheduleRecovery()
     }

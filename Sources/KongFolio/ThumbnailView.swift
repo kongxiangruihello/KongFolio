@@ -16,6 +16,7 @@ struct ThumbnailView: View {
     @ObservedObject var workspace: Workspace
     let index: Int
     var height: CGFloat = 140
+    var inPageGrid = false
     @StateObject private var state = ThumbnailState()
     var body: some View {
         Group {
@@ -31,9 +32,10 @@ struct ThumbnailView: View {
                 // Let fast scrolling settle before serializing a page on the main actor.
                 try await Task.sleep(nanoseconds:45_000_000)
                 try Task.checkCancellation()
+                guard workspace.showsPageThumbnails == inPageGrid, key == workspace.thumbnailKey(index) else { return }
                 guard let data=autoreleasepool(invoking:{ DocumentServices.subset(workspace.document,indexes:[index]).dataRepresentation() }) else { return }
                 let cg = try await ThumbnailRenderer.shared.render(data,maxDimension:workspace.store?.constrainedMemory == true ? 180 : 310); try Task.checkCancellation()
-                guard key==workspace.thumbnailKey(index) else { return }
+                guard workspace.showsPageThumbnails == inPageGrid, key == workspace.thumbnailKey(index) else { return }
                 let image = NSImage(cgImage: cg, size: .zero)
                 workspace.thumbnails.put(image, key: key, cost: cg.width * cg.height * 4); state.image = image
             } catch { }
