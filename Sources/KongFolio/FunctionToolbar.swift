@@ -303,9 +303,14 @@ struct FunctionToolbar: View {
                 HStack(spacing: 0) {
                     Button {
                         workspace.showsPageThumbnails = false
-                        workspace.excerptSelection()
+                        let text = workspace.pdfView?.currentSelection?.string ?? ""
+                        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            store.startReadingRegionCapture()
+                        } else {
+                            workspace.excerptSelection()
+                        }
                     } label: { label(action, menu: false) }
-                    .help("摘录选中文字").accessibilityLabel("摘录选中文字")
+                    .help("摘录所选文字；未选文字时框选图片").accessibilityLabel("摘录文字或图片")
                     Menu {
                         ReadingExcerptActions(store: store)
                     } label: { Image(systemName: "chevron.down").font(.system(size: 8)).frame(width: 14, height: 28) }

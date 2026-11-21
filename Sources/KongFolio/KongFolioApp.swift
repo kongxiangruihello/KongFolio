@@ -140,7 +140,8 @@ import KongFolioUpdateKit
                     .keyboardShortcut("u", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Button("删除线") { if let w = store.commandWorkspace { w.mark(style: .strikeOut, color: w.markupColor) } }
                     .keyboardShortcut("d", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
-                Button("高亮并添加批注") { if let w = store.commandWorkspace { w.mark(style: .highlight, color: w.markupColor, annotate: true) } }
+                Button("添加 PDF 评论…") { (store.commandWorkspace?.pdfView as? DrawingPDFView)?.beginCommentOnSelection() }
+                Button("高亮并添加批注") { (store.commandWorkspace?.pdfView as? DrawingPDFView)?.beginCommentOnSelection(highlight: true) }
                     .keyboardShortcut("n", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
             }
             CommandMenu("编辑页面") {

@@ -32,6 +32,7 @@ struct PDFCanvas: NSViewRepresentable {
         let layoutChanged = view.displayMode != display
         if replaced {
             view.clearSourceHighlight()
+            view.dismissCommentEditor()
             view.document = workspace.document
             workspace.loadReadingRulerIfNeeded()
         }
@@ -175,6 +176,8 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     private var excerptDragSource: PDFExcerptDragSource?
     /// Rubber band of the region excerpt tool.
     private var regionStart: CGPoint?
+    private weak var regionPage: PDFPage?
+    private var commentEditor: NSPopover?
     private lazy var regionView: NSView = {
         let view = NSView()
         view.wantsLayer = true
@@ -197,9 +200,9 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
 
     /// SwiftUI may cache the native view after a tab disappears. Drop its PDF and overlays explicitly.
     func releaseReadingResources() {
-        endSignaturePlacement(); hideSelectionToolbar(); clearSourceHighlight()
+        endSignaturePlacement(); hideSelectionToolbar(); clearSourceHighlight(); dismissCommentEditor()
         points.removeAll(); drawingPage = nil; provisional = nil; moving = nil
-        pendingMove.removeAll(); contextSignature = nil; regionStart = nil
+        pendingMove.removeAll(); contextSignature = nil; regionStart = nil; regionPage = nil
         excerptDragStart = nil; excerptDragSource = nil
         strokePreview.annotation = nil; strokePreview.page = nil
         strokePreview.removeFromSuperview(); regionView.removeFromSuperview(); readingGuide.removeFromSuperview()
@@ -260,6 +263,12 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, workspace?.tool == .region {
+            regionStart = nil; regionPage = nil; regionView.isHidden = true; regionView.frame = .zero
+            workspace?.readingRegionOCRMode = nil
+            workspace?.selectTool(.select)
+            return
+        }
         if event.keyCode == 53, drawingPage != nil, moving == nil {
             provisional = nil; points = []; drawingPage = nil
             workspace?.drawingInProgress = false
@@ -315,11 +324,21 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             let item = NSMenuItem(title: "摘录到工作区", action: #selector(excerptToBoard), keyEquivalent: "")
             item.target = self
             menu.insertItem(item, at: 0)
-            menu.insertItem(.separator(), at: 1)
+            let comment = NSMenuItem(title: "添加评论…", action: #selector(commentOnSelection), keyEquivalent: "")
+            comment.target = self
+            menu.insertItem(comment, at: 1)
+            menu.insertItem(.separator(), at: 2)
+        }
+        if workspace?.store != nil {
+            let image = NSMenuItem(title: "框选图片摘录", action: #selector(startImageExcerpt), keyEquivalent: "")
+            image.target = self
+            menu.insertItem(image, at: 0)
         }
         return menu
     }
 
+    @objc private func commentOnSelection() { beginCommentOnSelection() }
+    @objc private func startImageExcerpt() { workspace?.store?.startReadingRegionCapture() }
     @objc private func excerptToBoard() { workspace?.excerptSelection() }
     @objc private func deleteHitAnnotation() { workspace?.deleteAnnotation() }
     private var contextSignature: (layer: SignatureLayer, item: PlacedSignature)?
@@ -335,7 +354,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     /// Shows the marking buttons next to the selected text once the mouse is released.
     private func showSelectionToolbar() {
         hideSelectionToolbar()
-        guard let workspace, workspace.tool == .select, let selected = currentSelection,
+        guard commentEditor == nil, let workspace, workspace.tool == .select, let selected = currentSelection,
               !(selected.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let page = selected.pages.last else { return }
         let area = convert(selected.bounds(for: page), from: page)
@@ -373,11 +392,16 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
                 workspace?.store?.revealCapturedExcerpt(record,message:"已打开已有摘录",opensEditor:true)
                 self?.hideSelectionToolbar()
             } },
+            comment: { [weak self] in self?.beginCommentOnSelection(selected) },
             mark: { [weak self, weak workspace] style, color, annotate in
                 guard let workspace, !workspace.readingLocked else { return }
                 if let color { workspace.markupColor = color }
+                if annotate {
+                    self?.beginCommentOnSelection(selected, highlight: true)
+                    return
+                }
                 if self?.currentSelection == nil { self?.setCurrentSelection(selected,animate:false) }
-                workspace.mark(style: style, color: workspace.markupColor, annotate: annotate)
+                workspace.mark(style: style, color: workspace.markupColor)
                 self?.hideSelectionToolbar()
             }
         )
@@ -392,15 +416,73 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         selectionBar = host
     }
 
-    /// Captures what is on screen inside the dragged rectangle and sends it to the workspace.
-    private func captureRegion(_ rect: CGRect) {
-        guard let workspace, rect.width > 8, rect.height > 8,
-              let page = page(for: CGPoint(x: rect.midX, y: rect.midY), nearest: true),
-              let rep = bitmapImageRepForCachingDisplay(in: rect) else { return }
-        cacheDisplay(in: rect, to: rep)
-        guard let png = rep.representation(using: .png, properties: [:]) else { return }
-        workspace.excerptRegion(imageData: png, size: rect.size, page: page, pageRect: convert(rect, to: page))
-        workspace.tool = .select
+    func beginCommentOnSelection(_ specific: PDFSelection? = nil, highlight: Bool = false) {
+        guard let workspace, !workspace.readingLocked, !workspace.busy, placement == nil else { return }
+        guard let source = specific ?? currentSelection, let page = source.pages.last,
+              let quote = source.string, !quote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            workspace.status = "请先选中文字，或用批注工具点击页面添加评论"
+            return
+        }
+        let anchor = source.bounds(for: page).intersection(page.bounds(for: .cropBox))
+        guard !anchor.isEmpty, !anchor.isNull else { return }
+        openCommentEditor(page: page, anchor: anchor, quote: quote, highlight: highlight ? source : nil)
+    }
+
+    private func comment(at point: CGPoint, on page: PDFPage) -> PDFAnnotation? {
+        page.annotations.reversed().first {
+            $0.shouldDisplay && $0.bounds.contains(point) && (PDFInlineComment.isCard($0) || $0.type == "Text")
+        }
+    }
+
+    private func openCommentEditor(page: PDFPage, anchor: CGRect, quote: String? = nil,
+                                   existing: PDFAnnotation? = nil, highlight: PDFSelection? = nil) {
+        guard commentEditor == nil, let workspace, !workspace.readingLocked, !workspace.busy, document === page.document,
+              let window, window.isVisible else { return }
+        hideSelectionToolbar()
+        let popover = NSPopover()
+        popover.behavior = .applicationDefined
+        popover.contentViewController = NSHostingController(rootView: PDFInlineCommentEditor(
+            text: existing?.contents ?? "", editing: existing != nil,
+            save: { [weak self, weak workspace] text in
+                guard let self, let workspace, self.workspace === workspace else { return }
+                if workspace.saveInlineComment(text, page: page, anchor: anchor, quote: quote,
+                                               existing: existing, highlight: highlight) {
+                    self.dismissCommentEditor()
+                    self.clearSelection()
+                    self.documentView?.needsDisplay = true
+                    self.needsDisplay = true
+                } else {
+                    self.dismissCommentEditor()
+                    workspace.status = "评论未保存，页面已变化或当前无法编辑"
+                }
+            },
+            cancel: { [weak self] in self?.dismissCommentEditor() }
+        ))
+        let raw = convert(existing?.bounds ?? anchor, from: page)
+        let visible = raw.intersection(bounds.insetBy(dx: 4, dy: 4))
+        guard !visible.isNull, !visible.isEmpty else { return }
+        commentEditor = popover
+        popover.show(relativeTo: visible, of: self, preferredEdge: .maxX)
+    }
+
+    func dismissCommentEditor() {
+        let editor = commentEditor
+        commentEditor = nil
+        editor?.close()
+    }
+
+    private func captureRegion(_ rect: CGRect, on page: PDFPage) {
+        guard let workspace, document === page.document, rect.width > 8, rect.height > 8 else { return }
+        let pageRect = convert(rect, to: page).intersection(page.bounds(for: .cropBox))
+        guard !pageRect.isNull, !pageRect.isEmpty else { return }
+        do {
+            let png = try PDFImageExcerpt.png(for: pageRect, on: page)
+            let size = page.rotation % 180 == 0 ? pageRect.size : CGSize(width: pageRect.height, height: pageRect.width)
+            workspace.excerptRegion(imageData: png, size: size, page: page, pageRect: pageRect)
+            workspace.selectTool(.select)
+        } catch {
+            workspace.error = error.localizedDescription
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -409,6 +491,16 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
               let window, event.window === window, let workspace, !workspace.busy else { return hit }
         if let selectionBar, hit === selectionBar || hit.isDescendant(of:selectionBar) { return hit }
         let location = convert(event.locationInWindow,from:nil)
+        if let page = page(for: location, nearest: false), placement == nil {
+            if workspace.tool == .region { return self }
+            if !workspace.readingLocked {
+                if workspace.tool == .note { return self }
+                if (workspace.tool == .select || workspace.tool == .edit),
+                   comment(at: convert(location, to: page), on: page) != nil {
+                    return self
+                }
+            }
+        }
         // PDFKit subviews may receive the press. Keep a press on the selected glyphs with the drag source.
         return canDragSelection(at:location,event:event,workspace:workspace) ? self : hit
     }
@@ -476,6 +568,14 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         }
         guard let page = page(for: location, nearest: false) else { return }
         let point = convert(location, to: page)
+        if placement == nil, workspace.tool == .select || workspace.tool == .edit || workspace.tool == .note,
+           let hit = comment(at: point, on: page) {
+            if event.clickCount == 2 {
+                openCommentEditor(page: page, anchor: PDFInlineComment.anchor(of: hit) ?? hit.bounds, existing: hit)
+                return
+            }
+            if workspace.tool == .note { return }
+        }
         switch workspace.tool {
         case .select:
             if page.annotations.contains(where: { $0.type == "Widget" && $0.bounds.contains(point) }) {
@@ -498,22 +598,22 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             moveStart = point
             originalOrigin = hit?.bounds.origin ?? .zero
             didMove = false
-        case .note, .textBox:
-            let isNote = workspace.tool == .note
-            // The text is asked for right here, unless one was already typed in the side panel.
+        case .note:
+            openCommentEditor(page: page, anchor: CGRect(x: point.x - 1, y: point.y - 1, width: 2, height: 2))
+        case .textBox:
             let text: String
             if workspace.note.isEmpty {
-                guard let entered = AnnotationText.ask(note: isNote) else { return }
+                guard let entered = AnnotationText.ask(note: false) else { return }
                 text = entered
             } else {
                 text = workspace.note
             }
-            let height: CGFloat = isNote ? 28 : AnnotationText.boxHeight(for: text)
-            let annotation = PDFAnnotation(bounds: CGRect(x: point.x, y: point.y - height, width: isNote ? 28 : 220, height: height), forType: isNote ? .text : .freeText, withProperties: nil)
+            let height = AnnotationText.boxHeight(for: text)
+            let annotation = PDFAnnotation(bounds: CGRect(x: point.x, y: point.y - height, width: 220, height: height), forType: .freeText, withProperties: nil)
             annotation.contents = text
             annotation.font = NSFont.systemFont(ofSize: 14)
-            annotation.fontColor = isNote ? .black : NSColor(workspace.annotationColor)
-            annotation.color = isNote ? .systemYellow : .clear
+            annotation.fontColor = NSColor(workspace.annotationColor)
+            annotation.color = .clear
             page.addAnnotation(annotation)
             workspace.recordAnnotationsAdded([annotation])
             needsDisplay = true
@@ -532,6 +632,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             }
         case .region:
             regionStart = location
+            regionPage = page
             regionView.frame = CGRect(origin: location, size: .zero)
             regionView.isHidden = false
         }
@@ -547,9 +648,12 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             return
         }
         if pressedCard != nil { pressMoved = true }
-        if let start = regionStart {
+        if let start = regionStart, let page = regionPage {
             let current = convert(event.locationInWindow, from: nil)
-            regionView.frame = CGRect(x: min(start.x, current.x), y: min(start.y, current.y), width: abs(current.x - start.x), height: abs(current.y - start.y))
+            let requested = CGRect(x: min(start.x, current.x), y: min(start.y, current.y),
+                                   width: abs(current.x - start.x), height: abs(current.y - start.y))
+            let clipped = requested.intersection(convert(page.bounds(for: .cropBox), from: page))
+            regionView.frame = clipped.isNull ? .zero : clipped
             return
         }
         if let moving, let page = drawingPage, let workspace {
@@ -592,10 +696,12 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         }
         if regionStart != nil {
             let rect = regionView.frame
+            let page = regionPage
             regionStart = nil
+            regionPage = nil
             regionView.isHidden = true
             regionView.frame = .zero
-            captureRegion(rect)
+            if let page { captureRegion(rect, on: page) }
             return
         }
         if moving != nil {
