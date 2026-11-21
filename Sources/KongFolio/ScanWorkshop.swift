@@ -3,6 +3,7 @@ import PDFKit
 
 struct ScanWorkshop: View {
     @ObservedObject var workspace: Workspace
+    var splitOnly = false
     @Environment(\.dismiss) private var dismiss
     @State private var tab = 0
     @State private var selectedOnly = true
@@ -22,10 +23,12 @@ struct ScanWorkshop: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("扫描整理").font(.title2.bold())
-            Picker("工具", selection: $tab) {
-                Text("跨页切分").tag(0); Text("纠偏").tag(1); Text("异常页检查").tag(2)
-            }.pickerStyle(.segmented).disabled(working)
+            Text(splitOnly ? "拆分页面" : "扫描整理").font(.title2.bold())
+            if !splitOnly {
+                Picker("工具", selection: $tab) {
+                    Text("跨页切分").tag(0); Text("纠偏").tag(1); Text("异常页检查").tag(2)
+                }.pickerStyle(.segmented).disabled(working)
+            }
             Toggle("只处理选中的 \(workspace.effectivePages.count) 页（取消为全部页）", isOn: $selectedOnly).disabled(working)
             if tab == 0 { splitControls }
             else if tab == 1 { straightenControls }
@@ -43,7 +46,7 @@ struct ScanWorkshop: View {
                 Button(working ? "取消任务" : "关闭") { if working { cancelAction?() } else { dismiss() } }.keyboardShortcut(.cancelAction)
                 Spacer()
                 if tab == 0 {
-                    Button("切分 \(pages.count) 页") {
+                    Button("拆分 \(pages.count) 页") {
                         do { try workspace.splitScannedPages(pages, fraction: fraction, rightFirst: rightFirst); dismiss() }
                         catch { message = error.localizedDescription }
                     }.disabled(working).buttonStyle(.borderedProminent)

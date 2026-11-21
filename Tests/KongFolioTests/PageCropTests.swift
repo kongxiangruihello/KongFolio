@@ -141,6 +141,32 @@ final class PageCropTests: XCTestCase {
         XCTAssertTrue(workspace.cropMessage.contains("6 页"))
     }
 
+    @MainActor func testBlankEdgeToolPreviewsSelectedPagesBeforeApplying() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let workspace = Workspace(storage: directory)
+        workspace.document = try book(pages: 3)
+        workspace.selectedPages = [0, 2]
+        workspace.setCropSingle(true)
+
+        workspace.openCrop(detectingBlankEdges: true)
+        XCTAssertTrue(workspace.showCrop)
+        XCTAssertTrue(workspace.cropAutoPreview)
+        XCTAssertFalse(workspace.cropSingle)
+        XCTAssertEqual(workspace.cropTargets, [0, 2])
+        for _ in 0..<100 where workspace.cropDetecting { try await Task.sleep(nanoseconds: 100_000_000) }
+        XCTAssertFalse(workspace.cropDetecting)
+        XCTAssertTrue(workspace.cropMessage.contains("2 页"))
+        XCTAssertEqual(workspace.currentCrop(of: 0), .zero)
+
+        workspace.applyCrop()
+        XCTAssertFalse(workspace.currentCrop(of: 0).isZero)
+        XCTAssertEqual(workspace.currentCrop(of: 1), .zero)
+        XCTAssertFalse(workspace.currentCrop(of: 2).isZero)
+        workspace.openCrop()
+        XCTAssertFalse(workspace.cropAutoPreview)
+    }
+
     @MainActor func testSinglePageTuningCutsOnePageAndLoadsEachPagesOwnCut() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("kongfolio-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }

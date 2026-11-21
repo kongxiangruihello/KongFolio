@@ -17,7 +17,7 @@ struct CropSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("裁边").font(.title2.bold())
+            Text(workspace.cropAutoPreview ? "清除空白边" : "裁剪页面").font(.title2.bold())
             HStack(alignment: .top, spacing: 18) {
                 preview
                 VStack(alignment: .leading, spacing: 8) {
@@ -33,6 +33,9 @@ struct CropSheet: View {
                         Text("滑杆只改当前页；点“裁这一页”后窗口保持打开，可以接着翻到下一页。").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     } else {
                         Picker("范围", selection: $workspace.cropScope) { ForEach(CropScope.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
+                            .onChange(of: workspace.cropScope) {
+                                if workspace.cropAutoPreview { workspace.detectCrop() }
+                            }
                         Toggle("奇数页和偶数页分开设置", isOn: $workspace.cropSeparate)
                     }
                     if workspace.cropSeparate && !workspace.cropSingle {
@@ -50,6 +53,7 @@ struct CropSheet: View {
                     if !workspace.cropMessage.isEmpty { Text(workspace.cropMessage).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
                 }
                 .frame(width: 250)
+                .disabled(workspace.cropDetecting)
             }
             Text("只改变显示的范围，页面内容不会被删掉；可以撤销，也可以用“恢复完整页面”还原。含文字层的页面，文字层保持不变。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -58,12 +62,14 @@ struct CropSheet: View {
                 Button(workspace.cropSingle ? "恢复本页完整" : "恢复完整页面") {
                     if workspace.cropSingle { workspace.cropPage = .zero; workspace.applyCropToCurrentPage() } else { workspace.resetCrop() }
                 }
+                .disabled(workspace.cropDetecting)
                 Spacer()
                 if workspace.cropSingle {
                     Button("完成") { workspace.showCrop = false }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
                 } else {
                     Text("将处理 \(workspace.cropTargets.count) 页").font(.callout).foregroundStyle(.secondary)
-                    Button("应用裁边") { workspace.applyCrop() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                    Button("应用裁剪") { workspace.applyCrop() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                        .disabled(workspace.cropDetecting)
                 }
             }
         }

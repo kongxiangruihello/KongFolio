@@ -35,6 +35,7 @@ struct ContentView: View {
         .sheet(isPresented: $workspace.showExport) { ExportSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showCompress) { CompressSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showScanWorkshop) { ScanWorkshop(workspace: workspace) }
+        .sheet(isPresented: $workspace.showPageSplit) { ScanWorkshop(workspace: workspace, splitOnly: true) }
         .sheet(isPresented: $workspace.showCrop) { CropSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showTableExtraction) { TableExtractionSheet(workspace: workspace) }
         .sheet(isPresented: $workspace.showFormTemplate) { FormTemplateSheet(workspace: workspace) }
@@ -697,6 +698,7 @@ struct ContentView: View {
                 Spacer()
                 Button("关闭") { workspace.showTools = false }
             }
+            PanelRow { PDFPageToolButtons(workspace: workspace) }
             PanelRow {
                 Button("提取表格…") { workspace.showTools = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { workspace.showTableExtraction = true } }
                 Button("填写 PDF 表单…") { workspace.showTools = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { workspace.showPDFForms = true } }
