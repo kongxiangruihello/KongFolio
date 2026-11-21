@@ -7,6 +7,8 @@ struct FunctionToolbar: View {
     @AppStorage(ReaderToolbarProfile.key) private var profileData = Data()
     @State private var showToolbarSettings = false
     @State private var toolbarWidth: CGFloat = 800
+    @State private var toolbarID = UUID()
+    @State private var toolbarDrop: ReaderToolDropPosition?
     @State private var homeRecentFiles: [String] = []
     @AppStorage(LayoutKeys.sidebar) private var showNavigation = true
     @AppStorage(LayoutKeys.inspector) private var showInspector = true
@@ -106,7 +108,11 @@ struct FunctionToolbar: View {
                 ForEach(visible) { action in
                     ToolbarControlSurface(selected:isSelected(action)) {
                         control(action,menu:false)
-                    }.frame(maxWidth:.infinity)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .modifier(DraggableReaderTool(action: action, toolbarID: toolbarID, insertion: $toolbarDrop) { source, target, after in
+                        reorder(source, relativeTo: target, after: after, availableWidth: availableWidth)
+                    })
                 }
                 if let issueInfo {
                     ToolbarControlSurface {
@@ -157,6 +163,15 @@ struct FunctionToolbar: View {
             )
         }
         .popover(isPresented:$store.showQuickReadingNote) { QuickReadingNote(store:store) }
+    }
+
+    private func reorder(_ source: FileToolbarAction, relativeTo target: FileToolbarAction, after: Bool, availableWidth: CGFloat) {
+        var updated = profile
+        let displayed = updated.visible(width: availableWidth, context: context)
+        guard displayed.contains(source), displayed.contains(target),
+              updated.move(source, relativeTo: target, after: after),
+              let data = try? JSONEncoder().encode(updated) else { return }
+        profileData = data
     }
 
     private func refreshIssue() {

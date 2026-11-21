@@ -41,6 +41,20 @@ final class ToolbarSelection0533Tests: XCTestCase {
         XCTAssertEqual(profile.visible(width:1280,context:.text),[.newFile,.open,.library,.sidebar])
     }
 
+    func testDraggedToolbarOrderPersistsAcrossWindowWidths() throws {
+        var profile = ReaderToolbarProfile()
+        let pinned = profile.pinned
+        XCTAssertTrue(profile.move(.ocr, relativeTo: .pageThumbnails, after: false))
+        XCTAssertEqual(profile.visible(width: 320), [.ocr, .pageThumbnails, .search])
+        XCTAssertFalse(profile.move(.ocr, relativeTo: .pageThumbnails, after: false))
+        XCTAssertFalse(profile.move(.ocr, relativeTo: .ocr, after: true))
+        XCTAssertTrue(profile.move(.ocr, relativeTo: .library, after: true))
+        let restored = ReaderToolbarProfile.decode(try JSONEncoder().encode(profile))
+        XCTAssertEqual(restored.visible(width: 1280).suffix(2), [.library, .ocr])
+        XCTAssertEqual(restored.pinned, pinned)
+        XCTAssertEqual(Set(restored.actions), Set(FileToolbarAction.allCases))
+    }
+
     func testNarrowWindowsKeepSelectedOrderAndOverflowEveryOtherAction() {
         var p=ReaderToolbarProfile();p.pinned=["open","annotate","library","signature"]
         for width in stride(from:320.0,through:1800,by:20) {
