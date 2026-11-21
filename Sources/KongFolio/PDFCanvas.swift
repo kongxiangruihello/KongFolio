@@ -35,7 +35,10 @@ struct PDFCanvas: NSViewRepresentable {
             view.dismissCommentEditor()
             view.document = workspace.document
             workspace.loadReadingRulerIfNeeded()
+            context.coordinator.navigation = nil
         }
+        // Keep PDFKit attached, but apply only the final page selection when the reader is visible.
+        guard !workspace.showsPageThumbnails else { return }
         view.refreshReadingRuler()
         if layoutChanged { view.displayMode = display }
         if replaced || layoutChanged || context.coordinator.navigation != workspace.navigationToken {

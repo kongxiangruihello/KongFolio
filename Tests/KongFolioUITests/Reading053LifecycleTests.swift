@@ -178,6 +178,48 @@ final class Reading053LifecycleTests: XCTestCase {
         XCTAssertEqual(journal.record(other.id)?.note,other.note)
     }
 
+    @MainActor func testThumbnailBrowsingDefersNativePDFNavigationUntilReturn() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = Workspace(storage: root)
+        workspace.readingLayout = .single
+        for index in 0..<4 {
+            let page = PDFPage()
+            page.setBounds(CGRect(x: 0, y: 0, width: 500, height: 700), for: .mediaBox)
+            workspace.document.insert(page, at: index)
+        }
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 600, height: 550),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: PDFCanvas(workspace: workspace))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.close() }
+        try await wait("初始阅读页") { workspace.pdfView?.currentPage === workspace.document.page(at: 0) }
+        let originalView = try XCTUnwrap(workspace.pdfView)
+
+        workspace.showsPageThumbnails = true
+        workspace.selectPage(1)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(originalView.currentPage === workspace.document.page(at: 0))
+
+        workspace.selectPage(3)
+        let token = workspace.navigationToken
+        workspace.selectPage(3)
+        XCTAssertEqual(workspace.navigationToken, token)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(originalView.currentPage === workspace.document.page(at: 0))
+        XCTAssertEqual(workspace.selection, 3)
+
+        workspace.showsPageThumbnails = false
+        host.layoutSubtreeIfNeeded()
+        try await wait("退出缩略图后的阅读页") { originalView.currentPage === workspace.document.page(at: 3) }
+        XCTAssertTrue(workspace.pdfView === originalView)
+    }
+
     @MainActor func testNativeCanvasImageWidthIsExactAndSourceFlashDoesNotEditPDF() async throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("KongFolio-placement-"+UUID().uuidString)
