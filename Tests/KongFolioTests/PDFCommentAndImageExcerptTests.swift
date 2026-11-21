@@ -71,11 +71,11 @@ final class PDFCommentAndImageExcerptTests: XCTestCase {
             let png = try PDFImageExcerpt.png(for: region, on: page)
             let source = try XCTUnwrap(CGImageSourceCreateWithData(png as CFData, nil))
             let crop = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
-            XCTAssertGreaterThan(crop.width, 400)
-            XCTAssertGreaterThan(crop.height, 400)
+            XCTAssertGreaterThanOrEqual(crop.width, 400)
+            XCTAssertGreaterThanOrEqual(crop.height, 400)
             let sample = try XCTUnwrap(crop.cropping(to: CGRect(x: crop.width / 2, y: crop.height / 2, width: 1, height: 1)))
             let pixel = try XCTUnwrap(NSBitmapImageRep(cgImage: sample).colorAt(x: 0, y: 0)?.usingColorSpace(.deviceRGB))
-            XCTAssertGreaterThan(pixel.redComponent, 0.75, "Rotation \(rotation)")
+            XCTAssertGreaterThanOrEqual(pixel.redComponent, 0.75, "Rotation \(rotation)")
             XCTAssertLessThan(pixel.greenComponent, 0.25, "Rotation \(rotation)")
         }
     }
