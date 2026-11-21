@@ -8,7 +8,7 @@ struct ReaderToolbarSettings: View {
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
             Text("工具栏排列与显示").font(.headline)
-            Text("勾选的工具才显示在工具栏。上移／下移调整顺序。窄窗口优先保留已勾选的导航、搜索和页面缩略图，其余入口见“更多”。").font(.caption)
+            Text("勾选的工具才显示在工具栏。上移／下移调整顺序。窄窗口优先保留已勾选的 OCR、页面缩略图和搜索，其余入口见“更多”。").font(.caption)
             Text("当前窗口显示 \(profile.visible(width:width,context:context).count) 项，另有 \(profile.hidden(width:width,context:context).filter { context.supports($0) }.count) 项收在“更多”中").font(.caption).foregroundStyle(.secondary)
             ScrollView(.horizontal) {
                 HStack(spacing:12) { ForEach(profile.visible(width:width,context:context)) { action in

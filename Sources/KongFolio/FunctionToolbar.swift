@@ -186,7 +186,7 @@ struct FunctionToolbar: View {
                 if overflow.contains(.search) { control(.search,menu:true) }
                 Button("跨文件全文搜索…") { store.showFolderSearch = true }
             }
-            overflowControls(overflow,actions:[.navigation,.pageThumbnails,.zoom,.sidebar,.annotate,.pdfPages])
+            overflowControls(overflow,actions:[.navigation,.pageThumbnails,.ocr,.zoom,.sidebar,.annotate,.pdfPages])
             let resources = overflow.filter { [.excerpt,.note,.library,.books].contains($0) }
             if !resources.isEmpty {
                 Menu("阅读资料") { ForEach(resources) { control($0,menu:true) } }
@@ -196,11 +196,6 @@ struct FunctionToolbar: View {
                 Button("打开全部阅读资料…") { store.openReadingDesk(.search, window: true) }
             }
             if context == .pdf, let workspace {
-                if canRecognizeCurrentPage(workspace) {
-                    Button("识别当前页文字…") {
-                        recognizeCurrentPage(workspace)
-                    }
-                }
                 Button(workspace.readingLocked ? "切换为编辑模式" : "保护 PDF 正文") { workspace.toggleReadingLock() }
                 Button(store.readingMode ? "切换到完整 PDF 工具界面" : "切换到专注阅读界面") { store.readingMode.toggle() }
             }
@@ -238,20 +233,25 @@ struct FunctionToolbar: View {
             }
         case .pageThumbnails:
             if let active = store.activeWorkspace {
-                if menu {
-                    Menu { thumbnailActions(active, includeGrid: true) } label: { label(action, menu: true) }
-                } else {
-                    HStack(spacing: 0) {
-                        Button { perform(action) } label: { label(action, menu: false) }
-                            .help(action.title).accessibilityLabel(action.title)
-                            .disabled(unavailable(action))
-                        Menu { thumbnailActions(active, includeGrid: false) } label: {
-                            Image(systemName: "chevron.down").font(.system(size: 8)).frame(width: 14, height: 28)
-                        }
-                        .menuStyle(.borderlessButton).menuIndicator(.hidden)
-                        .help("页面操作").accessibilityLabel("页面操作")
-                    }
+                Menu {
+                    thumbnailActions(active)
+                } label: {
+                    label(action, menu: menu)
                 }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                .help("页面缩略图与提取页面").accessibilityLabel("页面缩略图与提取页面")
+            }
+        case .ocr:
+            if let workspace {
+                Menu {
+                    ocrActions(workspace)
+                } label: {
+                    if menu { label(action, menu: true) }
+                    else { Text("OCR").font(.system(size: 11, weight: .semibold)).frame(width: 28, height: 28) }
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                .help(action.title).accessibilityLabel(action.title)
+                .disabled(workspace.busy || workspace.readingLocked || workspace.drawingInProgress || workspace.placingSignature != nil)
             }
         case .zoom:
             if let workspace {
@@ -272,11 +272,6 @@ struct FunctionToolbar: View {
                     .help("摘录选中文字").accessibilityLabel("摘录选中文字")
                     Menu {
                         ReadingExcerptActions(store: store)
-                        if canRecognizeCurrentPage(workspace) {
-                            Button("识别当前页文字…") {
-                                recognizeCurrentPage(workspace)
-                            }
-                        }
                     } label: { Image(systemName: "chevron.down").font(.system(size: 8)).frame(width: 14, height: 28) }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden)
                     .help("摘录方式").accessibilityLabel("摘录方式")
@@ -303,12 +298,10 @@ struct FunctionToolbar: View {
         }
     }
 
-    @ViewBuilder private func thumbnailActions(_ active: Workspace, includeGrid: Bool) -> some View {
-        if includeGrid {
-            Button(active.showsPageThumbnails ? "返回 PDF 阅读" : "打开页面缩略图") {
-                perform(.pageThumbnails)
-            }.disabled(unavailable(.pageThumbnails))
-        }
+    @ViewBuilder private func thumbnailActions(_ active: Workspace) -> some View {
+        Button(active.showsPageThumbnails ? "返回 PDF 阅读" : "打开页面缩略图") {
+            perform(.pageThumbnails)
+        }.disabled(unavailable(.pageThumbnails))
         Button("提取选中页面…") {
             active.openExport(scope: .selected, extractingPages: true)
         }
@@ -347,15 +340,15 @@ struct FunctionToolbar: View {
         }
     }
 
-    private func canRecognizeCurrentPage(_ workspace: Workspace) -> Bool {
-        guard !workspace.busy, !workspace.readingLocked, let page = workspace.page else { return false }
-        return BackgroundJobs.textCharacterCount(page) < workspace.ocrSettings.minimumTextCharacters
-    }
-
-    private func recognizeCurrentPage(_ workspace: Workspace) {
-        workspace.showsPageThumbnails = false
-        workspace.selectPage(workspace.selection)
-        workspace.ocr(selectedOnly: true)
+    @ViewBuilder private func ocrActions(_ workspace: Workspace) -> some View {
+        Button("识别当前页") { workspace.ocrCurrentPage() }
+        Button("识别选中页面（\(workspace.effectivePages.count) 页）") {
+            workspace.ocr(selectedOnly: true)
+        }.disabled(workspace.effectivePages.isEmpty)
+        Button("识别整份 PDF") { workspace.ocr() }
+        Divider()
+        Button("OCR 质量检查…") { workspace.openOCRQuality() }
+        Button("OCR 批量纠错…") { workspace.showOCRBatchCorrection = true }
     }
 
     private func perform(_ action: FileToolbarAction) {
@@ -441,11 +434,6 @@ private struct PDFToolbarToolsMenu: View {
                 Button("合并 PDF…") { workspace.open(insert:hasPDF,merge:!hasPDF) }.disabled(workspace.readingLocked || workspace.busy)
                 Button("对照阅读…") { workspace.compare() }.disabled(!hasPDF || workspace.busy)
             }
-            Menu("OCR") {
-                Button("识别正文") { workspace.ocr() }
-                Button("OCR 质量检查…") { workspace.openOCRQuality() }
-                Button("OCR 批量纠错…") { workspace.showOCRBatchCorrection = true }
-            }.disabled(!canEditPDF)
             Menu("压缩与转换") {
                 Button("压缩 PDF…") { workspace.compress() }
                 Button("导出 Word…") { store.exportWordActive() }
@@ -458,6 +446,6 @@ private struct PDFToolbarToolsMenu: View {
             if showTitle { Label("PDF 工具",systemImage:"square.grid.2x2") }
             else { Image(systemName:"square.grid.2x2").frame(width:28,height:28) }
         }.menuStyle(.borderlessButton).menuIndicator(.hidden)
-            .help("PDF 工具：页面编辑、OCR、压缩与转换").accessibilityLabel("PDF 工具")
+            .help("PDF 工具：页面编辑、压缩与转换").accessibilityLabel("PDF 工具")
     }
 }

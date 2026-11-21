@@ -332,9 +332,17 @@ extension Workspace {
 
     /// `resume` leaves out pages that already carry recognition records, for picking up an interrupted run.
     func ocr(selectedOnly: Bool = false, force: Bool = false, resume: Bool = false) {
+        runOCR(pages: selectedOnly ? effectivePages : Array(0..<count), force: force, resume: resume)
+    }
+
+    func ocrCurrentPage() {
+        guard (0..<count).contains(selection) else { return }
+        runOCR(pages: [selection], force: false, resume: false)
+    }
+
+    private func runOCR(pages requested: [Int], force: Bool, resume: Bool) {
         guard count > 0, !busy, checkDraftsForExport() else { return }
-        var pages = selectedOnly ? effectivePages : Array(0..<count)
-        if resume { pages = pages.filter { !(meta($0).ocrRegions.map { !$0.isEmpty } ?? false) } }
+        let pages = resume ? requested.filter { meta($0).ocrRegions?.isEmpty != false } : requested
         guard !pages.isEmpty else { status = "所有页面都已识别"; return }
         if force {
             guard pages.allSatisfy({ meta($0).ocrOriginal != nil }) else {

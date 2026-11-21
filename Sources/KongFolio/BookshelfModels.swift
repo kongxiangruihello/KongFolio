@@ -5,6 +5,22 @@ import Darwin
 enum ShelfReadingStatus: String, CaseIterable, Codable, Identifiable {
     case unread = "待读", reading = "在读", finished = "已读"
     var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .unread: return "未读"
+        case .reading: return "正在读"
+        case .finished: return "已读"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .unread: return "bookmark"
+        case .reading: return "book"
+        case .finished: return "checkmark.circle"
+        }
+    }
 }
 
 enum ShelfSort: String, CaseIterable {

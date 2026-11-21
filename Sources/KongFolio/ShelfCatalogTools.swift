@@ -296,7 +296,7 @@ enum ShelfChecklist {
             let link = (try? ReadingShortcut(path:book.path,title:book.title,position:ViewPosition(selection:0)).link().absoluteString) ?? ""
             let count = summaries[ReadingBookIdentity.key(book.path)]?.counts["摘录",default:0] ?? 0
             return [book.title,issue.periodical,issue.year,issue.volume,issue.issue,book.shelfEdition?.rawValue ?? "",
-                    book.shelfStatus(progress[book.path]).rawValue,String(count),link]
+                    book.shelfStatus(progress[book.path]).title,String(count),link]
         }
         switch format {
         case .csv:

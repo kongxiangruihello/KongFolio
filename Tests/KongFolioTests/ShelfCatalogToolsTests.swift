@@ -37,6 +37,26 @@ final class ShelfCatalogToolsTests: XCTestCase {
         XCTAssertEqual(BookLibrary(storage:root).shelfFilters,[filter])
     }
 
+    @MainActor func testShelfReadingStatusUsesProgressAndPersistsManualChanges() throws {
+        let root = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = try Release037Tests().pdf(root)
+        let library = BookLibrary(storage: root)
+        try library.add([file])
+        let book = try XCTUnwrap(library.books.first)
+        let progress = ReadingProgress(visited: [0], pages: 3)
+        XCTAssertEqual(book.shelfStatus(nil), .unread)
+        XCTAssertEqual(book.shelfStatus(progress), .reading)
+        try library.editShelfBooks([book.id], name: "更改阅读状态") { $0.readingStatus = .finished }
+        let reopened = BookLibrary(storage: root)
+        XCTAssertEqual(reopened.books.first?.shelfStatus(progress), .finished)
+        try reopened.editShelfBooks([book.id], name: "更改阅读状态") { $0.readingStatus = nil }
+        XCTAssertEqual(BookLibrary(storage: root).books.first?.shelfStatus(progress), .reading)
+        let decoder = JSONDecoder()
+        XCTAssertEqual(try decoder.decode(ShelfReadingStatus.self, from: Data(#""待读""#.utf8)).title, "未读")
+        XCTAssertEqual(try decoder.decode(ShelfReadingStatus.self, from: Data(#""在读""#.utf8)).title, "正在读")
+    }
+
     @MainActor func testDeleteAllReadingHistoryPreservesBookAndPosition() async throws {
         let root = try Release027Tests().folder()
         defer { try? FileManager.default.removeItem(at:root) }

@@ -69,8 +69,9 @@ struct BookLibraryView: View {
         let item: ReadingLibraryID?
         var id: UUID { book.id }
     }
-    private let builtIn = [("all","全部书籍","books.vertical"),("reading","在读","book"),
-                           ("unread","待读","bookmark"),("finished","已读","checkmark.circle"),
+    private let builtIn = [("all","全部书籍","books.vertical"),("reading",ShelfReadingStatus.reading.title,ShelfReadingStatus.reading.symbol),
+                           ("unread",ShelfReadingStatus.unread.title,ShelfReadingStatus.unread.symbol),
+                           ("finished",ShelfReadingStatus.finished.title,ShelfReadingStatus.finished.symbol),
                            ("favorite","收藏","star"),("queue","待读队列","list.number")]
     private var size: Int { pageSize == 50 ? 50 : 20 }
     private var topic: String? { scope.hasPrefix("topic:") ? String(scope.dropFirst(6)) : nil }
@@ -377,17 +378,22 @@ struct BookLibraryView: View {
             ScrollView(.horizontal,showsIndicators:false) {
                 HStack(spacing:8) {
                     ForEach(books) { book in
-                        Button { open(book) } label: {
-                            HStack(spacing:8) {
-                                LibraryCover(path:book.path).frame(width:34,height:44)
-                                VStack(alignment:.leading,spacing:4) {
-                                    Text(book.title).font(.callout.weight(.semibold)).lineLimit(1)
-                                    Text(progressLine(book)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                            }.padding(8).frame(width:172,alignment:.leading)
-                                .background(.quaternary.opacity(0.55),in:RoundedRectangle(cornerRadius:8))
-                        }.buttonStyle(.plain).help(book.title)
-                         .contextMenu { bookActions(book) }
+                        VStack(alignment:.leading,spacing:4) {
+                            Button { open(book) } label: {
+                                HStack(spacing:8) {
+                                    LibraryCover(path:book.path).frame(width:34,height:44)
+                                    VStack(alignment:.leading,spacing:4) {
+                                        Text(book.title).font(.callout.weight(.semibold)).lineLimit(1)
+                                        if let line = progressLine(book) {
+                                            Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                    }
+                                }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+                            }.buttonStyle(.plain).help(book.title)
+                            bookReadingStatus(book)
+                        }.padding(8).frame(width:172,alignment:.leading)
+                            .background(.quaternary.opacity(0.55),in:RoundedRectangle(cornerRadius:8))
+                            .contextMenu { bookActions(book) }
                     }
                 }
             }
@@ -452,7 +458,7 @@ struct BookLibraryView: View {
             TextField("刊名",text:$filterPeriodical)
             Picker("阅读状态",selection:$filterStatus) {
                 Text("不限").tag("")
-                ForEach(ShelfReadingStatus.allCases) { status in Text(status.rawValue).tag(status.rawValue) }
+                ForEach(ShelfReadingStatus.allCases) { status in Text(status.title).tag(status.rawValue) }
             }
             Toggle("仅显示已有摘录的书",isOn:$filterExcerpts)
             HStack {
@@ -601,11 +607,31 @@ struct BookLibraryView: View {
         return VStack(alignment:.leading,spacing:4) {
             Text(book.title).font(.callout.weight(.semibold)).lineLimit(lines).help(book.title)
             if !metadata.isEmpty { Text(metadata.joined(separator:" · ")).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-            HStack(spacing:5) {
-                Text(progressLine(book)).foregroundStyle(.secondary).lineLimit(1)
-                if let field = book.matchingShelfField(matchedQuery) { Text("匹配"+field).foregroundStyle(Color.accentColor).lineLimit(1) }
-            }.font(.caption)
+            bookReadingStatus(book)
+            let line = progressLine(book)
+            let field = book.matchingShelfField(matchedQuery)
+            if line != nil || field != nil {
+                HStack(spacing:5) {
+                    if let line { Text(line).foregroundStyle(.secondary).lineLimit(1) }
+                    if let field { Text("匹配"+field).foregroundStyle(Color.accentColor).lineLimit(1) }
+                }.font(.caption)
+            }
         }
+    }
+
+    private func bookReadingStatus(_ book: LibraryBook) -> some View {
+        let status = book.shelfStatus(progress[book.path])
+        return Menu {
+            readingStatusActions([book.id], current: book.readingStatus)
+        } label: {
+            Label(status.title, systemImage: status.symbol)
+                .font(.caption)
+                .foregroundStyle(status == .unread ? Color.secondary : Color.accentColor)
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .help("更改《" + book.title + "》的阅读状态")
+        .accessibilityLabel(book.title + "的阅读状态")
+        .accessibilityValue(status.title)
     }
 
     private func details(_ book:LibraryBook) -> some View {
@@ -708,12 +734,7 @@ struct BookLibraryView: View {
                 perform { try library.enqueueShelfBooks(ShelfBrowse.ordered(library.books.filter{ids.contains($0.id) && $0.canQueueReading},sort:sort,progress:progress).map(\.id)) }
             }
         }
-        Menu("阅读状态") {
-            ForEach(ShelfReadingStatus.allCases) { status in
-                Button("标为"+status.rawValue) { change(ids,"更改阅读状态") { $0.readingStatus = status } }
-            }
-            Button("按进度自动判断") { change(ids,"更改阅读状态") { $0.readingStatus = nil } }
-        }
+        Menu("阅读状态") { readingStatusActions(ids) }
         Menu("加入专题") {
             ForEach(library.shelfTopics,id:\.self) { topic in
                 Button(topic) { change(ids,"加入专题") { $0.topics = ShelfBrowse.topics($0.shelfTopics+[topic]) } }
@@ -757,9 +778,22 @@ struct BookLibraryView: View {
         guard !Task.isCancelled else { return }
         fileStatus = result
     }
-    private func progressLine(_ book:LibraryBook) -> String {
+    @ViewBuilder private func readingStatusActions(_ ids: Set<UUID>, current: ShelfReadingStatus? = nil) -> some View {
+        ForEach(ShelfReadingStatus.allCases) { status in
+            Button {
+                change(ids, "更改阅读状态") { $0.readingStatus = status }
+            } label: {
+                if current == status { Label(status.title, systemImage: "checkmark") }
+                else { Text(status.title) }
+            }
+        }
+        Divider()
+        Button("按进度自动判断") { change(ids, "更改阅读状态") { $0.readingStatus = nil } }
+    }
+
+    private func progressLine(_ book:LibraryBook) -> String? {
         if let status = fileStatus[book.path]?.label { return status }
-        guard let p = progress[book.path], let date = p.date, p.pages > 0 else { return book.shelfStatus(progress[book.path]).rawValue }
+        guard let p = progress[book.path], let date = p.date, p.pages > 0 else { return nil }
         return date.formatted(.relative(presentation:.named))+" · 第 \(p.last+1) / \(p.pages) 页"
     }
     private func promptTopic(adding ids:Set<UUID> = []) { renamedTopic = nil;topicName = "";topicBooks = ids;newTopic = true }
