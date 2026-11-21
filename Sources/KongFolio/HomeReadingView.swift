@@ -14,6 +14,7 @@ struct HomeReadingView: View {
     @AppStorage private var searchExpanded: Bool
     @AppStorage private var foldersExpanded: Bool
     @StateObject private var sourceNavigator = ReadingSourceNavigator()
+    @Environment(\.colorScheme) private var colorScheme
 
     init(store: WorkspaceStore,journal: ReadingJournal,workspace: Workspace) {
         self.store = store
@@ -26,21 +27,23 @@ struct HomeReadingView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let compact = geometry.size.height < 540 || geometry.size.width < 460
+            let wide = geometry.size.width >= 760
+            let compact = geometry.size.width < 520
             ScrollView {
-                VStack(spacing:compact ? 14 : 22) {
-                    welcomeBrand(compact:compact)
-                    WelcomeActions(workspace:workspace)
-                    readingRows.frame(maxWidth:640)
+                VStack(alignment: .leading, spacing: compact ? 18 : 24) {
+                    header(wide: wide)
+                    dashboard(wide: wide, compact: compact)
                     if lastRead == nil {
-                        Text("PDF · 图片 · Markdown · HTML · TXT · 可直接拖入窗口")
-                            .font(.caption).foregroundStyle(.secondary)
+                        Label("将 PDF、图片或文本文件拖入窗口即可打开", systemImage: "arrow.down.to.line")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.horizontal,14)
-                .padding(.top,compact ? 18 : min(68,max(32,geometry.size.height * 0.07)))
-                .padding(.bottom,24)
-                .frame(maxWidth:.infinity,minHeight:geometry.size.height,alignment:lastRead == nil ? .center : .top)
+                .padding(.horizontal, compact ? 20 : 32)
+                .padding(.top, compact ? 22 : 38)
+                .padding(.bottom, 32)
+                .frame(maxWidth: 980)
+                .frame(maxWidth: .infinity, alignment: .top)
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
@@ -66,125 +69,320 @@ struct HomeReadingView: View {
         } message: { Text(relinkReview?.message ?? "") }
     }
 
-    private func welcomeBrand(compact: Bool) -> some View {
-        VStack(spacing:compact ? 7 : 12) {
-            Image(systemName:"doc.richtext")
-                .font(.system(size:compact ? 38 : 54,weight:.ultraLight))
-                .foregroundStyle(Brand.accent)
-                .accessibilityHidden(true)
-            Text("每一页，都井井有条。")
-                .font(.system(size:compact ? 20 : 28,weight:.medium))
-                .multilineTextAlignment(.center)
-                .accessibilityAddTraits(.isHeader)
+    private func header(wide: Bool) -> some View {
+        let title = Text("阅读工作台")
+            .font(.system(size: wide ? 32 : 27, weight: .semibold))
+            .accessibilityAddTraits(.isHeader)
+        return Group {
+            if wide {
+                HStack(spacing: 16) { title; Spacer(); shortcuts }
+            } else {
+                VStack(alignment: .leading, spacing: 14) { title; shortcuts }
+            }
         }
     }
 
-    private var readingRows: some View {
+    private var shortcuts: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { shortcutButtons(compact: false) }.fixedSize(horizontal: true, vertical: false)
+            HStack(spacing: 6) { shortcutButtons(compact: true) }.fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: 6) { shortcutButtons(compact: true) }
+        }
+    }
+
+    @ViewBuilder private func shortcutButtons(compact: Bool) -> some View {
+        Button { store.openReadingHistory(.bookshelf) } label: {
+            Label(compact ? "书架" : "个人书架", systemImage: "books.vertical")
+        }.buttonStyle(HomeWorkspaceButtonStyle(.quiet))
+        Button { store.openReadingDesk(.search, window: true) } label: {
+            Label("资料库", systemImage: "tray.full")
+        }.buttonStyle(HomeWorkspaceButtonStyle(.quiet))
+        Button { workspace.open() } label: {
+            Label("打开文件", systemImage: "folder")
+        }.buttonStyle(HomeWorkspaceButtonStyle(lastRead == nil ? .accent : .quiet))
+    }
+
+    @ViewBuilder private func dashboard(wide: Bool, compact: Bool) -> some View {
         let batch = store.unfinishedHomeBatch
-        let combined = batch?.sharesHomeResume(with:lastRead?.path) == true
-        return VStack(alignment:.leading,spacing:0) {
-            if !store.startupEntries.isEmpty {
-                row(nil,icon:"clock.arrow.circlepath",title:"恢复上次打开的文献",
-                    detail:"还有 \(store.startupEntries.count) 份可恢复") {
-                    Button("查看上次标签页") { store.showStartupReview = true }
-                }
+        let combined = batch?.sharesHomeResume(with: lastRead?.path) == true
+        let note = ReadingLibraryItem.latestHomeNote(journal.state)
+        let separateBatch = combined ? nil : batch
+        let hasWork = note != nil || separateBatch?.next != nil || !store.startupEntries.isEmpty
+
+        if let item = lastRead { resumeCard(item, batch: combined ? batch : nil, wide: wide, compact: compact) }
+        if wide && hasWork {
+            HStack(alignment: .top, spacing: 22) {
+                workColumn(note: note, batch: separateBatch).frame(maxWidth: .infinity)
+                utilityColumn.frame(width: 256)
             }
-            if let item = lastRead {
-                resumeRow(item,batch:combined ? batch : nil)
-            }
-            if let note = ReadingLibraryItem.latestHomeNote(journal.state) {
-                let source = note.homeSource
-                row("最近编辑的笔记",icon:"square.and.pencil",title:note.homeNoteTitle,
-                    detail:source?.1.display ?? "独立笔记",
-                    preview:note.homeNotePreview == note.homeNoteTitle ? nil : note.homeNotePreview) {
-                    Button("继续写") { store.openReadingItem(note.id) }
-                    if let (record,citation) = source {
-                        Button("返回原文") { sourceNavigator.open(citation,record:record,store:store) }
-                    }
-                }
-            }
-            if !combined, let batch, let next = batch.next {
-                row("继续批阅",icon:"list.bullet.rectangle",title:next.title,detail:batchSummary(batch)) {
-                    Button("打开下一份") { store.openReadingBatchEntry(next) }
-                    Button("查看本批") { showBatch(batch) }
-                }
-            }
-            if let search = lastSearch {
-                Divider()
-                DisclosureGroup(isExpanded:$searchExpanded) {
-                    row(nil,icon:"magnifyingglass",title:search.query,
-                        detail:search.title + (search.pdfMatch.map { " · 第 \($0.index + 1) 处" } ?? "")) {
-                        Button("恢复搜索") {
-                            resolving = true
-                            message = ""
-                            Task {
-                                defer { resolving = false }
-                                do { try await store.resumeHomeSearch(search) }
-                                catch { message = error.localizedDescription }
-                            }
-                        }.disabled(resolving)
-                    }
-                } label: {
-                    Label("上次搜索",systemImage:"magnifyingglass")
-                }.padding(.vertical,8)
-            }
-            Divider()
-            DisclosureGroup(isExpanded:$foldersExpanded) {
-                folderRows
-            } label: {
-                HStack {
-                    Label("常用文件夹",systemImage:"folder")
-                    Spacer(minLength:4)
-                    Button("固定文件夹…") {
-                        foldersExpanded = true
-                        store.chooseHomeFolders()
-                    }.fixedSize()
-                }
-            }.padding(.vertical,8)
-            if resolving || sourceNavigator.busy { ProgressView().controlSize(.small).padding(.vertical,6) }
-            if !message.isEmpty {
-                Text(message).font(.callout).foregroundStyle(.secondary).padding(.vertical,6)
-            }
+        } else {
+            if hasWork { workColumn(note: note, batch: separateBatch) }
+            utilityColumn
+        }
+        if resolving || sourceNavigator.busy {
+            ProgressView().controlSize(.small).accessibilityLabel("正在准备文件")
+        }
+        if !message.isEmpty {
+            Label(message, systemImage: "info.circle")
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var folderRows: some View {
-        ForEach(store.homePinnedFolders) { folder in
-            row(nil,icon:"folder",title:folder.title,detail:folder.path) {
-                Button("打开文件") { store.open(directory:folder.url) }
+    private func workColumn(note: ReadingLibraryItem?, batch: ReadingOpenBatch?) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("最近工作")
+            if let note { noteCard(note) }
+            if let batch, let next = batch.next { batchCard(batch, next: next) }
+            if !store.startupEntries.isEmpty {
+                panel {
+                    entryHeading("上次标签页", symbol: "clock.arrow.circlepath", tint: .secondary)
+                    Text("有 \(store.startupEntries.count) 份文献可恢复")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Button("查看上次标签页") { store.showStartupReview = true }
+                        .buttonStyle(HomeWorkspaceButtonStyle(.soft))
+                }
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var utilityColumn: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("快速访问")
+            if let search = lastSearch { searchCard(search) }
+            foldersCard
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title).font(.system(size: 16, weight: .semibold))
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func entryHeading(_ title: String, symbol: String, tint: Color) -> some View {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(tint)
+                .frame(width: 26, height: 26)
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                .accessibilityHidden(true)
+        }.font(.system(size: 13, weight: .semibold))
+    }
+
+    private func panel<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8, content: content)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background {
+                RoundedRectangle(cornerRadius: 13)
+                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.055 : 0.025))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 13)
+                    .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.13 : 0.08))
+                    .allowsHitTesting(false)
+            }
+    }
+
+    private func noteCard(_ note: ReadingLibraryItem) -> some View {
+        let source = note.homeSource
+        return panel {
+            entryHeading("最近编辑的笔记", symbol: "square.and.pencil", tint: .purple)
+            Text(note.homeNoteTitle).font(.system(size: 15, weight: .semibold))
+                .lineLimit(2).help(note.homeNoteTitle)
+            let reference = source?.1.display ?? "独立笔记"
+            Text(reference).font(.caption).foregroundStyle(.secondary).lineLimit(2).help(reference)
+            if let preview = note.homeNotePreview, preview != note.homeNoteTitle {
+                Text(preview).font(.callout).foregroundStyle(.secondary).lineLimit(2).help(preview)
+            }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { noteActions(note, source: source) }.fixedSize(horizontal: true, vertical: false)
+                VStack(alignment: .leading, spacing: 6) { noteActions(note, source: source) }
+            }.padding(.top, 2)
+        }
+    }
+
+    @ViewBuilder private func noteActions(_ note: ReadingLibraryItem, source: (ReadingRecord, ReadingCitation)?) -> some View {
+        Button("继续写") { store.openReadingItem(note.id) }.buttonStyle(HomeWorkspaceButtonStyle(.soft))
+        if let (record, citation) = source {
+            Button("返回原文") { sourceNavigator.open(citation, record: record, store: store) }
+                .buttonStyle(HomeWorkspaceButtonStyle(.quiet))
+        }
+    }
+
+    private func batchCard(_ batch: ReadingOpenBatch, next: ReadingOpenBatch.Entry) -> some View {
+        panel {
+            entryHeading("继续批阅", symbol: "list.bullet.rectangle", tint: .teal)
+            Text(HomeReadingDisplay.documentTitle(next.title)).font(.system(size: 15, weight: .semibold))
+                .lineLimit(2).help(next.title)
+            Text(batchSummary(batch)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            ProgressView(value: Double(batch.finishedCount), total: Double(max(1, batch.entries.count)))
+                .tint(.teal).accessibilityLabel("批阅进度")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { batchActions(batch, next: next) }.fixedSize(horizontal: true, vertical: false)
+                VStack(alignment: .leading, spacing: 6) { batchActions(batch, next: next) }
+            }.padding(.top, 2)
+        }
+    }
+
+    @ViewBuilder private func batchActions(_ batch: ReadingOpenBatch, next: ReadingOpenBatch.Entry) -> some View {
+        Button("打开下一份") { store.openReadingBatchEntry(next) }.buttonStyle(HomeWorkspaceButtonStyle(.soft))
+        Button("查看本批") { showBatch(batch) }.buttonStyle(HomeWorkspaceButtonStyle(.quiet))
+    }
+
+    private func searchCard(_ search: HomeReadingSearch) -> some View {
+        panel {
+            DisclosureGroup(isExpanded: $searchExpanded) {
+                Text(search.title + (search.pdfMatch.map { " · 第 \($0.index + 1) 处" } ?? ""))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    .padding(.top, 4)
+            } label: { entryHeading("上次搜索", symbol: "magnifyingglass", tint: Brand.accent) }
+            Text(search.query).font(.callout.weight(.medium)).lineLimit(2).help(search.query)
+            Button("恢复搜索") {
+                resolving = true
+                message = ""
+                Task {
+                    defer { resolving = false }
+                    do { try await store.resumeHomeSearch(search) }
+                    catch { message = error.localizedDescription }
+                }
+            }
+            .buttonStyle(HomeWorkspaceButtonStyle(.soft))
+            .disabled(resolving)
+        }
+    }
+
+    private var foldersCard: some View {
+        panel {
+            DisclosureGroup(isExpanded: $foldersExpanded) {
+                if store.homePinnedFolders.isEmpty {
+                    Text("尚未固定文件夹").font(.caption).foregroundStyle(.secondary).padding(.top, 4)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(store.homePinnedFolders) { folder in
+                            Divider()
+                            folderRow(folder)
+                        }
+                    }.padding(.top, 4)
+                }
+            } label: {
+                entryHeading("常用文件夹", symbol: "folder", tint: .orange)
+            }
+            if !foldersExpanded, !store.homePinnedFolders.isEmpty {
+                Text(store.homePinnedFolders.map(\.title).joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Button {
+                foldersExpanded = true
+                store.chooseHomeFolders()
+            } label: {
+                Label("固定文件夹…", systemImage: "plus")
+            }.buttonStyle(HomeWorkspaceButtonStyle(.quiet))
+        }
+    }
+
+    private func folderRow(_ folder: HomePinnedFolder) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(folder.title).font(.callout.weight(.medium)).lineLimit(2).help(folder.path)
+            Text(HomeReadingDisplay.folderLocation(folder.url))
+                .font(.caption).foregroundStyle(.secondary).lineLimit(2).help(folder.path)
+            HStack(spacing: 6) {
+                Button("打开文件") { store.open(directory: folder.url) }
+                    .buttonStyle(HomeWorkspaceButtonStyle(.soft))
                 Menu {
                     Button("在访达中打开") {
                         if !NSWorkspace.shared.open(folder.url) { message = "找不到文件夹，可移除后重新固定。" }
                     }
-                    Button("取消固定",role:.destructive) {
+                    Button("取消固定", role: .destructive) {
                         store.updateHomeFolders(store.homePinnedFolders.filter { $0.id != folder.id })
                     }
-                } label: { Image(systemName:"ellipsis.circle") }
-                .menuStyle(.borderlessButton).fixedSize().help("文件夹操作")
+                } label: { Image(systemName: "ellipsis").frame(width: 24) }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .help("文件夹操作").accessibilityLabel("文件夹操作")
             }
         }
     }
 
-    private func resumeRow(_ item: ReadingProgress.HistoryItem,batch: ReadingOpenBatch?) -> some View {
-        let label = (store.research.label(path:item.path,page:item.progress.last) ?? item.progress.pageLabel)
-            .map { " · 印刷页码 " + $0 } ?? ""
+    private func resumeCard(_ item: ReadingProgress.HistoryItem, batch: ReadingOpenBatch?, wide: Bool, compact: Bool) -> some View {
+        let pageLabel = store.research.label(path: item.path, page: item.progress.last) ?? item.progress.pageLabel
         let phase = preparation.path.map(ReadingBookIdentity.key) == ReadingBookIdentity.key(item.path) ? preparation.phase : nil
-        let detail = "PDF 第 \(item.progress.last + 1) 页" + label
-        return row("继续阅读",icon:"book",title:item.title,detail:detail,
-                   preview:batch.map(batchSummary),prominent:true,status:resumeStatus(phase),working:phase?.inProgress == true) {
-            switch phase {
-            case .locating, .downloading:
-                Button("取消") { preparation.cancel() }
-            case .missing:
-                Button("重新定位…") { chooseReplacement(item) }.buttonStyle(.borderedProminent)
-            default:
-                Button(phase == .ready ? "打开文件" : "继续阅读") { resume(item,batch:batch) }.buttonStyle(.borderedProminent)
+        let title = HomeReadingDisplay.documentTitle(store.library.book(path: item.path)?.title ?? item.title)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 16) {
+                if !compact {
+                    LibraryCover(path: item.path)
+                        .frame(width: 72, height: 96)
+                        .background(Color.white.opacity(0.13), in: RoundedRectangle(cornerRadius: 7))
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                        .accessibilityHidden(true)
+                }
+                VStack(alignment: .leading, spacing: 7) {
+                    Label("继续阅读", systemImage: "book")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.76, green: 0.86, blue: 1))
+                        .accessibilityAddTraits(.isHeader)
+                    Text(title).font(.system(size: compact ? 20 : 25, weight: .semibold))
+                        .foregroundStyle(.white).lineLimit(3).help(item.title)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(HomeReadingDisplay.pagePosition(item.progress, printedLabel: pageLabel))
+                        if let batch { Text(batchSummary(batch)) }
+                    }
+                    .font(.callout).foregroundStyle(Color.white.opacity(0.82))
+                    .monospacedDigit()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if wide {
+                    resumeActions(item, batch: batch, phase: phase).fixedSize(horizontal: true, vertical: false)
+                }
             }
+            if let status = resumeStatus(phase) {
+                HStack(spacing: 7) {
+                    if phase?.inProgress == true { ProgressView().controlSize(.small) }
+                    Text(status).font(.caption).foregroundStyle(.white)
+                }.accessibilityElement(children: .combine)
+            }
+            if !wide { resumeActions(item, batch: batch, phase: phase) }
+        }
+        .padding(compact ? 18 : 22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(LinearGradient(colors: [
+                    Color(red: 0.08, green: 0.15, blue: 0.26),
+                    Color(red: 0.12, green: 0.25, blue: 0.44)
+                ], startPoint: .topLeading, endPoint: .bottomTrailing))
+        }
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func resumeActions(_ item: ReadingProgress.HistoryItem, batch: ReadingOpenBatch?, phase: HomeReadingPreparation.Phase?) -> some View {
+        HStack(spacing: 8) {
+            Group {
+                switch phase {
+                case .locating, .downloading:
+                    Button("取消") { preparation.cancel() }
+                case .missing:
+                    Button("重新定位…") { chooseReplacement(item) }
+                default:
+                    Button { resume(item, batch: batch) } label: {
+                        Label(phase == .ready ? "打开文件" : "继续阅读", systemImage: "arrow.right")
+                            .labelStyle(.titleAndIcon)
+                    }
+                }
+            }.buttonStyle(HomeWorkspaceButtonStyle(.hero))
             Menu {
                 if let batch { Button("查看本批") { showBatch(batch) } }
                 Button("重新定位原文件…") { chooseReplacement(item) }
-            } label: { Image(systemName:"ellipsis.circle") }
-            .menuStyle(.borderlessButton).fixedSize().help("续读操作")
+            } label: {
+                Image(systemName: "ellipsis").foregroundStyle(.white)
+                    .frame(width: 30, height: 28)
+                    .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .help("续读操作").accessibilityLabel("续读操作")
         }
     }
 
@@ -206,52 +404,6 @@ struct HomeReadingView: View {
     private func showBatch(_ batch: ReadingOpenBatch) {
         store.selectedReadingBatchID = batch.id
         store.showReadingBatch = true
-    }
-
-    private func row<Actions: View>(_ heading: String?,icon: String,title: String,detail: String,
-                                    preview: String? = nil,prominent: Bool = false,
-                                    status: String? = nil,working: Bool = false,
-                                    @ViewBuilder actions: () -> Actions) -> some View {
-        VStack(alignment:.leading,spacing:0) {
-            if !prominent { Divider() }
-            ViewThatFits(in:.horizontal) {
-                HStack(spacing:10) {
-                    rowLabel(heading,icon:icon,title:title,detail:detail,preview:preview,prominent:prominent)
-                        .frame(idealWidth:200,maxWidth:.infinity,alignment:.leading)
-                    Spacer(minLength:6)
-                    HStack(spacing:6,content:actions).fixedSize()
-                }
-                VStack(alignment:.leading,spacing:6) {
-                    rowLabel(heading,icon:icon,title:title,detail:detail,preview:preview,prominent:prominent)
-                    HStack(spacing:6,content:actions).padding(.leading,28)
-                }.frame(maxWidth:.infinity,alignment:.leading)
-            }
-            if let status {
-                HStack(spacing:6) {
-                    if working { ProgressView().controlSize(.small) }
-                    Text(status).font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(.leading,28).padding(.top,6)
-                .accessibilityElement(children:.combine)
-            }
-        }
-        .padding(.vertical,prominent ? 12 : 4)
-        .padding(.horizontal,prominent ? 12 : 0)
-        .background {
-            if prominent { RoundedRectangle(cornerRadius:10).fill(Brand.accent.opacity(0.09)) }
-        }
-    }
-
-    private func rowLabel(_ heading: String?,icon: String,title: String,detail: String,preview: String?,prominent: Bool) -> some View {
-        HStack(alignment:.top,spacing:9) {
-            Image(systemName:icon).foregroundStyle(Brand.accent).frame(width:19).padding(.top,2)
-            VStack(alignment:.leading,spacing:3) {
-                if let heading { Text(heading).font(.caption).foregroundStyle(.secondary) }
-                Text(title).font(prominent ? .headline : .callout.weight(.medium)).lineLimit(1).help(title)
-                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(detail)
-                if let preview { Text(preview).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(preview) }
-            }.frame(minWidth:100,alignment:.leading)
-        }
     }
 
     private func resume(_ item: ReadingProgress.HistoryItem,batch: ReadingOpenBatch?) {
@@ -311,6 +463,52 @@ struct HomeReadingView: View {
         }
     }
 
+}
+
+private struct HomeWorkspaceButtonStyle: ButtonStyle {
+    enum Role: Equatable { case quiet, soft, accent, hero }
+    let role: Role
+
+    init(_ role: Role) { self.role = role }
+
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        let active = isEnabled && (configuration.isPressed || hovering)
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 11)
+            .frame(minHeight: role == .hero ? 34 : 30)
+            .background(background(active), in: RoundedRectangle(cornerRadius: 7))
+            .overlay {
+                RoundedRectangle(cornerRadius: 7)
+                    .strokeBorder(role == .quiet ? Color.primary.opacity(0.13) : .clear)
+                    .allowsHitTesting(false)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+            .opacity(isEnabled ? 1 : 0.5)
+            .onHover { hovering = $0 }
+    }
+
+    private var foreground: Color {
+        switch role {
+        case .quiet: return .primary
+        case .soft: return .primary
+        case .accent: return .white
+        case .hero: return Color(red: 0.08, green: 0.15, blue: 0.26)
+        }
+    }
+
+    private func background(_ active: Bool) -> Color {
+        switch role {
+        case .quiet: return Color.primary.opacity(active ? 0.08 : 0.025)
+        case .soft: return Brand.accent.opacity(active ? 0.22 : 0.12)
+        case .accent: return Color(red: 0.14, green: 0.33, blue: active ? 0.66 : 0.76)
+        case .hero: return .white.opacity(active ? 0.86 : 1)
+        }
+    }
 }
 
 struct ReadingSourceSheetPresenter: ViewModifier {

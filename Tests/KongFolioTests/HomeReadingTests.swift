@@ -2,6 +2,16 @@ import XCTest
 @testable import KongFolio
 
 @MainActor final class HomeReadingTests: XCTestCase {
+    func testHomeTitleAndLocationKeepDisplayReadable() {
+        XCTAssertEqual(HomeReadingDisplay.documentTitle("自行车与近代中国 -- 徐涛著, 1982 June- author -- 2015.pdf"), "自行车与近代中国")
+        XCTAssertEqual(HomeReadingDisplay.documentTitle("文明史 -- 下编.PDF"), "文明史 -- 下编")
+        let folder = URL(fileURLWithPath: "/Users/example/Library/Mobile Documents/com~apple~CloudDocs/近代史/万国公报")
+        XCTAssertEqual(HomeReadingDisplay.folderLocation(folder), "iCloud 云盘 / 近代史")
+        XCTAssertEqual(HomeReadingDisplay.pagePosition(ReadingProgress(last: 4, pages: 18), printedLabel: "伍"),
+                       "PDF 第 5 / 18 页 · 印刷页码 伍")
+        XCTAssertEqual(HomeReadingDisplay.pagePosition(ReadingProgress(last: 4), printedLabel: "5"), "PDF 第 5 页")
+    }
+
     func testLatestNoteUsesModifiedDateAndSkipsEmptyAndRemovedItems() {
         let before = Date(timeIntervalSince1970:10)
         let after = Date(timeIntervalSince1970:20)
