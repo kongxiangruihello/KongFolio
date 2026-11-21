@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import KongFolio
 
@@ -39,6 +40,52 @@ final class ToolbarSelection0533Tests: XCTestCase {
         XCTAssertEqual(profile.visible(width:320),[.sidebar,.annotate,.search])
         XCTAssertEqual(profile.visible(width:1280).map(\.rawValue),order)
         XCTAssertEqual(profile.visible(width:1280,context:.text),[.newFile,.open,.library,.sidebar])
+    }
+
+    @MainActor
+    func testToolbarNativeMouseEventsDistinguishClickFromDrop() throws {
+        let frames: [FileToolbarAction: CGRect] = [
+            .pageThumbnails: CGRect(x: 0, y: 0, width: 40, height: 32),
+            .ocr: CGRect(x: 40, y: 0, width: 40, height: 32)
+        ]
+        func mouse(_ type: NSEvent.EventType, _ x: CGFloat) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: type, location: CGPoint(x: x, y: 16),
+                                            modifierFlags: [], timestamp: 1, windowNumber: 0,
+                                            context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+        var track = ReaderToolbarMouseTrack()
+        let down = try mouse(.leftMouseDown, 20)
+        let up = try mouse(.leftMouseUp, 21)
+        guard case .consume = track.handle(down, at: down.locationInWindow, frames: frames) else {
+            return XCTFail("The native menu must wait for a click or a drag")
+        }
+        guard case let .click(originalDown, originalUp) = track.handle(up, at: up.locationInWindow, frames: frames) else {
+            return XCTFail("A click must replay the original events")
+        }
+        XCTAssertTrue(originalDown === down)
+        XCTAssertTrue(originalUp === up)
+
+        _ = track.handle(down, at: down.locationInWindow, frames: frames)
+        let drag = try mouse(.leftMouseDragged, 65)
+        let expected = ReaderToolDropPosition(action: .ocr, after: true)
+        guard case let .preview(destination) = track.handle(drag, at: drag.locationInWindow, frames: frames) else {
+            return XCTFail("Dragging from the menu icon must preview an insertion")
+        }
+        XCTAssertEqual(destination, expected)
+        let drop = try mouse(.leftMouseUp, 66)
+        guard case let .drop(source, position) = track.handle(drop, at: drop.locationInWindow, frames: frames) else {
+            return XCTFail("A drop must reorder without replaying a click")
+        }
+        XCTAssertEqual(source, .pageThumbnails)
+        XCTAssertEqual(position, expected)
+        XCTAssertFalse(track.isPressed)
+
+        _ = track.handle(down, at: down.locationInWindow, frames: frames)
+        _ = track.handle(drag, at: drag.locationInWindow, frames: frames)
+        let outside = try mouse(.leftMouseUp, 81)
+        guard case .drop(_, nil) = track.handle(outside, at: outside.locationInWindow, frames: frames) else {
+            return XCTFail("Dropping outside should leave the order alone")
+        }
     }
 
     func testDraggedToolbarOrderPersistsAcrossWindowWidths() throws {
