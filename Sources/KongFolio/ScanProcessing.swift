@@ -10,11 +10,22 @@ struct ScanIssue: Identifiable, Equatable {
 }
 
 enum ScanProcessing {
+    static let splitFractionRange = 0.2...0.8
+
+    static func clampedSplitFraction(_ fraction: Double) -> Double {
+        min(splitFractionRange.upperBound, max(splitFractionRange.lowerBound, fraction))
+    }
+
+    /// The 1-based output page number preceding the second half.
+    static func firstOutputPage(for page: Int, splitting pages: [Int]) -> Int {
+        page + 1 + pages.filter { $0 < page }.count
+    }
+
     static func splitBoxes(_ page: PDFPage, fraction: Double) -> [CGRect] {
         let crop = page.bounds(for: .cropBox)
         let rotated = abs(page.rotation % 180) == 90
         let shown = CGSize(width: rotated ? crop.height : crop.width, height: rotated ? crop.width : crop.height)
-        let cut = min(0.8, max(0.2, fraction)) * shown.width
+        let cut = clampedSplitFraction(fraction) * shown.width
         return [CGRect(x: 0, y: 0, width: cut, height: shown.height), CGRect(x: cut, y: 0, width: shown.width - cut, height: shown.height)].map {
             SignatureStamp.originalRect($0, pageSize: crop.size, rotation: page.rotation).offsetBy(dx: crop.minX, dy: crop.minY)
         }
@@ -101,9 +112,13 @@ enum ScanProcessing {
 }
 
 extension Workspace {
-    func splitScannedPages(_ pages: [Int], fraction: Double, rightFirst: Bool) throws {
-        guard !busy, !pages.isEmpty, pages.allSatisfy({ (0..<count).contains($0) }) else { return }
-        guard fraction.isFinite, (0.2...0.8).contains(fraction) else { throw FolioError(message: "中缝比例必须在 20%–80% 之间") }
+    func splitScannedPages(_ pages: [Int], fraction: Double, rightFirst: Bool,
+                           pageFractions: [Int: Double] = [:]) throws {
+        guard !busy, !readingLocked, !pages.isEmpty, pages.allSatisfy({ (0..<count).contains($0) }) else { return }
+        guard ScanProcessing.splitFractionRange.contains(fraction),
+              pageFractions.values.allSatisfy(ScanProcessing.splitFractionRange.contains) else {
+            throw FolioError(message: "中缝比例必须在 20%–80% 之间")
+        }
         // Work from committed bytes so in-memory crop/rotation edits are respected by PDFKit.
         let source = try PDFDocument(data: pdfData()).unwrap("无法读取文档")
         alignMeta()
@@ -113,6 +128,7 @@ extension Workspace {
             first[index] = output.pageCount
             let page = try source.page(at: index).unwrap("无法读取页面")
             if chosen.contains(index) {
+                let fraction = pageFractions[index] ?? fraction
                 let pieces = try ScanProcessing.halves(page, fraction: fraction, rightFirst: rightFirst)
                 for (half, piece) in pieces.enumerated() {
                     var meta = oldMeta[index]

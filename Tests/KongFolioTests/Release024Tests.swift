@@ -72,6 +72,41 @@ final class Release024Tests: XCTestCase {
         XCTAssertEqual(w.count,3)
         XCTAssertEqual(w.bookmarks.first?.page,2)
     }
+    @MainActor func testSplitPreviewPageNumberMatchesRightFirstBatchOutput() throws {
+        let workspace = Workspace()
+        workspace.document = DocumentServicesTests().fixture()
+        let selected = [0, 2]
+        let previewPage = 2
+        let first = ScanProcessing.firstOutputPage(for: previewPage, splitting: selected)
+        let page = try workspace.document.page(at: previewPage).unwrap("缺少原页")
+        let boxes = ScanProcessing.splitBoxes(page, fraction: 0.4)
+
+        XCTAssertEqual(first, 4)
+        XCTAssertEqual(ScanProcessing.clampedSplitFraction(0), 0.2)
+        XCTAssertEqual(ScanProcessing.clampedSplitFraction(1), 0.8)
+        try workspace.splitScannedPages(selected, fraction: 0.5, rightFirst: true, pageFractions: [previewPage: 0.4])
+
+        let right = try workspace.document.page(at: first - 1).unwrap("缺少右半页").bounds(for: .cropBox)
+        let left = try workspace.document.page(at: first).unwrap("缺少左半页").bounds(for: .cropBox)
+        XCTAssertEqual(right, boxes[1])
+        XCTAssertEqual(left, boxes[0])
+    }
+
+    func testAutomaticSplitFindsAnOffsetGutterWithContentOnBothSides() {
+        let width = 100
+        let height = 60
+        var pixels = [UInt8](repeating: 255, count: width * height)
+        for y in 8..<52 {
+            for x in 10..<47 { pixels[y * width + x] = 12 }
+            for x in 63..<92 { pixels[y * width + x] = 12 }
+        }
+        XCTAssertEqual(SpreadGutter.fraction(pixels: pixels, width: width, height: height), 0.55)
+        for y in 8..<52 {
+            for x in 63..<92 { pixels[y * width + x] = 255 }
+        }
+        XCTAssertNil(SpreadGutter.fraction(pixels: pixels, width: width, height: height))
+    }
+
     func testMedianBaselineRejectsOutliers() {
         let lines = [0.02,0.021,0.019,0.02,0.3].map { slope in (CGPoint(x:0.1,y:0.3),CGPoint(x:0.9,y:0.3+slope)) }
         let angle = ScanProcessing.baselineAngle(lines,size:CGSize(width:1000,height:1000))
