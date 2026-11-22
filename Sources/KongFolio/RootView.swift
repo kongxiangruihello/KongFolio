@@ -28,6 +28,11 @@ struct RootView: View {
                 } else { Color.clear }
             }
         }
+        .overlayPreferenceValue(AnnotationToolsAnchor.self) { anchor in
+            if let workspace = store.commandWorkspace {
+                AnchoredAnnotationTools(workspace: workspace, anchor: anchor)
+            }
+        }
         .modifier(ReadingSourceSheetPresenter(navigator:store.linkedSourceNavigator,store:store))
         .task { await store.importLegacyReadingRecords() }
         .onChange(of:store.readingDeskWindowRequest) { _,request in if request != nil { ReadingDeskWindowManager.shared.show(store) } }

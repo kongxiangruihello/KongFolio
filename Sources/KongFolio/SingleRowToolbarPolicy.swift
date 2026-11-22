@@ -22,7 +22,7 @@ extension FileToolbarAction {
         case .library:return "资料库（独立窗口）"
         case .essay:return "笔记"
         case .note:return "笔记：为当前 PDF 写笔记（⌥⌘N），在资料库统一管理"
-        case .annotate:return "标注工具（文档上方）"
+        case .annotate:return "标注工具"
         case .tools:return "快捷工具（对话框）"
         case .quickNote:return "笔记（⌥⌘N）"
         case .books:return "个人书架与阅读记录（对话框）"

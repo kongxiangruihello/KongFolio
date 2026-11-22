@@ -131,7 +131,9 @@ struct FunctionToolbar: View {
                         AppIcon("ellipsis.circle").frame(width:28,height:28)
                     }.menuStyle(.borderlessButton).menuIndicator(.hidden)
                         .help("更多工具").accessibilityLabel("更多工具")
-                }.frame(maxWidth:visible.isEmpty ? nil : .infinity)
+                }
+                .annotationToolsAnchor(when: overflow.contains(.annotate))
+                .frame(maxWidth:visible.isEmpty ? nil : .infinity)
             }
             .coordinateSpace(name: ReaderToolFrames.space)
             .backgroundPreferenceValue(ReaderToolFrames.self) { frames in
@@ -170,6 +172,7 @@ struct FunctionToolbar: View {
         ToolbarControlSurface(selected: isSelected(action)) {
             control(action, menu: false)
         }
+        .annotationToolsAnchor(when: action == .annotate)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             GeometryReader { cell in

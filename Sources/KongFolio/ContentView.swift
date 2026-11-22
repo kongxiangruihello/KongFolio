@@ -17,6 +17,11 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { proxy in layout(width: proxy.size.width) }
         .background(Color(nsColor: .windowBackgroundColor))
+        .overlayPreferenceValue(AnnotationToolsAnchor.self) { anchor in
+            if showsPrimaryToolbar {
+                AnchoredAnnotationTools(workspace: workspace, anchor: anchor)
+            }
+        }
         .tint(Brand.accent)
         .disabled(workspace.busy)
         .overlay { if workspace.busy { busyOverlay } }
@@ -317,6 +322,7 @@ struct ContentView: View {
             if iconOnly { AppIcon("pencil.tip.crop.circle") } else { Label("标注", appIcon: "pencil.tip.crop.circle") }
         }
         .accessibilityLabel("标注")
+        .annotationToolsAnchor()
         .foregroundStyle(workspace.showAnnotationBar ? Brand.accent : Color.primary)
         .disabled(workspace.count == 0)
         .help(workspace.showAnnotationBar ? "收起标注工具栏（⌥⌘A）" : "打开标注工具栏（⌥⌘A）：马克笔、橡皮擦")
@@ -486,14 +492,10 @@ struct ContentView: View {
         } else {
             PDFCanvas(workspace: workspace)
                 .overlay(alignment: .top) {
-                    if workspace.showAnnotationBar {
-                        if workspace.showAdvancedAnnotationBar {
-                            GeometryReader { proxy in
-                                AnnotationBar(workspace: workspace, availableWidth: max(140, proxy.size.width - 20))
-                                    .padding(.horizontal, 10).padding(.top, 10)
-                            }
-                        } else {
-                            QuickAnnotationTools(workspace: workspace).padding(.top, 10)
+                    if workspace.showAnnotationBar && workspace.showAdvancedAnnotationBar {
+                        GeometryReader { proxy in
+                            AnnotationBar(workspace: workspace, availableWidth: max(140, proxy.size.width - 20))
+                                .padding(.horizontal, 10).padding(.top, 10)
                         }
                     }
                 }
