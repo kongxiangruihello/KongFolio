@@ -1,7 +1,33 @@
 import SwiftUI
 
+private struct ToolbarIconToneKey: EnvironmentKey {
+    static let defaultValue: Color? = nil
+}
+
+extension EnvironmentValues {
+    var toolbarIconTone: Color? {
+        get { self[ToolbarIconToneKey.self] }
+        set { self[ToolbarIconToneKey.self] = newValue }
+    }
+}
+
+enum PDFToolbarPalette {
+    static func graphite(_ scheme: ColorScheme) -> Color {
+        Color(nsColor: graphiteColor(inDarkMode: scheme == .dark))
+    }
+
+    static func graphiteColor(inDarkMode: Bool) -> NSColor {
+        NSColor(srgbRed: inDarkMode ? 0.83 : 0.24,
+                green: inDarkMode ? 0.84 : 0.25,
+                blue: inDarkMode ? 0.87 : 0.29, alpha: 1)
+    }
+
+    static let annotationHighlight = Color(red: 0.32, green: 0.28, blue: 0.88)
+}
+
 /// Applies the same color to a feature wherever its symbol appears.
 struct AppIcon: View {
+    @Environment(\.toolbarIconTone) private var toolbarIconTone
     let symbol: String
     let tone: Color?
 
@@ -11,10 +37,16 @@ struct AppIcon: View {
     }
 
     var body: some View {
-        let primary = tone ?? Self.color(for: symbol)
-        Image(systemName: symbol)
-            .symbolRenderingMode(.palette)
-            .foregroundStyle(primary, primary.opacity(0.75), primary.opacity(0.58))
+        if let toolbarIconTone {
+            Image(systemName: symbol)
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(toolbarIconTone)
+        } else {
+            let primary = tone ?? Self.color(for: symbol)
+            Image(systemName: symbol)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(primary, primary.opacity(0.75), primary.opacity(0.58))
+        }
     }
 
     static let onAccent = Color(red: 0.76, green: 0.93, blue: 1)
