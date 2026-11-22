@@ -30,7 +30,7 @@ struct CropSheet: View {
                             Spacer()
                             Button("裁这一页") { workspace.applyCropToCurrentPage() }
                         }
-                        Text("滑杆只改当前页；点“裁这一页”后窗口保持打开，可以接着翻到下一页。").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text("当前调整只用于本页。点「裁这一页」后，可以接着翻到下一页。").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     } else {
                         Picker("范围", selection: $workspace.cropScope) { ForEach(CropScope.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
                             .onChange(of: workspace.cropScope) {
@@ -39,7 +39,7 @@ struct CropSheet: View {
                         Toggle("奇数页和偶数页分开设置", isOn: $workspace.cropSeparate)
                     }
                     if workspace.cropSeparate && !workspace.cropSingle {
-                        Text("当前预览的是第 \(workspace.selection + 1) 页（\(PageCrop.isOddPage(workspace.selection) ? "奇数页" : "偶数页")），拖动滑杆只改这一组。")
+                        Text("当前预览的是第 \(workspace.selection + 1) 页（\(PageCrop.isOddPage(workspace.selection) ? "奇数页" : "偶数页")），当前调整只用于这一组。")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     slider("左", \.left)
@@ -55,6 +55,8 @@ struct CropSheet: View {
                 .frame(width: 250)
                 .disabled(workspace.cropDetecting)
             }
+            Text("拖动裁剪框的边或角调整范围，拖动框内可移动选区。")
+                .font(.caption).foregroundStyle(.secondary)
             Text("只改变显示的范围，页面内容不会被删掉；可以撤销，也可以用“恢复完整页面”还原。含文字层的页面，文字层保持不变。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
@@ -77,13 +79,6 @@ struct CropSheet: View {
         .adaptiveSheet(width: 600, height: 600, flexibleHeight: true)
     }
 
-    /// The part of a preview of the given size that stays after the cut (the top-left origin of SwiftUI).
-    private static func keptArea(_ margins: CropMargins, in size: CGSize) -> CGRect {
-        let left = CGFloat(margins.left) * size.width, right = CGFloat(margins.right) * size.width
-        let top = CGFloat(margins.top) * size.height, bottom = CGFloat(margins.bottom) * size.height
-        return CGRect(x: left, y: top, width: size.width - left - right, height: size.height - top - bottom)
-    }
-
     private func slider(_ title: String, _ key: WritableKeyPath<CropMargins, Double>) -> some View {
         HStack {
             Text(title).frame(width: 18)
@@ -96,25 +91,12 @@ struct CropSheet: View {
         }
     }
 
-    /// The whole page with the part that will be cut shaded.
     private var preview: some View {
-        let page = workspace.document.page(at: workspace.selection)
-        let image = page?.thumbnail(of: CGSize(width: 300, height: 400), for: .mediaBox)
-        let m = margins.wrappedValue.clamped
-        return ZStack {
-            if let image {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
-                    .overlay(GeometryReader { proxy in
-                        let kept = Self.keptArea(m, in: proxy.size)
-                        Path { path in
-                            path.addRect(CGRect(origin: .zero, size: proxy.size))
-                            path.addRect(kept)
-                        }
-                        .fill(Color.black.opacity(0.45), style: FillStyle(eoFill: true))
-                        Rectangle().stroke(Color.accentColor, lineWidth: 1.5)
-                            .frame(width: kept.width, height: kept.height)
-                            .position(x: kept.midX, y: kept.midY)
-                    })
+        ZStack {
+            if let page = workspace.document.page(at: workspace.selection) {
+                CropPagePreview(page: page, revision: workspace.revision,
+                                editing: !workspace.cropDetecting, margins: margins)
+                    .id(ObjectIdentifier(page))
             } else {
                 Rectangle().fill(Color.secondary.opacity(0.1))
             }

@@ -141,6 +141,31 @@ final class PageCropTests: XCTestCase {
         XCTAssertTrue(workspace.cropMessage.contains("6 页"))
     }
 
+    func testCropPreviewResizesFromCornerAndMovesWithoutChangingSize() {
+        let size = CGSize(width: 200, height: 400)
+        let start = CropMargins(left: 0.1, right: 0.2, top: 0.1, bottom: 0.2)
+        let area = CropPreviewGeometry.area(for: start, in: size)
+        let corner = CropPreviewGeometry.Target(horizontal: -1, vertical: -1)
+        XCTAssertEqual(CropPreviewGeometry.target(at: area.origin, in: area), corner)
+        XCTAssertEqual(CropPreviewGeometry.target(at: CGPoint(x: area.midX, y: area.midY), in: area), .move)
+        XCTAssertNil(CropPreviewGeometry.target(at: .zero, in: area))
+
+        let resized = CropPreviewGeometry.adjusted(start, target: corner,
+                                                    translation: CGSize(width: 20, height: 40), in: size)
+        XCTAssertEqual(resized.left, 0.2, accuracy: 0.001)
+        XCTAssertEqual(resized.top, 0.2, accuracy: 0.001)
+        XCTAssertEqual(resized.right, start.right)
+        XCTAssertEqual(resized.bottom, start.bottom)
+
+        let moved = CropPreviewGeometry.adjusted(start, target: .move,
+                                                  translation: CGSize(width: 500, height: -500), in: size)
+        let movedArea = CropPreviewGeometry.area(for: moved, in: size)
+        XCTAssertEqual(movedArea.width, area.width, accuracy: 0.001)
+        XCTAssertEqual(movedArea.height, area.height, accuracy: 0.001)
+        XCTAssertEqual(movedArea.maxX, size.width, accuracy: 0.001)
+        XCTAssertEqual(movedArea.minY, 0, accuracy: 0.001)
+    }
+
     @MainActor func testBlankEdgeToolPreviewsSelectedPagesBeforeApplying() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
