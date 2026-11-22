@@ -157,6 +157,41 @@ final class ReadingWorkflow05312Tests: XCTestCase {
         XCTAssertEqual(store.readingExcerptFeedback?.recordID,record.id)
         XCTAssertEqual(record.citations.first?.source.page,0)
         XCTAssertNil(workspace.readingRegionOCRMode)
+        XCTAssertEqual(workspace.tool, .select)
+    }
+
+    @MainActor func testOrdinaryImageExcerptsStayArmedAndRevealEachNewRecord() throws {
+        let root = try Release027Tests().folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = WorkspaceStore(storage: root)
+        store.bootstrap()
+        let workspace = try XCTUnwrap(store.activeWorkspace)
+        let source = try PDFTextSnapshot053Tests().fixture(root)
+        workspace.load([source], prepared: .documents([try Data(contentsOf: source)]))
+        let png = try XCTUnwrap(SignatureImage.pngData(SignaturePositionTests().square()))
+        let page = try XCTUnwrap(workspace.document.page(at: 0))
+        workspace.quickPDFExcerpt()
+        XCTAssertEqual(workspace.tool, .region)
+
+        let firstRect = CGRect(x: 12, y: 30, width: 20, height: 20)
+        workspace.excerptRegion(imageData: png, size: firstRect.size, page: page, pageRect: firstRect)
+        let first = try XCTUnwrap(store.journal.record(store.readingRecordID))
+        XCTAssertEqual(workspace.tool, .region)
+        XCTAssertTrue(store.showReadingDesk)
+
+        let secondRect = firstRect.offsetBy(dx: 0, dy: 30)
+        workspace.excerptRegion(imageData: png, size: secondRect.size, page: page, pageRect: secondRect)
+        let second = try XCTUnwrap(store.journal.record(store.readingRecordID))
+        XCTAssertTrue(second.id != first.id)
+        XCTAssertEqual(second.citations.first?.source.rects, [secondRect])
+        XCTAssertEqual(store.readingExcerptFeedback?.recordID, second.id)
+        XCTAssertEqual(workspace.tool, .region)
+
+        workspace.endPDFExcerptRegion()
+        XCTAssertEqual(workspace.tool, .select)
+        workspace.quickPDFExcerpt()
+        XCTAssertEqual(workspace.tool, .region)
+        XCTAssertFalse(workspace.showAnnotationBar)
     }
 
     func testExportsKeepBodyTimeAndBothSourcesInThreeFormats() throws {

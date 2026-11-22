@@ -305,20 +305,18 @@ struct FunctionToolbar: View {
                     .help("缩放 PDF").accessibilityLabel("缩放 PDF")
             }
         case .excerpt:
-            if menu || context != .pdf {
-                Menu { ReadingExcerptActions(store:store) } label:{ label(action,menu:menu) }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle)
-            } else if let workspace {
-                HStack(spacing: 0) {
-                    Button { workspace.quickPDFExcerpt() } label: { label(action, menu: false) }
-                        .help(workspace.tool == .region ? "取消框选图片" : "摘录所选文字；未选文字时框选图片")
-                        .accessibilityLabel(workspace.tool == .region ? "取消框选图片" : "摘录文字或图片")
-                    Menu {
-                        ReadingExcerptActions(store: store)
-                    } label: { AppIcon("chevron.down").font(.system(size: 8)).frame(width: 14, height: 28) }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden)
-                    .help("摘录方式").accessibilityLabel("摘录方式")
-                }.disabled(workspace.busy || workspace.showsPageThumbnails)
+            if context == .pdf, let workspace {
+                Button { workspace.quickPDFExcerpt() } label: {
+                    if menu { label(action, menu: true) }
+                    else {
+                        action.icon
+                            .frame(width: 34, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                }
+                .help("摘录所选文字；未选文字时框选图片")
+                .accessibilityLabel("摘录文字或图片")
+                .disabled(workspace.busy || workspace.showsPageThumbnails)
             }
         case .export:
             Menu {
@@ -438,7 +436,7 @@ private struct ToolbarControlSurface<Content: View>: View {
 
     var body: some View {
         content()
-            .frame(width:34,height:32)
+            .frame(width: 34, height: 32)
             .foregroundStyle(annotationActive ? Color.white : toolbarIconTone ?? Color(nsColor: .secondaryLabelColor))
             .environment(\.toolbarIconTone, annotationActive ? Color.white : toolbarIconTone)
             .background {

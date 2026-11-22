@@ -275,7 +275,8 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53, let workspace, workspace.tool == .region {
-            workspace.quickPDFExcerpt()
+            workspace.endPDFExcerptRegion()
+            workspace.status = "已结束框选图片"
             return
         }
         if event.keyCode == 53, drawingPage != nil, moving == nil {
@@ -490,8 +491,8 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         do {
             let png = try PDFImageExcerpt.png(for: pageRect, on: page)
             let size = page.rotation % 180 == 0 ? pageRect.size : CGSize(width: pageRect.height, height: pageRect.width)
+            clearSelection()
             workspace.excerptRegion(imageData: png, size: size, page: page, pageRect: pageRect)
-            workspace.selectTool(.select)
         } catch {
             workspace.error = error.localizedDescription
         }

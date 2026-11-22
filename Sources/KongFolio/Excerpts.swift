@@ -34,13 +34,6 @@ extension Workspace {
     /// The main excerpt button saves selected text or prepares a region capture.
     func quickPDFExcerpt(selection: PDFSelection? = nil) {
         guard let store, count > 0, !busy, !drawingInProgress, placingSignature == nil else { return }
-        let view = pdfView as? DrawingPDFView
-        if tool == .region {
-            view?.resetExcerptRegion()
-            selectTool(.select)
-            status = "已取消框选"
-            return
-        }
         let selected = selection ?? pdfView?.currentSelection
         if let selected, !(selected.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             preparePDFExcerpt()
@@ -50,7 +43,15 @@ extension Workspace {
         }
     }
 
+    func endPDFExcerptRegion() {
+        guard tool == .region else { return }
+        (pdfView as? DrawingPDFView)?.resetExcerptRegion()
+        store?.multiRegionTarget053 = nil
+        selectTool(.select)
+    }
+
     func preparePDFExcerpt() {
+        endPDFExcerptRegion()
         showsPageThumbnails = false
         if showAnnotationBar { showAnnotationBar = false }
         selectTool(.select)
@@ -116,11 +117,15 @@ extension Workspace {
             }
             let record = ReadingRecord(kind:.image,citations:[readingCitation(page:index == NSNotFound ? selection : index,rects:[pageRect])])
             store.journal.add(record,image:imageData)
-            if let saved = store.journal.record(record.id) {
-                store.revealCapturedExcerpt(saved,message:"已保存图片摘录")
+            guard let saved = store.journal.record(record.id) else { return }
+            store.revealCapturedExcerpt(saved, message: "已保存图片摘录")
+            if let ocrMode {
+                endPDFExcerptRegion()
+                store.readingImageOCRRequest = ReadingImageOCRRequest(recordID: record.id, mode: ocrMode)
+                status = "图片摘录已保存，正在准备文字识别"
+            } else {
+                status = tool == .region ? "已保存图片摘录，可继续拖动框选，按 Esc 结束" : "图片摘录已保存到阅读记录"
             }
-            if let ocrMode { store.readingImageOCRRequest = ReadingImageOCRRequest(recordID:record.id,mode:ocrMode) }
-            status = ocrMode == nil ? "图片摘录已保存到阅读记录" : "图片摘录已保存，正在准备文字识别"
             return
         }
         guard let board = store?.board else { error = "工作区不可用。"; return }
@@ -128,6 +133,7 @@ extension Workspace {
         if Workspace.tintsSources { tint(cardID: id, color: board.card(id)?.color ?? .blue, pages: [(page, pageRect)], quote: "") }
         board.focus(id)
         showBoardPane()
+        endPDFExcerptRegion()
         status = "已把所选区域摘录到工作区"
     }
 
