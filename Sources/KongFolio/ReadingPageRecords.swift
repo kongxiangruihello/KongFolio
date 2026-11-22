@@ -82,7 +82,7 @@ extension WorkspaceStore {
         switch item {
         case .record(let record):
             if record.isExcerpt {
-                revealCapturedExcerpt(record,message:"已打开本页摘录",opensEditor:true)
+                revealCapturedExcerpt(record,message:"已打开本页摘录")
             } else {
                 pinnedReadingID = nil
                 showReadingPanel(.notes,noteID:record.id)

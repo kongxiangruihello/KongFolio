@@ -39,8 +39,8 @@ extension Workspace {
         }
         return citation
     }
-    func captureReadingExcerpt(_ selection:PDFSelection) -> Bool {
-        guard let store, store.readingMode else { return false }
+    func captureReadingExcerpt(_ selection:PDFSelection, intoReadingDesk: Bool = false) -> Bool {
+        guard let store, intoReadingDesk || store.readingMode else { return false }
         guard !store.journal.unreadable else { error = store.journal.error; return true }
         guard let record = readingExcerpt(from:selection) else { error = "请选中文字；扫描页可使用图片摘录"; return true }
         store.saveReadingExcerpt(record)

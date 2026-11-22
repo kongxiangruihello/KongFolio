@@ -150,12 +150,12 @@ extension WorkspaceStore {
         return true
     }
 
-    func revealCapturedExcerpt(_ record: ReadingRecord, message: String, opensEditor:Bool = false) {
+    func revealCapturedExcerpt(_ record: ReadingRecord, message: String) {
         rememberRightPanelNote()
         if let pinned = journal.record(pinnedReadingID), pinned.kind != .note { pinnedReadingID = nil }
-        readingRecordID = record.id
-        openReadingDesk(.excerpts)
-        readingExcerptFeedback = ReadingExcerptFeedback(recordID:record.id,message:message,opensEditor:opensEditor)
+        if readingImageOCRRequest?.recordID != record.id { readingImageOCRRequest = nil }
+        showReadingPanel(.excerpts, noteID: record.id)
+        readingExcerptFeedback = ReadingExcerptFeedback(recordID:record.id,message:message,opensEditor:true)
     }
 
     private func excerptLocation(_ record: ReadingRecord) -> String {

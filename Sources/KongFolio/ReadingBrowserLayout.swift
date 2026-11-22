@@ -6,6 +6,7 @@ struct ReadingBrowserLayout<Browser:View,Editor:View>:View {
     let hasEditor:Bool
     var compact = false
     var deskSection: Binding<ReadingDeskSection>? = nil
+    var backTitle = "返回记录列表"
     var onBack:()->Void
     @ViewBuilder var browser:()->Browser
     @ViewBuilder var editor:()->Editor
@@ -19,7 +20,7 @@ struct ReadingBrowserLayout<Browser:View,Editor:View>:View {
             } else if hasEditor {
                 VStack(alignment:.leading,spacing:10) {
                     deskHeader
-                    Button(action:onBack) { Label("返回记录列表",appIcon:"chevron.left") }.buttonStyle(.borderless)
+                    Button(action:onBack) { Label(backTitle,appIcon:"chevron.left") }.buttonStyle(.borderless)
                     editorArea
                 }
             } else { browserArea }

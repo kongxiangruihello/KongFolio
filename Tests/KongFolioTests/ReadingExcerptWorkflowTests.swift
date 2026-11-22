@@ -17,6 +17,8 @@ final class ReadingExcerptWorkflowTests: XCTestCase {
         let record = excerpt("相同原文")
         XCTAssertTrue(store.saveReadingExcerpt(record))
         XCTAssertEqual(store.readingExcerptFeedback?.recordID,record.id)
+        XCTAssertEqual(store.readingRecordID,record.id)
+        XCTAssertTrue(store.readingExcerptFeedback?.opensEditor == true)
         XCTAssertTrue(store.saveReadingExcerpt(excerpt("相同原文",y:51)))
         XCTAssertTrue(store.readingExcerptFeedback?.message.contains("已摘录过") == true)
         XCTAssertEqual(store.journal.state.records.count,1)
