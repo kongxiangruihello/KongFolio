@@ -193,13 +193,8 @@ struct ReadingDeskView: View {
                 TextField("按标签筛选",text:$tag)
                 Toggle("最近移除",isOn:$removed).font(.caption)
             }
-            if section == .excerpts {
-                HStack {
-                    if compact { Menu("摘录操作") { ReadingExcerptActions(store:store) } }
-                    if !store.readingRecordSelection.isEmpty {
-                        Button("按选中顺序导出…") { store.exportCheckedReadingRecords() }
-                    }
-                }
+            if section == .excerpts && !store.readingRecordSelection.isEmpty {
+                Button("按选中顺序导出…") { store.exportCheckedReadingRecords() }
             }
             if section == .notes {
                 Menu("新建笔记") {
@@ -376,6 +371,14 @@ struct ReadingRecordDetail: View {
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment:.leading,spacing:10) {
+                if let image = current.imageAsset, imageOCR.text.isEmpty { ReadingRecordImage(url:journal.assetURL(image),pending:journal.pendingImage(image)).frame(maxHeight:220) }
+                if current.excerptSegments != nil {
+                    segmentedExcerpt
+                } else if current.kind != .note {
+                    HStack { Text("摘录原文").font(.caption); Spacer(); Button("原文与校订对照…") { showQuoteCorrection = true }; Button(editQuote ? "完成文字校正" : "校正摘录文字") { editQuote.toggle() } }
+                    if editQuote { ReadingWritingEditor(text:binding(\.quote),label:"摘录校订文字",identity:"quote:"+record.id.uuidString).id("quote:"+record.id.uuidString).frame(height:100).border(.quaternary) }
+                    else if !current.quote.isEmpty { Text(current.quote).textSelection(.enabled) }
+                }
                 HStack { Button(store.pinnedReadingID == record.id ? "取消固定这条笔记" : "固定这条记录，翻页时继续写") { store.pinnedReadingID = store.pinnedReadingID == record.id ? nil : record.id };if store.pinnedReadingID == record.id { Text("已固定："+current.displayTitle).font(.caption).lineLimit(1) } }
                 ReadingRecordMetadataView(record:current)
                 if sourceNavigator.busy {
@@ -389,15 +392,7 @@ struct ReadingRecordDetail: View {
                 if current.kind == .excerpt || current.kind == .image {
                     ReadingExcerptRemarkField(journal:journal,recordID:record.id)
                 }
-                if current.excerptSegments != nil {
-                    segmentedExcerpt
-                } else if current.kind != .note {
-                    HStack { Text("摘录原文").font(.caption); Spacer(); Button("原文与校订对照…") { showQuoteCorrection = true }; Button(editQuote ? "完成文字校正" : "校正摘录文字") { editQuote.toggle() } }
-                    if editQuote { ReadingWritingEditor(text:binding(\.quote),label:"摘录校订文字",identity:"quote:"+record.id.uuidString).id("quote:"+record.id.uuidString).frame(height:100).border(.quaternary) }
-                    else if !current.quote.isEmpty { Text(current.quote).textSelection(.enabled) }
-                }
                 if current.kind == .note && !current.quote.isEmpty { Text("关联原文").font(.caption); Text(current.quote).textSelection(.enabled) }
-                if let image = current.imageAsset, imageOCR.text.isEmpty { ReadingRecordImage(url:journal.assetURL(image),pending:journal.pendingImage(image)).frame(maxHeight:220) }
                 if current.kind == .image {
                     imageRecognition.onAppear { imageOCR.restoreSegments(current); startRequestedOCR() }
                 }

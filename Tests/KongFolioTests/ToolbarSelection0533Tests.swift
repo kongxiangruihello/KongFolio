@@ -92,7 +92,7 @@ final class ToolbarSelection0533Tests: XCTestCase {
         var profile = ReaderToolbarProfile()
         let pinned = profile.pinned
         XCTAssertTrue(profile.move(.ocr, relativeTo: .pageThumbnails, after: false))
-        XCTAssertEqual(profile.visible(width: 320), [.ocr, .pageThumbnails, .search])
+        XCTAssertEqual(profile.visible(width: 320), [.ocr, .pageThumbnails, .excerpt])
         XCTAssertFalse(profile.move(.ocr, relativeTo: .pageThumbnails, after: false))
         XCTAssertFalse(profile.move(.ocr, relativeTo: .ocr, after: true))
         XCTAssertTrue(profile.move(.ocr, relativeTo: .library, after: true))

@@ -31,14 +31,19 @@ extension Workspace {
 
     // MARK: Excerpting
 
+    var canQuickPDFExcerpt: Bool { count > 0 && !busy && !drawingInProgress && placingSignature == nil }
+
+    var pdfExcerptButtonTitle: String { tool == .region ? "结束图片摘录" : "摘录文字或图片" }
+
+    var pdfExcerptButtonHelp: String {
+        tool == .region ? "结束图片摘录（Esc）" : "保存选中的文字，或拖动框选图片"
+    }
+
     /// The main excerpt button saves selected text or prepares a region capture.
     func quickPDFExcerpt(selection: PDFSelection? = nil) {
-        guard let store, count > 0, !busy, !drawingInProgress, placingSignature == nil else { return }
-        let view = pdfView as? DrawingPDFView
+        guard let store, canQuickPDFExcerpt else { return }
         if tool == .region {
-            view?.resetExcerptRegion()
-            selectTool(.select)
-            status = "已取消框选"
+            endReadingRegionCapture()
             return
         }
         let selected = selection ?? pdfView?.currentSelection
@@ -46,8 +51,14 @@ extension Workspace {
             preparePDFExcerpt()
             _ = captureReadingExcerpt(selected, intoReadingDesk: true)
         } else {
-            store.startReadingRegionCapture(from: self)
+            store.startReadingRegionCapture(from: self, continuous: true)
         }
+    }
+
+    func endReadingRegionCapture() {
+        if store?.commandWorkspace === self { store?.multiRegionTarget053 = nil }
+        selectTool(.select)
+        status = "已结束图片摘录"
     }
 
     func preparePDFExcerpt() {
@@ -100,7 +111,7 @@ extension Workspace {
     func excerptRegion(imageData: Data, size: CGSize, page: PDFPage, pageRect: CGRect) {
         let ocrMode = readingRegionOCRMode
         readingRegionOCRMode = nil
-        if let store, store.readingMode {
+        if let store, store.readingMode || keepsReadingRegionCapture {
             guard !store.journal.unreadable else { error = store.journal.error; return }
             let index = document.index(for:page)
             if let id=store.multiRegionTarget053,let target=store.journal.record(id),target.removed==nil,target.kind == .image {
@@ -120,7 +131,11 @@ extension Workspace {
                 store.revealCapturedExcerpt(saved,message:"已保存图片摘录")
             }
             if let ocrMode { store.readingImageOCRRequest = ReadingImageOCRRequest(recordID:record.id,mode:ocrMode) }
-            status = ocrMode == nil ? "图片摘录已保存到阅读记录" : "图片摘录已保存，正在准备文字识别"
+            if keepsReadingRegionCapture {
+                status = "图片摘录已保存，可继续框选；按 Esc 结束"
+            } else {
+                status = ocrMode == nil ? "图片摘录已保存到阅读记录" : "图片摘录已保存，正在准备文字识别"
+            }
             return
         }
         guard let board = store?.board else { error = "工作区不可用。"; return }
@@ -253,17 +268,17 @@ extension Workspace {
 }
 
 extension WorkspaceStore {
-    func startReadingRegionCapture(ocr: ReadingImageOCRMode? = nil, from source: Workspace? = nil) {
-        guard let workspace = source ?? commandWorkspace, workspace.store === self,
-              workspace.count > 0, !workspace.busy, !workspace.drawingInProgress, workspace.placingSignature == nil else { return }
+    func startReadingRegionCapture(ocr: ReadingImageOCRMode? = nil, from source: Workspace? = nil, continuous: Bool = false) {
+        guard let workspace = source ?? commandWorkspace, workspace.store === self, workspace.canQuickPDFExcerpt else { return }
         workspace.preparePDFExcerpt()
         workspace.pdfView?.clearSelection()
         if let view = workspace.pdfView { view.window?.makeFirstResponder(view) }
         readingMode = true
         multiRegionTarget053 = nil
         workspace.tool = .region
+        workspace.keepsReadingRegionCapture = continuous
         workspace.readingRegionOCRMode = ocr
-        workspace.status = ocr == nil ? "在 PDF 页面上拖动框选图片，按 Esc 取消" : "在 PDF 页面上拖动框选，保存图片后识别文字"
+        workspace.status = ocr == nil ? "在 PDF 页面上拖动框选图片，按 Esc 结束" : "在 PDF 页面上拖动框选，保存图片后识别文字"
     }
 
     /// Takes the reader to a card's source. By default (setting `cardsBeside`) the source document is shown in the right
