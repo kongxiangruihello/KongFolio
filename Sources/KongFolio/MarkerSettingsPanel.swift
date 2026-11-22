@@ -1,11 +1,49 @@
 import AppKit
 import SwiftUI
 
-struct QuickAnnotationTools: View {
+struct AnnotationToolsAnchor: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        if let next = nextValue() { value = next }
+    }
+}
+
+extension View {
+    func annotationToolsAnchor(when isAnchor: Bool = true) -> some View {
+        anchorPreference(key: AnnotationToolsAnchor.self, value: .bounds) { isAnchor ? $0 : nil }
+    }
+}
+
+struct AnchoredAnnotationTools: View {
     @ObservedObject var workspace: Workspace
+    let anchor: Anchor<CGRect>?
 
     var body: some View {
-        HStack(spacing: 6) {
+        if let anchor, workspace.showsQuickAnnotationTools, workspace.count > 0,
+           !workspace.showsPageThumbnails, !workspace.readingLocked, !workspace.busy {
+            GeometryReader { geometry in
+                let button = geometry[anchor]
+                let margin: CGFloat = 8
+                let width = QuickAnnotationTools.width
+                let left = max(margin, min(button.midX - width / 2, geometry.size.width - width - margin))
+                QuickAnnotationTools(workspace: workspace)
+                    .fixedSize()
+                    .offset(x: left, y: button.maxY + margin)
+            }
+        }
+    }
+}
+
+private struct QuickAnnotationTools: View {
+    @ObservedObject var workspace: Workspace
+    private static let buttonWidth: CGFloat = 44
+    private static let spacing: CGFloat = 6
+    private static let padding: CGFloat = 5
+    static var width: CGFloat { buttonWidth * 2 + spacing + padding * 2 }
+
+    var body: some View {
+        HStack(spacing: Self.spacing) {
             button("马克笔", symbol: "highlighter", selected: workspace.tool == .pen && !workspace.penHighlighter) {
                 workspace.openMarkerSettings()
             }
@@ -13,7 +51,7 @@ struct QuickAnnotationTools: View {
                 workspace.selectTool(.eraser)
             }
         }
-        .padding(5)
+        .padding(Self.padding)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary).allowsHitTesting(false) }
         .shadow(color: .black.opacity(0.16), radius: 7, y: 3)
@@ -25,7 +63,7 @@ struct QuickAnnotationTools: View {
         Button(action: action) {
             AppIcon(symbol)
                 .font(.system(size: 20, weight: .medium))
-                .frame(width: 44, height: 36)
+                .frame(width: Self.buttonWidth, height: 36)
                 .background(selected ? Brand.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
                 .contentShape(Rectangle())
         }
