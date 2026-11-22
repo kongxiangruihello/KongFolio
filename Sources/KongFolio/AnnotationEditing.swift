@@ -2,6 +2,33 @@ import SwiftUI
 import PDFKit
 
 extension Workspace {
+    var showsQuickAnnotationTools: Bool { showAnnotationBar && !showAdvancedAnnotationBar }
+
+    func toggleQuickAnnotationTools() {
+        if showsQuickAnnotationTools {
+            showAnnotationBar = false
+            return
+        }
+        showsPageThumbnails = false
+        showAdvancedAnnotationBar = false
+        showAnnotationBar = true
+        selectTool(.select)
+    }
+
+    func openMarkerSettings() {
+        guard !readingLocked else { status = "请先切换到编辑模式"; return }
+        selectTool(.pen)
+        store?.closeRightReadingPanel()
+        showPenSettings = true
+    }
+
+    var drawingStrokeStyle: PenStyle {
+        if tool == .pen && !penHighlighter {
+            return PenStyle(width: min(max(penWidth, 0.5), 24), alpha: markerOpacity)
+        }
+        return PenStyle.make(width: penWidth, highlighter: penHighlighter, arrow: tool != .pen)
+    }
+
     /// Switches the drawing tool; each tool keeps its own colour and width, starting from sensible ones.
     func selectTool(_ next: AnnotationTool, highlighter: Bool = false) {
         guard !readingLocked || next == .select || next == .region else { status = "请先切换到编辑模式";return }
@@ -11,6 +38,8 @@ extension Workspace {
         penHighlighter = next == .pen && highlighter
         let key = AnnotationStyleDefaults.key(tool: next, highlighter: penHighlighter)
         let stored = SavedDrawingStyle.load(drawingDefaults)[key] ?? toolStyles[key]
+        markerOpacity = stored?.opacity ?? 1
+        markerTouch = stored?.touch ?? .direct
         if let style = stored {
             annotationColor = Color(.sRGB, red: style.rgb[0], green: style.rgb[1], blue: style.rgb[2], opacity: 1)
             penWidth = style.width; shapeFill = style.fill; lineDashed = style.dashed

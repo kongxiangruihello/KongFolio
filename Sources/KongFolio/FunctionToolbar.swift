@@ -415,8 +415,7 @@ struct FunctionToolbar: View {
                 store.startNoteFromExcerpt(excerpt)
             } else { store.newReadingNote() }
         case .annotate:
-            workspace?.showsPageThumbnails = false
-            workspace?.showAnnotationBar.toggle()
+            workspace?.toggleQuickAnnotationTools()
         case .save: store.saveActive()
         case .books: store.openReadingHistory(.bookshelf)
         case .jobs: store.showBackgroundJobs = true

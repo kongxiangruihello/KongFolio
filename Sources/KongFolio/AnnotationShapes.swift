@@ -47,7 +47,9 @@ enum AnnotationShapes {
             if fill { annotation.interiorColor = color.withAlphaComponent(0.2) }
         case .pen, .signature:
             let xs = points.map(\.x), ys = points.map(\.y)
-            let bounds = CGRect(x: xs.min()! - 3, y: ys.min()! - 3, width: xs.max()! - xs.min()! + 6, height: ys.max()! - ys.min()! + 6)
+            let pad = max(3, style.width / 2 + 1)
+            let bounds = CGRect(x: xs.min()! - pad, y: ys.min()! - pad,
+                                width: xs.max()! - xs.min()! + 2 * pad, height: ys.max()! - ys.min()! + 2 * pad)
             annotation = PDFAnnotation(bounds: bounds, forType: .ink, withProperties: nil)
             let path = NSBezierPath()
             path.move(to: CGPoint(x: points[0].x - bounds.minX, y: points[0].y - bounds.minY))

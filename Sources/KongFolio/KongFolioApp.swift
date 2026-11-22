@@ -130,9 +130,16 @@ import KongFolioUpdateKit
                 Button("粘贴标注") { store.commandWorkspace?.pasteAnnotations() }.keyboardShortcut("v", modifiers: [.command, .option, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Button("再制所选标注") { store.commandWorkspace?.duplicateSelectedAnnotations() }.keyboardShortcut("d").disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Divider()
-                Button((store.commandWorkspace?.showAnnotationBar ?? true) ? "隐藏标注工具栏" : "显示标注工具栏") {
-                    if let w = store.commandWorkspace { w.showAnnotationBar.toggle() }
+                Button((store.commandWorkspace?.showsQuickAnnotationTools == true) ? "隐藏标注工具栏" : "显示标注工具栏") {
+                    store.commandWorkspace?.toggleQuickAnnotationTools()
                 }.keyboardShortcut("a", modifiers: [.command, .option]).disabled((store.commandWorkspace?.count ?? 0) == 0)
+                Button("显示完整标注工具栏") {
+                    guard let workspace = store.commandWorkspace else { return }
+                    workspace.showsPageThumbnails = false
+                    workspace.showPenSettings = false
+                    workspace.showAnnotationBar = true
+                    workspace.showAdvancedAnnotationBar = true
+                }.disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Divider()
                 Button("高亮选中文字") { if let w = store.commandWorkspace { w.mark(style: .highlight, color: w.markupColor) } }
                     .keyboardShortcut("h", modifiers: [.command, .shift]).disabled((store.commandWorkspace?.count ?? 0) == 0)

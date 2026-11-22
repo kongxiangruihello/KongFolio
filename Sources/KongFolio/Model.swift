@@ -32,6 +32,25 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
     var draws: Bool { [.pen, .line, .arrow, .rectangle, .ellipse, .signature].contains(self) }
 }
 
+/// Mouse response for freehand marker strokes.
+enum MarkerTouch: String, CaseIterable, Codable {
+    case direct
+    case smooth
+
+    var title: String { self == .direct ? "灵敏" : "平滑" }
+
+    func strokePoints(_ points: [CGPoint]) -> [CGPoint] {
+        guard self == .smooth, points.count > 2 else { return points }
+        var result = points
+        for index in 1..<(points.count - 1) {
+            let before = points[index - 1], current = points[index], after = points[index + 1]
+            result[index] = CGPoint(x: (before.x + 2 * current.x + after.x) / 4,
+                                    y: (before.y + 2 * current.y + after.y) / 4)
+        }
+        return result
+    }
+}
+
 /// How a pen or arrow stroke looks, from the width and highlighter settings.
 struct PenStyle: Equatable {
     var width: Double

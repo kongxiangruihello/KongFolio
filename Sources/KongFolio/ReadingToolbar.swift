@@ -14,7 +14,7 @@ struct ReadingToolbar: View {
                 Spacer(minLength:0)
                 if width >= 1200 { actions }
                 Button { workspace.open() } label:{AppIcon("folder")}.help("打开 PDF 文献")
-                Button { workspace.showAnnotationBar.toggle() } label:{AppIcon("pencil.tip.crop.circle")}.disabled(workspace.count == 0).help("标注工具")
+                Button { workspace.toggleQuickAnnotationTools() } label:{AppIcon("pencil.tip.crop.circle")}.disabled(workspace.count == 0).help("标注工具")
                 Button { workspace.showTools = true } label:{AppIcon("square.grid.2x2")}.help("快捷工具：OCR、页面整理与转换")
                 Button { store.toggleRightReadingPanel() } label:{AppIcon("sidebar.right")}.help("右侧面板")
                 Menu {

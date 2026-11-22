@@ -75,7 +75,10 @@ import UniformTypeIdentifiers
     @Published var readingLocked = false
     var readingRegionOCRMode: ReadingImageOCRMode?
     @Published var tool = AnnotationTool.select {
-        didSet { if tool != .region { readingRegionOCRMode = nil } }
+        didSet {
+            if tool != .region { readingRegionOCRMode = nil }
+            if tool != .pen, showPenSettings { showPenSettings = false }
+        }
     }
     @Published var note = ""
     @Published var status = "所有处理均在本机完成"
@@ -166,7 +169,16 @@ import UniformTypeIdentifiers
     @Published var noteFilter = AnnotationFilter()
     /// Pen and arrow line width in points; the highlighter draws a wide translucent stroke instead.
     @Published var penWidth = 2.0 { didSet { rememberDrawingStyle() } }
-    @Published var penHighlighter = false { didSet { rememberDrawingStyle() } }
+    @Published var penHighlighter = false {
+        didSet {
+            if penHighlighter, showPenSettings { showPenSettings = false }
+            rememberDrawingStyle()
+        }
+    }
+    @Published var markerOpacity = 1.0 { didSet { rememberDrawingStyle() } }
+    @Published var markerTouch = MarkerTouch.direct { didSet { rememberDrawingStyle() } }
+    @Published var showPenSettings = false
+    @Published var showAdvancedAnnotationBar = false
     /// Rectangles and ellipses get a translucent fill.
     @Published var shapeFill = false { didSet { rememberDrawingStyle() } }
     /// Entries ticked in the annotation list, for deleting or recolouring several at once.
@@ -183,8 +195,11 @@ import UniformTypeIdentifiers
     @Published var showAnnotationBar = UserDefaults.standard.object(forKey: "KongFolio.annotationBar2") as? Bool ?? false {
         didSet {
             UserDefaults.standard.set(showAnnotationBar, forKey: "KongFolio.annotationBar2")
-            if !showAnnotationBar, tool != .select { tool = .select }
-            else if showAnnotationBar, tool == .select, drawingStylesReady {
+            if !showAnnotationBar {
+                showAdvancedAnnotationBar = false
+                showPenSettings = false
+                if tool != .select { tool = .select }
+            } else if tool == .select, drawingStylesReady {
                 let next = drawingDefaults.string(forKey: "KongFolio.lastDrawingTool").flatMap(AnnotationTool.init(rawValue:)) ?? .pen
                 selectTool(next, highlighter: drawingDefaults.bool(forKey: "KongFolio.lastHighlighter"))
             }
