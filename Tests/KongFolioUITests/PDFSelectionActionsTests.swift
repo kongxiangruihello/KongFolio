@@ -31,7 +31,7 @@ final class PDFSelectionActionsTests: XCTestCase {
 
         workspace.showAnnotationBar = true
         store.closeRightReadingPanel()
-        let selected = try XCTUnwrap(workspace.document.findString(quote,with:[]).first)
+        let selected = try XCTUnwrap(workspace.document.findString(quote, withOptions: []).first)
         view.setCurrentSelection(selected,animate:false)
         workspace.quickPDFExcerpt()
         let text = try XCTUnwrap(store.journal.record(store.readingRecordID))
@@ -42,6 +42,7 @@ final class PDFSelectionActionsTests: XCTestCase {
         XCTAssertEqual(store.readingExcerptFeedback?.opensEditor,true)
         XCTAssertFalse(workspace.showAnnotationBar)
 
+        store.closeRightReadingPanel()
         workspace.quickPDFExcerpt()
         XCTAssertEqual(workspace.tool,.region)
         func mouse(_ kind: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
@@ -63,6 +64,8 @@ final class PDFSelectionActionsTests: XCTestCase {
             XCTAssertEqual(image.kind,.image)
             XCTAssertNotNil(image.imageAsset)
             XCTAssertTrue(imageIDs.insert(image.id).inserted)
+            XCTAssertTrue(store.rightReadingPanelVisible)
+            XCTAssertEqual(store.readingDeskSection,.excerpts)
             XCTAssertEqual(store.readingExcerptFeedback?.recordID,image.id)
             XCTAssertEqual(store.readingExcerptFeedback?.opensEditor,true)
             XCTAssertEqual(workspace.tool,.region)
