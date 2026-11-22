@@ -8,6 +8,10 @@ struct ScanWorkshop: View {
     @State private var tab = 0
     @State private var selectedOnly = true
     @State private var fraction = 0.5
+    @State private var automaticSplit = false
+    @State private var gutterResult: GutterResult?
+    @State private var gutterOverrides: [Int: Double] = [:]
+    @State private var reviewedPage: Int?
     @State private var rightFirst = false
     @State private var manualAngle = 0.0
     @State private var automatic = true
@@ -19,7 +23,40 @@ struct ScanWorkshop: View {
     @State private var message = ""
     @State private var cancelAction: (() -> Void)?
     private var pages: [Int] { selectedOnly ? workspace.effectivePages : Array(0..<workspace.count) }
-    private var previewKey: String { "\(tab)-\(fraction)-\(rightFirst)-\(manualAngle)" }
+    private var splitPreviewPage: Int? {
+        if let reviewedPage, pages.contains(reviewedPage) { return reviewedPage }
+        return pages.contains(workspace.selection) ? workspace.selection : pages.first
+    }
+    private var previewKey: String { "\(tab)-\(manualAngle)" }
+
+    private struct GutterRequest: Equatable {
+        let revision: UUID
+        let pages: [Int]
+    }
+
+    private struct GutterResult {
+        let request: GutterRequest
+        let fractions: [Int: Double]
+        var error: String? = nil
+    }
+
+    private var gutterRequest: GutterRequest? {
+        guard tab == 0, automaticSplit, !pages.isEmpty else { return nil }
+        return GutterRequest(revision: workspace.revision, pages: pages)
+    }
+
+    private var activeGutters: GutterResult? {
+        guard let gutterResult, gutterResult.request == gutterRequest else { return nil }
+        return gutterResult
+    }
+
+    private func splitFraction(for index: Int) -> Binding<Double> {
+        guard automaticSplit else { return $fraction }
+        return Binding(
+            get: { gutterOverrides[index] ?? activeGutters?.fractions[index] ?? 0.5 },
+            set: { gutterOverrides[index] = $0 }
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -33,10 +70,19 @@ struct ScanWorkshop: View {
             if tab == 0 { splitControls }
             else if tab == 1 { straightenControls }
             else { inspection }
-            if tab != 2 {
+            if tab == 0, let pageIndex = splitPreviewPage, let page = workspace.document.page(at: pageIndex) {
+                VStack(spacing: 7) {
+                    splitPreviewNavigation(for: pageIndex)
+                    SplitPagePreview(page: page,
+                                     firstOutputPage: ScanProcessing.firstOutputPage(for: pageIndex, splitting: pages),
+                                     rightFirst: rightFirst, fraction: splitFraction(for: pageIndex))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(height: 395)
+            } else if tab == 1 {
                 HStack {
-                    thumbnail(original, label: "原页（第 \(workspace.selection+1) 页）")
-                    thumbnail(preview, label: tab == 0 ? "切分后的第一页" : "纠偏预览")
+                    thumbnail(original, label: "原页（第 \(workspace.selection + 1) 页）")
+                    thumbnail(preview, label: "纠偏预览")
                 }.frame(height: 270)
             }
             if working { ProgressView("正在逐页处理…") }
@@ -47,9 +93,17 @@ struct ScanWorkshop: View {
                 Spacer()
                 if tab == 0 {
                     Button("拆分 \(pages.count) 页") {
-                        do { try workspace.splitScannedPages(pages, fraction: fraction, rightFirst: rightFirst); dismiss() }
-                        catch { message = error.localizedDescription }
-                    }.disabled(working).buttonStyle(.borderedProminent)
+                        do {
+                            let perPage = automaticSplit
+                                ? (activeGutters?.fractions ?? [:]).merging(gutterOverrides) { _, edited in edited }
+                                : [:]
+                            try workspace.splitScannedPages(pages, fraction: automaticSplit ? 0.5 : fraction,
+                                                            rightFirst: rightFirst, pageFractions: perPage)
+                            dismiss()
+                        } catch { message = error.localizedDescription }
+                    }
+                    .disabled(working || pages.isEmpty || (automaticSplit && activeGutters == nil))
+                    .buttonStyle(.borderedProminent)
                 } else if tab == 1 {
                     Button(automatic ? "检测并纠偏 \(pages.count) 页" : "按预览角度纠偏 \(pages.count) 页") { straighten() }.disabled(working).buttonStyle(.borderedProminent)
                 } else {
@@ -57,9 +111,30 @@ struct ScanWorkshop: View {
                 }
             }
         }
-        .padding(22).adaptiveSheet(width: 720, height: 650)
+        .padding(22).adaptiveSheet(width: 720, height: 680, minimumWidth: 430)
         .interactiveDismissDisabled(working)
-        .onAppear {
+        .task(id: gutterRequest) {
+            gutterOverrides = [:]
+            guard let request = gutterRequest else { return }
+            do {
+                let data = try workspace.pdfData()
+                let analysis = Task.detached(priority: .userInitiated) { try SpreadGutter.detect(data, pages: request.pages) }
+                let detected = try await withTaskCancellationHandler {
+                    try await analysis.value
+                } onCancel: {
+                    analysis.cancel()
+                }
+                guard !Task.isCancelled, gutterRequest == request else { return }
+                gutterResult = GutterResult(request: request, fractions: detected)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled, gutterRequest == request else { return }
+                gutterResult = GutterResult(request: request, fractions: [:], error: error.localizedDescription)
+            }
+        }
+        .task(id: tab) {
+            guard tab == 1, original == nil else { return }
             do {
                 let document = try PDFDocument(data: workspace.pdfData()).unwrap("无法读取页面")
                 let holder = PDFDocument()
@@ -69,23 +144,70 @@ struct ScanWorkshop: View {
         }
         .task(id: previewKey + (original == nil ? "-empty" : "-loaded")) {
             do { try await Task.sleep(nanoseconds: 150_000_000) } catch { return }
-            guard let page = original?.page(at: 0) else { return }
+            guard tab == 1, let page = original?.page(at: 0) else { return }
             do {
                 let holder = PDFDocument()
-                if tab == 0 { holder.insert(try ScanProcessing.halves(page, fraction: fraction, rightFirst: rightFirst)[0], at: 0) }
-                else if tab == 1 { holder.insert(try ScanProcessing.straightened(page, angle: manualAngle), at: 0) }
+                holder.insert(try ScanProcessing.straightened(page, angle: manualAngle), at: 0)
                 preview = holder
             } catch { message = error.localizedDescription }
         }
     }
+    private func splitPreviewNavigation(for page: Int) -> some View {
+        let targets = pages
+        let index = targets.firstIndex(of: page) ?? 0
+        return HStack(spacing: 10) {
+            Button {
+                reviewedPage = targets[index - 1]
+            } label: { AppIcon("chevron.left") }
+                .disabled(index == 0)
+                .accessibilityLabel("上一张预览")
+            Text("原文档第 \(page + 1) 页")
+                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+            Button {
+                reviewedPage = targets[index + 1]
+            } label: { AppIcon("chevron.right") }
+                .disabled(index >= targets.count - 1)
+                .accessibilityLabel("下一张预览")
+        }
+        .buttonStyle(.borderless)
+    }
+
     private var splitControls: some View {
-        VStack(alignment: .leading) {
-            HStack { Text("中缝 \(Int(fraction*100))%") ; Slider(value: $fraction, in: 0.2...0.8) }
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("拆分方式", selection: $automaticSplit) {
+                Text("手动").tag(false)
+                Text("自动").tag(true)
+            }
+            .pickerStyle(.segmented)
+            if let page = splitPreviewPage {
+                let position = splitFraction(for: page)
+                HStack {
+                    Text("分割线 \(Int((position.wrappedValue * 100).rounded()))%").monospacedDigit()
+                    Slider(value: position, in: ScanProcessing.splitFractionRange)
+                        .accessibilityLabel("分割线位置")
+                }
+            }
             Toggle("右页先输出（竖排书籍）", isOn: $rightFirst)
-            Text("按可见页面宽度切分；保留文字与标注。切分属于页面裁切，不用于永久删除隐私内容。操作可撤销。")
-                .font(.caption).foregroundStyle(.secondary)
+            if automaticSplit {
+                if let result = activeGutters {
+                    let fallback = result.request.pages.count - result.fractions.count
+                    if let error = result.error {
+                        Text("\(error) 可以按中线拆分或拖动调整。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text("检测到 \(result.fractions.count) 页中缝 · \(fallback) 页使用中线。拖动虚线可微调预览页。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    ProgressView("正在检测中缝…").controlSize(.small)
+                }
+            } else {
+                Text("拖动虚线调整位置。手动分割线用于所选范围内的各页。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }.disabled(working)
     }
+
     private var straightenControls: some View {
         VStack(alignment: .leading) {
             Toggle("自动检测每页文字倾斜（最多 ±7.5°）", isOn: $automatic)
