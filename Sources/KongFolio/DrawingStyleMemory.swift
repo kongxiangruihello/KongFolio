@@ -6,10 +6,19 @@ struct SavedDrawingStyle: Codable, Equatable {
     var width: Double
     var dashed: Bool
     var fill: Bool
+    var opacity: Double? = nil
+    var touch: MarkerTouch? = nil
     static let key = "KongFolio.drawingStyles.v1"
     static func load(_ defaults: UserDefaults) -> [String: SavedDrawingStyle] {
         guard let data = defaults.data(forKey: key), let styles = try? JSONDecoder().decode([String: SavedDrawingStyle].self, from: data) else { return [:] }
-        return styles.filter { _, s in s.rgb.count == 3 && s.rgb.allSatisfy { $0.isFinite && (0...1).contains($0) } && s.width.isFinite && (0.1...100).contains(s.width) }
+        return styles.filter { _, s in
+            s.rgb.count == 3 && s.rgb.allSatisfy { $0.isFinite && (0...1).contains($0) }
+                && s.width.isFinite && (0.1...100).contains(s.width)
+        }.mapValues { style in
+            var style = style
+            if let opacity = style.opacity, !(0.05...1).contains(opacity) { style.opacity = nil }
+            return style
+        }
     }
 }
 
@@ -27,7 +36,10 @@ extension Workspace {
         let key = AnnotationStyleDefaults.key(tool: tool, highlighter: penHighlighter)
         guard AnnotationStyleDefaults.style(for: key) != nil,
               let rgb = NSColor(annotationColor).usingColorSpace(.sRGB) else { return }
-        let style = SavedDrawingStyle(rgb: [Double(rgb.redComponent), Double(rgb.greenComponent), Double(rgb.blueComponent)], width: penWidth, dashed: lineDashed, fill: shapeFill)
+        let marker = tool == .pen && !penHighlighter
+        let style = SavedDrawingStyle(rgb: [Double(rgb.redComponent), Double(rgb.greenComponent), Double(rgb.blueComponent)],
+                                      width: penWidth, dashed: lineDashed, fill: shapeFill,
+                                      opacity: marker ? markerOpacity : nil, touch: marker ? markerTouch : nil)
         var styles = SavedDrawingStyle.load(drawingDefaults)
         styles[key] = style
         toolStyles = styles

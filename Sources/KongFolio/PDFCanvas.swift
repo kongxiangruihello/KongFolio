@@ -694,11 +694,12 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         let point = convert(convert(event.locationInWindow, from: nil), to: page)
         points.append(point)
 
-        let style = PenStyle.make(width: workspace.penWidth, highlighter: workspace.penHighlighter, arrow: workspace.tool != .pen)
+        let style = workspace.drawingStrokeStyle
+        let stroke = workspace.tool == .pen && !workspace.penHighlighter ? workspace.markerTouch.strokePoints(points) : points
         let color: NSColor = workspace.tool == .signature ? .black : NSColor(workspace.annotationColor)
         let signature = workspace.tool == .signature
         let drawn = signature ? PenStyle(width: 1.6, alpha: 1) : style
-        guard let annotation = AnnotationShapes.make(tool: workspace.tool, points: points, style: drawn, color: color, fill: workspace.shapeFill,
+        guard let annotation = AnnotationShapes.make(tool: workspace.tool, points: stroke, style: drawn, color: color, fill: workspace.shapeFill,
                                                        constrained: event.modifierFlags.contains(.shift), dashed: workspace.lineDashed) else { return }
         if signature { annotation.userName = "KongFolio Signature" }
         provisional = annotation

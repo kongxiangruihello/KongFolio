@@ -105,6 +105,48 @@ final class AnnotationBarBehaviourTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "KongFolio.annotationBar2")
     }
 
+    @MainActor func testQuickAnnotationToolsOpenMarkerSettingsOnlyWhenChosen() {
+        let name = "kf-marker-panel-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: name)!
+        defer {
+            defaults.removePersistentDomain(forName: name)
+            UserDefaults.standard.removeObject(forKey: "KongFolio.annotationBar2")
+        }
+        let space = Workspace(drawingDefaults: defaults)
+        space.showAnnotationBar = false
+        space.showsPageThumbnails = true
+        space.toggleQuickAnnotationTools()
+        XCTAssertTrue(space.showsQuickAnnotationTools)
+        XCTAssertFalse(space.showPenSettings)
+        XCTAssertFalse(space.showsPageThumbnails)
+        XCTAssertEqual(space.tool, .select)
+
+        space.openMarkerSettings()
+        XCTAssertTrue(space.showPenSettings)
+        XCTAssertEqual(space.tool, .pen)
+        space.markerOpacity = 0.45
+        space.penWidth = 18
+        space.markerTouch = .smooth
+
+        space.selectTool(.eraser)
+        XCTAssertFalse(space.showPenSettings)
+        space.openMarkerSettings()
+        let stroke = space.drawingStrokeStyle
+        XCTAssertEqual(stroke.width, 18)
+        XCTAssertEqual(stroke.alpha, 0.45, accuracy: 0.001)
+        XCTAssertEqual(space.markerTouch, .smooth)
+        space.toggleQuickAnnotationTools()
+        XCTAssertFalse(space.showPenSettings)
+        XCTAssertEqual(space.tool, .select)
+    }
+
+    func testMarkerSmoothingReducesJitterAndKeepsBothEndpoints() {
+        let points = [CGPoint.zero, CGPoint(x: 20, y: 12), CGPoint(x: 40, y: 0)]
+        XCTAssertEqual(MarkerTouch.direct.strokePoints(points), points)
+        XCTAssertEqual(MarkerTouch.smooth.strokePoints(points),
+                       [.zero, CGPoint(x: 20, y: 6), CGPoint(x: 40, y: 0)])
+    }
+
     @MainActor func testEachToolKeepsItsOwnColourAndWidth() {
         let space = workspace()
         space.selectTool(.pen)

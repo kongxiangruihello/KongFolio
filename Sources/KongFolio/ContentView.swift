@@ -134,12 +134,27 @@ struct ContentView: View {
                     SplitPane(primary: workspace, partner: partner) { workspace.splitPartner = nil }
                         .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
                 }
-
+                if showsPenPanel, width >= 620 {
+                    MarkerSettingsPanel(workspace: workspace)
+                        .frame(minWidth: 260, idealWidth: 300, maxWidth: 360)
+                }
+            }
+            .overlay(alignment: .trailing) {
+                if showsPenPanel, width < 620 {
+                    MarkerSettingsPanel(workspace: workspace)
+                        .frame(width: min(300, width - 40))
+                        .shadow(color: .black.opacity(0.18), radius: 8, x: -3)
+                }
             }
             Divider()
             statusBar(width: width)
         }
         .frame(width: width)
+    }
+
+    private var showsPenPanel: Bool {
+        workspace.count > 0 && workspace.showAnnotationBar && workspace.showPenSettings &&
+            !workspace.readingLocked && !workspace.showsPageThumbnails
     }
 
     private func statusBar(width: CGFloat) -> some View {
@@ -298,13 +313,13 @@ struct ContentView: View {
 
     /// Always in the top bar, so the annotation tools are one click away without being open on every document.
     @ViewBuilder private func annotateButton(iconOnly: Bool) -> some View {
-        Button { workspace.showAnnotationBar.toggle() } label: {
+        Button { workspace.toggleQuickAnnotationTools() } label: {
             if iconOnly { AppIcon("pencil.tip.crop.circle") } else { Label("标注", appIcon: "pencil.tip.crop.circle") }
         }
         .accessibilityLabel("标注")
         .foregroundStyle(workspace.showAnnotationBar ? Brand.accent : Color.primary)
         .disabled(workspace.count == 0)
-        .help(workspace.showAnnotationBar ? "收起标注工具栏（⌥⌘A）" : "打开标注工具栏（⌥⌘A）：画线、画框、写文字、荧光笔")
+        .help(workspace.showAnnotationBar ? "收起标注工具栏（⌥⌘A）" : "打开标注工具栏（⌥⌘A）：马克笔、橡皮擦")
     }
 
     @ViewBuilder private func toolsButton(iconOnly: Bool) -> some View {
@@ -472,9 +487,13 @@ struct ContentView: View {
             PDFCanvas(workspace: workspace)
                 .overlay(alignment: .top) {
                     if workspace.showAnnotationBar {
-                        GeometryReader { proxy in
-                            AnnotationBar(workspace: workspace, availableWidth: max(140, proxy.size.width - 20))
-                                .padding(.horizontal, 10).padding(.top, 10)
+                        if workspace.showAdvancedAnnotationBar {
+                            GeometryReader { proxy in
+                                AnnotationBar(workspace: workspace, availableWidth: max(140, proxy.size.width - 20))
+                                    .padding(.horizontal, 10).padding(.top, 10)
+                            }
+                        } else {
+                            QuickAnnotationTools(workspace: workspace).padding(.top, 10)
                         }
                     }
                 }

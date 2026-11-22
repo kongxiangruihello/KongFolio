@@ -136,7 +136,7 @@ extension WorkspaceStore {
         case .extractPages: w?.exportPDF(currentOnly: true)
         case .removePages: w?.remove()
         case .blankPage: w?.insertBlankPage()
-        case .annotation: w?.showAnnotationBar.toggle()
+        case .annotation: w?.toggleQuickAnnotationTools()
         case .signature: showSignatureManager = true
         case .tools: w?.showTools = true
         case .table: w?.showTableExtraction = true

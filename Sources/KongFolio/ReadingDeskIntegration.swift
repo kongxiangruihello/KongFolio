@@ -66,6 +66,7 @@ extension Workspace {
 extension WorkspaceStore {
     func openNoteLibrary() { readingLibraryPreferredKind = "笔记";readingLibraryNavigation = nil;readingLibraryNavigationRequest = UUID();openReadingDesk(.search,window:true) }
     func showReadingPanel(_ section:ReadingDeskSection, noteID: UUID? = nil) {
+        activeWorkspace?.showPenSettings = false
         let returningToNotes = section == .notes && (!showReadingDesk || readingDeskSection != .notes)
         if section != .notes { rememberRightPanelNote() }
         if let noteID { readingRecordID = noteID }
