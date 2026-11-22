@@ -310,16 +310,9 @@ struct FunctionToolbar: View {
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).help(action.menuTitle)
             } else if let workspace {
                 HStack(spacing: 0) {
-                    Button {
-                        workspace.showsPageThumbnails = false
-                        let text = workspace.pdfView?.currentSelection?.string ?? ""
-                        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            store.startReadingRegionCapture()
-                        } else {
-                            workspace.excerptSelection()
-                        }
-                    } label: { label(action, menu: false) }
-                    .help("摘录所选文字；未选文字时框选图片").accessibilityLabel("摘录文字或图片")
+                    Button { workspace.quickPDFExcerpt() } label: { label(action, menu: false) }
+                        .help(workspace.tool == .region ? "取消框选图片" : "摘录所选文字；未选文字时框选图片")
+                        .accessibilityLabel(workspace.tool == .region ? "取消框选图片" : "摘录文字或图片")
                     Menu {
                         ReadingExcerptActions(store: store)
                     } label: { AppIcon("chevron.down").font(.system(size: 8)).frame(width: 14, height: 28) }
@@ -356,6 +349,7 @@ struct FunctionToolbar: View {
         case .annotate:
             guard let workspace else { return false }
             return workspace.showAnnotationBar && !workspace.showsPageThumbnails && !workspace.readingLocked
+        case .excerpt: return context == .pdf && workspace?.tool == .region
         case .search: return store.rightPDFSearchWorkspace != nil
         case .pdfPages: return store.activeWorkspace?.pageEditing053 == true
         default: return false

@@ -126,9 +126,21 @@ struct ReadingDeskView: View {
         return selected
     }
     private var records: some View {
-        ReadingBrowserLayout(hasEditor:selectedRecord != nil,compact:compact,onBack:{
+        ReadingBrowserLayout(hasEditor:selectedRecord != nil,compact:compact,
+                             backTitle:section == .excerpts ? "返回全部摘录" : "返回记录列表",onBack:{
             if section == .notes { store.lastRightPanelNoteID = nil }
-            if section == .excerpts { excerptInList = store.readingRecordID }
+            if section == .excerpts {
+                excerptInList = nil
+                pendingExcerptReveal = nil
+                store.readingExcerptFeedback = nil
+                store.readingImageOCRRequest = nil
+                excerptsBookOnly = false
+                query = ""
+                tag = ""
+                removed = false
+                recent = false
+                page = 0
+            }
             if section == .notes || store.pinnedExcerptNote == nil { store.pinnedReadingID = nil }
             store.readingRecordID = nil
         }) {
@@ -261,6 +273,7 @@ struct ReadingDeskView: View {
 
     private func locateCapturedExcerpt(_ feedback: ReadingExcerptFeedback) {
         guard let record = journal.record(feedback.recordID) else { return }
+        if feedback.opensEditor { browsingSearchResults = false }
         excerptInList = feedback.opensEditor ? nil : record.id
         highlightedExcerpt = record.id
         excerptScrollTarget = nil

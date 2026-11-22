@@ -33,10 +33,8 @@ struct ReadingExcerptActions: View {
 
     var body: some View {
         Button("查看摘录") { store.showReadingPanel(.excerpts) }
-        Button("摘录选中文字") {
-            store.showReadingPanel(.excerpts)
-            store.commandWorkspace?.excerptSelection()
-        }.disabled(!store.canSearchPDF)
+        Button("摘录文字或图片") { store.commandWorkspace?.quickPDFExcerpt() }
+            .disabled(!store.canSearchPDF)
         Button("追加选中文字到上一条摘录") { store.commandWorkspace?.appendSelectionToLastExcerpt() }
             .disabled(!store.canSearchPDF || store.lastTextExcerpt == nil)
         Button("框选图片摘录") { store.startReadingRegionCapture() }.disabled(!store.canSearchPDF)

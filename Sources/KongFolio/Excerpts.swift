@@ -31,6 +31,32 @@ extension Workspace {
 
     // MARK: Excerpting
 
+    /// The main excerpt button saves selected text or prepares a region capture.
+    func quickPDFExcerpt(selection: PDFSelection? = nil) {
+        guard let store, count > 0, !busy, !drawingInProgress, placingSignature == nil else { return }
+        let view = pdfView as? DrawingPDFView
+        if tool == .region {
+            view?.resetExcerptRegion()
+            selectTool(.select)
+            status = "已取消框选"
+            return
+        }
+        let selected = selection ?? pdfView?.currentSelection
+        if let selected, !(selected.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            preparePDFExcerpt()
+            _ = captureReadingExcerpt(selected, intoReadingDesk: true)
+        } else {
+            store.startReadingRegionCapture(from: self)
+        }
+    }
+
+    func preparePDFExcerpt() {
+        showsPageThumbnails = false
+        if showAnnotationBar { showAnnotationBar = false }
+        selectTool(.select)
+        (pdfView as? DrawingPDFView)?.hideSelectionToolbar()
+    }
+
     /// Sends the selected text to the workspace as a card that remembers its page and position.
     func excerptSelection() {
         guard store != nil else { error = "工作区不可用。"; return }
@@ -81,7 +107,11 @@ extension Workspace {
                 do {
                     let asset=try store.journal.stageAsset053(imageData),citation=readingCitation(page:index == NSNotFound ? selection:index,rects:[pageRect])
                     store.journal.editRecord(id) { r in var extras=r.extras ?? ReadingRecordExtras053();extras.regions=(extras.regions ?? [])+[ReadingRegion053(asset:asset,citation:citation)];r.extras=extras;if !r.citations.contains(citation) { r.citations.append(citation) } }
-                    store.readingRecordID=id;status="已追加区域，当前共 \((store.journal.record(id)?.extras?.regions?.count ?? 0)+1) 个区域";return
+                    if let updated = store.journal.record(id) {
+                        status = "已追加区域，当前共 \((updated.extras?.regions?.count ?? 0) + 1) 个区域"
+                        store.revealCapturedExcerpt(updated, message: status)
+                    }
+                    return
                 } catch { recordError(error);return }
             }
             let record = ReadingRecord(kind:.image,citations:[readingCitation(page:index == NSNotFound ? selection : index,rects:[pageRect])])
@@ -223,19 +253,17 @@ extension Workspace {
 }
 
 extension WorkspaceStore {
-    func startReadingRegionCapture(ocr: ReadingImageOCRMode? = nil) {
-        guard canSearchPDF, let workspace = commandWorkspace, workspace.placingSignature == nil else { return }
-        workspace.showsPageThumbnails = false
+    func startReadingRegionCapture(ocr: ReadingImageOCRMode? = nil, from source: Workspace? = nil) {
+        guard let workspace = source ?? commandWorkspace, workspace.store === self,
+              workspace.count > 0, !workspace.busy, !workspace.drawingInProgress, workspace.placingSignature == nil else { return }
+        workspace.preparePDFExcerpt()
         workspace.pdfView?.clearSelection()
-        (workspace.pdfView as? DrawingPDFView)?.hideSelectionToolbar()
-        showReadingPanel(.excerpts)
+        if let view = workspace.pdfView { view.window?.makeFirstResponder(view) }
+        readingMode = true
         multiRegionTarget053 = nil
-        if let pinned = journal.record(pinnedReadingID), pinned.kind != .note { pinnedReadingID = nil }
-        readingImageOCRRequest = nil
         workspace.tool = .region
         workspace.readingRegionOCRMode = ocr
-        workspace.showAnnotationBar = true
-        workspace.status = ocr == nil ? "在 PDF 页面上拖动框选图片" : "在 PDF 页面上拖动框选，保存图片后识别文字"
+        workspace.status = ocr == nil ? "在 PDF 页面上拖动框选图片，按 Esc 取消" : "在 PDF 页面上拖动框选，保存图片后识别文字"
     }
 
     /// Takes the reader to a card's source. By default (setting `cardsBeside`) the source document is shown in the right

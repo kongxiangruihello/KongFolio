@@ -36,8 +36,8 @@ struct ReadingToolbar: View {
         HStack(spacing:10) {
             Button { store.openReadingDesk(.search,window:true) } label:{FileToolbarAction.library.label("资料库")}.buttonStyle(.borderless).help("统一新增、编辑、查找和删除摘录、标注、评论与笔记")
             Menu {
-                Button("摘录选中文字") { workspace.excerptSelection() }
-                Button("框选图片摘录") { workspace.tool = .region; workspace.showAnnotationBar = true }
+                Button("摘录文字或图片") { workspace.quickPDFExcerpt() }
+                Button("框选图片摘录") { store.startReadingRegionCapture(from: workspace) }
             } label:{Label("摘录",appIcon:"text.quote")}.menuStyle(.borderlessButton).fixedSize().disabled(workspace.count == 0).help("保存所选文字，或框选扫描页、插图和表格")
             Button { store.newReadingNote() } label:{Label("笔记",appIcon:"note.text.badge.plus")}.help("新建与当前 PDF 关联的笔记")
             Menu {

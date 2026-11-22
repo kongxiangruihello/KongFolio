@@ -266,11 +266,16 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         if let workspace, !(currentSelection?.string ?? "").isEmpty { workspace.copyInReadingOrder() } else { super.copy(sender) }
     }
 
+    func resetExcerptRegion() {
+        regionStart = nil
+        regionPage = nil
+        regionView.isHidden = true
+        regionView.frame = .zero
+    }
+
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53, workspace?.tool == .region {
-            regionStart = nil; regionPage = nil; regionView.isHidden = true; regionView.frame = .zero
-            workspace?.readingRegionOCRMode = nil
-            workspace?.selectTool(.select)
+        if event.keyCode == 53, let workspace, workspace.tool == .region {
+            workspace.quickPDFExcerpt()
             return
         }
         if event.keyCode == 53, drawingPage != nil, moving == nil {
@@ -372,13 +377,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         let noteTarget = workspace.store?.citationNoteTarget
         let toolbar = PDFSelectionActions(
             editable: !workspace.readingLocked, compact: bounds.width < 340,
-            excerpt: { [weak self, weak workspace] in
-                if let self {
-                    if self.currentSelection == nil { self.setCurrentSelection(selected,animate:false) }
-                    workspace?.excerptSelection()
-                    self.hideSelectionToolbar()
-                }
-            },
+            excerpt: { [weak workspace] in workspace?.quickPDFExcerpt(selection: selected) },
             note: { [weak self, weak workspace] in
                 if let workspace, let record = workspace.readingExcerpt(from: selected) {
                     workspace.store?.startNoteFromExcerpt(record)
@@ -393,7 +392,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             copy: { [weak workspace] in copySelection(.preferred(workspace?.readingDefaults ?? .standard)) },
             copyAs:copySelection,
             openExisting:match.map { record in { [weak self, weak workspace] in
-                workspace?.store?.revealCapturedExcerpt(record,message:"已打开已有摘录",opensEditor:true)
+                workspace?.store?.revealCapturedExcerpt(record,message:"已打开已有摘录")
                 self?.hideSelectionToolbar()
             } },
             comment: { [weak self] in self?.beginCommentOnSelection(selected) },
@@ -730,11 +729,8 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         if regionStart != nil {
             let rect = regionView.frame
             let page = regionPage
-            regionStart = nil
-            regionPage = nil
-            regionView.isHidden = true
-            regionView.frame = .zero
-            if let page { captureRegion(rect, on: page) }
+            resetExcerptRegion()
+            if let page, workspace?.tool == .region { captureRegion(rect, on: page) }
             return
         }
         if let moving {
