@@ -37,6 +37,7 @@ struct AnchoredAnnotationTools: View {
 
 private struct QuickAnnotationTools: View {
     @ObservedObject var workspace: Workspace
+    @Environment(\.colorScheme) private var colorScheme
     private static let buttonWidth: CGFloat = 44
     private static let spacing: CGFloat = 6
     private static let padding: CGFloat = 5
@@ -51,6 +52,7 @@ private struct QuickAnnotationTools: View {
                 workspace.selectTool(.eraser)
             }
         }
+        .environment(\.toolbarIconTone, PDFToolbarPalette.graphite(colorScheme))
         .padding(Self.padding)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary).allowsHitTesting(false) }
@@ -64,7 +66,7 @@ private struct QuickAnnotationTools: View {
             AppIcon(symbol)
                 .font(.system(size: 20, weight: .medium))
                 .frame(width: Self.buttonWidth, height: 36)
-                .background(selected ? Brand.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .background(selected ? Color.primary.opacity(0.11) : .clear, in: RoundedRectangle(cornerRadius: 8))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

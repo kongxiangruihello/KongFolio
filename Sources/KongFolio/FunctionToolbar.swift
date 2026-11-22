@@ -3,6 +3,7 @@ import PDFKit
 
 struct FunctionToolbar: View {
     @ObservedObject var store: WorkspaceStore
+    @Environment(\.colorScheme) private var colorScheme
     @State private var issueInfo: ReaderShelfIssue?
     @AppStorage(ReaderToolbarProfile.key) private var profileData = Data()
     @State private var showToolbarSettings = false
@@ -147,7 +148,8 @@ struct FunctionToolbar: View {
             }
             .buttonStyle(.borderless)
             .font(.system(size:16,weight:.medium))
-            .foregroundStyle(Color(nsColor:.secondaryLabelColor))
+            .foregroundStyle(context == .pdf ? PDFToolbarPalette.graphite(colorScheme) : Color(nsColor: .secondaryLabelColor))
+            .environment(\.toolbarIconTone, context == .pdf ? PDFToolbarPalette.graphite(colorScheme) : nil)
             .padding(.horizontal,12)
             .frame(maxWidth:CGFloat(visible.count+1)*128+(showsQueue ? 40 : 0)+issueWidth+(context == .pdf ? ReaderToolbarProfile.pageControlWidth : 0))
             .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:visible.isEmpty ? .trailing : .center)
@@ -169,9 +171,12 @@ struct FunctionToolbar: View {
     }
 
     private func draggableTool(_ action: FileToolbarAction) -> some View {
-        ToolbarControlSurface(selected: isSelected(action)) {
+        let selected = isSelected(action)
+        let annotationActive = selected && action == .annotate
+        return ToolbarControlSurface(selected: selected, annotationActive: annotationActive) {
             control(action, menu: false)
         }
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
         .annotationToolsAnchor(when: action == .annotate)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
@@ -183,7 +188,7 @@ struct FunctionToolbar: View {
         }
         .overlay(alignment: toolbarDrop?.after == true ? .trailing : .leading) {
             if toolbarDrop?.action == action {
-                Capsule().fill(Color.accentColor).frame(width: 3, height: 28)
+                Capsule().fill(context == .pdf ? PDFToolbarPalette.graphite(colorScheme) : Color.accentColor).frame(width: 3, height: 28)
                     .allowsHitTesting(false)
             }
         }
@@ -287,7 +292,7 @@ struct FunctionToolbar: View {
                     ocrActions(workspace)
                 } label: {
                     if menu { label(action, menu: true) }
-                    else { Text("OCR").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color(nsColor: .systemTeal)).frame(width: 28, height: 28) }
+                    else { Text("OCR").font(.system(size: 11, weight: .semibold)).frame(width: 28, height: 28) }
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden)
                 .help(action.title).accessibilityLabel(action.title)
@@ -348,7 +353,9 @@ struct FunctionToolbar: View {
         case .sidebar: return store.rightReadingPanelVisible
         case .navigation: return showNavigation && !showInspector && workspace?.showsPageThumbnails != true
         case .pageThumbnails: return store.activeWorkspace?.showsPageThumbnails == true
-        case .annotate: return workspace?.showAnnotationBar == true
+        case .annotate:
+            guard let workspace else { return false }
+            return workspace.showAnnotationBar && !workspace.showsPageThumbnails && !workspace.readingLocked
         case .search: return store.rightPDFSearchWorkspace != nil
         case .pdfPages: return store.activeWorkspace?.pageEditing053 == true
         default: return false
@@ -430,16 +437,19 @@ struct FunctionToolbar: View {
 
 private struct ToolbarControlSurface<Content: View>: View {
     var selected = false
+    var annotationActive = false
+    @Environment(\.toolbarIconTone) private var toolbarIconTone
     @ViewBuilder var content: () -> Content
     @State private var hovered = false
 
     var body: some View {
         content()
             .frame(width:34,height:32)
-            .foregroundStyle(selected ? Color.accentColor : Color(nsColor:.secondaryLabelColor))
+            .foregroundStyle(annotationActive ? Color.white : toolbarIconTone ?? Color(nsColor: .secondaryLabelColor))
+            .environment(\.toolbarIconTone, annotationActive ? Color.white : toolbarIconTone)
             .background {
-                RoundedRectangle(cornerRadius:7)
-                    .fill(selected ? Color.accentColor.opacity(0.13) : Color.primary.opacity(hovered ? 0.07 : 0))
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(annotationActive ? PDFToolbarPalette.annotationHighlight : Color.primary.opacity(selected ? 0.11 : hovered ? 0.07 : 0))
             }
             .onHover { hovered = $0 }
     }
