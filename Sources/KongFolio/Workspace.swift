@@ -74,9 +74,14 @@ import UniformTypeIdentifiers
     @Published var title = "未命名文档"
     @Published var readingLocked = false
     var readingRegionOCRMode: ReadingImageOCRMode?
+    var keepsReadingRegionCapture = false
     @Published var tool = AnnotationTool.select {
         didSet {
-            if tool != .region { readingRegionOCRMode = nil }
+            if oldValue == .region && tool != .region {
+                readingRegionOCRMode = nil
+                keepsReadingRegionCapture = false
+                (pdfView as? DrawingPDFView)?.resetExcerptRegion()
+            }
             if tool != .pen, showPenSettings { showPenSettings = false }
         }
     }

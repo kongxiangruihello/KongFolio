@@ -32,12 +32,8 @@ struct ReadingExcerptActions: View {
     @ObservedObject var store: WorkspaceStore
 
     var body: some View {
-        Button("查看摘录") { store.showReadingPanel(.excerpts) }
-        Button("摘录文字或图片") { store.commandWorkspace?.quickPDFExcerpt() }
-            .disabled(!store.canSearchPDF)
         Button("追加选中文字到上一条摘录") { store.commandWorkspace?.appendSelectionToLastExcerpt() }
             .disabled(!store.canSearchPDF || store.lastTextExcerpt == nil)
-        Button("框选图片摘录") { store.startReadingRegionCapture() }.disabled(!store.canSearchPDF)
         Menu("框选并识别文字") {
             ForEach(ReadingImageOCRMode.allCases) { mode in
                 Button(mode.rawValue) { store.startReadingRegionCapture(ocr:mode) }
@@ -134,6 +130,9 @@ struct RightReadingPanelLayout<Content: View>: View {
                     reviewing = true
                 }.disabled(store.commandWorkspace?.readingJournalPath == nil && store.readingBatch == nil)
                 Spacer()
+                Menu { ReadingExcerptActions(store:store) } label: { AppIcon("ellipsis.circle") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .help("更多摘录操作").accessibilityLabel("更多摘录操作")
             }.padding(.horizontal,10).padding(.top,8)
             if store.acceptsPDFExcerptDrop && store.canSearchPDF {
                 Label(excerptDropTargeted ? "松手保存摘录" : "把 PDF 选中的文字拖到这里",appIcon:"text.quote")

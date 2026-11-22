@@ -51,7 +51,7 @@ struct ReaderToolbarProfile:Codable,Equatable {
         // Keep room for the pinned navigation tools even at the compact window minimum.
         let slots = context == .pdf && width.isFinite && width >= 300 ? max(3, capacity) : capacity
         guard available.count > slots else { return available }
-        let priority: [FileToolbarAction] = [.ocr,.pageThumbnails,.search,.navigation,.annotate,.excerpt,.sidebar]
+        let priority: [FileToolbarAction] = [.excerpt,.ocr,.pageThumbnails,.search,.navigation,.annotate,.sidebar]
         let ranked = priority.filter { available.contains($0) }
         let retained = Set((ranked + available.filter { !priority.contains($0) }).prefix(slots))
         return available.filter { retained.contains($0) }

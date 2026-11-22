@@ -43,8 +43,10 @@ extension Workspace {
         guard let store, intoReadingDesk || store.readingMode else { return false }
         guard !store.journal.unreadable else { error = store.journal.error; return true }
         guard let record = readingExcerpt(from:selection) else { error = "请选中文字；扫描页可使用图片摘录"; return true }
-        store.saveReadingExcerpt(record)
-        status = store.readingExcerptFeedback?.message ?? "摘录已加入阅读记录"
+        if store.saveReadingExcerpt(record) {
+            if intoReadingDesk { pdfView?.clearSelection() }
+            status = store.readingExcerptFeedback?.message ?? "摘录已加入阅读记录"
+        }
         return true
     }
 
