@@ -46,8 +46,16 @@ struct ReadingRecordExtrasView053:View {
             }
             if case .record(let r)=item,r.kind == .image {
                 Button(store.multiRegionTarget053==r.id ? "完成这组图片摘录":"继续框选，追加到这组图片摘录") {
-                    if store.multiRegionTarget053==r.id { store.multiRegionTarget053=nil }
-                    else { store.multiRegionTarget053=r.id;store.commandWorkspace?.tool = .region;store.commandWorkspace?.status="框选后会追加到这组摘录；可以切换页面继续框选" }
+                    if store.multiRegionTarget053 == r.id {
+                        store.commandWorkspace?.endPDFExcerptRegion()
+                        store.multiRegionTarget053 = nil
+                    } else if let workspace = store.commandWorkspace {
+                        store.startReadingRegionCapture(from: workspace)
+                        if workspace.tool == .region {
+                            store.multiRegionTarget053 = r.id
+                            workspace.status = "框选后会追加到这组摘录，可以切换页面继续框选"
+                        }
+                    }
                 }
             }
         }.font(.system(size:13))

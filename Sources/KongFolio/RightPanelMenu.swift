@@ -32,12 +32,15 @@ struct ReadingExcerptActions: View {
     @ObservedObject var store: WorkspaceStore
 
     var body: some View {
-        Button("查看摘录") { store.showReadingPanel(.excerpts) }
-        Button("摘录文字或图片") { store.commandWorkspace?.quickPDFExcerpt() }
-            .disabled(!store.canSearchPDF)
         Button("追加选中文字到上一条摘录") { store.commandWorkspace?.appendSelectionToLastExcerpt() }
             .disabled(!store.canSearchPDF || store.lastTextExcerpt == nil)
         Button("框选图片摘录") { store.startReadingRegionCapture() }.disabled(!store.canSearchPDF)
+        if let workspace = store.commandWorkspace, workspace.tool == .region {
+            Button("结束框选图片") {
+                workspace.endPDFExcerptRegion()
+                workspace.status = "已结束框选图片"
+            }
+        }
         Menu("框选并识别文字") {
             ForEach(ReadingImageOCRMode.allCases) { mode in
                 Button(mode.rawValue) { store.startReadingRegionCapture(ocr:mode) }
@@ -128,6 +131,8 @@ struct RightReadingPanelLayout<Content: View>: View {
     private var excerptDropArea: some View {
         VStack(spacing:0) {
             HStack {
+                Menu("摘录操作") { ReadingExcerptActions(store: store) }
+                    .menuStyle(.borderlessButton)
                 Button("连续核对摘录") {
                     reviewBook = store.commandWorkspace?.readingJournalPath
                     reviewBatch = Set(store.readingBatch?.entries.map{ReadingBookIdentity.key($0.path)} ?? [])

@@ -193,13 +193,8 @@ struct ReadingDeskView: View {
                 TextField("按标签筛选",text:$tag)
                 Toggle("最近移除",isOn:$removed).font(.caption)
             }
-            if section == .excerpts {
-                HStack {
-                    if compact { Menu("摘录操作") { ReadingExcerptActions(store:store) } }
-                    if !store.readingRecordSelection.isEmpty {
-                        Button("按选中顺序导出…") { store.exportCheckedReadingRecords() }
-                    }
-                }
+            if section == .excerpts, !store.readingRecordSelection.isEmpty {
+                Button("按选中顺序导出…") { store.exportCheckedReadingRecords() }
             }
             if section == .notes {
                 Menu("新建笔记") {
