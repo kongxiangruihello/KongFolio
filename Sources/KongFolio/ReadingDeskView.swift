@@ -132,6 +132,9 @@ struct ReadingDeskView: View {
             if section == .excerpts {
                 excerptInList = nil
                 pendingExcerptReveal = nil
+                if let workspace = store.commandWorkspace, workspace.pdfExcerptAppendTarget != nil {
+                    workspace.endPDFExcerptSelection()
+                }
                 store.readingExcerptFeedback = nil
                 store.readingImageOCRRequest = nil
                 excerptsBookOnly = false
@@ -236,10 +239,21 @@ struct ReadingDeskView: View {
             HStack {
                 Text(feedback.message).lineLimit(1).help(feedback.message)
                 Spacer(minLength:0)
-                Button { store.readingExcerptFeedback = nil } label: { AppIcon("xmark") }.help("关闭摘录提示")
+                Button {
+                    if let workspace = store.commandWorkspace, workspace.pdfExcerptAppendTarget == feedback.recordID {
+                        workspace.endPDFExcerptSelection()
+                    }
+                    store.readingExcerptFeedback = nil
+                } label: { AppIcon("xmark") }.help("关闭摘录提示")
             }
             HStack(spacing:10) {
                 if let excerpt = journal.record(feedback.recordID) {
+                    if store.appendablePDFExcerpt(excerpt.id) != nil, let workspace = store.commandWorkspace {
+                        let selecting = workspace.pdfExcerptAppendTarget == excerpt.id
+                        Button(selecting ? "完成追加" : "选择更多") { store.togglePDFExcerptAppend(excerpt.id) }
+                            .disabled(!selecting && !workspace.canQuickPDFExcerpt)
+                            .help(excerpt.kind == .image ? "继续框选图片，追加到当前摘录" : "继续拖选文字，追加到当前摘录")
+                    }
                     Button("写笔记") { store.startNoteFromExcerpt(excerpt) }.disabled(journal.unreadable)
                     if let note = store.pinnedExcerptNote {
                         Button("加入固定笔记") {
@@ -372,6 +386,10 @@ struct ReadingRecordDetail: View {
         ScrollView {
             VStack(alignment:.leading,spacing:10) {
                 if let image = current.imageAsset, imageOCR.text.isEmpty { ReadingRecordImage(url:journal.assetURL(image),pending:journal.pendingImage(image)).frame(maxHeight:220) }
+                ForEach(current.extras?.regions ?? []) { region in
+                    ReadingRecordImage(url:journal.assetURL(region.asset),pending:journal.pendingImage(region.asset))
+                        .frame(maxHeight:220)
+                }
                 if current.excerptSegments != nil {
                     segmentedExcerpt
                 } else if current.kind != .note {

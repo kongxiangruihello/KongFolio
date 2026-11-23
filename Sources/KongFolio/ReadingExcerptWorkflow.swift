@@ -98,15 +98,26 @@ extension WorkspaceStore {
     }
 
     @discardableResult
-    func saveReadingExcerpt(_ record: ReadingRecord, append: Bool = false) -> Bool {
+    func saveReadingExcerpt(_ record: ReadingRecord, append: Bool = false, appendTo: UUID? = nil) -> Bool {
         guard !journal.unreadable,record.kind == .excerpt,!record.quote.isEmpty else { return false }
-        if let duplicate = existingReadingExcerpt(record) {
+        let previous: ReadingRecord?
+        let duplicate: ReadingRecord?
+        if let appendTo {
+            guard let target = appendablePDFExcerpt(appendTo), target.kind == .excerpt else { return false }
+            previous = target
+            duplicate = target.textExcerptSegments.contains {
+                $0.duplicates(record.quote, citations: record.citations, in: target)
+            } ? target : nil
+        } else {
+            previous = append ? lastTextExcerpt : nil
+            if append && previous == nil { return false }
+            duplicate = existingReadingExcerpt(record)
+        }
+        if let duplicate {
             revealCapturedExcerpt(duplicate,message:"已摘录过 · "+excerptLocation(record))
             return true
         }
         let previousLastExcerpt = lastTextExcerpt?.id
-        let previous = append ? lastTextExcerpt : nil
-        if append && previous == nil { return false }
         let pathKeys = Set((previous?.citations ?? []).map(\.source.path)+record.citations.map(\.source.path))
         let previousLastNotes = journal.state.lastNotes.filter { pathKeys.contains($0.key) }
         let saved: ReadingRecord
@@ -121,7 +132,7 @@ extension WorkspaceStore {
         lastTextExcerptID = saved.id
         readingExcerptUndo = ReadingExcerptUndo(previous:previous,saved:saved,previousLastNotes:previousLastNotes,
                                                  previousLastExcerpt:previousLastExcerpt)
-        revealCapturedExcerpt(saved,message:(append ? "已追加 · " : "已保存摘录 · ")+excerptLocation(record))
+        revealCapturedExcerpt(saved,message:(previous != nil ? "已追加 · " : "已保存摘录 · ")+excerptLocation(record))
         return true
     }
 

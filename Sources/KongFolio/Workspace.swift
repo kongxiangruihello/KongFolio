@@ -75,12 +75,17 @@ import UniformTypeIdentifiers
     @Published var readingLocked = false
     var readingRegionOCRMode: ReadingImageOCRMode?
     var keepsReadingRegionCapture = false
+    @Published var pdfExcerptAppendTarget: UUID?
     @Published var showsPDFExcerptTools = false
     @Published var awaitsPDFExcerptText = false
     @Published var tool = AnnotationTool.select {
         didSet {
-            if tool != .select, awaitsPDFExcerptText { awaitsPDFExcerptText = false }
+            if tool != .select, awaitsPDFExcerptText {
+                awaitsPDFExcerptText = false
+                pdfExcerptAppendTarget = nil
+            }
             if oldValue == .region && tool != .region {
+                pdfExcerptAppendTarget = nil
                 readingRegionOCRMode = nil
                 keepsReadingRegionCapture = false
                 (pdfView as? DrawingPDFView)?.resetExcerptRegion()
@@ -214,6 +219,7 @@ import UniformTypeIdentifiers
             if showAnnotationBar {
                 showsPDFExcerptTools = false
                 awaitsPDFExcerptText = false
+                pdfExcerptAppendTarget = nil
             }
         }
     }
