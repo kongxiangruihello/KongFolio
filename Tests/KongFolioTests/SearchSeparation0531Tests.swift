@@ -25,7 +25,7 @@ import PDFKit
         editor.writingSession = writing
         let findRequest = writing.findRequest
         store.findFromKeyboard(responder: editor)
-        XCTAssertNotEqual(writing.findRequest, findRequest)
+        XCTAssertTrue(writing.findRequest != findRequest)
         XCTAssertNil(store.rightPDFSearchWorkspace)
         XCTAssertEqual(w.pdfSearchFocusRequest, first)
         store.findFromKeyboard(responder: nil)
