@@ -45,17 +45,16 @@ extension Workspace {
     }
 
     func choosePDFTextExcerpt() {
-        guard canQuickPDFExcerpt, store != nil else { return }
+        guard canQuickPDFExcerpt, store != nil, let view = pdfView as? DrawingPDFView else { return }
         if tool == .region { endReadingRegionCapture() }
         preparePDFExcerpt()
-        if let selection = pdfView?.currentSelection,
-           !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            savePDFTextExcerpt(selection)
-            return
+        if store?.readingExcerptFeedback?.selectionWorkspaceID == id {
+            store?.readingExcerptFeedback?.selectionWorkspaceID = nil
         }
         awaitsPDFExcerptText = true
-        if let view = pdfView { view.window?.makeFirstResponder(view) }
-        status = "在 PDF 中拖选文字，松开鼠标即保存；按 Esc 结束"
+        view.window?.makeFirstResponder(view)
+        status = "在 PDF 中拖选文字，然后选择摘录或增加选区"
+        view.finishTextSelection()
     }
 
     func savePDFTextExcerpt(_ selection: PDFSelection) {
@@ -71,10 +70,10 @@ extension Workspace {
     }
 
     func choosePDFImageExcerpt() {
-        if tool == .region && keepsReadingRegionCapture {
+        if tool == .region && previewsPDFImageExcerpt {
             endReadingRegionCapture()
         } else {
-            store?.startReadingRegionCapture(from: self, continuous: true)
+            store?.startReadingRegionCapture(from: self, previewBeforeSaving: true)
         }
     }
 
@@ -340,7 +339,8 @@ extension WorkspaceStore {
         }
     }
 
-    func startReadingRegionCapture(ocr: ReadingImageOCRMode? = nil, from source: Workspace? = nil, continuous: Bool = false, appendTo: UUID? = nil) {
+    func startReadingRegionCapture(ocr: ReadingImageOCRMode? = nil, from source: Workspace? = nil, continuous: Bool = false,
+                                   appendTo: UUID? = nil, previewBeforeSaving: Bool = false) {
         guard let workspace = source ?? commandWorkspace, workspace.store === self, workspace.canQuickPDFExcerpt else { return }
         workspace.preparePDFExcerpt()
         workspace.pdfView?.clearSelection()
@@ -348,9 +348,13 @@ extension WorkspaceStore {
         readingMode = true
         workspace.tool = .region
         workspace.keepsReadingRegionCapture = continuous
+        workspace.previewsPDFImageExcerpt = previewBeforeSaving
         workspace.readingRegionOCRMode = ocr
         workspace.pdfExcerptAppendTarget = appendTo
-        if appendTo != nil {
+        if previewBeforeSaving {
+            if readingExcerptFeedback?.selectionWorkspaceID == workspace.id { readingExcerptFeedback?.selectionWorkspaceID = nil }
+            workspace.status = "在 PDF 中框选图片，然后选择摘录或增加选区"
+        } else if appendTo != nil {
             workspace.status = "框选图片即可追加到当前摘录；按 Esc 完成"
         } else {
             workspace.status = ocr == nil ? "在 PDF 页面上拖动框选图片，按 Esc 结束" : "在 PDF 页面上拖动框选，保存图片后识别文字"

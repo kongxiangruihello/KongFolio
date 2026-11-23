@@ -73,7 +73,7 @@ struct AnchoredExcerptTools: View {
                     button("摘录文字", symbol: "text.quote", selected: workspace.awaitsPDFExcerptText) {
                         workspace.choosePDFTextExcerpt()
                     }
-                    button("摘录图片", symbol: "viewfinder", selected: workspace.tool == .region && workspace.keepsReadingRegionCapture) {
+                    button("摘录图片", symbol: "viewfinder", selected: workspace.tool == .region && workspace.previewsPDFImageExcerpt) {
                         workspace.choosePDFImageExcerpt()
                     }
                 }
