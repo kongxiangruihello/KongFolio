@@ -39,13 +39,14 @@ extension Workspace {
         }
         return citation
     }
-    func captureReadingExcerpt(_ selection:PDFSelection, intoReadingDesk: Bool = false) -> Bool {
+    func captureReadingExcerpt(_ selection:PDFSelection, intoReadingDesk: Bool = false, appendTo: UUID? = nil) -> Bool {
         guard let store, intoReadingDesk || store.readingMode else { return false }
         guard !store.journal.unreadable else { error = store.journal.error; return true }
         guard let record = readingExcerpt(from:selection) else { error = "请选中文字；扫描页可使用图片摘录"; return true }
-        if store.saveReadingExcerpt(record) {
+        if store.saveReadingExcerpt(record, appendTo: appendTo) {
             if intoReadingDesk { pdfView?.clearSelection() }
-            status = store.readingExcerptFeedback?.message ?? "摘录已加入阅读记录"
+            let message = store.readingExcerptFeedback?.message ?? "摘录已加入阅读记录"
+            status = appendTo == nil ? message : message + "，可继续拖选；按 Esc 完成"
         }
         return true
     }
@@ -68,6 +69,9 @@ extension Workspace {
 extension WorkspaceStore {
     func openNoteLibrary() { readingLibraryPreferredKind = "笔记";readingLibraryNavigation = nil;readingLibraryNavigationRequest = UUID();openReadingDesk(.search,window:true) }
     func showReadingPanel(_ section:ReadingDeskSection, noteID: UUID? = nil) {
+        if section != .excerpts, let workspace = commandWorkspace, workspace.pdfExcerptAppendTarget != nil {
+            workspace.endPDFExcerptSelection()
+        }
         activeWorkspace?.showPenSettings = false
         let returningToNotes = section == .notes && (!showReadingDesk || readingDeskSection != .notes)
         if section != .notes { rememberRightPanelNote() }

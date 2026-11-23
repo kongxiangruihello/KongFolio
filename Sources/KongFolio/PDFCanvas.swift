@@ -279,10 +279,10 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             return
         }
         if event.keyCode == 53, let workspace, workspace.showsPDFExcerptTools || workspace.awaitsPDFExcerptText {
-            workspace.showsPDFExcerptTools = false
             if workspace.awaitsPDFExcerptText {
-                workspace.awaitsPDFExcerptText = false
-                workspace.status = "已取消文字摘录"
+                workspace.endPDFExcerptSelection()
+            } else {
+                workspace.showsPDFExcerptTools = false
             }
             return
         }

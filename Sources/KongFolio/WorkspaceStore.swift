@@ -57,7 +57,6 @@ import UniformTypeIdentifiers
     @Published var quickExcerptNoteID:UUID?
     @Published var readingDetailRequest: ReadingDetailRequest?
     @Published var readingRecordID:UUID?
-    @Published var multiRegionTarget053:UUID?
     @Published var readingRecordSelection = Set<UUID>() {
         didSet {
             readingRecordSelectionOrder.removeAll { !readingRecordSelection.contains($0) }

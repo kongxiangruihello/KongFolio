@@ -60,8 +60,14 @@ extension Workspace {
 
     func savePDFTextExcerpt(_ selection: PDFSelection) {
         guard canQuickPDFExcerpt else { return }
-        preparePDFExcerpt()
-        _ = captureReadingExcerpt(selection, intoReadingDesk: true)
+        let target = awaitsPDFExcerptText ? pdfExcerptAppendTarget : nil
+        if let target, store?.appendablePDFExcerpt(target)?.kind != .excerpt {
+            endPDFExcerptSelection()
+            status = "这条文字摘录已不可追加"
+            return
+        }
+        if target == nil { preparePDFExcerpt() }
+        _ = captureReadingExcerpt(selection, intoReadingDesk: true, appendTo: target)
     }
 
     func choosePDFImageExcerpt() {
@@ -74,14 +80,25 @@ extension Workspace {
 
     func endReadingRegionCapture() {
         showsPDFExcerptTools = false
-        if store?.commandWorkspace === self { store?.multiRegionTarget053 = nil }
         selectTool(.select)
         status = "已结束图片摘录"
+    }
+
+    func endPDFExcerptSelection() {
+        if tool == .region {
+            endReadingRegionCapture()
+        } else {
+            showsPDFExcerptTools = false
+            awaitsPDFExcerptText = false
+            pdfExcerptAppendTarget = nil
+            status = "已结束文字摘录"
+        }
     }
 
     func preparePDFExcerpt() {
         showsPDFExcerptTools = false
         awaitsPDFExcerptText = false
+        pdfExcerptAppendTarget = nil
         showsPageThumbnails = false
         if showAnnotationBar { showAnnotationBar = false }
         selectTool(.select)
@@ -134,13 +151,19 @@ extension Workspace {
         if let store, store.readingMode || keepsReadingRegionCapture {
             guard !store.journal.unreadable else { error = store.journal.error; return }
             let index = document.index(for:page)
-            if let id=store.multiRegionTarget053,let target=store.journal.record(id),target.removed==nil,target.kind == .image {
+            if let id = pdfExcerptAppendTarget {
+                guard store.appendablePDFExcerpt(id)?.kind == .image else {
+                    endReadingRegionCapture()
+                    status = "这条图片摘录已不可追加"
+                    return
+                }
                 do {
                     let asset=try store.journal.stageAsset053(imageData),citation=readingCitation(page:index == NSNotFound ? selection:index,rects:[pageRect])
                     store.journal.editRecord(id) { r in var extras=r.extras ?? ReadingRecordExtras053();extras.regions=(extras.regions ?? [])+[ReadingRegion053(asset:asset,citation:citation)];r.extras=extras;if !r.citations.contains(citation) { r.citations.append(citation) } }
                     if let updated = store.journal.record(id) {
-                        status = "已追加区域，当前共 \((updated.extras?.regions?.count ?? 0) + 1) 个区域"
-                        store.revealCapturedExcerpt(updated, message: status)
+                        let message = "已追加图片，当前共 \((updated.extras?.regions?.count ?? 0) + 1) 张"
+                        store.revealCapturedExcerpt(updated, message: message)
+                        status = message + "，可继续框选；按 Esc 完成"
                     }
                     return
                 } catch { recordError(error);return }
@@ -288,17 +311,46 @@ extension Workspace {
 }
 
 extension WorkspaceStore {
-    func startReadingRegionCapture(ocr: ReadingImageOCRMode? = nil, from source: Workspace? = nil, continuous: Bool = false) {
+    func appendablePDFExcerpt(_ id: UUID) -> ReadingRecord? {
+        guard !journal.unreadable, let record = journal.record(id), record.removed == nil,
+              record.kind == .excerpt || record.kind == .image else { return nil }
+        return record
+    }
+
+    func togglePDFExcerptAppend(_ id: UUID) {
+        guard let workspace = commandWorkspace else { return }
+        if workspace.pdfExcerptAppendTarget == id {
+            workspace.endPDFExcerptSelection()
+            return
+        }
+        guard workspace.canQuickPDFExcerpt, let record = appendablePDFExcerpt(id) else { return }
+        if record.kind == .image {
+            startReadingRegionCapture(from: workspace, continuous: true, appendTo: id)
+        } else {
+            workspace.preparePDFExcerpt()
+            workspace.pdfExcerptAppendTarget = id
+            workspace.awaitsPDFExcerptText = true
+            workspace.pdfView?.clearSelection()
+            if let view = workspace.pdfView { view.window?.makeFirstResponder(view) }
+            workspace.status = "拖选文字即可追加到当前摘录；按 Esc 完成"
+        }
+    }
+
+    func startReadingRegionCapture(ocr: ReadingImageOCRMode? = nil, from source: Workspace? = nil, continuous: Bool = false, appendTo: UUID? = nil) {
         guard let workspace = source ?? commandWorkspace, workspace.store === self, workspace.canQuickPDFExcerpt else { return }
         workspace.preparePDFExcerpt()
         workspace.pdfView?.clearSelection()
         if let view = workspace.pdfView { view.window?.makeFirstResponder(view) }
         readingMode = true
-        multiRegionTarget053 = nil
         workspace.tool = .region
         workspace.keepsReadingRegionCapture = continuous
         workspace.readingRegionOCRMode = ocr
-        workspace.status = ocr == nil ? "在 PDF 页面上拖动框选图片，按 Esc 结束" : "在 PDF 页面上拖动框选，保存图片后识别文字"
+        workspace.pdfExcerptAppendTarget = appendTo
+        if appendTo != nil {
+            workspace.status = "框选图片即可追加到当前摘录；按 Esc 完成"
+        } else {
+            workspace.status = ocr == nil ? "在 PDF 页面上拖动框选图片，按 Esc 结束" : "在 PDF 页面上拖动框选，保存图片后识别文字"
+        }
     }
 
     /// Takes the reader to a card's source. By default (setting `cardsBeside`) the source document is shown in the right
