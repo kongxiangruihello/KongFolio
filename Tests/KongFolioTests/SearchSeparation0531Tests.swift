@@ -20,7 +20,15 @@ import PDFKit
         w.pageEditing053 = true
         store.showReadingPanel(.excerpts)
         let first = w.pdfSearchFocusRequest
-        XCTAssertTrue(store.openPDFSearch())
+        let editor = ComposingTextView()
+        let writing = WritingSession()
+        editor.writingSession = writing
+        let findRequest = writing.findRequest
+        store.findFromKeyboard(responder: editor)
+        XCTAssertTrue(writing.findRequest != findRequest)
+        XCTAssertNil(store.rightPDFSearchWorkspace)
+        XCTAssertEqual(w.pdfSearchFocusRequest, first)
+        store.findFromKeyboard(responder: nil)
         XCTAssertTrue(store.rightPDFSearchWorkspace === w)
         XCTAssertEqual(w.sidebarTab,.bookmarks)
         XCTAssertTrue(w.pageEditing053)

@@ -420,8 +420,8 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         if workspace.store?.readingExcerptFeedback?.selectionWorkspaceID == workspace.id {
             workspace.store?.readingExcerptFeedback?.selectionWorkspaceID = nil
         }
-        workspace.awaitsPDFExcerptText = false
         retainExcerptSelection(selection)
+        workspace.awaitsPDFExcerptText = !excerptSelections.isEmpty
         window?.makeFirstResponder(self)
         workspace.status = "可继续拖选其他文字，点「摘录」保存全部选区"
         showExcerptSelectionsToolbar()
@@ -451,6 +451,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     func cancelExcerptSelections() {
         guard !excerptSelections.isEmpty else { return }
         excerptSelections.removeAll()
+        workspace?.awaitsPDFExcerptText = false
         excerptSelectionOverlays.forEach { $0.removeFromSuperview() }
         excerptSelectionOverlays.removeAll()
         hideSelectionToolbar()

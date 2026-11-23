@@ -18,7 +18,7 @@ enum SingleRowToolbarPolicy {
 extension FileToolbarAction {
     var menuTitle:String {
         switch self {
-        case .search:return "搜索当前 PDF 正文（右侧面板，⌃F）"
+        case .search:return "搜索当前 PDF 正文（右侧面板，⌘F）"
         case .library:return "资料库（独立窗口）"
         case .essay:return "笔记"
         case .note:return "笔记：为当前 PDF 写笔记（⌥⌘N），在资料库统一管理"

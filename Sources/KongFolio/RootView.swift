@@ -1,8 +1,17 @@
 import SwiftUI
 
+struct LeftNavigationVisibility: PreferenceKey {
+    static let defaultValue: UUID? = nil
+
+    static func reduce(value: inout UUID?, nextValue: () -> UUID?) {
+        if let workspaceID = nextValue() { value = workspaceID }
+    }
+}
+
 /// Tab bar above the active tab's content.
 struct RootView: View {
     @ObservedObject var store: WorkspaceStore
+    @State private var leftNavigationWorkspaceID: UUID?
 
     static func showsFunctionToolbar(for tab: OpenTab?) -> Bool {
         guard let note = tab?.note else { return true }
@@ -14,7 +23,7 @@ struct RootView: View {
             TabBar(store: store)
             Divider()
             if Self.showsFunctionToolbar(for:store.activeTab) {
-                FunctionToolbar(store:store)
+                FunctionToolbar(store: store, leftNavigationVisible: leftNavigationWorkspaceID == store.activeWorkspace?.id && leftNavigationWorkspaceID != nil)
                 Divider()
             }
             RightReadingPanelLayout(store:store) {
@@ -28,6 +37,7 @@ struct RootView: View {
                 } else { Color.clear }
             }
         }
+        .onPreferenceChange(LeftNavigationVisibility.self) { leftNavigationWorkspaceID = $0 }
         .overlayPreferenceValue(AnnotationToolsAnchor.self) { anchor in
             if let workspace = store.commandWorkspace {
                 AnchoredAnnotationTools(workspace: workspace, anchor: anchor)

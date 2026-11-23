@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 @MainActor extension WorkspaceStore {
     var canSearchPDF:Bool {
@@ -11,6 +11,15 @@ import Foundation
         if active.id == id { return active.count > 0 ? active : nil }
         guard let partner = active.splitPartner, partner.id == id, partner.count > 0 else { return nil }
         return partner
+    }
+
+    func findFromKeyboard(responder: NSResponder? = NSApp?.keyWindow?.firstResponder) {
+        if let editor = responder as? ComposingTextView, let session = editor.writingSession {
+            guard !editor.hasMarkedText() else { return }
+            session.findRequest = UUID()
+        } else {
+            openPDFSearch()
+        }
     }
 
     func rememberRightPanelNote() {

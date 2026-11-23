@@ -112,7 +112,7 @@ struct ContentView: View {
                         HStack {
                             Text("PDF 页面编辑").font(.headline)
                             Spacer()
-                            Button { workspace.pageEditing053=false } label:{ AppIcon("xmark") }.help("关闭页面编辑")
+                            SidePanelCloseButton(title: "关闭左侧面板", close: closeLeftPanel)
                         }.padding(10)
                         Divider()
                         PDFPageEditor053(workspace:workspace)
@@ -122,7 +122,7 @@ struct ContentView: View {
                         HStack {
                             Text("PDF 属性与标注").font(.headline)
                             Spacer()
-                            Button { showInspector = false } label:{ AppIcon("xmark") }.help("关闭 PDF 属性与标注")
+                            SidePanelCloseButton(title: "关闭左侧面板", close: closeLeftPanel)
                         }.padding(10)
                         Divider()
                         inspector
@@ -412,15 +412,26 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(spacing: 8) {
-            Picker("导航", selection: $workspace.sidebarTab) {
-                ForEach([SidebarTab.pages,.outline,.bookmarks]) { Text($0.title).tag($0) }
+            HStack {
+                Picker("导航", selection: $workspace.sidebarTab) {
+                    ForEach([SidebarTab.pages,.outline,.bookmarks]) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                Spacer(minLength: 0)
+                SidePanelCloseButton(title: "关闭左侧面板", close: closeLeftPanel)
             }
-            .labelsHidden()
             .padding(.horizontal, 12)
-            .padding(.top, 12)
+            .padding(.top, 8)
             if workspace.sidebarTab == .pages { pagesSidebar } else { ReadingSidebar(workspace: workspace) }
         }
         .background(Color(nsColor: .controlBackgroundColor))
+        .preference(key: LeftNavigationVisibility.self, value: workspace.id)
+    }
+
+    private func closeLeftPanel() {
+        showSidebar = false
+        showInspector = false
+        workspace.pageEditing053 = false
     }
 
     private var pagesSidebar: some View {

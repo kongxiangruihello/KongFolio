@@ -55,8 +55,8 @@ import KongFolioUpdateKit
             CommandMenu("阅读") {
                 Button("最近批阅…") { store.showReadingBatch = true }
                     .disabled(store.readingBatch == nil)
-                Button("搜索当前 PDF 正文") { store.openPDFSearch() }
-                    .keyboardShortcut("f",modifiers:.control).disabled(!store.canSearchPDF)
+                Button("搜索当前 PDF 正文") { store.findFromKeyboard() }
+                    .keyboardShortcut("f",modifiers:.command).disabled(!store.canSearchPDF)
                 Button("阅读与史料研究…") { store.showResearch = true }
                 Button("显示／隐藏阅读尺") { if let w = store.commandWorkspace { w.loadReadingRulerIfNeeded(); w.readingRuler.enabled.toggle() } }.disabled((store.commandWorkspace?.count ?? 0) == 0)
                 Button("阅读尺前移") { store.commandWorkspace?.readingRuler.move(-0.04) }.keyboardShortcut(.upArrow,modifiers:[.command,.option])
