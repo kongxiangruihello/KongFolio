@@ -278,6 +278,14 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             workspace.endReadingRegionCapture()
             return
         }
+        if event.keyCode == 53, let workspace, workspace.showsPDFExcerptTools || workspace.awaitsPDFExcerptText {
+            workspace.showsPDFExcerptTools = false
+            if workspace.awaitsPDFExcerptText {
+                workspace.awaitsPDFExcerptText = false
+                workspace.status = "已取消文字摘录"
+            }
+            return
+        }
         if event.keyCode == 53, drawingPage != nil, moving == nil {
             provisional = nil; points = []; drawingPage = nil
             workspace?.drawingInProgress = false
@@ -363,12 +371,16 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
 
     func hideSelectionToolbar() { selectionBar?.removeFromSuperview(); selectionBar = nil }
 
-    /// Shows the marking buttons next to the selected text once the mouse is released.
-    private func showSelectionToolbar() {
+    /// Handles the final text selection once PDFKit has processed the mouse release.
+    func finishTextSelection() {
         hideSelectionToolbar()
         guard commentEditor == nil, let workspace, workspace.tool == .select, let selected = currentSelection,
               !(selected.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let page = selected.pages.last else { return }
+        if workspace.awaitsPDFExcerptText {
+            workspace.savePDFTextExcerpt(selected)
+            return
+        }
         let area = convert(selected.bounds(for: page), from: page)
         let match = workspace.readingExcerpt(from:selected,trackVisual:false).flatMap { workspace.store?.existingReadingExcerpt($0) }
         let copySelection: (ReadingExcerptCopyFormat) -> Void = { [weak self, weak workspace] format in
@@ -380,7 +392,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         let noteTarget = workspace.store?.citationNoteTarget
         let toolbar = PDFSelectionActions(
             editable: !workspace.readingLocked, compact: bounds.width < 340,
-            excerpt: { [weak workspace] in workspace?.quickPDFExcerpt(selection: selected) },
+            excerpt: { [weak workspace] in workspace?.savePDFTextExcerpt(selected) },
             note: { [weak self, weak workspace] in
                 if let workspace, let record = workspace.readingExcerpt(from: selected) {
                     workspace.store?.startNoteFromExcerpt(record)
@@ -722,7 +734,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             return
         }
         // The selection is final only after PDFView has handled the release.
-        defer { DispatchQueue.main.async { [weak self] in self?.showSelectionToolbar() } }
+        defer { DispatchQueue.main.async { [weak self] in self?.finishTextSelection() } }
         if let id = pressedCard {
             pressedCard = nil
             super.mouseUp(with: event)

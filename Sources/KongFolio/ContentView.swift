@@ -22,6 +22,11 @@ struct ContentView: View {
                 AnchoredAnnotationTools(workspace: workspace, anchor: anchor)
             }
         }
+        .overlayPreferenceValue(ExcerptToolsAnchor.self) { anchor in
+            if showsPrimaryToolbar {
+                AnchoredExcerptTools(workspace: workspace, anchor: anchor)
+            }
+        }
         .tint(Brand.accent)
         .disabled(workspace.busy)
         .overlay { if workspace.busy { busyOverlay } }
