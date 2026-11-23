@@ -44,11 +44,6 @@ struct ReadingRecordExtrasView053:View {
             if item.extras053.followUps?.isEmpty == false {
                 Button("待查问题（\(questions.count)）") { showFollowUps = true }
             }
-            if case .record(let record) = item, record.kind == .image, let workspace = store.commandWorkspace {
-                let selecting = workspace.pdfExcerptAppendTarget == record.id
-                Button(selecting ? "完成追加" : "选择更多") { store.togglePDFExcerptAppend(record.id) }
-                    .disabled(!selecting && (!workspace.canQuickPDFExcerpt || store.appendablePDFExcerpt(record.id) == nil))
-            }
         }.font(.system(size:13))
         .sheet(item:$versionPair) { ReadingExcerptVersionsSheet(journal:journal,pair:$0) }
         .sheet(isPresented:$showFollowUps) {

@@ -27,6 +27,7 @@ struct LibraryRecordDetail: View {
         ScrollView {
             VStack(alignment:.leading,spacing:10) {
                 HStack {
+                    if !focusedWriting { ReadingExcerptAppendButton(store:store,record:current) }
                     Spacer()
                     Button {
                         focusedWriting.toggle()

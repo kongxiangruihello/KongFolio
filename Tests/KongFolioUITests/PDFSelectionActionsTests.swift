@@ -46,6 +46,7 @@ final class PDFSelectionActionsTests: XCTestCase {
         XCTAssertEqual(store.readingDeskSection,.excerpts)
         XCTAssertEqual(store.readingExcerptFeedback?.recordID,text.id)
         XCTAssertEqual(store.readingExcerptFeedback?.opensEditor,true)
+        XCTAssertEqual(store.readingExcerptFeedback?.selectionWorkspaceID, workspace.id)
         XCTAssertFalse(workspace.showAnnotationBar)
 
         store.closeRightReadingPanel()
@@ -81,6 +82,7 @@ final class PDFSelectionActionsTests: XCTestCase {
             XCTAssertEqual(store.readingDeskSection,.excerpts)
             XCTAssertEqual(store.readingExcerptFeedback?.recordID,image.id)
             XCTAssertEqual(store.readingExcerptFeedback?.opensEditor,true)
+            XCTAssertEqual(store.readingExcerptFeedback?.selectionWorkspaceID, workspace.id)
             XCTAssertEqual(workspace.tool,.region)
         }
         workspace.togglePDFExcerptTools()
@@ -91,9 +93,11 @@ final class PDFSelectionActionsTests: XCTestCase {
         let recordCount = store.journal.state.records.count
         store.togglePDFExcerptAppend(imageID)
         XCTAssertEqual(workspace.pdfExcerptAppendTarget, imageID)
+        XCTAssertNil(store.readingExcerptFeedback?.selectionWorkspaceID)
         try dragImage(at: 0.3)
         try dragImage(at: 0.4)
         XCTAssertEqual(store.readingRecordID, imageID)
+        XCTAssertNil(store.readingExcerptFeedback?.selectionWorkspaceID)
         XCTAssertEqual(store.journal.record(imageID)?.extras?.regions?.count, 2)
         XCTAssertEqual(store.journal.state.records.count, recordCount)
         store.togglePDFExcerptAppend(imageID)
@@ -113,12 +117,14 @@ final class PDFSelectionActionsTests: XCTestCase {
         let newerTextID = try XCTUnwrap(store.readingRecordID)
         XCTAssertNotEqual(newerTextID, text.id)
         store.revealCapturedExcerpt(text, message: "已打开摘录")
+        XCTAssertNil(store.readingExcerptFeedback?.selectionWorkspaceID)
         store.togglePDFExcerptAppend(text.id)
         for extra in extraQuotes {
             let selection = try XCTUnwrap(workspace.document.findString(extra, withOptions: []).first)
             view.setCurrentSelection(selection, animate: false)
             view.finishTextSelection()
             XCTAssertEqual(store.readingRecordID, text.id)
+            XCTAssertNil(store.readingExcerptFeedback?.selectionWorkspaceID)
             XCTAssertTrue(workspace.awaitsPDFExcerptText)
         }
         XCTAssertEqual(store.journal.record(text.id)?.textExcerptSegments.map(\.text), [quote] + extraQuotes)

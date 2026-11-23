@@ -115,6 +115,11 @@ struct ReadingDeskView: View {
         .onChange(of:recent) { _,_ in page = 0 }.onChange(of:removed) { _,_ in page = 0 }
         .onChange(of:pageSize) { _,_ in page = 0 }.onChange(of:hits.count) { _,_ in page = pagination.index }
         .onChange(of:store.readingRecordID) { _,id in if id != nil { browsingSearchResults = false } }
+        .onChange(of:selectedRecord?.id) { previous, current in
+            guard previous != current, let previous, let workspace = store.commandWorkspace,
+                  workspace.pdfExcerptAppendTarget == previous else { return }
+            workspace.endPDFExcerptSelection()
+        }
         .onChange(of:journal.draftRecord?.id) { _,id in if id != nil { browsingSearchResults = false; page = 0; query = ""; tag = ""; removed = false; recent = false } }
     }
     private var selectedRecord: ReadingRecord? {
@@ -156,6 +161,7 @@ struct ReadingDeskView: View {
                     }
                     LibraryRecordDetail(store:store,journal:journal,record:record,inReadingSidebar:compact).id(record.id).disabled(journal.unreadable)
                 } else {
+                    ReadingExcerptAppendButton(store:store,record:record)
                     ReadingRecordDetail(store:store,journal:journal,record:record,onNewLinkedNote:{ createNote(linked:$0) })
                         .id(record.id).disabled(journal.unreadable)
                 }
@@ -239,21 +245,10 @@ struct ReadingDeskView: View {
             HStack {
                 Text(feedback.message).lineLimit(1).help(feedback.message)
                 Spacer(minLength:0)
-                Button {
-                    if let workspace = store.commandWorkspace, workspace.pdfExcerptAppendTarget == feedback.recordID {
-                        workspace.endPDFExcerptSelection()
-                    }
-                    store.readingExcerptFeedback = nil
-                } label: { AppIcon("xmark") }.help("关闭摘录提示")
+                Button { store.readingExcerptFeedback = nil } label: { AppIcon("xmark") }.help("关闭摘录提示")
             }
             HStack(spacing:10) {
                 if let excerpt = journal.record(feedback.recordID) {
-                    if store.appendablePDFExcerpt(excerpt.id) != nil, let workspace = store.commandWorkspace {
-                        let selecting = workspace.pdfExcerptAppendTarget == excerpt.id
-                        Button(selecting ? "完成追加" : "选择更多") { store.togglePDFExcerptAppend(excerpt.id) }
-                            .disabled(!selecting && !workspace.canQuickPDFExcerpt)
-                            .help(excerpt.kind == .image ? "继续框选图片，追加到当前摘录" : "继续拖选文字，追加到当前摘录")
-                    }
                     Button("写笔记") { store.startNoteFromExcerpt(excerpt) }.disabled(journal.unreadable)
                     if let note = store.pinnedExcerptNote {
                         Button("加入固定笔记") {
@@ -368,6 +363,57 @@ struct ReadingDeskView: View {
                                                        (store.readingRecordID == record.id ? Color.accentColor.opacity(0.10) : .clear))
     }
 }
+struct PDFExcerptSelectionPrompt: View {
+    @ObservedObject var store: WorkspaceStore
+    @ObservedObject var workspace: Workspace
+
+    var body: some View {
+        if store.commandWorkspace === workspace, store.showReadingDesk, store.readingDeskSection == .excerpts,
+           let feedback = store.readingExcerptFeedback, feedback.selectionWorkspaceID == workspace.id,
+           store.readingRecordID == feedback.recordID, workspace.canQuickPDFExcerpt,
+           let record = store.appendablePDFExcerpt(feedback.recordID) {
+            HStack(spacing: 10) {
+                Text(record.kind == .image ? "图片已摘录" : "文字已摘录")
+                    .font(.subheadline.weight(.semibold))
+                ReadingExcerptAppendButton(store: store, record: record)
+                Button {
+                    store.readingExcerptFeedback?.selectionWorkspaceID = nil
+                } label: {
+                    AppIcon("xmark").frame(width: 20, height: 24).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("关闭提示")
+                .accessibilityLabel("关闭选择更多提示")
+            }
+            .padding(10)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary).allowsHitTesting(false) }
+            .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
+            .accessibilityIdentifier("pdfExcerptSelectionPrompt")
+        }
+    }
+}
+
+struct ReadingExcerptAppendButton: View {
+    @ObservedObject var store: WorkspaceStore
+    let record: ReadingRecord
+
+    var body: some View {
+        if store.appendablePDFExcerpt(record.id) != nil {
+            let workspace = store.commandWorkspace
+            let selecting = workspace?.pdfExcerptAppendTarget == record.id
+            let actionHint = record.kind == .image ? "继续框选图片，追加到这条摘录" : "继续拖选文字，追加到这条摘录"
+            Button { store.togglePDFExcerptAppend(record.id) } label: {
+                Label(selecting ? "完成追加" : "选择更多", appIcon: selecting ? "checkmark" : "plus")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!selecting && workspace?.canQuickPDFExcerpt != true)
+            .help(workspace == nil ? "请先打开 PDF" : selecting ? "结束追加（Esc）" : actionHint)
+            .accessibilityIdentifier("readingExcerptAppendButton")
+        }
+    }
+}
+
 struct ReadingRecordDetail: View {
     @ObservedObject var store:WorkspaceStore
     @ObservedObject var journal:ReadingJournal

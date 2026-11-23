@@ -70,6 +70,7 @@ struct ReadingExcerptFeedback: Identifiable {
     let recordID: UUID
     let message: String
     var opensEditor = false
+    var selectionWorkspaceID: UUID?
 }
 
 struct ReadingExcerptUndo {
@@ -98,7 +99,8 @@ extension WorkspaceStore {
     }
 
     @discardableResult
-    func saveReadingExcerpt(_ record: ReadingRecord, append: Bool = false, appendTo: UUID? = nil) -> Bool {
+    func saveReadingExcerpt(_ record: ReadingRecord, append: Bool = false, appendTo: UUID? = nil,
+                            offeringMoreFrom workspaceID: UUID? = nil) -> Bool {
         guard !journal.unreadable,record.kind == .excerpt,!record.quote.isEmpty else { return false }
         let previous: ReadingRecord?
         let duplicate: ReadingRecord?
@@ -114,7 +116,7 @@ extension WorkspaceStore {
             duplicate = existingReadingExcerpt(record)
         }
         if let duplicate {
-            revealCapturedExcerpt(duplicate,message:"已摘录过 · "+excerptLocation(record))
+            revealCapturedExcerpt(duplicate,message:"已摘录过 · "+excerptLocation(record),offeringMoreFrom:workspaceID)
             return true
         }
         let previousLastExcerpt = lastTextExcerpt?.id
@@ -132,7 +134,8 @@ extension WorkspaceStore {
         lastTextExcerptID = saved.id
         readingExcerptUndo = ReadingExcerptUndo(previous:previous,saved:saved,previousLastNotes:previousLastNotes,
                                                  previousLastExcerpt:previousLastExcerpt)
-        revealCapturedExcerpt(saved,message:(previous != nil ? "已追加 · " : "已保存摘录 · ")+excerptLocation(record))
+        revealCapturedExcerpt(saved,message:(previous != nil ? "已追加 · " : "已保存摘录 · ")+excerptLocation(record),
+                              offeringMoreFrom:workspaceID)
         return true
     }
 
@@ -161,12 +164,12 @@ extension WorkspaceStore {
         return true
     }
 
-    func revealCapturedExcerpt(_ record: ReadingRecord, message: String) {
+    func revealCapturedExcerpt(_ record: ReadingRecord, message: String, offeringMoreFrom workspaceID: UUID? = nil) {
         rememberRightPanelNote()
         if let pinned = journal.record(pinnedReadingID), pinned.kind != .note { pinnedReadingID = nil }
         if readingImageOCRRequest?.recordID != record.id { readingImageOCRRequest = nil }
         showReadingPanel(.excerpts, noteID: record.id)
-        readingExcerptFeedback = ReadingExcerptFeedback(recordID:record.id,message:message,opensEditor:true)
+        readingExcerptFeedback = ReadingExcerptFeedback(recordID:record.id,message:message,opensEditor:true,selectionWorkspaceID:workspaceID)
     }
 
     private func excerptLocation(_ record: ReadingRecord) -> String {
