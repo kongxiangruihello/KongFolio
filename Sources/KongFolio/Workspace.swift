@@ -75,8 +75,11 @@ import UniformTypeIdentifiers
     @Published var readingLocked = false
     var readingRegionOCRMode: ReadingImageOCRMode?
     var keepsReadingRegionCapture = false
+    @Published var showsPDFExcerptTools = false
+    @Published var awaitsPDFExcerptText = false
     @Published var tool = AnnotationTool.select {
         didSet {
+            if tool != .select, awaitsPDFExcerptText { awaitsPDFExcerptText = false }
             if oldValue == .region && tool != .region {
                 readingRegionOCRMode = nil
                 keepsReadingRegionCapture = false
@@ -207,6 +210,10 @@ import UniformTypeIdentifiers
             } else if tool == .select, drawingStylesReady {
                 let next = drawingDefaults.string(forKey: "KongFolio.lastDrawingTool").flatMap(AnnotationTool.init(rawValue:)) ?? .pen
                 selectTool(next, highlighter: drawingDefaults.bool(forKey: "KongFolio.lastHighlighter"))
+            }
+            if showAnnotationBar {
+                showsPDFExcerptTools = false
+                awaitsPDFExcerptText = false
             }
         }
     }

@@ -33,7 +33,11 @@ final class PDFSelectionActionsTests: XCTestCase {
         store.closeRightReadingPanel()
         let selected = try XCTUnwrap(workspace.document.findString(quote, withOptions: []).first)
         view.setCurrentSelection(selected,animate:false)
-        workspace.quickPDFExcerpt()
+        workspace.togglePDFExcerptTools()
+        XCTAssertTrue(workspace.showsPDFExcerptTools)
+        XCTAssertNil(store.readingRecordID)
+        workspace.choosePDFTextExcerpt()
+        XCTAssertFalse(workspace.showsPDFExcerptTools)
         let text = try XCTUnwrap(store.journal.record(store.readingRecordID))
         XCTAssertEqual(text.quote,quote)
         XCTAssertTrue(store.rightReadingPanelVisible)
@@ -43,8 +47,12 @@ final class PDFSelectionActionsTests: XCTestCase {
         XCTAssertFalse(workspace.showAnnotationBar)
 
         store.closeRightReadingPanel()
-        workspace.quickPDFExcerpt()
+        view.setCurrentSelection(selected, animate: false)
+        workspace.togglePDFExcerptTools()
+        workspace.choosePDFImageExcerpt()
+        XCTAssertFalse(workspace.showsPDFExcerptTools)
         XCTAssertEqual(workspace.tool,.region)
+        XCTAssertNil(view.currentSelection?.string)
         func mouse(_ kind: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
             let location = view.convert(view.convert(point,from:page),to:nil)
             return try XCTUnwrap(NSEvent.mouseEvent(with:kind,location:location,modifierFlags:[],
@@ -70,8 +78,17 @@ final class PDFSelectionActionsTests: XCTestCase {
             XCTAssertEqual(store.readingExcerptFeedback?.opensEditor,true)
             XCTAssertEqual(workspace.tool,.region)
         }
-        workspace.quickPDFExcerpt()
+        workspace.togglePDFExcerptTools()
+        workspace.choosePDFImageExcerpt()
         XCTAssertEqual(workspace.tool,.select)
+        workspace.togglePDFExcerptTools()
+        workspace.choosePDFTextExcerpt()
+        XCTAssertTrue(workspace.awaitsPDFExcerptText)
+        XCTAssertFalse(workspace.showsPDFExcerptTools)
+        view.setCurrentSelection(selected, animate: false)
+        view.finishTextSelection()
+        XCTAssertFalse(workspace.awaitsPDFExcerptText)
+        XCTAssertEqual(store.journal.record(store.readingRecordID)?.quote, quote)
         XCTAssertTrue(page.annotations.isEmpty)
     }
 

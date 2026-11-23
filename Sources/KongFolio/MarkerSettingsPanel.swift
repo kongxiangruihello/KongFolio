@@ -13,6 +13,35 @@ extension View {
     func annotationToolsAnchor(when isAnchor: Bool = true) -> some View {
         anchorPreference(key: AnnotationToolsAnchor.self, value: .bounds) { isAnchor ? $0 : nil }
     }
+
+    func excerptToolsAnchor(when isAnchor: Bool = true) -> some View {
+        anchorPreference(key: ExcerptToolsAnchor.self, value: .bounds) { isAnchor ? $0 : nil }
+    }
+}
+
+struct ExcerptToolsAnchor: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        if let next = nextValue() { value = next }
+    }
+}
+
+private struct AnchoredPDFTools<Content: View>: View {
+    let anchor: Anchor<CGRect>
+    let width: CGFloat
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        GeometryReader { geometry in
+            let button = geometry[anchor]
+            let margin: CGFloat = 8
+            let left = max(margin, min(button.midX - width / 2, geometry.size.width - width - margin))
+            content()
+                .fixedSize()
+                .offset(x: left, y: button.maxY + margin)
+        }
+    }
 }
 
 struct AnchoredAnnotationTools: View {
@@ -22,16 +51,52 @@ struct AnchoredAnnotationTools: View {
     var body: some View {
         if let anchor, workspace.showsQuickAnnotationTools, workspace.count > 0,
            !workspace.showsPageThumbnails, !workspace.readingLocked, !workspace.busy {
-            GeometryReader { geometry in
-                let button = geometry[anchor]
-                let margin: CGFloat = 8
-                let width = QuickAnnotationTools.width
-                let left = max(margin, min(button.midX - width / 2, geometry.size.width - width - margin))
+            AnchoredPDFTools(anchor: anchor, width: QuickAnnotationTools.width) {
                 QuickAnnotationTools(workspace: workspace)
-                    .fixedSize()
-                    .offset(x: left, y: button.maxY + margin)
             }
         }
+    }
+}
+
+struct AnchoredExcerptTools: View {
+    @ObservedObject var workspace: Workspace
+    let anchor: Anchor<CGRect>?
+    @Environment(\.colorScheme) private var colorScheme
+    private static let buttonWidth: CGFloat = 96
+    private static let spacing: CGFloat = 6
+    private static let padding: CGFloat = 5
+
+    var body: some View {
+        if let anchor, workspace.showsPDFExcerptTools, workspace.canQuickPDFExcerpt, !workspace.showsPageThumbnails {
+            AnchoredPDFTools(anchor: anchor, width: Self.buttonWidth * 2 + Self.spacing + Self.padding * 2) {
+                HStack(spacing: Self.spacing) {
+                    button("摘录文字", symbol: "text.quote", selected: workspace.awaitsPDFExcerptText) {
+                        workspace.choosePDFTextExcerpt()
+                    }
+                    button("摘录图片", symbol: "viewfinder", selected: workspace.tool == .region && workspace.keepsReadingRegionCapture) {
+                        workspace.choosePDFImageExcerpt()
+                    }
+                }
+                .environment(\.toolbarIconTone, PDFToolbarPalette.graphite(colorScheme))
+                .padding(Self.padding)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary).allowsHitTesting(false) }
+                .shadow(color: .black.opacity(0.16), radius: 7, y: 3)
+                .accessibilityIdentifier("quickExcerptTools")
+            }
+        }
+    }
+
+    private func button(_ title: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, appIcon: symbol)
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: Self.buttonWidth, height: 36)
+                .background(selected ? Color.primary.opacity(0.11) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 }
 

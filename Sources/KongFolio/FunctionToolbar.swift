@@ -134,6 +134,7 @@ struct FunctionToolbar: View {
                         .help("更多工具").accessibilityLabel("更多工具")
                 }
                 .annotationToolsAnchor(when: overflow.contains(.annotate))
+                .excerptToolsAnchor(when: overflow.contains(.excerpt))
                 .frame(maxWidth:visible.isEmpty ? nil : .infinity)
             }
             .coordinateSpace(name: ReaderToolFrames.space)
@@ -178,6 +179,7 @@ struct FunctionToolbar: View {
         }
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .annotationToolsAnchor(when: action == .annotate)
+        .excerptToolsAnchor(when: action == .excerpt)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             GeometryReader { cell in
@@ -306,12 +308,12 @@ struct FunctionToolbar: View {
             }
         case .excerpt:
             if context == .pdf, let workspace {
-                Button { workspace.quickPDFExcerpt() } label: {
-                    if menu { action.label(workspace.pdfExcerptButtonTitle) }
-                    else { action.icon.frame(width:34,height:32).contentShape(Rectangle()) }
+                Button { workspace.togglePDFExcerptTools() } label: {
+                    if menu { action.label("摘录") }
+                    else { action.icon.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle()) }
                 }
-                .help(workspace.pdfExcerptButtonHelp)
-                .accessibilityLabel(workspace.pdfExcerptButtonTitle)
+                .help("打开文字和图片摘录工具")
+                .accessibilityLabel("摘录")
                 .disabled(!workspace.canQuickPDFExcerpt || workspace.showsPageThumbnails)
             } else {
                 Button { store.showReadingPanel(.excerpts) } label: { label(action,menu:menu) }
@@ -346,7 +348,9 @@ struct FunctionToolbar: View {
         case .annotate:
             guard let workspace else { return false }
             return workspace.showAnnotationBar && !workspace.showsPageThumbnails && !workspace.readingLocked
-        case .excerpt: return context == .pdf && workspace?.tool == .region
+        case .excerpt:
+            guard context == .pdf, let workspace else { return false }
+            return workspace.showsPDFExcerptTools || workspace.awaitsPDFExcerptText || workspace.tool == .region
         case .search: return store.rightPDFSearchWorkspace != nil
         case .pdfPages: return store.activeWorkspace?.pageEditing053 == true
         default: return false

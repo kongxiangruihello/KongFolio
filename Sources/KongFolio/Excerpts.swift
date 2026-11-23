@@ -33,35 +33,55 @@ extension Workspace {
 
     var canQuickPDFExcerpt: Bool { count > 0 && !busy && !drawingInProgress && placingSignature == nil }
 
-    var pdfExcerptButtonTitle: String { tool == .region ? "结束图片摘录" : "摘录文字或图片" }
-
-    var pdfExcerptButtonHelp: String {
-        tool == .region ? "结束图片摘录（Esc）" : "保存选中的文字，或拖动框选图片"
+    func togglePDFExcerptTools() {
+        guard canQuickPDFExcerpt, !showsPageThumbnails else { return }
+        if showsPDFExcerptTools {
+            showsPDFExcerptTools = false
+        } else {
+            if showAnnotationBar { showAnnotationBar = false }
+            showsPDFExcerptTools = true
+            if let view = pdfView { view.window?.makeFirstResponder(view) }
+        }
     }
 
-    /// The main excerpt button saves selected text or prepares a region capture.
-    func quickPDFExcerpt(selection: PDFSelection? = nil) {
-        guard let store, canQuickPDFExcerpt else { return }
-        if tool == .region {
-            endReadingRegionCapture()
+    func choosePDFTextExcerpt() {
+        guard canQuickPDFExcerpt, store != nil else { return }
+        if tool == .region { endReadingRegionCapture() }
+        preparePDFExcerpt()
+        if let selection = pdfView?.currentSelection,
+           !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            savePDFTextExcerpt(selection)
             return
         }
-        let selected = selection ?? pdfView?.currentSelection
-        if let selected, !(selected.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            preparePDFExcerpt()
-            _ = captureReadingExcerpt(selected, intoReadingDesk: true)
+        awaitsPDFExcerptText = true
+        if let view = pdfView { view.window?.makeFirstResponder(view) }
+        status = "在 PDF 中拖选文字，松开鼠标即保存；按 Esc 结束"
+    }
+
+    func savePDFTextExcerpt(_ selection: PDFSelection) {
+        guard canQuickPDFExcerpt else { return }
+        preparePDFExcerpt()
+        _ = captureReadingExcerpt(selection, intoReadingDesk: true)
+    }
+
+    func choosePDFImageExcerpt() {
+        if tool == .region && keepsReadingRegionCapture {
+            endReadingRegionCapture()
         } else {
-            store.startReadingRegionCapture(from: self, continuous: true)
+            store?.startReadingRegionCapture(from: self, continuous: true)
         }
     }
 
     func endReadingRegionCapture() {
+        showsPDFExcerptTools = false
         if store?.commandWorkspace === self { store?.multiRegionTarget053 = nil }
         selectTool(.select)
         status = "已结束图片摘录"
     }
 
     func preparePDFExcerpt() {
+        showsPDFExcerptTools = false
+        awaitsPDFExcerptText = false
         showsPageThumbnails = false
         if showAnnotationBar { showAnnotationBar = false }
         selectTool(.select)

@@ -35,11 +35,12 @@ struct ReadingToolbar: View {
     private var actions:some View {
         HStack(spacing:10) {
             Button { store.openReadingDesk(.search,window:true) } label:{FileToolbarAction.library.label("资料库")}.buttonStyle(.borderless).help("统一新增、编辑、查找和删除摘录、标注、评论与笔记")
-            Button { workspace.quickPDFExcerpt() } label: {
+            Button { workspace.togglePDFExcerptTools() } label: {
                 Label("摘录",appIcon:"text.quote").contentShape(Rectangle())
             }.buttonStyle(.borderless).fixedSize()
+                .excerptToolsAnchor()
                 .disabled(!workspace.canQuickPDFExcerpt || workspace.showsPageThumbnails)
-                .help(workspace.pdfExcerptButtonHelp).accessibilityLabel(workspace.pdfExcerptButtonTitle)
+                .help("打开文字和图片摘录工具").accessibilityLabel("摘录")
             Button { store.newReadingNote() } label:{Label("笔记",appIcon:"note.text.badge.plus")}.help("新建与当前 PDF 关联的笔记")
             Menu {
                 Button("导出页面为图片…") { workspace.openImageExport() }.disabled(workspace.count == 0 || workspace.busy)
