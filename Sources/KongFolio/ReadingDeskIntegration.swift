@@ -43,7 +43,7 @@ extension Workspace {
         guard let store, intoReadingDesk || store.readingMode else { return false }
         guard !store.journal.unreadable else { error = store.journal.error; return true }
         guard let record = readingExcerpt(from:selection) else { error = "请选中文字；扫描页可使用图片摘录"; return true }
-        if store.saveReadingExcerpt(record, appendTo: appendTo) {
+        if store.saveReadingExcerpt(record, appendTo: appendTo, offeringMoreFrom: appendTo == nil ? id : nil) {
             if intoReadingDesk { pdfView?.clearSelection() }
             let message = store.readingExcerptFeedback?.message ?? "摘录已加入阅读记录"
             status = appendTo == nil ? message : message + "，可继续拖选；按 Esc 完成"

@@ -1,7 +1,21 @@
 import SwiftUI
 import PDFKit
 
-struct PDFCanvas: NSViewRepresentable {
+struct PDFCanvas: View {
+    @ObservedObject var workspace: Workspace
+
+    var body: some View {
+        NativePDFCanvas(workspace: workspace)
+            .overlay(alignment: .topLeading) {
+                if let store = workspace.store {
+                    PDFExcerptSelectionPrompt(store: store, workspace: workspace)
+                        .padding(12)
+                }
+            }
+    }
+}
+
+private struct NativePDFCanvas: NSViewRepresentable {
     @ObservedObject var workspace: Workspace
     func makeNSView(context: Context) -> ReadingPDFContainer {
         let view = DrawingPDFView(); view.workspace = workspace; view.autoScales = true; view.displayMode = .singlePageContinuous; view.displayDirection = .vertical; view.backgroundColor = .windowBackgroundColor

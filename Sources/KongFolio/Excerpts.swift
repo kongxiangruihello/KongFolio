@@ -171,7 +171,7 @@ extension Workspace {
             let record = ReadingRecord(kind:.image,citations:[readingCitation(page:index == NSNotFound ? selection : index,rects:[pageRect])])
             store.journal.add(record,image:imageData)
             if let saved = store.journal.record(record.id) {
-                store.revealCapturedExcerpt(saved,message:"已保存图片摘录")
+                store.revealCapturedExcerpt(saved,message:"已保存图片摘录",offeringMoreFrom:ocrMode == nil ? id : nil)
             }
             if let ocrMode { store.readingImageOCRRequest = ReadingImageOCRRequest(recordID:record.id,mode:ocrMode) }
             if keepsReadingRegionCapture {
@@ -324,6 +324,7 @@ extension WorkspaceStore {
             return
         }
         guard workspace.canQuickPDFExcerpt, let record = appendablePDFExcerpt(id) else { return }
+        if readingExcerptFeedback?.recordID == id { readingExcerptFeedback?.selectionWorkspaceID = nil }
         if record.kind == .image {
             startReadingRegionCapture(from: workspace, continuous: true, appendTo: id)
         } else {
