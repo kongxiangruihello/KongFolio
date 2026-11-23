@@ -88,14 +88,16 @@ struct AnchoredExcerptTools: View {
     }
 
     private func button(_ title: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        let tone = AppIcon.color(for: symbol)
+        return Button(action: action) {
             Label(title, appIcon: symbol)
                 .font(.system(size: 13, weight: .medium))
                 .frame(width: Self.buttonWidth, height: 36)
-                .background(selected ? Color.primary.opacity(0.11) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .background(selected ? tone.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 8))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .environment(\.toolbarIconTone, selected ? tone : PDFToolbarPalette.graphite(colorScheme))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 }
@@ -127,14 +129,16 @@ private struct QuickAnnotationTools: View {
     }
 
     private func button(_ title: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        let tone = AppIcon.color(for: symbol)
+        return Button(action: action) {
             AppIcon(symbol)
                 .font(.system(size: 20, weight: .medium))
                 .frame(width: Self.buttonWidth, height: 36)
-                .background(selected ? Color.primary.opacity(0.11) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .background(selected ? tone.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 8))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .environment(\.toolbarIconTone, selected ? tone : PDFToolbarPalette.graphite(colorScheme))
         .help(title)
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])

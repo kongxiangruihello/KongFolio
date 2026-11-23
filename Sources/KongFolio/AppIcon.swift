@@ -21,8 +21,6 @@ enum PDFToolbarPalette {
                 green: inDarkMode ? 0.84 : 0.25,
                 blue: inDarkMode ? 0.87 : 0.29, alpha: 1)
     }
-
-    static let annotationHighlight = Color(red: 0.32, green: 0.28, blue: 0.88)
 }
 
 /// Applies the same color to a feature wherever its symbol appears.
@@ -51,7 +49,7 @@ struct AppIcon: View {
 
     static let onAccent = Color(red: 0.76, green: 0.93, blue: 1)
 
-    private static func color(for symbol: String) -> Color {
+    static func color(for symbol: String) -> Color {
         switch symbol {
         case "text.viewfinder", "doc.text.magnifyingglass", "plus.magnifyingglass", "minus.magnifyingglass":
             return Color(nsColor: .systemTeal)

@@ -3,6 +3,7 @@ import PDFKit
 
 struct FunctionToolbar: View {
     @ObservedObject var store: WorkspaceStore
+    var leftNavigationVisible: Bool
     @Environment(\.colorScheme) private var colorScheme
     @State private var issueInfo: ReaderShelfIssue?
     @AppStorage(ReaderToolbarProfile.key) private var profileData = Data()
@@ -125,7 +126,7 @@ struct FunctionToolbar: View {
                         .accessibilityLabel("下一份待读文献")
                     }.frame(width:40)
                 }
-                ToolbarControlSurface {
+                ToolbarControlSurface(activeTone: overflow.first(where: isSelected).map { AppIcon.color(for: $0.symbol) }) {
                     Menu {
                         moreActions(overflow)
                     } label: {
@@ -173,8 +174,7 @@ struct FunctionToolbar: View {
 
     private func draggableTool(_ action: FileToolbarAction) -> some View {
         let selected = isSelected(action)
-        let annotationActive = selected && action == .annotate
-        return ToolbarControlSurface(selected: selected, annotationActive: annotationActive) {
+        return ToolbarControlSurface(activeTone: selected ? AppIcon.color(for: action.symbol) : nil) {
             control(action, menu: false)
         }
         .accessibilityAddTraits(selected ? [.isSelected] : [])
@@ -343,16 +343,31 @@ struct FunctionToolbar: View {
     private func isSelected(_ action: FileToolbarAction) -> Bool {
         switch action {
         case .sidebar: return store.rightReadingPanelVisible
-        case .navigation: return showNavigation && !showInspector && workspace?.showsPageThumbnails != true
+        case .navigation: return leftNavigationVisible
         case .pageThumbnails: return store.activeWorkspace?.showsPageThumbnails == true
         case .annotate:
             guard let workspace else { return false }
             return workspace.showAnnotationBar && !workspace.showsPageThumbnails && !workspace.readingLocked
         case .excerpt:
-            guard context == .pdf, let workspace else { return false }
+            guard context == .pdf, let workspace else {
+                return store.showReadingDesk && store.readingDeskSection == .excerpts
+            }
             return workspace.showsPDFExcerptTools || workspace.awaitsPDFExcerptText || workspace.tool == .region
         case .search: return store.rightPDFSearchWorkspace != nil
         case .pdfPages: return store.activeWorkspace?.pageEditing053 == true
+        case .note: return store.showReadingDesk && store.readingDeskSection == .notes
+        case .library: return store.notebookBook != nil || (store.showReadingDesk && store.readingDeskSection == .search)
+        case .tools: return workspace?.showTools == true || workspace?.showCrop == true || workspace?.showCompress == true ||
+            workspace?.showScanWorkshop == true || workspace?.showPageSplit == true ||
+            workspace?.showTableExtraction == true || workspace?.showPDFForms == true
+        case .signature:
+            let placingSignature = workspace?.placingSignature.map { $0.isPageImage != true } ?? false
+            return placingSignature || workspace?.showSignatureImport == true || store.showSignatureManager
+        case .export: return workspace?.showExport == true || workspace?.showWordExport == true || store.exportReview != nil
+        case .books: return store.showReadingHistory
+        case .jobs: return store.showBackgroundJobs
+        case .ocr: return workspace?.showOCRQuality == true || workspace?.showOCRBatchCorrection == true || workspace?.showOCRReview == true
+        case .newFile: return store.showPDFCreation
         default: return false
         }
     }
@@ -395,11 +410,10 @@ struct FunctionToolbar: View {
             store.activeWorkspace?.showsPageThumbnails = false
             store.activeWorkspace?.pageEditing053 = true
         case .navigation:
-            let alreadyOpen = showNavigation && !showInspector && store.activeWorkspace?.showsPageThumbnails != true
             store.activeWorkspace?.showsPageThumbnails = false
             store.activeWorkspace?.pageEditing053 = false
             showInspector = false
-            showNavigation = !alreadyOpen
+            showNavigation = !leftNavigationVisible
         case .pageThumbnails:
             guard let active = store.activeWorkspace else { return }
             if !active.showsPageThumbnails {
@@ -431,8 +445,7 @@ struct FunctionToolbar: View {
 }
 
 private struct ToolbarControlSurface<Content: View>: View {
-    var selected = false
-    var annotationActive = false
+    var activeTone: Color? = nil
     @Environment(\.toolbarIconTone) private var toolbarIconTone
     @ViewBuilder var content: () -> Content
     @State private var hovered = false
@@ -440,11 +453,11 @@ private struct ToolbarControlSurface<Content: View>: View {
     var body: some View {
         content()
             .frame(width:34,height:32)
-            .foregroundStyle(annotationActive ? Color.white : toolbarIconTone ?? Color(nsColor: .secondaryLabelColor))
-            .environment(\.toolbarIconTone, annotationActive ? Color.white : toolbarIconTone)
+            .foregroundStyle(activeTone ?? toolbarIconTone ?? Color(nsColor: .secondaryLabelColor))
+            .environment(\.toolbarIconTone, activeTone ?? toolbarIconTone)
             .background {
                 RoundedRectangle(cornerRadius: 7)
-                    .fill(annotationActive ? PDFToolbarPalette.annotationHighlight : Color.primary.opacity(selected ? 0.11 : hovered ? 0.07 : 0))
+                    .fill(activeTone?.opacity(0.15) ?? Color.primary.opacity(hovered ? 0.07 : 0))
             }
             .onHover { hovered = $0 }
     }

@@ -1,6 +1,24 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct SidePanelCloseButton: View {
+    let title: String
+    let close: () -> Void
+
+    var body: some View {
+        Button(action: close) {
+            AppIcon("xmark", tone: .secondary)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .fixedSize()
+        .help(title)
+        .accessibilityLabel(title)
+    }
+}
+
 struct LeftPanelActions: View {
     @ObservedObject var store: WorkspaceStore
     @AppStorage(LayoutKeys.inspector) private var inspector = true
@@ -72,31 +90,44 @@ struct RightReadingPanelLayout<Content: View>: View {
         }
     }
 
+    private var panelControls: some View {
+        HStack(spacing:6) {
+            panelTab("搜索",selected:!showsPageRecords && store.rightPDFSearchWorkspace != nil) { showsPageRecords = false;store.openPDFSearch() }
+                .disabled(!store.canSearchPDF)
+            panelTab("摘录",selected:!showsPageRecords && isSelected(.excerpts)) { showsPageRecords = false;store.showReadingPanel(.excerpts) }
+            panelTab("笔记",selected:!showsPageRecords && isSelected(.notes)) { showsPageRecords = false;store.showReadingPanel(.notes) }
+            panelTab("全部资料",selected:!showsPageRecords && isSelected(.search)) { showsPageRecords = false;store.showReadingPanel(.search) }
+            Button { showsPageRecords.toggle(); reviewing = false } label: {
+                AppIcon("doc.text.magnifyingglass").foregroundStyle(showsPageRecords ? Color.accentColor : Color.secondary)
+            }.buttonStyle(.borderless).help("查看本页已有记录").accessibilityLabel("查看本页已有记录")
+                .disabled(store.commandWorkspace?.readingJournalPath == nil || !store.canSearchPDF)
+            if !showsPageRecords && store.showReadingDesk && store.readingDeskSection == .notes {
+                Button { store.newReadingNote() } label: { AppIcon("plus") }
+                    .buttonStyle(.borderless).help("新建笔记").accessibilityLabel("新建笔记")
+                    .disabled(store.journal.unreadable)
+            }
+            if store.showReadingDesk {
+                Button { store.openReadingDesk(store.readingDeskSection,window:true) } label: { AppIcon("arrow.up.left.and.arrow.down.right") }
+                    .buttonStyle(.borderless).help("在独立窗口打开阅读资料").accessibilityLabel("在独立窗口打开阅读资料")
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
     private var panel: some View {
         VStack(spacing:0) {
-            HStack(spacing:6) {
-                panelTab("搜索",selected:!showsPageRecords && store.rightPDFSearchWorkspace != nil) { showsPageRecords = false;store.openPDFSearch() }
-                    .disabled(!store.canSearchPDF)
-                panelTab("摘录",selected:!showsPageRecords && isSelected(.excerpts)) { showsPageRecords = false;store.showReadingPanel(.excerpts) }
-                panelTab("笔记",selected:!showsPageRecords && isSelected(.notes)) { showsPageRecords = false;store.showReadingPanel(.notes) }
-                panelTab("全部资料",selected:!showsPageRecords && isSelected(.search)) { showsPageRecords = false;store.showReadingPanel(.search) }
-                Button { showsPageRecords.toggle(); reviewing = false } label: {
-                    AppIcon("doc.text.magnifyingglass").foregroundStyle(showsPageRecords ? Color.accentColor : Color.secondary)
-                }.buttonStyle(.borderless).help("查看本页已有记录").accessibilityLabel("查看本页已有记录")
-                    .disabled(store.commandWorkspace?.readingJournalPath == nil || !store.canSearchPDF)
-                Spacer(minLength:0)
-                if !showsPageRecords && store.showReadingDesk && store.readingDeskSection == .notes {
-                    Button { store.newReadingNote() } label: { AppIcon("plus") }
-                        .buttonStyle(.borderless).help("新建笔记").accessibilityLabel("新建笔记")
-                        .disabled(store.journal.unreadable)
+            HStack(spacing: 6) {
+                ViewThatFits(in: .horizontal) {
+                    panelControls
+                    ScrollView(.horizontal, showsIndicators: false) { panelControls }
                 }
-                if store.showReadingDesk {
-                    Button { store.openReadingDesk(store.readingDeskSection,window:true) } label: { AppIcon("arrow.up.left.and.arrow.down.right") }
-                        .buttonStyle(.borderless).help("在独立窗口打开阅读资料").accessibilityLabel("在独立窗口打开阅读资料")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                SidePanelCloseButton(title: "关闭右侧面板") {
+                    showsPageRecords = false
+                    reviewing = false
+                    store.closeRightReadingPanel()
                 }
-                Button { store.closeRightReadingPanel() } label: { AppIcon("xmark") }
-                    .buttonStyle(.borderless).help("隐藏右侧面板").accessibilityLabel("隐藏右侧面板")
-            }.font(.system(size:12)).padding(.horizontal,8).padding(.vertical,9).background(.bar)
+            }.font(.system(size:12)).padding(.horizontal,8).padding(.vertical,6).background(.bar)
             Divider()
             if showsPageRecords,let workspace = store.commandWorkspace,workspace.count > 0 {
                 ReadingPageRecordsPane(store:store,workspace:workspace,journal:store.journal) { showsPageRecords = false }.id(workspace.id)
