@@ -32,9 +32,13 @@ private struct NativePDFCanvas: NSViewRepresentable {
             if let previous = view.workspace, previous.pdfView === view { previous.pdfView = nil }
             context.coordinator.resetPosition()
             view.clearSourceHighlight()
+            view.cancelExcerptSelections()
         }
         workspace.pdfView = view
-        if workspace.tool != .select { view.hideSelectionToolbar() }
+        if workspace.tool != .select || workspace.showsPageThumbnails {
+            view.cancelExcerptSelections()
+            view.hideSelectionToolbar()
+        }
         view.workspace = workspace
         let replaced = view.document !== workspace.document
         let display: PDFDisplayMode
@@ -46,6 +50,7 @@ private struct NativePDFCanvas: NSViewRepresentable {
         let layoutChanged = view.displayMode != display
         if replaced {
             view.clearSourceHighlight()
+            view.cancelExcerptSelections()
             view.dismissCommentEditor()
             view.document = workspace.document
             workspace.loadReadingRulerIfNeeded()
@@ -161,7 +166,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
 
     func showSourceHighlight(_ rects:[CGRect],on page:PDFPage,keep:Bool) {
         clearSourceHighlight()
-        let overlay = ReadingSourceOverlay(pdfView:self,page:page,rects:rects,keep:keep)
+        let overlay = ReadingSourceOverlay(pdfView:self,page:page,rects:rects,color:keep ? .systemYellow : .systemOrange)
         sourceHighlight = overlay
         addSubview(overlay,positioned:.above,relativeTo:nil)
         if !keep {
@@ -172,7 +177,11 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         }
     }
 
-    func refreshSourceHighlight() { sourceHighlight?.needsDisplay = true }
+    func refreshSourceHighlight() {
+        sourceHighlight?.needsDisplay = true
+        excerptSelectionOverlays.forEach { $0.needsDisplay = true }
+        if let anchor = excerptSelections.last, let selectionBar { positionSelectionToolbar(selectionBar, near: anchor) }
+    }
 
     func clearSourceHighlight() {
         sourceHighlightExpiry?.cancel()
@@ -218,7 +227,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
 
     /// SwiftUI may cache the native view after a tab disappears. Drop its PDF and overlays explicitly.
     func releaseReadingResources() {
-        endSignaturePlacement(); hideSelectionToolbar(); clearSourceHighlight(); dismissCommentEditor()
+        endSignaturePlacement(); cancelExcerptSelections(); hideSelectionToolbar(); clearSourceHighlight(); dismissCommentEditor()
         points.removeAll(); drawingPage = nil; provisional = nil; moving = nil
         pendingMove.removeAll(); contextSignature = nil; regionStart = nil; regionPage = nil; pressedComment = nil
         excerptDragStart = nil; excerptDragSource = nil
@@ -288,6 +297,11 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, !excerptSelections.isEmpty {
+            cancelExcerptSelections()
+            workspace?.status = "已取消增加选区"
+            return
+        }
         if event.keyCode == 53, let workspace, workspace.tool == .region {
             workspace.endReadingRegionCapture()
             return
@@ -382,20 +396,91 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
 
     // MARK: Floating toolbar over a text selection
     private var selectionBar: NSView?
+    private var excerptSelections: [PDFSelection] = []
+    private var excerptSelectionOverlays: [ReadingSourceOverlay] = []
 
     func hideSelectionToolbar() { selectionBar?.removeFromSuperview(); selectionBar = nil }
+
+    func beginAddingExcerptSelection(_ selection: PDFSelection) {
+        guard let workspace, workspace.canQuickPDFExcerpt, workspace.store != nil else { return }
+        if workspace.store?.readingExcerptFeedback?.selectionWorkspaceID == workspace.id {
+            workspace.store?.readingExcerptFeedback?.selectionWorkspaceID = nil
+        }
+        retainExcerptSelection(selection)
+        window?.makeFirstResponder(self)
+        workspace.status = "可继续拖选其他文字，点「摘录」保存全部选区"
+        showExcerptSelectionsToolbar()
+    }
+
+    private func retainExcerptSelection(_ selection: PDFSelection) {
+        guard let document, !selection.pages.isEmpty,
+              selection.pages.allSatisfy({ $0.document === document }),
+              let text = selection.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let repeated = excerptSelections.contains { previous in
+            previous.string == text && previous.pages == selection.pages &&
+            selection.pages.allSatisfy { previous.bounds(for: $0) == selection.bounds(for: $0) }
+        }
+        if !repeated, let retained = selection.copy() as? PDFSelection {
+            excerptSelections.append(retained)
+            let lines = retained.selectionsByLine()
+            for page in retained.pages {
+                let rects = lines.filter { $0.pages.contains(page) }.map { $0.bounds(for: page) }
+                let overlay = ReadingSourceOverlay(pdfView:self,page:page,rects:rects.isEmpty ? [retained.bounds(for:page)] : rects,color:.systemBlue)
+                excerptSelectionOverlays.append(overlay)
+                addSubview(overlay, positioned: .above, relativeTo: nil)
+            }
+        }
+        clearSelection()
+    }
+
+    func cancelExcerptSelections() {
+        guard !excerptSelections.isEmpty else { return }
+        excerptSelections.removeAll()
+        excerptSelectionOverlays.forEach { $0.removeFromSuperview() }
+        excerptSelectionOverlays.removeAll()
+        hideSelectionToolbar()
+        clearSelection()
+    }
+
+    func saveExcerptSelections() {
+        guard let workspace, workspace.canQuickPDFExcerpt, let store = workspace.store,
+              !excerptSelections.isEmpty else { return }
+        guard !store.journal.unreadable else { workspace.error = store.journal.error; return }
+        let sections = excerptSelections.compactMap { workspace.readingExcerpt(from: $0) }
+        guard sections.count == excerptSelections.count, var record = sections.first else {
+            workspace.status = "无法读取选区，请重新选择文字"
+            return
+        }
+        for section in sections.dropFirst() { record.appendExcerpt(section) }
+        guard store.saveReadingExcerpt(record, offeringMoreFrom: workspace.id) else { return }
+        workspace.preparePDFExcerpt()
+        workspace.status = store.readingExcerptFeedback?.message ?? "摘录已保存"
+    }
+
+    private func showExcerptSelectionsToolbar() {
+        guard let anchor = excerptSelections.last else { return }
+        showSelectionToolbar(PDFSelectionActions(
+            editable: false, compact: bounds.width < 340, excerpt: { [weak self] in self?.saveExcerptSelections() },
+            selectionCount: excerptSelections.count, cancelSelection: { [weak self] in self?.cancelExcerptSelections() },
+            note: {}, copy: {}, mark: { _, _, _ in }
+        ), near: anchor)
+    }
 
     /// Handles the final text selection once PDFKit has processed the mouse release.
     func finishTextSelection() {
         hideSelectionToolbar()
+        if !excerptSelections.isEmpty {
+            if let selection = currentSelection { retainExcerptSelection(selection) }
+            showExcerptSelectionsToolbar()
+            return
+        }
         guard commentEditor == nil, let workspace, workspace.tool == .select, let selected = currentSelection,
               !(selected.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let page = selected.pages.last else { return }
+              !selected.pages.isEmpty else { return }
         if workspace.awaitsPDFExcerptText {
             workspace.savePDFTextExcerpt(selected)
             return
         }
-        let area = convert(selected.bounds(for: page), from: page)
         let match = workspace.readingExcerpt(from:selected,trackVisual:false).flatMap { workspace.store?.existingReadingExcerpt($0) }
         let copySelection: (ReadingExcerptCopyFormat) -> Void = { [weak self, weak workspace] format in
             guard let workspace, var capture = workspace.readingExcerpt(from:selected,trackVisual:false) else { return }
@@ -407,6 +492,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         let toolbar = PDFSelectionActions(
             editable: !workspace.readingLocked, compact: bounds.width < 340,
             excerpt: { [weak workspace] in workspace?.savePDFTextExcerpt(selected) },
+            addSelection: workspace.store != nil ? { [weak self] in self?.beginAddingExcerptSelection(selected) } : nil,
             note: { [weak self, weak workspace] in
                 if let workspace, let record = workspace.readingExcerpt(from: selected) {
                     workspace.store?.startNoteFromExcerpt(record)
@@ -437,15 +523,30 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
                 self?.hideSelectionToolbar()
             }
         )
+        showSelectionToolbar(toolbar, near: selected)
+    }
+
+    private func showSelectionToolbar(_ toolbar: PDFSelectionActions, near selection: PDFSelection) {
+        hideSelectionToolbar()
         let host = NSHostingView(rootView: toolbar)
         host.frame.size = host.fittingSize
+        positionSelectionToolbar(host, near: selection)
+        addSubview(host)
+        selectionBar = host
+    }
+
+    private func positionSelectionToolbar(_ host: NSView, near selection: PDFSelection) {
+        guard let page = selection.pages.last else { return }
+        let area = convert(selection.bounds(for: page), from: page)
         var origin = CGPoint(x: area.midX - host.frame.width / 2, y: area.maxY + 5)
-        if origin.y + host.frame.height > bounds.maxY { origin.y = area.minY - host.frame.height - 5 }
+        if !area.intersects(bounds) && !excerptSelections.isEmpty {
+            origin = CGPoint(x: bounds.midX - host.frame.width / 2, y: bounds.maxY - host.frame.height - 6)
+        } else if origin.y + host.frame.height > bounds.maxY {
+            origin.y = area.minY - host.frame.height - 5
+        }
         origin.x = min(max(bounds.minX, origin.x), max(bounds.minX, bounds.maxX - host.frame.width))
         origin.y = min(max(bounds.minY, origin.y), max(bounds.minY, bounds.maxY - host.frame.height))
         host.frame.origin = origin
-        addSubview(host)
-        selectionBar = host
     }
 
     func beginCommentOnSelection(_ specific: PDFSelection? = nil, highlight: Bool = false) {
@@ -912,11 +1013,11 @@ private final class ReadingSourceOverlay: NSView {
     let rects: [CGRect]
     let color: NSColor
 
-    init(pdfView:PDFView,page:PDFPage,rects:[CGRect],keep:Bool) {
+    init(pdfView:PDFView,page:PDFPage,rects:[CGRect],color:NSColor) {
         self.pdfView = pdfView
         self.page = page
         self.rects = rects
-        color = keep ? .systemYellow : .systemOrange
+        self.color = color
         super.init(frame:pdfView.bounds)
         autoresizingMask = [.width,.height]
     }

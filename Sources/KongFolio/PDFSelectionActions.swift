@@ -4,6 +4,9 @@ struct PDFSelectionActions: View {
     let editable: Bool
     let compact: Bool
     let excerpt: () -> Void
+    var addSelection: (() -> Void)? = nil
+    var selectionCount: Int? = nil
+    var cancelSelection: (() -> Void)? = nil
     let note: () -> Void
     var insertInNote: (() -> Void)? = nil
     var noteTargetTitle: String? = nil
@@ -16,6 +19,29 @@ struct PDFSelectionActions: View {
     @State private var showMarkup = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let selectionCount, let cancelSelection {
+                HStack(spacing: 4) {
+                    action("摘录（\(selectionCount) 段）", icon: "text.quote", help: "将所有选区保存为同一条摘录", primary: true, perform: excerpt)
+                    action("取消", icon: "xmark", help: "取消增加选区（Esc）", perform: cancelSelection)
+                }
+            } else {
+                standardActions
+                if let addSelection {
+                    action("增加选区", icon: "plus", help: "保留当前选区，再用鼠标选择其他文字", showTitle: true, perform: addSelection)
+                }
+            }
+        }
+        .font(.system(size: 13, weight: .semibold))
+        .padding(6)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 11))
+        .overlay { RoundedRectangle(cornerRadius: 11).strokeBorder(.primary.opacity(0.17)).allowsHitTesting(false) }
+        .shadow(color: .black.opacity(0.26), radius: 5, y: 2)
+        .padding(compact ? 5 : 7)
+        .fixedSize()
+    }
+
+    private var standardActions: some View {
         HStack(spacing: 4) {
             if let openExisting {
                 action("打开已有摘录",icon:"text.quote",help:"此处已经摘录，打开原有记录",primary:true,perform:openExisting)
@@ -53,13 +79,6 @@ struct PDFSelectionActions: View {
                 .popover(isPresented:$showMarkup,arrowEdge:.bottom) { markupOptions }
             }
         }
-        .font(.system(size: 13, weight: .semibold))
-        .padding(6)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 11))
-        .overlay { RoundedRectangle(cornerRadius: 11).strokeBorder(.primary.opacity(0.17)) }
-        .shadow(color: .black.opacity(0.26), radius: 5, y: 2)
-        .padding(compact ? 5 : 7)
-        .fixedSize()
     }
 
     private var markupOptions: some View {
@@ -94,10 +113,10 @@ struct PDFSelectionActions: View {
         mark(style,color,annotate)
     }
 
-    private func action(_ title: String, icon: String, help: String, primary: Bool = false,
+    private func action(_ title: String, icon: String, help: String, primary: Bool = false, showTitle: Bool = false,
                         perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
-            caption(title, icon: icon, showText: primary || !compact, tone: primary ? AppIcon.onAccent : nil)
+            caption(title, icon: icon, showText: showTitle || primary || !compact, tone: primary ? AppIcon.onAccent : nil)
         }
         .buttonStyle(PDFSelectionActionStyle(primary: primary))
         .accessibilityLabel(title)
