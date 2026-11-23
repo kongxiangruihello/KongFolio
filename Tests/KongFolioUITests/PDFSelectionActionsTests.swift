@@ -135,11 +135,57 @@ final class PDFSelectionActionsTests: XCTestCase {
         XCTAssertTrue(page.annotations.isEmpty)
     }
 
+    @MainActor func testAdditionalTextSelectionsSaveTogetherAcrossPages() throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = WorkspaceStore(storage: root)
+        store.bootstrap()
+        let workspace = try XCTUnwrap(store.activeWorkspace)
+        let firstText = "First selected paragraph"
+        let secondText = "Second selected paragraph"
+        workspace.document = try TextImport.render(firstText, markdown: false)
+        let secondDocument = try TextImport.render(secondText, markdown: false)
+        let secondPage = try XCTUnwrap(secondDocument.page(at: 0)?.copy() as? PDFPage)
+        workspace.document.insert(secondPage, at: 1)
+        let view = DrawingPDFView(frame: CGRect(x: 0, y: 0, width: 600, height: 500))
+        view.workspace = workspace
+        workspace.pdfView = view
+        view.document = workspace.document
+        let first = try XCTUnwrap(workspace.document.findString(firstText, withOptions: []).first)
+        let second = try XCTUnwrap(workspace.document.findString(secondText, withOptions: []).first)
+
+        view.beginAddingExcerptSelection(first)
+        view.setCurrentSelection(second, animate: false)
+        view.finishTextSelection()
+        XCTAssertTrue(store.journal.state.records.isEmpty)
+        view.cancelExcerptSelections()
+        view.saveExcerptSelections()
+        XCTAssertTrue(store.journal.state.records.isEmpty)
+
+        view.beginAddingExcerptSelection(first)
+        view.setCurrentSelection(second, animate: false)
+        view.finishTextSelection()
+        view.setCurrentSelection(second, animate: false)
+        view.finishTextSelection()
+        view.saveExcerptSelections()
+        XCTAssertEqual(store.journal.state.records.count, 1)
+        let record = try XCTUnwrap(store.journal.record(store.readingRecordID))
+        XCTAssertEqual(record.textExcerptSegments.map(\.text), [firstText, secondText])
+        XCTAssertEqual(record.textExcerptSegments.map { $0.sources(in: record).map(\.source.page) }, [[0], [1]])
+        XCTAssertTrue(first.pages.allSatisfy { $0.annotations.isEmpty })
+        XCTAssertTrue(second.pages.allSatisfy { $0.annotations.isEmpty })
+        XCTAssertEqual(store.readingExcerptFeedback?.selectionWorkspaceID, workspace.id)
+        XCTAssertTrue(store.undoCapturedExcerpt(record.id))
+        XCTAssertTrue(store.journal.state.records.isEmpty)
+    }
+
     @MainActor func testSelectionActionsFitRegularAndNarrowPDFPanes() throws {
         _ = NSApplication.shared
         for compact in [false,true] {
             for editable in [false,true] {
-                let actions = PDFSelectionActions(editable:editable,compact:compact,excerpt:{},note:{},copy:{},mark:{_,_,_ in})
+                let actions = PDFSelectionActions(editable:editable,compact:compact,excerpt:{},addSelection:{},note:{},copy:{},mark:{_,_,_ in})
                 let host = NSHostingView(rootView:actions)
                 XCTAssertGreaterThan(host.fittingSize.height,40)
                 XCTAssertLessThanOrEqual(host.fittingSize.width,compact ? 230 : 340)

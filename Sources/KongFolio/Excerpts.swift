@@ -102,7 +102,10 @@ extension Workspace {
         showsPageThumbnails = false
         if showAnnotationBar { showAnnotationBar = false }
         selectTool(.select)
-        (pdfView as? DrawingPDFView)?.hideSelectionToolbar()
+        if let view = pdfView as? DrawingPDFView {
+            view.cancelExcerptSelections()
+            view.hideSelectionToolbar()
+        }
     }
 
     /// Sends the selected text to the workspace as a card that remembers its page and position.
