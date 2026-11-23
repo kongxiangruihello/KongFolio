@@ -75,6 +75,7 @@ import UniformTypeIdentifiers
     @Published var readingLocked = false
     var readingRegionOCRMode: ReadingImageOCRMode?
     var keepsReadingRegionCapture = false
+    var previewsPDFImageExcerpt = false
     @Published var pdfExcerptAppendTarget: UUID?
     @Published var showsPDFExcerptTools = false
     @Published var awaitsPDFExcerptText = false
@@ -88,7 +89,11 @@ import UniformTypeIdentifiers
                 pdfExcerptAppendTarget = nil
                 readingRegionOCRMode = nil
                 keepsReadingRegionCapture = false
-                (pdfView as? DrawingPDFView)?.resetExcerptRegion()
+                previewsPDFImageExcerpt = false
+                if let view = pdfView as? DrawingPDFView {
+                    view.resetExcerptRegion()
+                    view.cancelImageExcerptSelections()
+                }
             }
             if tool != .pen, showPenSettings { showPenSettings = false }
         }

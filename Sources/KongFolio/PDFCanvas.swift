@@ -33,10 +33,12 @@ private struct NativePDFCanvas: NSViewRepresentable {
             context.coordinator.resetPosition()
             view.clearSourceHighlight()
             view.cancelExcerptSelections()
+            view.cancelImageExcerptSelections()
         }
         workspace.pdfView = view
-        if workspace.tool != .select || workspace.showsPageThumbnails {
+        if workspace.showsPageThumbnails || (workspace.tool != .select && !workspace.previewsPDFImageExcerpt) {
             view.cancelExcerptSelections()
+            view.cancelImageExcerptSelections()
             view.hideSelectionToolbar()
         }
         view.workspace = workspace
@@ -51,6 +53,7 @@ private struct NativePDFCanvas: NSViewRepresentable {
         if replaced {
             view.clearSourceHighlight()
             view.cancelExcerptSelections()
+            view.cancelImageExcerptSelections()
             view.dismissCommentEditor()
             view.document = workspace.document
             workspace.loadReadingRulerIfNeeded()
@@ -180,7 +183,11 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     func refreshSourceHighlight() {
         sourceHighlight?.needsDisplay = true
         excerptSelectionOverlays.forEach { $0.needsDisplay = true }
+        imageExcerptOverlays.forEach { $0.needsDisplay = true }
         if let anchor = excerptSelections.last, let selectionBar { positionSelectionToolbar(selectionBar, near: anchor) }
+        if let region = imageExcerptRegions.last, let selectionBar {
+            positionSelectionToolbar(selectionBar, near: convert(region.rect, from: region.page), persistent: true)
+        }
     }
 
     func clearSourceHighlight() {
@@ -227,7 +234,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
 
     /// SwiftUI may cache the native view after a tab disappears. Drop its PDF and overlays explicitly.
     func releaseReadingResources() {
-        endSignaturePlacement(); cancelExcerptSelections(); hideSelectionToolbar(); clearSourceHighlight(); dismissCommentEditor()
+        endSignaturePlacement(); cancelExcerptSelections(); cancelImageExcerptSelections(); hideSelectionToolbar(); clearSourceHighlight(); dismissCommentEditor()
         points.removeAll(); drawingPage = nil; provisional = nil; moving = nil
         pendingMove.removeAll(); contextSignature = nil; regionStart = nil; regionPage = nil; pressedComment = nil
         excerptDragStart = nil; excerptDragSource = nil
@@ -398,6 +405,13 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     private var selectionBar: NSView?
     private var excerptSelections: [PDFSelection] = []
     private var excerptSelectionOverlays: [ReadingSourceOverlay] = []
+    private struct ImageExcerptRegion {
+        let page: PDFPage
+        let rect: CGRect
+    }
+    private var imageExcerptRegions: [ImageExcerptRegion] = []
+    private var imageExcerptOverlays: [ReadingSourceOverlay] = []
+    private var addingImageExcerptSelections = false
 
     func hideSelectionToolbar() { selectionBar?.removeFromSuperview(); selectionBar = nil }
 
@@ -406,6 +420,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         if workspace.store?.readingExcerptFeedback?.selectionWorkspaceID == workspace.id {
             workspace.store?.readingExcerptFeedback?.selectionWorkspaceID = nil
         }
+        workspace.awaitsPDFExcerptText = false
         retainExcerptSelection(selection)
         window?.makeFirstResponder(self)
         workspace.status = "可继续拖选其他文字，点「摘录」保存全部选区"
@@ -469,6 +484,10 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     /// Handles the final text selection once PDFKit has processed the mouse release.
     func finishTextSelection() {
         hideSelectionToolbar()
+        if workspace?.previewsPDFImageExcerpt == true {
+            showImageExcerptSelectionsToolbar()
+            return
+        }
         if !excerptSelections.isEmpty {
             if let selection = currentSelection { retainExcerptSelection(selection) }
             showExcerptSelectionsToolbar()
@@ -477,7 +496,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         guard commentEditor == nil, let workspace, workspace.tool == .select, let selected = currentSelection,
               !(selected.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !selected.pages.isEmpty else { return }
-        if workspace.awaitsPDFExcerptText {
+        if workspace.awaitsPDFExcerptText && workspace.pdfExcerptAppendTarget != nil {
             workspace.savePDFTextExcerpt(selected)
             return
         }
@@ -527,19 +546,27 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     private func showSelectionToolbar(_ toolbar: PDFSelectionActions, near selection: PDFSelection) {
+        guard let page = selection.pages.last else { return }
+        showSelectionToolbar(toolbar, near: convert(selection.bounds(for: page), from: page), persistent: !excerptSelections.isEmpty)
+    }
+
+    private func showSelectionToolbar(_ toolbar: PDFSelectionActions, near area: CGRect, persistent: Bool) {
         hideSelectionToolbar()
         let host = NSHostingView(rootView: toolbar)
         host.frame.size = host.fittingSize
-        positionSelectionToolbar(host, near: selection)
+        positionSelectionToolbar(host, near: area, persistent: persistent)
         addSubview(host)
         selectionBar = host
     }
 
     private func positionSelectionToolbar(_ host: NSView, near selection: PDFSelection) {
         guard let page = selection.pages.last else { return }
-        let area = convert(selection.bounds(for: page), from: page)
+        positionSelectionToolbar(host, near: convert(selection.bounds(for: page), from: page), persistent: true)
+    }
+
+    private func positionSelectionToolbar(_ host: NSView, near area: CGRect, persistent: Bool) {
         var origin = CGPoint(x: area.midX - host.frame.width / 2, y: area.maxY + 5)
-        if !area.intersects(bounds) && !excerptSelections.isEmpty {
+        if !area.intersects(bounds) && persistent {
             origin = CGPoint(x: bounds.midX - host.frame.width / 2, y: bounds.maxY - host.frame.height - 6)
         } else if origin.y + host.frame.height > bounds.maxY {
             origin.y = area.minY - host.frame.height - 5
@@ -617,6 +644,10 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         guard let workspace, document === page.document, rect.width > 8, rect.height > 8 else { return }
         let pageRect = convert(rect, to: page).intersection(page.bounds(for: .cropBox))
         guard !pageRect.isNull, !pageRect.isEmpty else { return }
+        if workspace.previewsPDFImageExcerpt {
+            retainImageExcerptSelection(pageRect, on: page)
+            return
+        }
         do {
             let png = try PDFImageExcerpt.png(for: pageRect, on: page)
             let size = page.rotation % 180 == 0 ? pageRect.size : CGSize(width: pageRect.height, height: pageRect.width)
@@ -625,6 +656,73 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         } catch {
             workspace.error = error.localizedDescription
         }
+    }
+
+    private func retainImageExcerptSelection(_ rect: CGRect, on page: PDFPage) {
+        guard workspace?.previewsPDFImageExcerpt == true, page.document === document else { return }
+        if !addingImageExcerptSelections { cancelImageExcerptSelections() }
+        guard !imageExcerptRegions.contains(where: { $0.page === page && $0.rect == rect }) else { return }
+        imageExcerptRegions.append(ImageExcerptRegion(page: page, rect: rect))
+        let overlay = ReadingSourceOverlay(pdfView: self, page: page, rects: [rect], color: .systemBlue)
+        imageExcerptOverlays.append(overlay)
+        addSubview(overlay, positioned: .above, relativeTo: nil)
+    }
+
+    func beginAddingImageExcerptSelections() {
+        guard !imageExcerptRegions.isEmpty else { return }
+        addingImageExcerptSelections = true
+        window?.makeFirstResponder(self)
+        workspace?.status = "可继续框选其他区域，点「摘录」保存全部选区"
+        showImageExcerptSelectionsToolbar()
+    }
+
+    func cancelImageExcerptSelections() {
+        guard !imageExcerptRegions.isEmpty else { return }
+        imageExcerptRegions.removeAll()
+        imageExcerptOverlays.forEach { $0.removeFromSuperview() }
+        imageExcerptOverlays.removeAll()
+        addingImageExcerptSelections = false
+        hideSelectionToolbar()
+    }
+
+    func saveImageExcerptSelections() {
+        guard let workspace, workspace.canQuickPDFExcerpt, workspace.previewsPDFImageExcerpt,
+              let store = workspace.store, !imageExcerptRegions.isEmpty else { return }
+        guard !store.journal.unreadable else { workspace.error = store.journal.error; return }
+        do {
+            let captures = try imageExcerptRegions.map { region in
+                let index = workspace.document.index(for: region.page)
+                guard index != NSNotFound else { throw FolioError(message: "图片选区的来源页已不可用") }
+                let png = try PDFImageExcerpt.png(for: region.rect, on: region.page)
+                return (png: png, citation: workspace.readingCitation(page: index, rects: [region.rect]))
+            }
+            var record = ReadingRecord(kind: .image, citations: captures.map(\.citation))
+            if captures.count > 1 {
+                var extras = ReadingRecordExtras053()
+                extras.regions = try captures.dropFirst().map {
+                    ReadingRegion053(asset: try store.journal.stageAsset053($0.png), citation: $0.citation)
+                }
+                record.extras = extras
+            }
+            store.journal.add(record, image: captures[0].png)
+            guard let saved = store.journal.record(record.id) else { return }
+            workspace.endReadingRegionCapture()
+            let message = captures.count == 1 ? "已保存图片摘录" : "已保存 \(captures.count) 张图片摘录"
+            store.revealCapturedExcerpt(saved, message: message, offeringMoreFrom: workspace.id)
+            workspace.status = message
+        } catch { workspace.recordError(error) }
+    }
+
+    private func showImageExcerptSelectionsToolbar() {
+        guard let region = imageExcerptRegions.last else { return }
+        let toolbar = PDFSelectionActions(
+            editable: false, compact: bounds.width < 340, excerpt: { [weak self] in self?.saveImageExcerptSelections() },
+            addSelection: addingImageExcerptSelections ? nil : { [weak self] in self?.beginAddingImageExcerptSelections() },
+            selectionCount: addingImageExcerptSelections ? imageExcerptRegions.count : nil, selectionUnit: "张",
+            cancelSelection: { [weak self] in self?.workspace?.endReadingRegionCapture() },
+            note: {}, copy: {}, mark: { _, _, _ in }
+        )
+        showSelectionToolbar(toolbar, near: convert(region.rect, from: region.page), persistent: true)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {

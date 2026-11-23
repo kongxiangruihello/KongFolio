@@ -6,6 +6,7 @@ struct PDFSelectionActions: View {
     let excerpt: () -> Void
     var addSelection: (() -> Void)? = nil
     var selectionCount: Int? = nil
+    var selectionUnit = "段"
     var cancelSelection: (() -> Void)? = nil
     let note: () -> Void
     var insertInNote: (() -> Void)? = nil
@@ -20,16 +21,15 @@ struct PDFSelectionActions: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let selectionCount, let cancelSelection {
+            if let cancelSelection {
                 HStack(spacing: 4) {
-                    action("摘录（\(selectionCount) 段）", icon: "text.quote", help: "将所有选区保存为同一条摘录", primary: true, perform: excerpt)
+                    let title = selectionCount.map { "摘录（\($0) \(selectionUnit)）" } ?? "摘录"
+                    action(title, icon: "text.quote", help: "将选区保存为摘录", primary: true, perform: excerpt)
                     action("取消", icon: "xmark", help: "取消增加选区（Esc）", perform: cancelSelection)
                 }
-            } else {
-                standardActions
-                if let addSelection {
-                    action("增加选区", icon: "plus", help: "保留当前选区，再用鼠标选择其他文字", showTitle: true, perform: addSelection)
-                }
+            } else { standardActions }
+            if let addSelection {
+                action("增加选区", icon: "plus", help: "保留当前选区，再用鼠标选择其他区域", showTitle: true, perform: addSelection)
             }
         }
         .font(.system(size: 13, weight: .semibold))
