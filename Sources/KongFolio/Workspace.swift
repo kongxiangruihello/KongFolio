@@ -1195,7 +1195,22 @@ import UniformTypeIdentifiers
         }
         readingPoint = nil
         navigationToken = UUID()
-        document = DocumentServices.subset(document, indexes: order)
+        if Set(order).count == order.count {
+            arrangeLivePages(order)
+        } else if let data = cachedPDF, let source = PDFDocument(data: data) {
+            // Move detached pages from a serialized checkpoint so their embedded fonts are kept.
+            var seen: Set<Int> = []
+            let copies = order.enumerated().compactMap { target, index -> (Int, PDFPage)? in
+                guard !seen.insert(index).inserted, let page = source.page(at: index) else { return nil }
+                return (target, page)
+            }
+            for (target, page) in copies {
+                source.removePage(at: source.index(for: page))
+                document.insert(page, at: target)
+            }
+        } else {
+            document = DocumentServices.subset(document, indexes: order)
+        }
         var remappedSignatures: [Int: SignatureEditArchive] = [:]
         for (index, old) in order.enumerated() { remappedSignatures[index] = oldSignatures[old] }
         restoreSignatureEdits(remappedSignatures)
@@ -1205,6 +1220,24 @@ import UniformTypeIdentifiers
         selection = selected.sorted().first ?? 0
         changed()
         status = "页面操作完成，共 \(count) 页"
+    }
+
+    private func arrangeLivePages(_ order: [Int]) {
+        let retained = Set(order)
+        var indices = Array(0..<count)
+        for index in indices.reversed() where !retained.contains(index) {
+            document.removePage(at: index)
+            indices.remove(at: index)
+        }
+        for (target, index) in order.enumerated() {
+            guard let source = indices.firstIndex(of: index), source != target,
+                  let page = document.page(at: source) else { continue }
+            // PDFKit cannot exchange a page with a newly inserted blank page on every macOS version.
+            document.removePage(at: source)
+            document.insert(page, at: target)
+            indices.remove(at: source)
+            indices.insert(index, at: target)
+        }
     }
 
     func move(_ delta: Int) {
