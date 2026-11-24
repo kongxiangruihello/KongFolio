@@ -1198,11 +1198,15 @@ import UniformTypeIdentifiers
         if Set(order).count == order.count {
             arrangeLivePages(order)
         } else if let data = cachedPDF, let source = PDFDocument(data: data) {
-            // Page copies made from an in-memory modified PDF can lose newly embedded fonts.
-            // Use the serialized checkpoint for copies, keeping existing page objects in place.
+            // Move detached pages from a serialized checkpoint so their embedded fonts are kept.
             var seen: Set<Int> = []
-            for (target, index) in order.enumerated() where !seen.insert(index).inserted {
-                if let page = source.page(at: index)?.copy() as? PDFPage { document.insert(page, at: target) }
+            let copies = order.enumerated().compactMap { target, index -> (Int, PDFPage)? in
+                guard !seen.insert(index).inserted, let page = source.page(at: index) else { return nil }
+                return (target, page)
+            }
+            for (target, page) in copies {
+                source.removePage(at: source.index(for: page))
+                document.insert(page, at: target)
             }
         } else {
             document = DocumentServices.subset(document, indexes: order)
@@ -1225,14 +1229,14 @@ import UniformTypeIdentifiers
             document.removePage(at: index)
             indices.remove(at: index)
         }
-        var positions = Dictionary(uniqueKeysWithValues: indices.enumerated().map { ($0.element, $0.offset) })
-        for (target, page) in order.enumerated() {
-            guard let source = positions[page], source != target else { continue }
-            let displaced = indices[target]
-            document.exchangePage(at: source, withPageAt: target)
-            indices.swapAt(source, target)
-            positions[page] = target
-            positions[displaced] = source
+        for (target, index) in order.enumerated() {
+            guard let source = indices.firstIndex(of: index), source != target,
+                  let page = document.page(at: source) else { continue }
+            // PDFKit cannot exchange a page with a newly inserted blank page on every macOS version.
+            document.removePage(at: source)
+            document.insert(page, at: target)
+            indices.remove(at: source)
+            indices.insert(index, at: target)
         }
     }
 
