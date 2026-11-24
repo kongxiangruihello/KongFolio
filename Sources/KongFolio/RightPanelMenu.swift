@@ -75,15 +75,14 @@ struct RightReadingPanelLayout<Content: View>: View {
             let width = geometry.size.width
             let split = store.activeWorkspace?.splitPartner != nil && LayoutMetrics.showsSplit(width:width)
             let docked = width >= (split ? 1080 : 560)
-            let panelVisible = store.rightReadingPanelVisible && store.activeWorkspace?.isMakingPDF != true
             HSplitView {
                 content().frame(minWidth:240,maxWidth:.infinity,maxHeight:.infinity)
-                if panelVisible && docked {
+                if store.rightReadingPanelVisible && docked {
                     panel.frame(minWidth:280,idealWidth:330,maxWidth:400)
                 }
             }
             .overlay(alignment:.trailing) {
-                if panelVisible && !docked {
+                if store.rightReadingPanelVisible && !docked {
                     panel.frame(width:min(370,max(260,width-44)))
                         .shadow(color:.black.opacity(0.18),radius:8,x:-3)
                 }
