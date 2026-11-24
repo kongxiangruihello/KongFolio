@@ -216,48 +216,71 @@ extension WorkspaceStore {
 }
 
 extension Workspace {
-    /// Only an unchanged paper created here may bypass saving. External documents never qualify.
+    /// Protect external files and pages containing text, images or marks, while letting empty drafts close.
     var canDiscardEmptyCreation: Bool {
         guard sourceURL == nil, projectURL == nil, !saving, !busy, !drawingInProgress,
               placingSignature == nil, !hasPrivateReadingData,
               outlineEntries.isEmpty, count > 0 else { return false }
+        let pages = (0..<count).compactMap { document.page(at: $0) }
+        guard pages.count == count, pages.allSatisfy({ $0.annotations.isEmpty }) else { return false }
         if let emptyCreationPDF {
-            guard cachedPDF == emptyCreationPDF else { return false }
-            return (0..<count).allSatisfy { document.page(at: $0)?.annotations.isEmpty == true }
+            if cachedPDF == emptyCreationPDF { return true }
+            guard let paper = PDFDocument(data: emptyCreationPDF) else { return false }
+            let paperStreams = Set((0..<paper.pageCount).compactMap { index in
+                paper.page(at: index)?.pageRef.flatMap(PDFCreationService.contentStreams)
+            })
+            return pages.allSatisfy { page in
+                PDFCreationService.readContentStreams(page).map {
+                    PDFCreationService.emptyContents($0) || paperStreams.contains($0)
+                } ?? false
+            }
         }
-        // Earlier versions created a single unmarked PDFPage without a content stream.
-        guard title == "未命名 PDF", count == 1, let page = document.page(at: 0), page.annotations.isEmpty else { return false }
-        if let reference = page.pageRef { return PDFCreationService.hasEmptyContents(reference) }
-        guard let data = try? pdfData(), let snapshot = PDFDocument(data: data) else { return false }
-        return withExtendedLifetime(snapshot) {
-            guard let reference = snapshot.page(at: 0)?.pageRef else { return false }
-            return PDFCreationService.hasEmptyContents(reference)
-        }
+        // Older recovery files did not record the initial paper.
+        guard title == "未命名 PDF", pages.count == 1 else { return false }
+        return PDFCreationService.readContentStreams(pages[0]).map(PDFCreationService.emptyContents) ?? false
     }
 }
 
 extension PDFCreationService {
-    static func hasEmptyContents(_ page: CGPDFPage) -> Bool {
-        guard let dictionary = page.dictionary else { return false }
+    static func readContentStreams(_ page: PDFPage) -> [Data]? {
+        if let reference = page.pageRef { return contentStreams(reference) }
+        guard let copy = page.copy() as? PDFPage else { return nil }
+        let single = PDFDocument()
+        single.insert(copy, at: 0)
+        guard let data = single.dataRepresentation(), let snapshot = PDFDocument(data: data) else { return nil }
+        return withExtendedLifetime(snapshot) { snapshot.page(at: 0)?.pageRef.flatMap(contentStreams) }
+    }
+
+    static func contentStreams(_ page: CGPDFPage) -> [Data]? {
+        guard let dictionary = page.dictionary else { return nil }
         var stream: CGPDFStreamRef?
-        if CGPDFDictionaryGetStream(dictionary, "Contents", &stream), let stream { return emptyStream(stream) }
+        if CGPDFDictionaryGetStream(dictionary, "Contents", &stream), let stream {
+            return decoded(stream).map { [$0] }
+        }
         var array: CGPDFArrayRef?
         if CGPDFDictionaryGetArray(dictionary, "Contents", &array), let array {
-            return (0..<CGPDFArrayGetCount(array)).allSatisfy { index in
+            var streams: [Data] = []
+            for index in 0..<CGPDFArrayGetCount(array) {
                 var stream: CGPDFStreamRef?
-                guard CGPDFArrayGetStream(array, index, &stream), let stream else { return false }
-                return emptyStream(stream)
+                guard CGPDFArrayGetStream(array, index, &stream), let stream, let data = decoded(stream) else { return nil }
+                streams.append(data)
             }
+            return streams
         }
         var object: CGPDFObjectRef?
-        return !CGPDFDictionaryGetObject(dictionary, "Contents", &object)
+        return CGPDFDictionaryGetObject(dictionary, "Contents", &object) ? nil : []
     }
-    private static func emptyStream(_ stream: CGPDFStreamRef) -> Bool {
+
+    private static func decoded(_ stream: CGPDFStreamRef) -> Data? {
         var format = CGPDFDataFormat.raw
-        guard let data = CGPDFStreamCopyData(stream, &format) else { return false }
-        guard let text = String(data: data as Data, encoding: .ascii) else { return false }
-        // PDFKit wraps an otherwise empty page in save/restore graphics-state operators.
-        let tokens = text.split { $0.isWhitespace || $0.asciiValue == 0 }
-        return tokens.allSatisfy { $0 == "q" || $0 == "Q" }
+        return CGPDFStreamCopyData(stream, &format).map { $0 as Data }
+    }
+
+    static func emptyContents(_ streams: [Data]) -> Bool {
+        streams.allSatisfy { data in
+            guard let text = String(data: data, encoding: .ascii) else { return false }
+            // PDFKit wraps otherwise empty pages in save/restore graphics-state operators.
+            return text.split { $0.isWhitespace || $0.asciiValue == 0 }.allSatisfy { $0 == "q" || $0 == "Q" }
+        }
     }
 }

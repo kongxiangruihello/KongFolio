@@ -37,6 +37,7 @@ private struct NativePDFCanvas: NSViewRepresentable {
             view.cancelImageExcerptSelections()
         }
         workspace.pdfView = view
+        if !workspace.placesPDFContentText { view.dismissPageTextEditor() }
         if workspace.showsPageThumbnails || (workspace.tool != .select && !workspace.previewsPDFImageExcerpt) {
             view.cancelExcerptSelections()
             view.cancelImageExcerptSelections()
@@ -61,6 +62,7 @@ private struct NativePDFCanvas: NSViewRepresentable {
             view.cancelExcerptSelections()
             view.cancelImageExcerptSelections()
             view.dismissCommentEditor()
+            view.dismissPageTextEditor()
             view.document = workspace.document
             workspace.loadReadingRulerIfNeeded()
             context.coordinator.navigation = nil
@@ -221,6 +223,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     private var regionStart: CGPoint?
     private weak var regionPage: PDFPage?
     private(set) var commentEditor: NSPopover?
+    private var pageTextEditor: NSPopover?
     private var pressedComment: (page: PDFPage, annotation: PDFAnnotation)?
     private lazy var regionView: NSView = {
         let view = NSView()
@@ -274,7 +277,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
 
     /// SwiftUI may cache the native view after a tab disappears. Drop its PDF and overlays explicitly.
     func releaseReadingResources() {
-        endSignaturePlacement(); cancelExcerptSelections(); cancelImageExcerptSelections(); hideSelectionToolbar(); clearSourceHighlight(); dismissCommentEditor()
+        endSignaturePlacement(); cancelExcerptSelections(); cancelImageExcerptSelections(); hideSelectionToolbar(); clearSourceHighlight(); dismissCommentEditor(); dismissPageTextEditor()
         points.removeAll(); drawingPage = nil; provisional = nil; moving = nil
         pendingMove.removeAll(); contextSignature = nil; regionStart = nil; regionPage = nil; pressedComment = nil
         excerptDragStart = nil; excerptDragSource = nil
@@ -344,6 +347,12 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, let workspace, workspace.placesPDFContentText {
+            workspace.placesPDFContentText = false
+            dismissPageTextEditor()
+            workspace.status = "已取消添加文字"
+            return
+        }
         if event.keyCode == 53, !excerptSelections.isEmpty {
             cancelExcerptSelections()
             workspace?.status = "已取消增加选区"
@@ -682,6 +691,37 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         editor?.close()
     }
 
+    private func openPageTextEditor(on page: PDFPage, at location: CGPoint) {
+        guard let workspace, !workspace.readingLocked, workspace.placingSignature == nil,
+              pageTextEditor?.isShown != true, let window, window.isVisible else { return }
+        let point = convert(location, to: page)
+        let popover = NSPopover()
+        popover.behavior = .applicationDefined
+        popover.contentViewController = NSHostingController(rootView: PDFPageTextEditor(
+            insert: { [weak self, weak workspace, weak page] text, size, color in
+                guard let self, let workspace, let page, self.workspace === workspace else {
+                    throw FolioError(message: "当前页面已关闭。")
+                }
+                try workspace.addPageContentText(text, size: size, color: color, on: page, at: point)
+                self.dismissPageTextEditor()
+                self.window?.makeFirstResponder(self)
+            },
+            cancel: { [weak self, weak workspace] in
+                workspace?.placesPDFContentText = false
+                workspace?.status = "已取消添加文字"
+                self?.dismissPageTextEditor()
+            }
+        ))
+        pageTextEditor = popover
+        popover.show(relativeTo: CGRect(x: location.x, y: location.y, width: 1, height: 1), of: self, preferredEdge: .maxX)
+    }
+
+    func dismissPageTextEditor() {
+        let editor = pageTextEditor
+        pageTextEditor = nil
+        editor?.close()
+    }
+
     private func captureRegion(_ rect: CGRect, on page: PDFPage) {
         guard let workspace, document === page.document, rect.width > 8, rect.height > 8 else { return }
         let pageRect = convert(rect, to: page).intersection(page.bounds(for: .cropBox))
@@ -837,6 +877,10 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             return
         }
         let location = convert(event.locationInWindow, from: nil)
+        if workspace.isMakingPDF, workspace.placesPDFContentText {
+            if let page = page(for: location, nearest: false) { openPageTextEditor(on: page, at: location) }
+            return
+        }
         if canDragSelection(at:location,event:event,workspace:workspace) {
             excerptDragStart = location
             pressedCard = nil
@@ -910,11 +954,6 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             annotation.color = .clear
             page.addAnnotation(annotation)
             workspace.recordAnnotationsAdded([annotation])
-            if workspace.isMakingPDF {
-                workspace.tool = .edit
-                workspace.selectAnnotation(annotation)
-                workspace.status = "已添加文字，可拖动或调整样式"
-            }
             needsDisplay = true
         case .pen, .line, .arrow, .rectangle, .ellipse, .signature:
             workspace.drawingInProgress = true

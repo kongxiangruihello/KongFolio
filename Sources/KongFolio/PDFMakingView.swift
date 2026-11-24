@@ -27,10 +27,10 @@ struct PDFMakingToolbar: View {
             } else {
                 Button { workspace.beginMakingText() } label: {
                     control("添加文字", symbol: "textformat", compact: compact)
-                        .foregroundStyle(workspace.tool == .textBox ? Brand.accent : Color.primary)
+                        .foregroundStyle(workspace.placesPDFContentText ? Brand.accent : Color.primary)
                 }
                 .help("添加文字").disabled(!canEdit)
-                Button { workspace.choosePageImage() } label: {
+                Button { workspace.placesPDFContentText = false; workspace.choosePageImage() } label: {
                     control("添加图片", symbol: "photo.badge.plus", compact: compact)
                 }
                 .help("添加图片到当前页").disabled(!canEdit)
@@ -47,9 +47,6 @@ struct PDFMakingToolbar: View {
                 .help("插入空白页、PDF 或图片")
                 .disabled(!canEdit)
 
-                if workspace.selectedAnnotation?.type == "FreeText" {
-                    textStyle(compact: compact).disabled(!canEdit)
-                }
                 Divider().frame(height: 17)
                 Button { workspace.undo() } label: { AppIcon("arrow.uturn.backward") }
                     .help("撤销").accessibilityLabel("撤销").disabled(!canEdit || workspace.history.isEmpty)
@@ -81,27 +78,11 @@ struct PDFMakingToolbar: View {
         .accessibilityLabel(title)
     }
 
-    private func textStyle(compact: Bool) -> some View {
-        Menu {
-            Menu("字号") {
-                ForEach(AnnotationTextStyle.sizes, id: \.self) { size in
-                    Button("\(Int(size)) 磅") { workspace.styleTextBoxes(size: size) }
-                }
-            }
-            Menu("文字颜色") {
-                Button("黑色") { workspace.styleTextBoxes(ink: .black) }
-                Button("深蓝") { workspace.styleTextBoxes(ink: .systemBlue) }
-                Button("深红") { workspace.styleTextBoxes(ink: .systemRed) }
-            }
-        } label: { control("文字样式", symbol: "textformat.size", compact: compact) }
-        .menuStyle(.borderlessButton).fixedSize()
-        .help("文字样式")
-    }
-
     private var more: some View {
         Menu {
             if !workspace.previewsCreatedPDF {
                 Button("预览 PDF") {
+                    workspace.placesPDFContentText = false
                     workspace.tool = .select
                     workspace.selectAnnotation(nil)
                     workspace.previewsCreatedPDF = true
@@ -114,6 +95,7 @@ struct PDFMakingToolbar: View {
             Button("打印…") { workspace.store?.printActive() }.disabled(workspace.busy)
             Divider()
             Button("切换到阅读界面") {
+                workspace.placesPDFContentText = false
                 workspace.previewsCreatedPDF = false
                 workspace.isMakingPDF = false
                 workspace.tool = .select
@@ -227,7 +209,9 @@ struct PDFMakingContent: View {
 
     private var showsBlankActions: Bool {
         !workspace.previewsCreatedPDF && workspace.selection == 0 && workspace.tool == .select &&
-            !workspace.readingLocked && workspace.emptyCreationPDF != nil && workspace.canDiscardEmptyCreation
+            !workspace.placesPDFContentText && !workspace.readingLocked &&
+            workspace.emptyCreationPDF != nil && workspace.cachedPDF == workspace.emptyCreationPDF &&
+            workspace.canDiscardEmptyCreation
     }
 
     private var saveStatus: String {
@@ -240,13 +224,9 @@ struct PDFMakingContent: View {
 extension Workspace {
     func beginMakingText() {
         guard isMakingPDF, !previewsCreatedPDF, !readingLocked, !busy, placingSignature == nil else { return }
-        if tool == .textBox {
-            tool = .select
-            status = "已退出添加文字"
-        } else {
-            note = ""
-            tool = .textBox
-            status = "点击纸面，输入文字"
-        }
+        tool = .select
+        selectAnnotation(nil)
+        placesPDFContentText.toggle()
+        status = placesPDFContentText ? "点击纸面，输入正文文字" : "已退出添加文字"
     }
 }

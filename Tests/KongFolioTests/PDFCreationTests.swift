@@ -42,12 +42,13 @@ import CoreText
         let workspace = store.newPDF()
         XCTAssertTrue(workspace.isMakingPDF)
         workspace.beginMakingText()
-        XCTAssertEqual(workspace.tool, .textBox)
+        XCTAssertTrue(workspace.placesPDFContentText)
+        XCTAssertEqual(workspace.tool, .select)
         let cover = try XCTUnwrap(workspace.page)
-        let title = PDFAnnotation(bounds: CGRect(x: 40, y: 80, width: 180, height: 30), forType: .freeText, withProperties: nil)
-        title.contents = "讲义封面"
-        cover.addAnnotation(title)
-        workspace.recordAnnotationsAdded([title])
+        try workspace.addPageContentText("讲义封面 FolioTitle", size: 18, color: .black,
+                                         on: cover, at: CGPoint(x: 40, y: 200))
+        XCTAssertFalse(workspace.placesPDFContentText)
+        XCTAssertFalse(workspace.canDiscardEmptyCreation)
         workspace.insertBlankPage()
         XCTAssertTrue(workspace.movePages([0], before: 2))
         workspace.undo()
@@ -58,10 +59,60 @@ import CoreText
         let saved = try XCTUnwrap(PDFDocument(url: url))
         XCTAssertEqual(saved.pageCount, 2)
         XCTAssertTrue(saved.page(at: 0)?.annotations.isEmpty == true)
-        XCTAssertEqual(saved.page(at: 1)?.annotations.first?.contents, "讲义封面")
+        XCTAssertTrue(saved.page(at: 1)?.annotations.isEmpty == true)
+        XCTAssertTrue(StampingTests().compact(saved.page(at: 1)?.string).contains("讲义封面FolioTitle"))
+        XCTAssertEqual(saved.findString("FolioTitle", withOptions: []).count, 1)
         XCTAssertTrue(workspace.discardWork())
         XCTAssertTrue(workspace.closeDocument())
         XCTAssertFalse(workspace.isMakingPDF)
+    }
+
+    func testAddingAndRemovingBlankPagesDoesNotRequireSaving() async throws {
+        let store = store()
+        defer { try? FileManager.default.removeItem(at: store.storage) }
+        var options = PDFCreationOptions()
+        options.pattern = .cornell
+        let workspace = try store.adoptCreatedPDF(PDFCreationService.blank(options), title: "PDF 草稿", emptyPaper: true)
+        workspace.insertBlankPage()
+        workspace.insertBlankPage()
+        XCTAssertTrue(workspace.movePages([0], before: 3))
+        XCTAssertTrue(workspace.canDiscardEmptyCreation)
+        let finished = await workspace.finishPendingSave()
+        XCTAssertTrue(finished)
+        XCTAssertNil(workspace.sourceURL)
+        XCTAssertFalse(workspace.dirty)
+    }
+
+    func testPageTextSurvivesImageRemovalAndKeepsAnnotations() throws {
+        let store = store()
+        defer { try? FileManager.default.removeItem(at: store.storage) }
+        let workspace = store.newPDF()
+        let initialPage = try XCTUnwrap(workspace.page)
+        initialPage.rotation = 90
+        workspace.changed()
+        let base = try workspace.pdfData()
+        let context = try XCTUnwrap(CGContext(data: nil, width: 2, height: 2, bitsPerComponent: 8,
+                                               bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(gray: 0.5, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        let image = try XCTUnwrap(context.makeImage())
+        let png = try XCTUnwrap(SignatureImage.pngData(image))
+        let item = PlacedSignature(id: UUID(), png: png, rect: CGRect(x: 40, y: 50, width: 50, height: 50), isPageImage: true)
+        let layer = SignatureLayer(base: base, preserved: true, size: initialPage.bounds(for: .cropBox).size,
+                                   rotation: 90, items: [item], page: initialPage)
+        let page = try workspace.rebake(layer, items: [item])
+        let existing = PDFAnnotation(bounds: CGRect(x: 20, y: 20, width: 18, height: 18), forType: .text, withProperties: nil)
+        existing.contents = "已存在的批注"
+        page.addAnnotation(existing)
+        workspace.recordAnnotationsAdded([existing])
+        try workspace.addPageContentText("RotatedText", size: 14, color: .blue,
+                                         on: page, at: CGPoint(x: 90, y: 45))
+        XCTAssertEqual(workspace.page?.rotation, 90)
+        XCTAssertTrue(workspace.page?.string?.contains("RotatedText") == true)
+        workspace.removePlacedSignature(item, in: layer)
+        XCTAssertTrue(workspace.page?.string?.contains("RotatedText") == true)
+        XCTAssertTrue(workspace.page?.annotations.contains(where: { $0.contents == "已存在的批注" }) == true)
     }
 
     func testTemplatePaperCanCloseButTextAnnotationRequiresSaving() throws {

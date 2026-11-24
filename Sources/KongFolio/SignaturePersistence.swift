@@ -9,8 +9,9 @@ struct SignatureEditArchive: Codable {
     var size: CGSize
     var rotation: Int
     var items: [PlacedSignature]
+    var texts: [PDFPageText]? = nil
     func validate() throws {
-        guard PDFDocument(data: base)?.pageCount == 1, size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
+        guard PDFDocument(data: base)?.pageCount == 1, size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0, (texts ?? []).allSatisfy(\.isValid),
               items.allSatisfy({ $0.rect.origin.x.isFinite && $0.rect.origin.y.isFinite && $0.rect.width.isFinite && $0.rect.height.isFinite && $0.rect.width > 0 && $0.rect.height > 0 && SignatureImage.loadData($0.png) != nil }) else {
             throw FolioError(message: "签名编辑记录损坏")
         }
@@ -48,8 +49,8 @@ extension Workspace {
     var signatureEditArchives: [Int: SignatureEditArchive] {
         var result: [Int: SignatureEditArchive] = [:]
         for index in 0..<count {
-            guard let page = document.page(at: index), let layer = signatureLayer(for: page), !layer.items.isEmpty else { continue }
-            result[index] = SignatureEditArchive(base: layer.base, preserved: layer.preserved, size: layer.size, rotation: layer.rotation, items: layer.items)
+            guard let page = document.page(at: index), let layer = signatureLayer(for: page), !layer.items.isEmpty || !layer.texts.isEmpty else { continue }
+            result[index] = SignatureEditArchive(base: layer.base, preserved: layer.preserved, size: layer.size, rotation: layer.rotation, items: layer.items, texts: layer.texts.isEmpty ? nil : layer.texts)
         }
         return result
     }
@@ -57,7 +58,7 @@ extension Workspace {
         signatureLayers = [:]
         for (index, value) in archives {
             guard let page = document.page(at: index), (try? value.validate()) != nil else { continue }
-            signatureLayers[ObjectIdentifier(page)] = SignatureLayer(base: value.base, preserved: value.preserved, size: value.size, rotation: value.rotation, items: value.items, page: page)
+            signatureLayers[ObjectIdentifier(page)] = SignatureLayer(base: value.base, preserved: value.preserved, size: value.size, rotation: value.rotation, items: value.items, page: page, texts: value.texts ?? [])
         }
     }
     func replacePlacedSignature(_ item: PlacedSignature, in layer: SignatureLayer) {

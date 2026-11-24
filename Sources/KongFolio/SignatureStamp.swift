@@ -67,12 +67,12 @@ enum SignatureStamp {
 
     /// The general form: several pictures, and annotations to add on top of `source`'s own (`extras`).
     /// `source` annotations are flattened into the page unless `preserve` is set.
-    static func bake(_ images: [(image: CGImage, rect: CGRect)], onto source: PDFPage, preserve: Bool, extras: [PDFAnnotation] = []) -> PDFPage? {
+    static func bake(_ images: [(image: CGImage, rect: CGRect)], onto source: PDFPage, preserve: Bool, extras: [PDFAnnotation] = [], texts: [PDFPageText] = []) -> PDFPage? {
         guard let reference = source.pageRef else { return nil }
         let crop = source.bounds(for: .cropBox)
         let rotation = source.rotation
         if preserve && !preservesAnnotations(source) {
-            return bakeInPageCoordinates(images,onto:source,reference:reference,extras:extras)
+            return bakeInPageCoordinates(images, onto: source, reference: reference, extras: extras, texts: texts)
         }
         let quarterTurn = abs(rotation % 180) == 90
         var box = CGRect(origin: .zero, size: quarterTurn ? CGSize(width: crop.height, height: crop.width) : crop.size)
@@ -94,6 +94,7 @@ enum SignatureStamp {
             let local = rect.offsetBy(dx:-crop.minX,dy:-crop.minY)
             context.draw(image, in: uprightRect(local, pageSize: crop.size, rotation: rotation))
         }
+        for text in texts { text.draw(in: context) }
         context.endPDFPage()
         context.closePDF()
         guard let page = PDFDocument(data: data as Data)?.page(at: 0) else { return nil }
@@ -104,8 +105,31 @@ enum SignatureStamp {
     }
 
     /// Preserve the PDF's coordinate space so links, widgets and ink keep their original positions.
-    private static func bakeInPageCoordinates(_ images: [(image:CGImage,rect:CGRect)], onto source: PDFPage,
-                                              reference: CGPDFPage, extras: [PDFAnnotation]) -> PDFPage? {
+    private static func bakeInPageCoordinates(_ images: [(image: CGImage, rect: CGRect)], onto source: PDFPage,
+                                              reference: CGPDFPage, extras: [PDFAnnotation], texts: [PDFPageText]) -> PDFPage? {
+        let rotation = source.rotation
+        let crop = source.bounds(for: .cropBox)
+        let page = redrawInPageCoordinates(source, reference: reference) { context in
+            context.interpolationQuality = .high
+            let quarterTurn = abs(rotation % 180) == 90
+            for (image, rect) in images {
+                let size = quarterTurn ? CGSize(width: rect.height, height: rect.width) : rect.size
+                context.saveGState()
+                context.translateBy(x: rect.midX, y: rect.midY)
+                context.rotate(by: CGFloat(rotation) * .pi / 180)
+                context.draw(image, in: CGRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height))
+                context.restoreGState()
+            }
+            for text in texts { text.draw(in: context, originalCrop: crop, rotation: rotation) }
+        }
+        for annotation in source.annotations + extras {
+            if let copy = annotation.copy() as? PDFAnnotation { page?.addAnnotation(copy) }
+        }
+        return page
+    }
+
+    static func redrawInPageCoordinates(_ source: PDFPage, reference: CGPDFPage,
+                                        draw: (CGContext) -> Void) -> PDFPage? {
         let data = NSMutableData()
         var media = source.bounds(for:.mediaBox)
         guard let consumer = CGDataConsumer(data:data),
@@ -121,24 +145,11 @@ enum SignatureStamp {
         }
         context.beginPDFPage(info as CFDictionary)
         context.drawPDFPage(reference)
-        context.interpolationQuality = .high
-        let rotation = source.rotation
-        let quarterTurn = abs(rotation % 180) == 90
-        for (image,rect) in images {
-            let size = quarterTurn ? CGSize(width:rect.height,height:rect.width) : rect.size
-            context.saveGState()
-            context.translateBy(x:rect.midX,y:rect.midY)
-            context.rotate(by:CGFloat(rotation) * .pi / 180)
-            context.draw(image,in:CGRect(x:-size.width/2,y:-size.height/2,width:size.width,height:size.height))
-            context.restoreGState()
-        }
+        draw(context)
         context.endPDFPage()
         context.closePDF()
         guard let page = PDFDocument(data:data as Data)?.page(at:0) else { return nil }
-        page.rotation = rotation
-        for annotation in source.annotations + extras {
-            if let copy = annotation.copy() as? PDFAnnotation { page.addAnnotation(copy) }
-        }
+        page.rotation = source.rotation
         return page
     }
 
@@ -163,12 +174,13 @@ final class SignatureLayer {
     let size: CGSize
     let rotation: Int
     var items: [PlacedSignature]
+    var texts: [PDFPageText]
     var page: PDFPage
     let shownBounds: CGRect
     private lazy var baseOrigin = PDFDocument(data:base)?.page(at:0)?.bounds(for:.cropBox).origin ?? .zero
 
-    init(base: Data, preserved: Bool, size: CGSize, rotation: Int, items: [PlacedSignature], page: PDFPage) {
-        self.base = base; self.preserved = preserved; self.size = size; self.rotation = rotation; self.items = items; self.page = page; self.shownBounds = page.bounds(for: .cropBox)
+    init(base: Data, preserved: Bool, size: CGSize, rotation: Int, items: [PlacedSignature], page: PDFPage, texts: [PDFPageText] = []) {
+        self.base = base; self.preserved = preserved; self.size = size; self.rotation = rotation; self.items = items; self.texts = texts; self.page = page; self.shownBounds = page.bounds(for: .cropBox)
     }
 
     /// Where the signature appears on the page that is in the document.
@@ -349,7 +361,7 @@ extension Workspace {
                                                                  rotation:page.rotation,items:[item],page:baked)
     }
 
-    private func replacePage(_ old:PDFPage,with page:PDFPage,at index:Int,preservingAnnotations:Bool) {
+    func replacePage(_ old:PDFPage,with page:PDFPage,at index:Int,preservingAnnotations:Bool) {
         let annotations = preservingAnnotations ? old.annotations : []
         var links: [(annotation:PDFAnnotation, action:Bool, page:Int, point:CGPoint, zoom:CGFloat)] = []
         for number in 0..<(preservingAnnotations ? document.pageCount : 0) {
@@ -428,19 +440,23 @@ extension Workspace {
 
     /// Redraws the page with exactly `items`, keeping the annotations that were added to it since.
     @discardableResult
-    func rebake(_ layer: SignatureLayer, items: [PlacedSignature]) throws -> PDFPage {
+    func rebake(_ layer: SignatureLayer, items: [PlacedSignature], texts: [PDFPageText]? = nil) throws -> PDFPage {
         let old = layer.page
         let index = document.index(for: old)
         guard index != NSNotFound, let baseDocument = PDFDocument(data:layer.base),
               let basePage = baseDocument.page(at:0) else { throw FolioError(message:"页面已变化，无法再移动这个内容。") }
         let images = items.compactMap { item in Self.decodePNG(item.png).map { (image:$0,rect:item.rect) } }
+        guard images.count == items.count else { throw FolioError(message: "无法读取页面中的图片或签名。") }
         let extras = layer.preserved ? [] : old.annotations
-        let page = try SignatureStamp.bake(images,onto:basePage,preserve:layer.preserved,extras:extras).unwrap("无法重绘页面")
+        let overlays = texts ?? layer.texts
+        let page = try SignatureStamp.bake(images, onto: basePage, preserve: layer.preserved, extras: extras, texts: overlays)
+            .unwrap("无法重绘页面")
         withExtendedLifetime(baseDocument) {}
         replacePage(old,with:page,at:index,preservingAnnotations:layer.preserved)
         signatureLayers[ObjectIdentifier(old)] = nil
         layer.page = page
         layer.items = items
+        layer.texts = overlays
         signatureLayers[ObjectIdentifier(page)] = layer
         return page
     }
