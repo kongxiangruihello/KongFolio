@@ -98,6 +98,7 @@ struct FunctionToolbar: View {
     }
 
     @ViewBuilder private var homeOtherFormats: some View {
+        Button("新建 Markdown") { store.newNote(format: .markdown) }
         Button("新建纯文本") { store.newNote(format: .plain) }
         Button("新建 HTML") { store.newNote(format: .html) }
     }
