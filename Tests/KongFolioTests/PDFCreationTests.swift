@@ -49,18 +49,28 @@ import CoreText
                                          on: cover, at: CGPoint(x: 40, y: 200))
         XCTAssertFalse(workspace.placesPDFContentText)
         XCTAssertFalse(workspace.canDiscardEmptyCreation)
+        XCTAssertTrue(workspace.page?.string?.contains("FolioTitle") == true, "写入后：\(String(describing: workspace.page?.string))")
         workspace.insertBlankPage()
+        XCTAssertTrue(workspace.document.page(at: 0)?.string?.contains("FolioTitle") == true,
+                      "插入页后：\(String(describing: workspace.document.string))")
         XCTAssertTrue(workspace.movePages([0], before: 2))
+        XCTAssertTrue(workspace.document.page(at: 1)?.string?.contains("FolioTitle") == true,
+                      "重排后：\(String(describing: workspace.document.string))")
         workspace.undo()
         XCTAssertTrue(workspace.isMakingPDF)
+        XCTAssertTrue(workspace.document.page(at: 0)?.string?.contains("FolioTitle") == true,
+                      "撤销后：\(String(describing: workspace.document.string))")
         workspace.redo()
+        XCTAssertTrue(workspace.document.page(at: 1)?.string?.contains("FolioTitle") == true,
+                      "重做后：\(String(describing: workspace.document.string))")
         let url = store.storage.appendingPathComponent("讲义.pdf")
         try workspace.writePDFCopy(to: url)
         let saved = try XCTUnwrap(PDFDocument(url: url))
         XCTAssertEqual(saved.pageCount, 2)
         XCTAssertTrue(saved.page(at: 0)?.annotations.isEmpty == true)
         XCTAssertTrue(saved.page(at: 1)?.annotations.isEmpty == true)
-        XCTAssertTrue(StampingTests().compact(saved.page(at: 1)?.string).contains("讲义封面FolioTitle"))
+        XCTAssertTrue(StampingTests().compact(saved.page(at: 1)?.string).contains("讲义封面FolioTitle"),
+                      "保存后：\(String(describing: saved.string))")
         XCTAssertEqual(saved.findString("FolioTitle", withOptions: []).count, 1)
         XCTAssertTrue(workspace.discardWork())
         XCTAssertTrue(workspace.closeDocument())
@@ -77,11 +87,15 @@ import CoreText
         workspace.insertBlankPage()
         XCTAssertTrue(workspace.movePages([0], before: 3))
         guard workspace.canDiscardEmptyCreation else {
-            let tokens = (0..<workspace.count).map {
-                workspace.document.page(at: $0).flatMap(PDFCreationService.readContentStreams)
-                    .flatMap(PDFCreationService.paperTokens).map { Array($0.prefix(16)) }
-            }
-            XCTFail("仅含空页及内置底纹的草稿应可直接关闭。private=\(workspace.hasPrivateReadingData) tokens=\(tokens)")
+            let initialData = try XCTUnwrap(workspace.emptyCreationPDF)
+            let initial = try XCTUnwrap(PDFDocument(data: initialData))
+            let old = initial.page(at: 0).flatMap(PDFCreationService.readContentStreams)
+                .flatMap(PDFCreationService.paperTokens) ?? []
+            let new = workspace.document.page(at: 2).flatMap(PDFCreationService.readContentStreams)
+                .flatMap(PDFCreationService.paperTokens) ?? []
+            let mismatch = zip(old, new).prefix(while: { $0.0 == $0.1 }).count
+            let range = max(0, mismatch - 4)
+            XCTFail("仅含空页及内置底纹的草稿应可直接关闭。private=\(workspace.hasPrivateReadingData) initial=\(old.count) current=\(new.count) old=\(Array(old.dropFirst(range).prefix(14))) new=\(Array(new.dropFirst(range).prefix(14)))")
             return
         }
         let finished = await workspace.finishPendingSave()
