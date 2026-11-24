@@ -7,7 +7,7 @@ struct PDFCanvas: View {
     var body: some View {
         NativePDFCanvas(workspace: workspace)
             .overlay(alignment: .topLeading) {
-                if let store = workspace.store {
+                if !workspace.isMakingPDF, let store = workspace.store {
                     PDFExcerptSelectionPrompt(store: store, workspace: workspace)
                         .padding(12)
                 }
@@ -45,11 +45,16 @@ private struct NativePDFCanvas: NSViewRepresentable {
         view.workspace = workspace
         let replaced = view.document !== workspace.document
         let display: PDFDisplayMode
-        switch workspace.readingLayout {
-        case .single: display = .singlePage
-        case .twoUp: display = .twoUp
-        case .continuous: display = .singlePageContinuous
+        if workspace.isMakingPDF {
+            display = .singlePage
+        } else {
+            switch workspace.readingLayout {
+            case .single: display = .singlePage
+            case .twoUp: display = .twoUp
+            case .continuous: display = .singlePageContinuous
+            }
         }
+        view.backgroundColor = workspace.isMakingPDF ? .underPageBackgroundColor : .windowBackgroundColor
         let layoutChanged = view.displayMode != display
         if replaced {
             view.clearSourceHighlight()
@@ -72,7 +77,11 @@ private struct NativePDFCanvas: NSViewRepresentable {
             }
             context.coordinator.navigation = workspace.navigationToken
         }
-        if view.contentFilters.isEmpty == workspace.nightReading { workspace.applyNightReading() }
+        if workspace.isMakingPDF {
+            if !view.contentFilters.isEmpty { view.contentFilters = [] }
+        } else if view.contentFilters.isEmpty == workspace.nightReading {
+            workspace.applyNightReading()
+        }
         if context.coordinator.revision != workspace.revision { view.layoutDocumentView(); context.coordinator.revision = workspace.revision }
         context.coordinator.observeScroll(view: view)
         if replaced || layoutChanged { view.needsDisplay = true }
@@ -377,6 +386,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        if workspace?.isMakingPDF == true && workspace?.previewsCreatedPDF == true { return nil }
         if workspace?.readingLocked == true { return nil }
         let menu = super.menu(for: event) ?? NSMenu()
         let location = convert(event.locationInWindow, from: nil)
@@ -822,6 +832,10 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         hideSelectionToolbar()
         if let workspace { workspace.store?.focus(workspace) }
         guard let workspace, !workspace.busy else { super.mouseDown(with: event); return }
+        if workspace.isMakingPDF && workspace.previewsCreatedPDF {
+            super.mouseDown(with: event)
+            return
+        }
         let location = convert(event.locationInWindow, from: nil)
         if canDragSelection(at:location,event:event,workspace:workspace) {
             excerptDragStart = location
@@ -896,6 +910,11 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             annotation.color = .clear
             page.addAnnotation(annotation)
             workspace.recordAnnotationsAdded([annotation])
+            if workspace.isMakingPDF {
+                workspace.tool = .edit
+                workspace.selectAnnotation(annotation)
+                workspace.status = "已添加文字，可拖动或调整样式"
+            }
             needsDisplay = true
         case .pen, .line, .arrow, .rectangle, .ellipse, .signature:
             workspace.drawingInProgress = true

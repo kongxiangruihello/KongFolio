@@ -10,6 +10,14 @@ struct PDFThumbnailPointer: NSViewRepresentable {
     let drop: (String, Bool) -> Bool
     let open: () -> Void
     let extract: () -> Void
+    var vertical = false
+    var pageActions: [PageAction] = []
+
+    struct PageAction {
+        let title: String
+        var enabled = true
+        let perform: () -> Void
+    }
 
     func makeNSView(context: Context) -> Surface {
         let view = Surface()
@@ -84,17 +92,34 @@ struct PDFThumbnailPointer: NSViewRepresentable {
         }
 
         private func isAfter(_ sender: NSDraggingInfo) -> Bool {
-            convert(sender.draggingLocation, from: nil).x >= bounds.midX
+            let point = convert(sender.draggingLocation, from: nil)
+            return actions?.vertical == true ? point.y < bounds.midY : point.x >= bounds.midX
         }
 
         override func menu(for event: NSEvent) -> NSMenu? {
             let menu = NSMenu()
+            if let actions, actions.vertical {
+                menu.autoenablesItems = false
+                for (index, action) in actions.pageActions.enumerated() {
+                    let item = NSMenuItem(title: action.title, action: #selector(performPageAction(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.tag = index
+                    item.isEnabled = action.enabled
+                    menu.addItem(item)
+                }
+                return menu
+            }
             for (title, action) in [("打开此页", #selector(openPage)), ("提取选中页面…", #selector(extractPages))] {
                 let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
                 item.target = self
                 menu.addItem(item)
             }
             return menu
+        }
+
+        @objc private func performPageAction(_ item: NSMenuItem) {
+            guard let items = actions?.pageActions, items.indices.contains(item.tag), items[item.tag].enabled else { return }
+            items[item.tag].perform()
         }
 
         @objc private func openPage() { actions?.open() }

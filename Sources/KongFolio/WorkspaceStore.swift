@@ -710,7 +710,7 @@ extension WorkspaceStore {
         workspace.title = "未命名 PDF"
         workspace.edited(reset: true)
         workspace.emptyCreationPDF = try? workspace.pdfData()
-        workspace.pageEditing053 = true
+        workspace.isMakingPDF = true
         workspace.status = "已新建 A4 PDF，可添加文字、图片和标注"
         return workspace
     }

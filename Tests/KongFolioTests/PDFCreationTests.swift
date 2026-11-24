@@ -35,6 +35,35 @@ import CoreText
         XCTAssertFalse(renderedPaper.canDiscardEmptyCreation)
     }
 
+    func testMakingPDFKeepsPageOrderAndTextWhenSaved() throws {
+        let store = store()
+        try FileManager.default.createDirectory(at: store.storage, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: store.storage) }
+        let workspace = store.newPDF()
+        XCTAssertTrue(workspace.isMakingPDF)
+        workspace.beginMakingText()
+        XCTAssertEqual(workspace.tool, .textBox)
+        let cover = try XCTUnwrap(workspace.page)
+        let title = PDFAnnotation(bounds: CGRect(x: 40, y: 80, width: 180, height: 30), forType: .freeText, withProperties: nil)
+        title.contents = "讲义封面"
+        cover.addAnnotation(title)
+        workspace.recordAnnotationsAdded([title])
+        workspace.insertBlankPage()
+        XCTAssertTrue(workspace.movePages([0], before: 2))
+        workspace.undo()
+        XCTAssertTrue(workspace.isMakingPDF)
+        workspace.redo()
+        let url = store.storage.appendingPathComponent("讲义.pdf")
+        try workspace.writePDFCopy(to: url)
+        let saved = try XCTUnwrap(PDFDocument(url: url))
+        XCTAssertEqual(saved.pageCount, 2)
+        XCTAssertTrue(saved.page(at: 0)?.annotations.isEmpty == true)
+        XCTAssertEqual(saved.page(at: 1)?.annotations.first?.contents, "讲义封面")
+        XCTAssertTrue(workspace.discardWork())
+        XCTAssertTrue(workspace.closeDocument())
+        XCTAssertFalse(workspace.isMakingPDF)
+    }
+
     func testTemplatePaperCanCloseButTextAnnotationRequiresSaving() throws {
         let store = store()
         defer { try? FileManager.default.removeItem(at: store.storage) }

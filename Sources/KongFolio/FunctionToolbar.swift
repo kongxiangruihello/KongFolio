@@ -23,7 +23,9 @@ struct FunctionToolbar: View {
 
     var body: some View {
         Group {
-            if context == .empty {
+            if let workspace, workspace.isMakingPDF, workspace.count > 0 {
+                PDFMakingToolbar(workspace: workspace)
+            } else if context == .empty {
                 homeToolbar
             } else {
                 documentToolbar

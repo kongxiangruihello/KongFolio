@@ -106,60 +106,68 @@ struct ContentView: View {
             }
             if workspace.saveConflict { SaveConflictBanner(copy: workspace.chooseConflictCopy, reload: workspace.reloadAfterConflict) }
             Divider()
-            HSplitView {
-                if !isHome, !workspace.showsPageThumbnails, workspace.pageEditing053 {
-                    VStack(spacing:0) {
-                        HStack {
-                            Text("PDF 页面编辑").font(.headline)
-                            Spacer()
-                            SidePanelCloseButton(title: "关闭左侧面板", close: closeLeftPanel)
-                        }.padding(10)
-                        Divider()
-                        PDFPageEditor053(workspace:workspace)
-                    }.frame(minWidth:180,idealWidth:240,maxWidth:300)
-                } else if !isHome, !workspace.showsPageThumbnails, LayoutMetrics.showsInspector(preferred:!readingMode && showInspector,width:width,boardShown:boardShown(width:width),splitShown:splitShown(width:width)) {
-                    VStack(spacing:0) {
-                        HStack {
-                            Text("PDF 属性与标注").font(.headline)
-                            Spacer()
-                            SidePanelCloseButton(title: "关闭左侧面板", close: closeLeftPanel)
-                        }.padding(10)
-                        Divider()
-                        inspector
-                    }.frame(minWidth:220,idealWidth:290,maxWidth:340)
-                } else if !isHome, !workspace.showsPageThumbnails, LayoutMetrics.showsSidebar(preferred:showSidebar,width:width) {
-                    sidebar.frame(minWidth:180,idealWidth:240,maxWidth:300)
-                }
-                if !isHome, !workspace.showsPageThumbnails, boardShown(width: width), let board = workspace.store?.board { BoardView(board: board, workspace: workspace).frame(minWidth: 280, idealWidth: 380, maxWidth: .infinity) }
-                ZStack {
-                    canvas
-                        .opacity(workspace.showsPageThumbnails ? 0 : 1)
-                        .allowsHitTesting(!workspace.showsPageThumbnails)
-                        .accessibilityHidden(workspace.showsPageThumbnails)
-                    if !isHome && workspace.showsPageThumbnails {
-                        PDFThumbnailGrid(workspace: workspace)
-                    }
-                }.frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
-                if !isHome, !workspace.showsPageThumbnails, splitShown(width: width), let partner = workspace.splitPartner {
-                    SplitPane(primary: workspace, partner: partner) { workspace.splitPartner = nil }
-                        .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
-                }
-                if showsPenPanel, width >= 620 {
-                    MarkerSettingsPanel(workspace: workspace)
-                        .frame(minWidth: 260, idealWidth: 300, maxWidth: 360)
-                }
-            }
-            .overlay(alignment: .trailing) {
-                if showsPenPanel, width < 620 {
-                    MarkerSettingsPanel(workspace: workspace)
-                        .frame(width: min(300, width - 40))
-                        .shadow(color: .black.opacity(0.18), radius: 8, x: -3)
-                }
+            if workspace.isMakingPDF && workspace.count > 0 {
+                PDFMakingContent(workspace: workspace)
+            } else {
+                readerContent(width: width, isHome: isHome)
             }
             Divider()
             statusBar(width: width)
         }
         .frame(width: width)
+    }
+
+    private func readerContent(width: CGFloat, isHome: Bool) -> some View {
+        HSplitView {
+            if !isHome, !workspace.showsPageThumbnails, workspace.pageEditing053 {
+                VStack(spacing:0) {
+                    HStack {
+                        Text("PDF 页面编辑").font(.headline)
+                        Spacer()
+                        SidePanelCloseButton(title: "关闭左侧面板", close: closeLeftPanel)
+                    }.padding(10)
+                    Divider()
+                    PDFPageEditor053(workspace:workspace)
+                }.frame(minWidth:180,idealWidth:240,maxWidth:300)
+            } else if !isHome, !workspace.showsPageThumbnails, LayoutMetrics.showsInspector(preferred:!readingMode && showInspector,width:width,boardShown:boardShown(width:width),splitShown:splitShown(width:width)) {
+                VStack(spacing:0) {
+                    HStack {
+                        Text("PDF 属性与标注").font(.headline)
+                        Spacer()
+                        SidePanelCloseButton(title: "关闭左侧面板", close: closeLeftPanel)
+                    }.padding(10)
+                    Divider()
+                    inspector
+                }.frame(minWidth:220,idealWidth:290,maxWidth:340)
+            } else if !isHome, !workspace.showsPageThumbnails, LayoutMetrics.showsSidebar(preferred:showSidebar,width:width) {
+                sidebar.frame(minWidth:180,idealWidth:240,maxWidth:300)
+            }
+            if !isHome, !workspace.showsPageThumbnails, boardShown(width: width), let board = workspace.store?.board { BoardView(board: board, workspace: workspace).frame(minWidth: 280, idealWidth: 380, maxWidth: .infinity) }
+            ZStack {
+                canvas
+                    .opacity(workspace.showsPageThumbnails ? 0 : 1)
+                    .allowsHitTesting(!workspace.showsPageThumbnails)
+                    .accessibilityHidden(workspace.showsPageThumbnails)
+                if !isHome && workspace.showsPageThumbnails {
+                    PDFThumbnailGrid(workspace: workspace)
+                }
+            }.frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
+            if !isHome, !workspace.showsPageThumbnails, splitShown(width: width), let partner = workspace.splitPartner {
+                SplitPane(primary: workspace, partner: partner) { workspace.splitPartner = nil }
+                    .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
+            }
+            if showsPenPanel, width >= 620 {
+                MarkerSettingsPanel(workspace: workspace)
+                    .frame(minWidth: 260, idealWidth: 300, maxWidth: 360)
+            }
+        }
+        .overlay(alignment: .trailing) {
+            if showsPenPanel, width < 620 {
+                MarkerSettingsPanel(workspace: workspace)
+                    .frame(width: min(300, width - 40))
+                    .shadow(color: .black.opacity(0.18), radius: 8, x: -3)
+            }
+        }
     }
 
     private var showsPenPanel: Bool {
@@ -172,7 +180,7 @@ struct ContentView: View {
             Circle().fill(workspace.busy ? Color.orange : Color.green).frame(width: 6, height: 6)
             Text(workspace.pathHint ?? workspace.store?.research.warning(path:workspace.displayPath ?? "") ?? workspace.status).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 0)
-            if workspace.count > 0 {
+            if workspace.count > 0 && !workspace.isMakingPDF {
                 Text("\(workspace.selection + 1) / \(workspace.count) 页").lineLimit(1).fixedSize()
                 if width >= 560, let label = workspace.printedPageLabel(workspace.selection) {
                     Text("印刷页码 \(label)").foregroundStyle(.secondary).lineLimit(1)
@@ -181,7 +189,7 @@ struct ContentView: View {
             if width >= 760 { Text(workspace.savePhase.isEmpty ? workspace.recoveryStatus : workspace.savePhase + " \(Int(workspace.saveProgress*100))%").foregroundStyle(.secondary).lineLimit(1) }
             if workspace.count > 0 { Button { workspace.showSaveDetails = true } label:{ AppIcon(workspace.saveConflict || workspace.error != nil ? "exclamationmark.circle" : (workspace.saving || workspace.dirty ? "clock" : "checkmark.circle")) }.buttonStyle(.plain).help("保存状态与重试").sheet(isPresented:$workspace.showSaveDetails) { DocumentSaveDetails(workspace:workspace) } }
             if let store = workspace.store {
-                if store.activeWorkspace === workspace, store.nextAfterFinishing(workspace) != nil {
+                if !workspace.isMakingPDF, store.activeWorkspace === workspace, store.nextAfterFinishing(workspace) != nil {
                     Button {
                         Task { await store.finishReadingAndOpenNext(workspace) }
                     } label: {

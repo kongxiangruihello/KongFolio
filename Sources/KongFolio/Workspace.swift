@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 @MainActor final class Workspace: ObservableObject {
     // MARK: Reading
     @Published var sidebarTab = SidebarTab.pages
+    @Published var isMakingPDF = false
+    @Published var previewsCreatedPDF = false
     @Published var pageEditing053 = false
     @Published var showsPageThumbnails = false
     var extractingPDFPages = false
@@ -815,7 +817,11 @@ import UniformTypeIdentifiers
         displayCache = nil; copiedAnnotations.removeAll()
         signatureLayers.removeAll(); movingSignature = nil; moveSnapshot = nil; placingSignature = nil; pageImageTarget = nil; pageImageWidthPoints = nil
         drawingInProgress = false; pendingReveal = nil; deferredOpen = nil
-        if !keepingSource { showsPageThumbnails = false }
+        if !keepingSource {
+            showsPageThumbnails = false
+            isMakingPDF = false
+            previewsCreatedPDF = false
+        }
         if let path = rulerPath { try? readingRuler.save(path:path,storage:storage) }
         rulerTask?.cancel(); rulerPath = nil
         document = PDFDocument(); emptyCreationPDF = nil; cachedPDF = nil; incrementalBase = nil; incrementalPages = []

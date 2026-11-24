@@ -97,7 +97,7 @@ extension Workspace {
     func distributeSelectedNotes(horizontally: Bool) { arrangeSelectedNotes({ AnnotationLayout.distribute($0, horizontally: horizontally) }, minimum: 3) }
 
     /// Changes the text box being edited (and the ticked text boxes, if any).
-    func styleTextBoxes(font name: String? = nil, size: CGFloat? = nil, fill: NSColor? = nil, border: CGFloat? = nil) {
+    func styleTextBoxes(font name: String? = nil, size: CGFloat? = nil, fill: NSColor? = nil, border: CGFloat? = nil, ink: NSColor? = nil) {
         var targets = annotations(ofNotes: selectedNoteIDs).filter { $0.type == "FreeText" }
         if targets.isEmpty, let one = selectedAnnotation, one.type == "FreeText" { targets = [one] }
         guard !targets.isEmpty else { status = "先选中一个文字框（用“编辑标注”点选，或在列表里勾选）"; return }
@@ -106,7 +106,12 @@ extension Workspace {
             let current = box.font ?? NSFont.systemFont(ofSize: 14)
             let family = name ?? (AnnotationTextStyle.fonts.first { !$0.name.isEmpty && current.fontName.hasPrefix($0.name.replacingOccurrences(of: " ", with: "")) }?.name ?? "")
             let points = size ?? current.pointSize
-            box.font = AnnotationTextStyle.font(name: family, size: points)
+            if name != nil {
+                box.font = AnnotationTextStyle.font(name: family, size: points)
+            } else if size != nil {
+                box.font = AnnotationTextStyle.font(name: current.fontName, size: points)
+            }
+            if let ink { box.fontColor = ink }
             if size != nil {
                 var frame = box.bounds
                 let height = AnnotationTextStyle.height(for: box.contents ?? "", size: points, width: frame.width)

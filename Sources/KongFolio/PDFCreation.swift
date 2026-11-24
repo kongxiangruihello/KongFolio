@@ -207,7 +207,7 @@ extension WorkspaceStore {
         let workspace = addWorkspace()
         workspace.document = document
         workspace.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "未命名 PDF" : title
-        workspace.pageEditing053 = true
+        workspace.isMakingPDF = true
         workspace.edited(reset: true)
         if emptyPaper { workspace.emptyCreationPDF = try? workspace.pdfData() }
         workspace.status = "已创建 PDF，可添加文字、图片和标注"

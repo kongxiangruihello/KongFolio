@@ -3,21 +3,24 @@ import AppKit
 
 struct PDFThumbnailGrid: View {
     @ObservedObject var workspace: Workspace
+    var inSidebar = false
     @State private var anchor: Int?
     @State private var dropIndicator: Int?
     @State private var confirmingDeletion = false
 
-    private let cardWidth: CGFloat = 144
+    private var cardWidth: CGFloat { inSidebar ? 104 : 144 }
     private var canEdit: Bool {
         !workspace.readingLocked && !workspace.busy && workspace.placingSignature == nil
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            toolbar
-                .padding(10)
-                .background(.bar)
-            Divider()
+            if !inSidebar {
+                toolbar
+                    .padding(10)
+                    .background(.bar)
+                Divider()
+            }
             if workspace.readingLocked {
                 Button("切换为编辑模式以排列页面") { workspace.toggleReadingLock() }
                     .buttonStyle(.link)
@@ -25,18 +28,21 @@ struct PDFThumbnailGrid: View {
             }
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: cardWidth, maximum: 185), spacing: 16)],
-                              spacing: 18) {
+                    LazyVGrid(columns: [GridItem(inSidebar ? .flexible() : .adaptive(minimum: cardWidth, maximum: 185), spacing: 16)],
+                              spacing: inSidebar ? 10 : 18) {
                         ForEach(0..<workspace.count, id: \.self) { index in
                             thumbnail(index).id(index)
                         }
                     }
-                    .padding(18)
+                    .padding(inSidebar ? 8 : 18)
                 }
                 .task {
                     await Task.yield()
                     guard !Task.isCancelled else { return }
                     proxy.scrollTo(workspace.selection, anchor: .center)
+                }
+                .onChange(of: workspace.navigationToken) { _, _ in
+                    if inSidebar { proxy.scrollTo(workspace.selection) }
                 }
             }
         }
@@ -127,7 +133,7 @@ struct PDFThumbnailGrid: View {
             select(index, modifiers: NSEvent.modifierFlags)
         } label: {
             VStack(spacing: 8) {
-                ThumbnailView(workspace: workspace, index: index, height: 156, inPageGrid: true)
+                ThumbnailView(workspace: workspace, index: index, height: inSidebar ? 100 : 156, inPageGrid: !inSidebar)
                 Text(caption.map { "\(index + 1) · p.\($0)" } ?? "\(index + 1)")
                     .font(.caption.monospacedDigit()).lineLimit(1)
             }
@@ -149,8 +155,16 @@ struct PDFThumbnailGrid: View {
             open(index)
         })
         .contextMenu {
-            Button("打开第 \(index + 1) 页") { open(index) }
-            Button("提取选中页面…") { extract(index) }.disabled(workspace.placingSignature != nil)
+            if inSidebar && canEdit {
+                let actions = sidebarActions(index)
+                ForEach(actions.indices, id: \.self) { index in
+                    let action = actions[index]
+                    Button(action.title, action: action.perform).disabled(!action.enabled)
+                }
+            } else {
+                Button("打开第 \(index + 1) 页") { open(index) }
+                Button("提取选中页面…") { extract(index) }.disabled(workspace.placingSignature != nil)
+            }
         }
         if canEdit {
             card
@@ -177,13 +191,34 @@ struct PDFThumbnailGrid: View {
                         },
                         drop: { payload, after in workspace.receivePageDrag(payload, before: index + (after ? 1 : 0)) },
                         open: { open(index) },
-                        extract: { extract(index) }
+                        extract: { extract(index) },
+                        vertical: inSidebar,
+                        pageActions: inSidebar ? sidebarActions(index) : []
                     )
                     .accessibilityHidden(true)
                 }
-                .overlay(alignment: .leading) { insertionLine(index * 2) }
-                .overlay(alignment: .trailing) { insertionLine(index * 2 + 1) }
+                .overlay(alignment: inSidebar ? .top : .leading) { insertionLine(index * 2) }
+                .overlay(alignment: inSidebar ? .bottom : .trailing) { insertionLine(index * 2 + 1) }
         } else { card }
+    }
+
+    private func sidebarActions(_ index: Int) -> [PDFThumbnailPointer.PageAction] {
+        let pages = workspace.selectedPages.contains(index) ? workspace.effectivePages : [index]
+        return [
+            .init(title: "前移", enabled: (pages.first ?? 0) > 0) { applyToPages(index) { workspace.move(-1) } },
+            .init(title: "后移", enabled: (pages.last ?? index) < workspace.count - 1) { applyToPages(index) { workspace.move(1) } },
+            .init(title: "复制页") { applyToPages(index) { workspace.duplicatePages() } },
+            .init(title: "旋转") { applyToPages(index) { workspace.rotate() } },
+            .init(title: "删除页面…", enabled: pages.count < workspace.count) {
+                applyToPages(index) { confirmingDeletion = true }
+            },
+            .init(title: "提取页面…") { extract(index) }
+        ]
+    }
+
+    private func applyToPages(_ index: Int, action: () -> Void) {
+        if !workspace.selectedPages.contains(index) { select(index) }
+        action()
     }
 
     private func select(_ index: Int, modifiers: NSEvent.ModifierFlags = []) {
@@ -204,7 +239,7 @@ struct PDFThumbnailGrid: View {
 
     @ViewBuilder private func insertionLine(_ boundary: Int) -> some View {
         if dropIndicator == boundary {
-            Capsule().fill(Color.accentColor).frame(width: 4).allowsHitTesting(false)
+            Capsule().fill(Color.accentColor).frame(width: inSidebar ? nil : 4, height: inSidebar ? 4 : nil).allowsHitTesting(false)
         }
     }
 }

@@ -3,7 +3,6 @@ import SwiftUI
 struct PDFPageEditor053:View {
     @ObservedObject var workspace:Workspace
     @State private var deleteConfirmation=false
-    @State private var imageWidth = ""
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
             Text("共 \(workspace.count) 页 · 已选 \(workspace.effectivePages.count) 页").font(.callout)
@@ -26,18 +25,7 @@ struct PDFPageEditor053:View {
                 Button("删除所选页面…",role:.destructive) { deleteConfirmation=true }.disabled(workspace.effectivePages.count>=workspace.count)
             }.disabled(workspace.readingLocked || workspace.busy || workspace.placingSignature != nil)
             if workspace.placingSignature?.isPageImage == true {
-                Text("拖动图片或拖角等比缩放。").font(.caption).foregroundStyle(.secondary)
-                HStack(spacing:6) {
-                    Text("宽度")
-                    TextField("毫米",text:$imageWidth).textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("图片宽度（毫米）").onSubmit(applyImageWidth)
-                    Text("毫米").font(.caption)
-                    Button("应用",action:applyImageWidth).disabled(imageWidthMillimetres == nil)
-                }
-                HStack {
-                    Button("放置图片") { workspace.confirmSignaturePlacement() }.buttonStyle(.borderedProminent)
-                    Button("取消") { workspace.cancelSignaturePlacement() }
-                }
+                PDFPageImagePlacementControls(workspace: workspace)
             }
             Text("按住 ⌘ 可选择多页。页面修改会自动保存，可用撤销恢复。").font(.caption).foregroundStyle(.secondary)
             List {
@@ -51,10 +39,34 @@ struct PDFPageEditor053:View {
                 }
             }.disabled(workspace.placingSignature?.isPageImage == true)
         }.padding(10)
-        .onChange(of:workspace.pageImageWidthPoints,initial:true) { _,width in
+        .confirmationDialog("删除 \(workspace.effectivePages.count) 页？",isPresented:$deleteConfirmation) { Button("删除页面",role:.destructive) { workspace.remove() } }
+    }
+
+}
+
+struct PDFPageImagePlacementControls: View {
+    @ObservedObject var workspace: Workspace
+    @State private var imageWidth = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("拖动图片或拖角等比缩放。").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Text("宽度")
+                TextField("毫米", text: $imageWidth).textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("图片宽度（毫米）").onSubmit(applyImageWidth)
+                    .frame(width: 65)
+                Text("毫米").font(.caption).foregroundStyle(.secondary)
+                Button("应用", action: applyImageWidth).disabled(imageWidthMillimetres == nil)
+            }
+            HStack {
+                Button("放置图片") { workspace.confirmSignaturePlacement() }.buttonStyle(.borderedProminent)
+                Button("取消") { workspace.cancelSignaturePlacement() }
+            }
+        }
+        .onChange(of: workspace.pageImageWidthPoints, initial: true) { _, width in
             updateWidthText(width)
         }
-        .confirmationDialog("删除 \(workspace.effectivePages.count) 页？",isPresented:$deleteConfirmation) { Button("删除页面",role:.destructive) { workspace.remove() } }
     }
 
     private var imageWidthMillimetres: Double? {
