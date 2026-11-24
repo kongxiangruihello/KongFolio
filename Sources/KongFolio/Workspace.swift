@@ -1195,19 +1195,8 @@ import UniformTypeIdentifiers
         }
         readingPoint = nil
         navigationToken = UUID()
-        if Set(order).count == order.count {
-            arrangeLivePages(order)
-        } else if let data = cachedPDF, let source = PDFDocument(data: data) {
-            // Move detached pages from a serialized checkpoint so their embedded fonts are kept.
-            var seen: Set<Int> = []
-            let copies = order.enumerated().compactMap { target, index -> (Int, PDFPage)? in
-                guard !seen.insert(index).inserted, let page = source.page(at: index) else { return nil }
-                return (target, page)
-            }
-            for (target, page) in copies {
-                source.removePage(at: source.index(for: page))
-                document.insert(page, at: target)
-            }
+        if isMakingPDF {
+            arrangeMakingPages(order)
         } else {
             document = DocumentServices.subset(document, indexes: order)
         }
@@ -1220,6 +1209,34 @@ import UniformTypeIdentifiers
         selection = selected.sorted().first ?? 0
         changed()
         status = "页面操作完成，共 \(count) 页"
+    }
+
+    private func arrangeMakingPages(_ order: [Int]) {
+        var seen: Set<Int> = []
+        var originals: [Int] = []
+        var duplicatePositions: [(target: Int, index: Int)] = []
+        for (target, index) in order.enumerated() {
+            if seen.insert(index).inserted { originals.append(index) }
+            else { duplicatePositions.append((target, index)) }
+        }
+        guard !duplicatePositions.isEmpty else { arrangeLivePages(originals); return }
+        guard let data = cachedPDF, let source = PDFDocument(data: data) else {
+            document = DocumentServices.subset(document, indexes: order)
+            return
+        }
+        // Detached pages from the serialized checkpoint retain the fonts used by newly written text.
+        let copies = duplicatePositions.compactMap { target, index in
+            source.page(at: index).map { (target, $0) }
+        }
+        guard copies.count == duplicatePositions.count else {
+            document = DocumentServices.subset(document, indexes: order)
+            return
+        }
+        arrangeLivePages(originals)
+        for (target, page) in copies {
+            source.removePage(at: source.index(for: page))
+            document.insert(page, at: target)
+        }
     }
 
     private func arrangeLivePages(_ order: [Int]) {
