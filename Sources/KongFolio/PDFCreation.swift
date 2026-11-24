@@ -291,6 +291,11 @@ extension PDFCreationService {
             result.append(contentsOf: text.split { $0.isWhitespace || $0.asciiValue == 0 }
                 .filter { $0 != "q" && $0 != "Q" }.map(String.init))
         }
+        // PDFKit can add a page-box clip during serialization and omit it when the page is copied.
+        if result.count >= 7, Array(result[4..<7]) == ["re", "W", "n"],
+           result.prefix(4).allSatisfy({ Double($0)?.isFinite == true }) {
+            result.removeFirst(7)
+        }
         return result
     }
 }

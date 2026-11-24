@@ -72,6 +72,11 @@ import CoreText
         XCTAssertTrue(StampingTests().compact(saved.page(at: 1)?.string).contains("讲义封面FolioTitle"),
                       "保存后：\(String(describing: saved.string))")
         XCTAssertEqual(saved.findString("FolioTitle", withOptions: []).count, 1)
+        workspace.duplicatePages()
+        XCTAssertEqual(workspace.count, 3)
+        XCTAssertEqual(workspace.document.findString("FolioTitle", withOptions: []).count, 2)
+        workspace.remove()
+        XCTAssertEqual(workspace.document.findString("FolioTitle", withOptions: []).count, 1)
         XCTAssertTrue(workspace.discardWork())
         XCTAssertTrue(workspace.closeDocument())
         XCTAssertFalse(workspace.isMakingPDF)

@@ -1195,7 +1195,18 @@ import UniformTypeIdentifiers
         }
         readingPoint = nil
         navigationToken = UUID()
-        document = DocumentServices.subset(document, indexes: order)
+        if Set(order).count == order.count {
+            arrangeLivePages(order)
+        } else if let data = cachedPDF, let source = PDFDocument(data: data) {
+            // Page copies made from an in-memory modified PDF can lose newly embedded fonts.
+            // Use the serialized checkpoint for copies, keeping existing page objects in place.
+            var seen: Set<Int> = []
+            for (target, index) in order.enumerated() where !seen.insert(index).inserted {
+                if let page = source.page(at: index)?.copy() as? PDFPage { document.insert(page, at: target) }
+            }
+        } else {
+            document = DocumentServices.subset(document, indexes: order)
+        }
         var remappedSignatures: [Int: SignatureEditArchive] = [:]
         for (index, old) in order.enumerated() { remappedSignatures[index] = oldSignatures[old] }
         restoreSignatureEdits(remappedSignatures)
@@ -1205,6 +1216,24 @@ import UniformTypeIdentifiers
         selection = selected.sorted().first ?? 0
         changed()
         status = "页面操作完成，共 \(count) 页"
+    }
+
+    private func arrangeLivePages(_ order: [Int]) {
+        let retained = Set(order)
+        var indices = Array(0..<count)
+        for index in indices.reversed() where !retained.contains(index) {
+            document.removePage(at: index)
+            indices.remove(at: index)
+        }
+        var positions = Dictionary(uniqueKeysWithValues: indices.enumerated().map { ($0.element, $0.offset) })
+        for (target, page) in order.enumerated() {
+            guard let source = positions[page], source != target else { continue }
+            let displaced = indices[target]
+            document.exchangePage(at: source, withPageAt: target)
+            indices.swapAt(source, target)
+            positions[page] = target
+            positions[displaced] = source
+        }
     }
 
     func move(_ delta: Int) {
