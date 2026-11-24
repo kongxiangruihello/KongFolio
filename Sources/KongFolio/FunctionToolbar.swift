@@ -50,6 +50,7 @@ struct FunctionToolbar: View {
                         HomeToolbarLabel("其他格式", symbol: "doc.on.doc", showsChevron: true)
                     }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                    .fixedSize(horizontal: true, vertical: false)
                 }
 
                 Spacer(minLength: 8)
@@ -68,6 +69,7 @@ struct FunctionToolbar: View {
                     HomeToolbarLabel("最近文件", symbol: "clock.arrow.circlepath", showsChevron: true)
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                .fixedSize(horizontal: true, vertical: false)
 
                 Menu {
                     if compact {
@@ -82,6 +84,7 @@ struct FunctionToolbar: View {
                     HomeToolbarLabel("更多", symbol: "ellipsis", showsTitle: false)
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                .fixedSize(horizontal: true, vertical: false)
                 .help("更多")
             }
             .buttonStyle(.plain)
