@@ -951,25 +951,17 @@ import UniformTypeIdentifiers
         }
     }
 
-    /// Files dropped on the window: open them, or insert after the current page when a document is open.
+    /// Opens dropped files through the same tab workflow as the file chooser.
     func openDropped(_ urls: [URL]) {
-        let files = urls.filter { $0.isFileURL && (["pdf", "kongfolio"].contains($0.pathExtension.lowercased()) || TextImport.handles($0) || ImageImport.handles($0)) }
-        guard !files.isEmpty else { error = "支持拖入 PDF、图片、Markdown、HTML、TXT 或 KongFolio 项目。"; return }
-        let isProject = files.contains { $0.pathExtension.lowercased() == "kongfolio" }
-        var insert = false
-        if count > 0, !isProject, AppEnvironment.isInteractive {
-            let alert = NSAlert()
-            alert.messageText = "如何处理拖入的 \(files.count) 个文件？"
-            alert.addButton(withTitle: "插入到当前页之后")
-            alert.addButton(withTitle: "打开为新文档")
-            alert.addButton(withTitle: "取消")
-            switch alert.runModal() {
-            case .alertFirstButtonReturn: insert = true
-            case .alertSecondButtonReturn: insert = false
-            default: return
-            }
+        let files = urls.filter {
+            $0.isFileURL && (["pdf", "kongfolio"].contains($0.pathExtension.lowercased()) ||
+                TextImport.handles($0) || ImageImport.handles($0) || ReadingShortcut.handles($0))
         }
-        openSelected(files, insert: insert)
+        guard !files.isEmpty else {
+            error = "支持拖入 PDF、图片、Markdown、HTML、TXT、阅读快捷方式或 KongFolio 项目。"
+            return
+        }
+        openSelected(files, insert: false)
     }
 
     private func openDeferredFiles() {

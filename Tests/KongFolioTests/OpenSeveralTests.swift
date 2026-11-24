@@ -46,6 +46,26 @@ final class OpenSeveralTests: XCTestCase {
         XCTAssertEqual(merging.tabs.count, 1)
     }
 
+    @MainActor func testDroppingFileOnOpenPDFSelectsSeparateTab() throws {
+        let directory = try folder(); defer { try? FileManager.default.removeItem(at: directory) }
+        let store = WorkspaceStore(storage: directory); store.bootstrap()
+        let original = try store.activeWorkspace.unwrap("没有标签页")
+        let document = DocumentServicesTests().fixture()
+        original.document = document
+        original.sourceURL = try pdf(in: directory, "原文.pdf")
+        original.selection = document.pageCount - 1
+        let originalPage = original.selection
+        let dropped = try pdf(in: directory, "拖入.pdf")
+
+        original.openDropped([dropped])
+
+        XCTAssertEqual(store.tabs.count, 2)
+        XCTAssertEqual(store.activeWorkspace?.sourceURL, dropped)
+        XCTAssertTrue(original.document === document)
+        XCTAssertEqual(original.selection, originalPage)
+        XCTAssertFalse(original.showImportOrder)
+    }
+
     // Without a tab store (older code paths, tests) several files are still merged after confirming the order.
     @MainActor func testWithoutStoreSeveralFilesAskForMergeOrder() throws {
         let w = Workspace()

@@ -19,6 +19,7 @@ private struct NativePDFCanvas: NSViewRepresentable {
     @ObservedObject var workspace: Workspace
     func makeNSView(context: Context) -> ReadingPDFContainer {
         let view = DrawingPDFView(); view.workspace = workspace; view.autoScales = true; view.displayMode = .singlePageContinuous; view.displayDirection = .vertical; view.backgroundColor = .windowBackgroundColor
+        view.registerForDraggedTypes(view.registeredDraggedTypes + [.fileURL])
         workspace.pdfView = view
         let coordinator = context.coordinator
         coordinator.observer = NotificationCenter.default.addObserver(forName: .PDFViewPageChanged, object: view, queue: .main) { [weak view, weak coordinator] _ in
@@ -230,6 +231,36 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             strokePreview.autoresizingMask = [.width, .height]
             addSubview(strokePreview)
         }
+    }
+
+    // The native PDF view can receive Finder drops before the surrounding SwiftUI view.
+    private func acceptsFileDrop(_ sender: NSDraggingInfo) -> Bool {
+        sender.draggingPasteboard.availableType(from: [.fileURL]) != nil
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard acceptsFileDrop(sender) else { return super.draggingEntered(sender) }
+        return workspace != nil && sender.draggingSourceOperationMask.contains(.copy) ? .copy : []
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard acceptsFileDrop(sender) else { return super.draggingUpdated(sender) }
+        return draggingEntered(sender)
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard acceptsFileDrop(sender) else { return super.prepareForDragOperation(sender) }
+        return draggingEntered(sender) == .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard acceptsFileDrop(sender) else { return super.performDragOperation(sender) }
+        let files = sender.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL] ?? []
+        guard let workspace, !files.isEmpty else { return false }
+        workspace.openDropped(files)
+        return true
     }
 
     /// SwiftUI may cache the native view after a tab disappears. Drop its PDF and overlays explicitly.
