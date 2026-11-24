@@ -32,12 +32,28 @@ struct FunctionToolbar: View {
     }
 
     private var homeToolbar: some View {
-        HStack(spacing: 8) {
-            homeCreationButton("新建 Markdown", symbol: "doc", badge: "MD") { store.newNote() }
-            homeCreationButton("新建文本", symbol: "doc.text") { store.newNote(format: .plain) }
-            homeCreationButton("新建 PDF", symbol: "doc", badge: "PDF") { store.showPDFCreation = true }
-            homeCreationButton("新建 HTML", symbol: "chevron.left.forwardslash.chevron.right") { store.newNote(format: .html) }
-            ToolbarControlSurface {
+        GeometryReader { geometry in
+            let compact = HomeWorkspaceLayout.isCompact(width: geometry.size.width)
+            HStack(spacing: 6) {
+                Button { store.newNote() } label: {
+                    HomeToolbarLabel("新建笔记", symbol: "square.and.pencil")
+                }
+                .help("新建 Markdown 笔记")
+
+                if !compact {
+                    Button { store.showPDFCreation = true } label: {
+                        HomeToolbarLabel("新建 PDF", symbol: "doc.badge.plus")
+                    }
+                    Menu {
+                        homeOtherFormats
+                    } label: {
+                        HomeToolbarLabel("其他格式", symbol: "doc.on.doc", showsChevron: true)
+                    }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                }
+
+                Spacer(minLength: 8)
+
                 Menu {
                     if !homeRecentFiles.isEmpty {
                         ForEach(homeRecentFiles, id: \.self) { path in
@@ -49,29 +65,31 @@ struct FunctionToolbar: View {
                         Text("暂无最近文件")
                     }
                 } label: {
-                    AppIcon("clock.arrow.circlepath").frame(width: 28, height: 28)
+                    HomeToolbarLabel("最近文件", symbol: "clock.arrow.circlepath", showsChevron: true)
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden)
-                .help("最近文件").accessibilityLabel("最近文件")
-            }.frame(maxWidth: .infinity)
-            ToolbarControlSurface {
+
                 Menu {
+                    if compact {
+                        Button("新建 PDF") { store.showPDFCreation = true }
+                        homeOtherFormats
+                        Divider()
+                    }
                     Button("后台任务…") { store.showBackgroundJobs = true }
                     Button("启动恢复与阅读内存…") { store.showReadingSettings = true }
                     Button("检查更新…") { AppUpdateWindow.shared.show() }
                 } label: {
-                    AppIcon("ellipsis.circle").frame(width: 28, height: 28)
+                    HomeToolbarLabel("更多", symbol: "ellipsis", showsTitle: false)
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden)
-                .help("更多").accessibilityLabel("更多")
-            }.frame(maxWidth: .infinity)
+                .help("更多")
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, HomeWorkspaceLayout.horizontalInset(compact: compact))
+            .frame(maxWidth: HomeWorkspaceLayout.maximumWidth)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .buttonStyle(.borderless)
-        .font(.system(size: 16, weight: .medium))
-        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-        .padding(.horizontal, 12)
-        .frame(maxWidth: 640)
-        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
+        .frame(height: 44)
         .background(.bar)
         .onAppear {
             let file = store.storage.appendingPathComponent("Recent.json")
@@ -79,20 +97,9 @@ struct FunctionToolbar: View {
         }
     }
 
-    private func homeCreationButton(_ title: String, symbol: String, badge: String? = nil,
-                                    action: @escaping () -> Void) -> some View {
-        ToolbarControlSurface {
-            Button(action: action) {
-                ZStack {
-                    AppIcon(symbol).font(.system(size: 22, weight: .regular))
-                    if let badge {
-                        Text(badge).font(.system(size: badge == "PDF" ? 6 : 8, weight: .bold))
-                            .offset(y: 3)
-                    }
-                }.frame(width: 28, height: 28)
-            }
-            .help(title).accessibilityLabel(title)
-        }.frame(maxWidth: .infinity)
+    @ViewBuilder private var homeOtherFormats: some View {
+        Button("新建纯文本") { store.newNote(format: .plain) }
+        Button("新建 HTML") { store.newNote(format: .html) }
     }
 
     private var documentToolbar: some View {
@@ -441,6 +448,46 @@ struct FunctionToolbar: View {
         case .sidebar: store.toggleRightReadingPanel()
         default: break
         }
+    }
+}
+
+private struct HomeToolbarLabel: View {
+    let title: String
+    let symbol: String
+    var showsTitle: Bool
+    var showsChevron: Bool
+    @State private var hovered = false
+
+    init(_ title: String, symbol: String, showsTitle: Bool = true, showsChevron: Bool = false) {
+        self.title = title
+        self.symbol = symbol
+        self.showsTitle = showsTitle
+        self.showsChevron = showsChevron
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            AppIcon(symbol)
+                .font(.system(size: 16, weight: .medium))
+                .accessibilityHidden(true)
+            if showsTitle {
+                Text(title).font(.system(size: 13, weight: .medium))
+            }
+            if showsChevron {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 9)
+        .frame(height: 30)
+        .fixedSize(horizontal: true, vertical: false)
+        .background(hovered ? Color.primary.opacity(0.07) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
+        .accessibilityLabel(title)
     }
 }
 

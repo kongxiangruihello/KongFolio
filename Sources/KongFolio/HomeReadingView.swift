@@ -1,5 +1,13 @@
 import SwiftUI
 
+enum HomeWorkspaceLayout {
+    static let maximumWidth: CGFloat = 980
+
+    static func isCompact(width: CGFloat) -> Bool { width < 520 }
+
+    static func horizontalInset(compact: Bool) -> CGFloat { compact ? 20 : 32 }
+}
+
 struct HomeReadingView: View {
     @ObservedObject var store: WorkspaceStore
     @ObservedObject var journal: ReadingJournal
@@ -28,7 +36,7 @@ struct HomeReadingView: View {
     var body: some View {
         GeometryReader { geometry in
             let wide = geometry.size.width >= 760
-            let compact = geometry.size.width < 520
+            let compact = HomeWorkspaceLayout.isCompact(width: geometry.size.width)
             ScrollView {
                 VStack(alignment: .leading, spacing: compact ? 18 : 24) {
                     header(wide: wide)
@@ -39,10 +47,10 @@ struct HomeReadingView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.horizontal, compact ? 20 : 32)
+                .padding(.horizontal, HomeWorkspaceLayout.horizontalInset(compact: compact))
                 .padding(.top, compact ? 22 : 38)
                 .padding(.bottom, 32)
-                .frame(maxWidth: 980)
+                .frame(maxWidth: HomeWorkspaceLayout.maximumWidth)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
         }
