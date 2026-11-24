@@ -227,11 +227,14 @@ extension Workspace {
             if cachedPDF == emptyCreationPDF { return true }
             guard let paper = PDFDocument(data: emptyCreationPDF) else { return false }
             let paperStreams = Set((0..<paper.pageCount).compactMap { index in
-                paper.page(at: index)?.pageRef.flatMap(PDFCreationService.contentStreams)
+                paper.page(at: index)?.pageRef
+                    .flatMap(PDFCreationService.contentStreams)
+                    .flatMap(PDFCreationService.paperTokens)
             })
             return pages.allSatisfy { page in
                 PDFCreationService.readContentStreams(page).map {
-                    PDFCreationService.emptyContents($0) || paperStreams.contains($0)
+                    guard let tokens = PDFCreationService.paperTokens($0) else { return false }
+                    return tokens.isEmpty || paperStreams.contains(tokens)
                 } ?? false
             }
         }
@@ -277,10 +280,17 @@ extension PDFCreationService {
     }
 
     static func emptyContents(_ streams: [Data]) -> Bool {
-        streams.allSatisfy { data in
-            guard let text = String(data: data, encoding: .ascii) else { return false }
-            // PDFKit wraps otherwise empty pages in save/restore graphics-state operators.
-            return text.split { $0.isWhitespace || $0.asciiValue == 0 }.allSatisfy { $0 == "q" || $0 == "Q" }
+        paperTokens(streams)?.isEmpty == true
+    }
+
+    static func paperTokens(_ streams: [Data]) -> [String]? {
+        var result: [String] = []
+        for data in streams {
+            guard let text = String(data: data, encoding: .ascii) else { return nil }
+            // PDFKit can add graphics-state wrappers and reflow whitespace when it copies paper to a new page.
+            result.append(contentsOf: text.split { $0.isWhitespace || $0.asciiValue == 0 }
+                .filter { $0 != "q" && $0 != "Q" }.map(String.init))
         }
+        return result
     }
 }

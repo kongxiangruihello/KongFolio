@@ -76,7 +76,14 @@ import CoreText
         workspace.insertBlankPage()
         workspace.insertBlankPage()
         XCTAssertTrue(workspace.movePages([0], before: 3))
-        XCTAssertTrue(workspace.canDiscardEmptyCreation)
+        guard workspace.canDiscardEmptyCreation else {
+            let tokens = (0..<workspace.count).map {
+                workspace.document.page(at: $0).flatMap(PDFCreationService.readContentStreams)
+                    .flatMap(PDFCreationService.paperTokens).map { Array($0.prefix(16)) }
+            }
+            XCTFail("仅含空页及内置底纹的草稿应可直接关闭。private=\(workspace.hasPrivateReadingData) tokens=\(tokens)")
+            return
+        }
         let finished = await workspace.finishPendingSave()
         XCTAssertTrue(finished)
         XCTAssertNil(workspace.sourceURL)
