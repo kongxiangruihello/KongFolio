@@ -77,16 +77,37 @@ struct RightReadingPanelLayout<Content: View>: View {
             let docked = width >= (split ? 1080 : 560)
             HSplitView {
                 content().frame(minWidth:240,maxWidth:.infinity,maxHeight:.infinity)
-                if store.rightReadingPanelVisible && docked {
-                    panel.frame(minWidth:280,idealWidth:330,maxWidth:400)
+                if showsPanel && docked {
+                    displayedPanel.frame(minWidth:280,idealWidth:330,maxWidth:400)
                 }
             }
             .overlay(alignment:.trailing) {
-                if store.rightReadingPanelVisible && !docked {
-                    panel.frame(width:min(370,max(260,width-44)))
+                if showsPanel && !docked {
+                    displayedPanel.frame(width:min(370,max(260,width-44)))
                         .shadow(color:.black.opacity(0.18),radius:8,x:-3)
                 }
             }
+        }
+    }
+
+    private var showsPanel: Bool {
+        store.activeWorkspace?.selectedPageText != nil || store.rightReadingPanelVisible
+    }
+
+    @ViewBuilder private var displayedPanel: some View {
+        if let workspace = store.activeWorkspace, let selection = workspace.pageTextSelection,
+           let block = workspace.selectedPageText {
+            VStack {
+                PDFPageTextEditor(editing: block, insert: { text, size, color in
+                    try workspace.updatePageContentText(selection, input: text, size: size, color: color)
+                }, cancel: { workspace.pageTextSelection = nil })
+                .id(selection)
+                Spacer(minLength: 0)
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(Color(nsColor: .windowBackgroundColor))
+        } else {
+            panel
         }
     }
 

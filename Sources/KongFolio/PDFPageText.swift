@@ -39,8 +39,7 @@ struct PDFPageText: Codable {
         let crop = page.bounds(for: .cropBox)
         let rotation = page.rotation
         let display = SignatureStamp.uprightRect(CGRect(origin: .zero, size: crop.size), pageSize: crop.size, rotation: rotation)
-        let local = CGPoint(x: point.x - crop.minX, y: point.y - crop.minY)
-        let anchor = SignatureStamp.uprightRect(CGRect(origin: local, size: .zero), pageSize: crop.size, rotation: rotation).origin
+        let anchor = displayedPoint(point, on: page)
         let inset: CGFloat = 8
         let width = min(360, display.width - inset * 2)
         let availableHeight = display.height - inset * 2
@@ -67,6 +66,38 @@ struct PDFPageText: Codable {
             throw FolioError(message: "当前页放不下完整文字，请缩短文字后再试。")
         }
         return block
+    }
+
+    static func displayedPoint(_ point: CGPoint, on page: PDFPage) -> CGPoint {
+        let crop = page.bounds(for: .cropBox)
+        let local = CGPoint(x: point.x - crop.minX, y: point.y - crop.minY)
+        return SignatureStamp.uprightRect(CGRect(origin: local, size: .zero),
+                                          pageSize: crop.size, rotation: page.rotation).origin
+    }
+
+    func pageRect(_ rect: CGRect, on page: PDFPage) -> CGRect {
+        let crop = page.bounds(for: .cropBox)
+        return SignatureStamp.originalRect(rect, pageSize: crop.size, rotation: page.rotation)
+            .offsetBy(dx: crop.minX, dy: crop.minY)
+    }
+
+    func contains(_ point: CGPoint, on page: PDFPage) -> Bool {
+        let position = Self.displayedPoint(point, on: page)
+        guard bounds.insetBy(dx: -3, dy: -3).contains(position) else { return false }
+        let frame = frame(in: CGRect(origin: .zero, size: bounds.size))
+        guard let lines = CTFrameGetLines(frame) as? [CTLine], !lines.isEmpty else { return false }
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        for (index, line) in lines.enumerated() {
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            let width = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+            let origin = origins[index]
+            let ink = CGRect(x: bounds.minX + origin.x, y: bounds.minY + origin.y - descent,
+                             width: CGFloat(width), height: ascent + descent)
+            if width > 0 && ink.insetBy(dx: -3, dy: -3).contains(position) { return true }
+        }
+        return false
     }
 
     private static func attributed(_ text: String, size: CGFloat, color: PDFPageTextColor) -> CFAttributedString {
@@ -101,18 +132,33 @@ struct PDFPageText: Codable {
 struct PDFPageTextEditor: View {
     let insert: (String, CGFloat, PDFPageTextColor) throws -> Void
     let cancel: () -> Void
-    @State private var text = ""
-    @State private var size: CGFloat = 14
-    @State private var color = PDFPageTextColor.black
+    private let editing: Bool
+    @State private var text: String
+    @State private var size: CGFloat
+    @State private var color: PDFPageTextColor
     @State private var error: String?
     @FocusState private var focused: Bool
 
+    init(editing block: PDFPageText? = nil, insert: @escaping (String, CGFloat, PDFPageTextColor) throws -> Void,
+         cancel: @escaping () -> Void) {
+        self.insert = insert
+        self.cancel = cancel
+        editing = block != nil
+        _text = State(initialValue: block?.text ?? "")
+        _size = State(initialValue: block?.size ?? 14)
+        _color = State(initialValue: block?.color ?? .black)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("添加正文文字").font(.headline)
+            HStack {
+                Text(editing ? "编辑正文文字" : "添加正文文字").font(.headline)
+                Spacer()
+                if editing { SidePanelCloseButton(title: "关闭正文编辑", close: cancel) }
+            }
             TextEditor(text: $text)
                 .font(.system(size: 14))
-                .frame(height: 92)
+                .frame(minHeight: 92, maxHeight: editing ? 220 : 92)
                 .focused($focused)
                 .accessibilityLabel("正文文字")
                 .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(.secondary.opacity(0.35)).allowsHitTesting(false) }
@@ -128,7 +174,7 @@ struct PDFPageTextEditor: View {
             HStack {
                 Spacer()
                 Button("取消", action: cancel).keyboardShortcut(.cancelAction)
-                Button("写入页面") {
+                Button(editing ? "应用修改" : "写入页面") {
                     do { try insert(text, size, color) }
                     catch { self.error = error.localizedDescription }
                 }
@@ -137,12 +183,58 @@ struct PDFPageTextEditor: View {
             }
         }
         .padding(14)
-        .frame(width: 320)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .task { focused = true }
     }
 }
 
+struct PDFPageTextSelection: Hashable {
+    let pageIndex: Int
+    let textIndex: Int
+    let revision: UUID
+}
+
 extension Workspace {
+    var selectedPageText: PDFPageText? {
+        guard !previewsCreatedPDF, !readingLocked, !showsPageThumbnails, !placesPDFContentText, placingSignature == nil,
+              let selected = pageTextSelection, selected.pageIndex == selection, selected.revision == revision,
+              let page, let layer = signatureLayer(for: page), layer.texts.indices.contains(selected.textIndex) else { return nil }
+        return layer.texts[selected.textIndex]
+    }
+
+    func pageTextIndex(at point: CGPoint, on page: PDFPage) -> Int? {
+        guard !previewsCreatedPDF, !readingLocked, !busy, !showsPageThumbnails, !placesPDFContentText,
+              placingSignature == nil, let layer = signatureLayer(for: page) else { return nil }
+        return layer.texts.indices.reversed().first { layer.texts[$0].contains(point, on: page) }
+    }
+
+    func selectPageText(_ index: Int, on clickedPage: PDFPage) {
+        guard let layer = signatureLayer(for: clickedPage), layer.texts.indices.contains(index) else { return }
+        let pageIndex = document.index(for: clickedPage)
+        if selection != pageIndex { selectPage(pageIndex) }
+        pageTextSelection = PDFPageTextSelection(pageIndex: pageIndex, textIndex: index, revision: revision)
+    }
+
+    func updatePageContentText(_ selected: PDFPageTextSelection, input: String,
+                               size: CGFloat, color: PDFPageTextColor) throws {
+        guard !busy, placingSignature == nil, pageTextSelection == selected, let old = selectedPageText,
+              let page, let layer = signatureLayer(for: page) else {
+            throw FolioError(message: "当前页面已变化，请重新点击正文文字。")
+        }
+        let anchor = CGRect(origin: CGPoint(x: old.bounds.minX, y: old.bounds.maxY), size: .zero)
+        let block = try PDFPageText.layout(input, size: size, color: color, at: old.pageRect(anchor, on: page).origin, on: page)
+        var texts = layer.texts
+        texts[selected.textIndex] = block
+        let before = try snapshot()
+        _ = try rebake(layer, items: layer.items, texts: texts)
+        pushUndo(.snapshot(before))
+        readingPoint = nil
+        navigationToken = UUID()
+        changed()
+        pageTextSelection = PDFPageTextSelection(pageIndex: selected.pageIndex, textIndex: selected.textIndex, revision: revision)
+        status = "已更新正文文字，可撤销"
+    }
+
     func addPageContentText(_ input: String, size: CGFloat, color: PDFPageTextColor,
                             on original: PDFPage, at point: CGPoint) throws {
         let index = document.index(for: original)
@@ -161,15 +253,9 @@ extension Workspace {
             let single = PDFDocument()
             single.insert(clean, at: 0)
             let bytes = try single.dataRepresentation().unwrap("无法读取当前页")
-            let holder = try PDFDocument(data: bytes).unwrap("无法解析当前页")
-            let source = try holder.page(at: 0).unwrap("无法读取页面内容")
-            let reference = try source.pageRef.unwrap("无法读取页面内容")
-            let crop = source.bounds(for: .cropBox)
-            let replacement = try SignatureStamp.redrawInPageCoordinates(source, reference: reference) { context in
-                block.draw(in: context, originalCrop: crop, rotation: source.rotation)
-            }.unwrap("无法写入正文文字")
-            withExtendedLifetime(holder) {}
-            replacePage(original, with: replacement, at: index, preservingAnnotations: true)
+            let layer = SignatureLayer(base: bytes, preserved: true, size: original.bounds(for: .cropBox).size,
+                                       rotation: original.rotation, items: [], page: original)
+            _ = try rebake(layer, items: [], texts: [block])
         }
         // A forced OCR run must not restore the pre-edit source over the new page content.
         updateMeta(index) { $0.ocrOriginal = nil }

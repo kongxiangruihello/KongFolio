@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 @MainActor final class Workspace: ObservableObject {
     // MARK: Reading
     @Published var sidebarTab = SidebarTab.pages
+    @Published var pageTextSelection: PDFPageTextSelection?
     @Published var placesPDFContentText = false
     @Published var isMakingPDF = false
     @Published var previewsCreatedPDF = false
@@ -817,6 +818,7 @@ import UniformTypeIdentifiers
         pdfView = nil
         displayCache = nil; copiedAnnotations.removeAll()
         signatureLayers.removeAll(); movingSignature = nil; moveSnapshot = nil; placingSignature = nil; pageImageTarget = nil; pageImageWidthPoints = nil
+        pageTextSelection = nil
         placesPDFContentText = false
         drawingInProgress = false; pendingReveal = nil; deferredOpen = nil
         if !keepingSource {

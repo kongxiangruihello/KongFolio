@@ -82,6 +82,42 @@ import CoreText
         XCTAssertFalse(workspace.isMakingPDF)
     }
 
+    func testSingleClickTextCanBeEditedAfterReopeningSavedPDF() throws {
+        let store = store()
+        defer { try? FileManager.default.removeItem(at: store.storage) }
+        try FileManager.default.createDirectory(at: store.storage, withIntermediateDirectories: true)
+        let workspace = store.newPDF()
+        let blank = try XCTUnwrap(workspace.page)
+        try workspace.addPageContentText("OriginalTitle", size: 18, color: .black,
+                                         on: blank, at: CGPoint(x: 40, y: 230))
+        let url = store.storage.appendingPathComponent("editable.pdf")
+        try workspace.writePDFCopy(to: url)
+        try SignaturePersistence.write(workspace.signatureEditArchives, pdf: url, storage: store.storage)
+        let bytes = try Data(contentsOf: url)
+        let reopened = Workspace(storage: store.storage)
+        reopened.document = try XCTUnwrap(PDFDocument(data: bytes))
+        reopened.restoreSignatureEdits(SignaturePersistence.read(pdf: url, bytes: bytes, storage: store.storage))
+        let page = try XCTUnwrap(reopened.page)
+        let block = try XCTUnwrap(reopened.signatureEditArchives[0]?.texts?.first)
+        let clicked = block.pageRect(CGRect(x: block.bounds.minX + 10, y: block.bounds.midY,
+                                           width: 0, height: 0), on: page).origin
+        let hit = try XCTUnwrap(reopened.pageTextIndex(at: clicked, on: page))
+        reopened.selectPageText(hit, on: page)
+        XCTAssertEqual(reopened.selectedPageText?.text, "OriginalTitle")
+        let selection = try XCTUnwrap(reopened.pageTextSelection)
+        try reopened.updatePageContentText(selection, input: "RevisedTitle", size: 24, color: .blue)
+        XCTAssertEqual(reopened.selectedPageText?.size, 24)
+        XCTAssertEqual(reopened.selectedPageText?.color, .blue)
+        XCTAssertEqual(reopened.document.findString("OriginalTitle", withOptions: []).count, 0)
+        XCTAssertEqual(reopened.document.findString("RevisedTitle", withOptions: []).count, 1)
+        XCTAssertTrue(reopened.page?.annotations.isEmpty == true)
+        XCTAssertThrowsError(try reopened.updatePageContentText(selection, input: "Stale", size: 14, color: .black))
+        reopened.undo()
+        XCTAssertEqual(reopened.document.findString("OriginalTitle", withOptions: []).count, 1)
+        reopened.redo()
+        XCTAssertEqual(reopened.document.findString("RevisedTitle", withOptions: []).count, 1)
+    }
+
     func testRearrangedDraftWithOnlyBlankPaperClosesWithoutSaving() async throws {
         let store = store()
         defer { try? FileManager.default.removeItem(at: store.storage) }

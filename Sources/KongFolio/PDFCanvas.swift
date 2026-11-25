@@ -86,6 +86,7 @@ private struct NativePDFCanvas: NSViewRepresentable {
         }
         if context.coordinator.revision != workspace.revision { view.layoutDocumentView(); context.coordinator.revision = workspace.revision }
         context.coordinator.observeScroll(view: view)
+        view.refreshPageTextSelection()
         if replaced || layoutChanged { view.needsDisplay = true }
     }
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -177,6 +178,25 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
     override func layout() { super.layout(); readingGuide.needsDisplay = true; refreshSourceHighlight() }
     private var sourceHighlight: ReadingSourceOverlay?
+    private var pageTextHighlight: ReadingSourceOverlay?
+    private var highlightedPageText: PDFPageTextSelection?
+    private var pressedPageText: (page: PDFPage, index: Int)?
+
+    func refreshPageTextSelection() {
+        let selection = workspace?.selectedPageText == nil ? nil : workspace?.pageTextSelection
+        if selection != highlightedPageText {
+            pageTextHighlight?.removeFromSuperview()
+            pageTextHighlight = nil
+            highlightedPageText = selection
+            if let workspace, let page = workspace.page, let block = workspace.selectedPageText {
+                let overlay = ReadingSourceOverlay(pdfView: self, page: page,
+                                                   rects: [block.pageRect(block.bounds, on: page)], color: .systemBlue)
+                pageTextHighlight = overlay
+                addSubview(overlay, positioned: .above, relativeTo: nil)
+            }
+        }
+        pageTextHighlight?.needsDisplay = true
+    }
     private var sourceHighlightExpiry: Task<Void,Never>?
 
     func showSourceHighlight(_ rects:[CGRect],on page:PDFPage,keep:Bool) {
@@ -194,6 +214,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
 
     func refreshSourceHighlight() {
         sourceHighlight?.needsDisplay = true
+        pageTextHighlight?.needsDisplay = true
         excerptSelectionOverlays.forEach { $0.needsDisplay = true }
         imageExcerptOverlays.forEach { $0.needsDisplay = true }
         if let anchor = excerptSelections.last, let selectionBar { positionSelectionToolbar(selectionBar, near: anchor) }
@@ -277,6 +298,10 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
 
     /// SwiftUI may cache the native view after a tab disappears. Drop its PDF and overlays explicitly.
     func releaseReadingResources() {
+        pressedPageText = nil
+        highlightedPageText = nil
+        pageTextHighlight?.removeFromSuperview()
+        pageTextHighlight = nil
         endSignaturePlacement(); cancelExcerptSelections(); cancelImageExcerptSelections(); hideSelectionToolbar(); clearSourceHighlight(); dismissCommentEditor(); dismissPageTextEditor()
         points.removeAll(); drawingPage = nil; provisional = nil; moving = nil
         pendingMove.removeAll(); contextSignature = nil; regionStart = nil; regionPage = nil; pressedComment = nil
@@ -347,6 +372,10 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, let workspace, workspace.selectedPageText != nil {
+            workspace.pageTextSelection = nil
+            return
+        }
         if event.keyCode == 53, let workspace, workspace.placesPDFContentText {
             workspace.placesPDFContentText = false
             dismissPageTextEditor()
@@ -711,7 +740,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
                 workspace?.status = "已取消添加文字"
                 self?.dismissPageTextEditor()
             }
-        ))
+        ).frame(width: 320))
         pageTextEditor = popover
         popover.show(relativeTo: CGRect(x: location.x, y: location.y, width: 1, height: 1), of: self, preferredEdge: .maxX)
     }
@@ -867,6 +896,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func mouseDown(with event: NSEvent) {
+        pressedPageText = nil
         pressedComment = nil
         excerptDragStart = nil
         hideSelectionToolbar()
@@ -926,6 +956,10 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
                 workspace.tool = .edit
                 return
             }
+            if event.clickCount == 1, event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
+               let index = workspace.pageTextIndex(at: point, on: page) {
+                pressedPageText = (page, index)
+            }
             if let hit = page.annotation(at: point), let id = workspace.cardID(of: hit) { pressedCard = id; pressMoved = false } else { pressedCard = nil }
             super.mouseDown(with: event)
         case .edit:
@@ -977,6 +1011,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func mouseDragged(with event: NSEvent) {
+        pressedPageText = nil
         if pressedComment != nil { return }
         if let start = excerptDragStart {
             let point = convert(event.locationInWindow,from:nil)
@@ -1026,6 +1061,8 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     override func mouseUp(with event: NSEvent) {
+        let textHit = pressedPageText
+        pressedPageText = nil
         if let pressedComment {
             self.pressedComment = nil
             openClickedComment(pressedComment.annotation, on: pressedComment.page, event: event)
@@ -1078,6 +1115,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
             needsDisplay = true
         } else {
             super.mouseUp(with: event)
+            if let textHit { workspace?.selectPageText(textHit.index, on: textHit.page) }
         }
     }
 }

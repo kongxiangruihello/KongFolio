@@ -71,7 +71,7 @@ enum SignatureStamp {
         guard let reference = source.pageRef else { return nil }
         let crop = source.bounds(for: .cropBox)
         let rotation = source.rotation
-        if preserve && !preservesAnnotations(source) {
+        if preserve && (!preservesAnnotations(source) || !texts.isEmpty) {
             return bakeInPageCoordinates(images, onto: source, reference: reference, extras: extras, texts: texts)
         }
         let quarterTurn = abs(rotation % 180) == 90
