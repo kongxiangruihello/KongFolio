@@ -62,7 +62,7 @@ final class PDFInlineCommentInput: NSScrollView, NSTextViewDelegate {
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
-        textView.textContainer?.containerSize = NSSize(width: 220, height: .greatestFiniteMagnitude)
+        textView.textContainer?.containerSize = NSSize(width: 220, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
         textView.textContainerInset = NSSize(width: 6, height: 5)
         textView.setAccessibilityLabel("评论内容")
