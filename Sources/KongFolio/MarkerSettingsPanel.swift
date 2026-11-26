@@ -108,7 +108,7 @@ private struct QuickAnnotationTools: View {
     private static let buttonWidth: CGFloat = 44
     private static let spacing: CGFloat = 6
     private static let padding: CGFloat = 5
-    static var width: CGFloat { buttonWidth * 2 + spacing + padding * 2 }
+    static var width: CGFloat { buttonWidth * 3 + spacing * 2 + padding * 2 }
 
     var body: some View {
         HStack(spacing: Self.spacing) {
@@ -117,6 +117,16 @@ private struct QuickAnnotationTools: View {
             }
             button("橡皮擦", symbol: "eraser", selected: workspace.tool == .eraser) {
                 workspace.selectTool(.eraser)
+            }
+            button("评论", symbol: "text.bubble", selected: workspace.tool == .note) {
+                if let view = workspace.pdfView as? DrawingPDFView,
+                   let text = view.currentSelection?.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    view.beginCommentOnSelection()
+                } else {
+                    let enablesCommentTool = workspace.tool != .note
+                    workspace.selectTool(enablesCommentTool ? .note : .select)
+                    if enablesCommentTool { workspace.status = "点击 PDF 页面添加评论" }
+                }
             }
         }
         .environment(\.toolbarIconTone, PDFToolbarPalette.graphite(colorScheme))
