@@ -69,6 +69,7 @@ extension Workspace {
 extension WorkspaceStore {
     func openNoteLibrary() { readingLibraryPreferredKind = "笔记";readingLibraryNavigation = nil;readingLibraryNavigationRequest = UUID();openReadingDesk(.search,window:true) }
     func showReadingPanel(_ section:ReadingDeskSection, noteID: UUID? = nil) {
+        pdfCommentOptionsWorkspaceID = nil
         if section != .excerpts, let workspace = commandWorkspace, workspace.pdfExcerptAppendTarget != nil {
             workspace.endPDFExcerptSelection()
         }

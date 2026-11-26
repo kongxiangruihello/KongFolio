@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import PDFKit
 
 struct PDFCanvas: View {
@@ -30,6 +31,7 @@ private struct NativePDFCanvas: NSViewRepresentable {
     func updateNSView(_ container: ReadingPDFContainer, context: Context) {
         guard let view = container.pdfView else { return }
         if view.workspace !== workspace {
+            view.dismissCommentEditor()
             if let previous = view.workspace, previous.pdfView === view { previous.pdfView = nil }
             context.coordinator.resetPosition()
             view.clearSourceHighlight()
@@ -213,6 +215,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     func refreshSourceHighlight() {
+        positionCommentEditor()
         sourceHighlight?.needsDisplay = true
         pageTextHighlight?.needsDisplay = true
         excerptSelectionOverlays.forEach { $0.needsDisplay = true }
@@ -243,7 +246,8 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     /// Rubber band of the region excerpt tool.
     private var regionStart: CGPoint?
     private weak var regionPage: PDFPage?
-    private(set) var commentEditor: NSPopover?
+    private(set) var commentEditor: PDFInlineCommentInput?
+    private var commentStyleChanges: AnyCancellable?
     private var pageTextEditor: NSPopover?
     private var pressedComment: (page: PDFPage, annotation: PDFAnnotation)?
     private lazy var regionView: NSView = {
@@ -676,35 +680,67 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
 
     private func openCommentEditor(page: PDFPage, anchor: CGRect, quote: String? = nil,
                                    existing: PDFAnnotation? = nil, highlight: PDFSelection? = nil) {
-        guard commentEditor == nil, let workspace, !workspace.readingLocked, !workspace.busy, document === page.document,
-              let window, window.isVisible else { return }
-        hideSelectionToolbar()
-        let popover = NSPopover()
-        popover.behavior = .applicationDefined
-        popover.contentViewController = NSHostingController(rootView: PDFInlineCommentEditor(
-            text: existing?.contents ?? "",
-            style: existing.map(PDFInlineComment.style(of:)) ?? PDFCommentStyle(),
-            editing: existing != nil, supportsStyle: existing.map(PDFInlineComment.isCard) ?? true,
-            save: { [weak self, weak workspace] text, style in
-                guard let self, let workspace, self.workspace === workspace else { return }
-                if workspace.saveInlineComment(text, page: page, anchor: anchor, quote: quote,
-                                               existing: existing, highlight: highlight, style: style) {
-                    self.dismissCommentEditor()
-                    self.clearSelection()
-                    self.documentView?.needsDisplay = true
-                    self.needsDisplay = true
-                } else {
-                    self.dismissCommentEditor()
-                    workspace.status = "评论未保存，页面已变化或当前无法编辑"
-                }
-            },
-            cancel: { [weak self] in self?.dismissCommentEditor() }
-        ))
-        let raw = convert(existing?.bounds ?? anchor, from: page)
-        let visible = raw.intersection(bounds.insetBy(dx: 4, dy: 4))
+        guard commentEditor == nil, let workspace, !workspace.readingLocked, !workspace.busy,
+              let window, window.isVisible, document === page.document else { return }
+        let visible = convert(existing?.bounds ?? anchor, from: page).intersection(bounds)
         guard !visible.isNull, !visible.isEmpty else { return }
-        commentEditor = popover
-        popover.show(relativeTo: visible, of: self, preferredEdge: .maxX)
+
+        hideSelectionToolbar()
+        let draft = PDFCommentDraft(page: page, anchor: anchor, quote: quote, existing: existing, highlight: highlight)
+        let editor = PDFInlineCommentInput(draft: draft)
+        editor.textView.save = { [weak self] in self?.commitCommentEditor() }
+        editor.textView.cancel = { [weak self] in self?.dismissCommentEditor() }
+        editor.onTextChange = { [weak self] in self?.positionCommentEditor() }
+        commentEditor = editor
+        addSubview(editor, positioned: .above, relativeTo: nil)
+        positionCommentEditor()
+        commentStyleChanges = draft.$style.dropFirst().sink { [weak self] style in
+            self?.positionCommentEditor(style: style)
+        }
+        workspace.store?.focus(workspace)
+        workspace.store?.pdfCommentOptionsWorkspaceID = workspace.id
+        window.makeFirstResponder(editor.textView)
+    }
+
+    private func positionCommentEditor(style: PDFCommentStyle? = nil) {
+        guard let editor = commentEditor, !bounds.isEmpty else { return }
+        let draft = editor.draft
+        let style = (style ?? draft.style).normalized
+        let card = convert(PDFInlineComment.cardBounds(for: editor.content, anchor: draft.anchor,
+                                                        on: draft.page, style: style), from: draft.page)
+        let location = draft.existing.map { convert($0.bounds, from: draft.page) } ?? card
+        editor.isHidden = !location.intersects(bounds) && !convert(draft.anchor, from: draft.page).intersects(bounds)
+        guard !editor.isHidden else { return }
+        let available = bounds.insetBy(dx: 4, dy: 4)
+        guard available.width > 0, available.height > 0 else { return }
+        let width = min(max(140, card.width), available.width)
+        let height = min(max(64, card.height), available.height)
+        let x = min(max(available.minX, location.minX), available.maxX - width)
+        let top = min(max(available.minY + height, location.maxY), available.maxY)
+        let frame = CGRect(x: x, y: top - height, width: width, height: height)
+        if editor.frame != frame { editor.frame = frame }
+        editor.applyStyle(style, scale: scaleFactor)
+    }
+
+    @discardableResult
+    func commitCommentEditor() -> Bool {
+        guard let editor = commentEditor, let workspace else { return true }
+        guard !editor.textView.hasMarkedText() else { return false }
+        if editor.content.isEmpty {
+            dismissCommentEditor()
+            return true
+        }
+        let draft = editor.draft
+        guard workspace.saveInlineComment(editor.content, page: draft.page, anchor: draft.anchor, quote: draft.quote,
+                                          existing: draft.existing, highlight: draft.highlight, style: draft.style) else {
+            workspace.status = "评论暂未保存，当前页面无法编辑"
+            return false
+        }
+        dismissCommentEditor()
+        clearSelection()
+        documentView?.needsDisplay = true
+        needsDisplay = true
+        return true
     }
 
     private func openClickedComment(_ annotation: PDFAnnotation, on page: PDFPage, event: NSEvent) {
@@ -715,9 +751,14 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
     }
 
     func dismissCommentEditor() {
-        let editor = commentEditor
+        guard let editor = commentEditor else { return }
+        commentStyleChanges = nil
         commentEditor = nil
-        editor?.close()
+        if window?.firstResponder === editor.textView { window?.makeFirstResponder(self) }
+        editor.removeFromSuperview()
+        if let workspace, let store = workspace.store, store.pdfCommentOptionsWorkspaceID == workspace.id {
+            store.pdfCommentOptionsWorkspaceID = nil
+        }
     }
 
     private func openPageTextEditor(on page: PDFPage, at location: CGPoint) {
@@ -840,9 +881,11 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         let hit = super.hitTest(point)
         guard let hit, let event = NSApp?.currentEvent, event.type == .leftMouseDown,
               let window, event.window === window, let workspace, !workspace.busy else { return hit }
+        if let commentEditor, hit === commentEditor || hit.isDescendant(of: commentEditor) { return hit }
         if let selectionBar, hit === selectionBar || hit.isDescendant(of:selectionBar) { return hit }
         let location = convert(event.locationInWindow,from:nil)
         if let page = page(for: location, nearest: false), placement == nil {
+            if commentEditor != nil { return self }
             if workspace.tool == .region { return self }
             if !workspace.readingLocked {
                 if workspace.tool == .note { return self }
@@ -902,6 +945,7 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         hideSelectionToolbar()
         if let workspace { workspace.store?.focus(workspace) }
         guard let workspace, !workspace.busy else { super.mouseDown(with: event); return }
+        guard commitCommentEditor() else { return }
         if workspace.isMakingPDF && workspace.previewsCreatedPDF {
             super.mouseDown(with: event)
             return

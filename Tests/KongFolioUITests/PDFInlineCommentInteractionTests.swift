@@ -55,5 +55,30 @@ final class PDFInlineCommentInteractionTests: XCTestCase {
         view.mouseUp(with: try mouse(.leftMouseUp, at: destination))
         XCTAssertNil(view.commentEditor)
         XCTAssertNotEqual(card.bounds.origin, origin)
+
+        workspace.selectTool(.note)
+        let newPosition = view.convert(view.convert(CGPoint(x: 90, y: 130), from: page), to: nil)
+        view.mouseDown(with: try mouse(.leftMouseDown, at: newPosition))
+        view.mouseUp(with: try mouse(.leftMouseUp, at: newPosition))
+        let input = try XCTUnwrap(view.commentEditor)
+        XCTAssertTrue(input.superview === view)
+        XCTAssertTrue(window.firstResponder === input.textView)
+        XCTAssertEqual(page.annotations.count, 1)
+
+        input.textView.insertText("就地输入的评论", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(input.draft.hasText)
+        input.draft.style.textColor = 0x254E9E
+        input.draft.style.alignment = .center
+        XCTAssertEqual(input.textView.alignment, .center)
+        XCTAssertTrue(view.commitCommentEditor())
+        XCTAssertNil(view.commentEditor)
+        let added = try XCTUnwrap(page.annotations.first { $0 !== card })
+        XCTAssertEqual(added.contents, "就地输入的评论")
+        XCTAssertEqual(PDFInlineComment.style(of: added).textColor, 0x254E9E)
+
+        view.mouseDown(with: try mouse(.leftMouseDown, at: newPosition))
+        XCTAssertNotNil(view.commentEditor)
+        view.dismissCommentEditor()
+        XCTAssertEqual(page.annotations.count, 2)
     }
 }
