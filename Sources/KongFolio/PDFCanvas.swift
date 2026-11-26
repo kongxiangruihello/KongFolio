@@ -691,6 +691,8 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         editor.textView.save = { [weak self] in self?.commitCommentEditor() }
         editor.textView.cancel = { [weak self] in self?.dismissCommentEditor() }
         editor.onTextChange = { [weak self] in self?.positionCommentEditor() }
+        editor.moveHandle.onDrag = { [weak self] in self?.adjustCommentEditor($0, from: $1, by: $2) }
+        editor.resizeHandle.onDrag = editor.moveHandle.onDrag
         commentEditor = editor
         addSubview(editor, positioned: .above, relativeTo: nil)
         positionCommentEditor()
@@ -706,20 +708,67 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         guard let editor = commentEditor, !bounds.isEmpty else { return }
         let draft = editor.draft
         let style = (style ?? draft.style).normalized
-        let card = convert(PDFInlineComment.cardBounds(for: editor.content, anchor: draft.anchor,
-                                                        on: draft.page, style: style), from: draft.page)
-        let location = draft.existing.map { convert($0.bounds, from: draft.page) } ?? card
-        editor.isHidden = !location.intersects(bounds) && !convert(draft.anchor, from: draft.page).intersects(bounds)
+        let card = commentCardRect(editor, style: style)
+        let showsAnchor = draft.position == nil && draft.existing == nil
+        editor.isHidden = !card.intersects(bounds) && !(showsAnchor && convert(draft.anchor, from: draft.page).intersects(bounds))
         guard !editor.isHidden else { return }
         let available = bounds.insetBy(dx: 4, dy: 4)
         guard available.width > 0, available.height > 0 else { return }
         let width = min(max(140, card.width), available.width)
         let height = min(max(64, card.height), available.height)
-        let x = min(max(available.minX, location.minX), available.maxX - width)
-        let top = min(max(available.minY + height, location.maxY), available.maxY)
+        let x = min(max(available.minX, card.minX), available.maxX - width)
+        let top = min(max(available.minY + height, card.maxY), available.maxY)
         let frame = CGRect(x: x, y: top - height, width: width, height: height)
         if editor.frame != frame { editor.frame = frame }
         editor.applyStyle(style, scale: scaleFactor)
+    }
+
+    private func commentCardRect(_ editor: PDFInlineCommentInput, style: PDFCommentStyle) -> CGRect {
+        let draft = editor.draft
+        let rect = PDFInlineComment.cardBounds(for: editor.content, anchor: draft.anchor, on: draft.page,
+                                               style: style, existing: draft.existing, position: draft.position)
+        return convert(rect, from: draft.page)
+    }
+
+    private func adjustCommentEditor(_ operation: PDFCommentDragHandle.Operation, from frame: CGRect, by delta: CGPoint) {
+        guard let editor = commentEditor, editor.draft.supportsStyle,
+              workspace?.readingLocked == false, workspace?.busy == false else { return }
+        let draft = editor.draft
+        let box = draft.page.bounds(for: .cropBox)
+        let margin = min(6, box.width / 4, box.height / 4)
+        let area = bounds.insetBy(dx: 4, dy: 4).intersection(convert(box.insetBy(dx: margin, dy: margin), from: draft.page))
+        guard !area.isNull, !area.isEmpty else { return }
+
+        var style = draft.style.normalized
+        let requested: CGRect
+        switch operation {
+        case .move:
+            let size = commentCardRect(editor, style: style).size
+            let width = min(size.width, area.width)
+            let height = min(size.height, area.height)
+            let x = min(max(area.minX, frame.minX + delta.x), max(area.minX, area.maxX - max(width, frame.width)))
+            let top = min(max(area.minY + min(area.height, max(height, frame.height)), frame.maxY + delta.y), area.maxY)
+            requested = CGRect(x: x, y: top - height, width: width, height: height)
+        case .resize:
+            let x = min(max(area.minX, frame.minX), area.maxX)
+            let top = min(max(area.minY, frame.maxY), area.maxY)
+            let maxWidth = area.maxX - x
+            let maxHeight = top - area.minY
+            guard maxWidth > 0, maxHeight > 0 else { return }
+            let width = min(max(140, frame.width + delta.x), maxWidth)
+            let height = min(max(64, frame.height - delta.y), maxHeight)
+            requested = CGRect(x: x, y: top - height, width: width, height: height)
+        }
+        let pageRect = convert(requested, to: draft.page)
+        draft.position = CGPoint(x: pageRect.minX, y: pageRect.maxY)
+        if operation == .resize {
+            style.width = Int(pageRect.width.rounded())
+            style.height = Int(pageRect.height.rounded())
+            style.automaticHeight = false
+            draft.style = style.normalized
+        } else {
+            positionCommentEditor()
+        }
     }
 
     @discardableResult
@@ -732,7 +781,8 @@ final class DrawingPDFView: ManagedPDFView, SignaturePlacing, ReadingResourceRel
         }
         let draft = editor.draft
         guard workspace.saveInlineComment(editor.content, page: draft.page, anchor: draft.anchor, quote: draft.quote,
-                                          existing: draft.existing, highlight: draft.highlight, style: draft.style) else {
+                                          existing: draft.existing, highlight: draft.highlight, style: draft.style,
+                                          position: draft.position) else {
             workspace.status = "评论暂未保存，当前页面无法编辑"
             return false
         }
