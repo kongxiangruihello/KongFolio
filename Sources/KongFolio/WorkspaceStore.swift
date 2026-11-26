@@ -35,6 +35,7 @@ import UniformTypeIdentifiers
     @Published var readingMode = true { didSet { readingDefaults.set(readingMode,forKey:Self.readingModeKey) } }
     @Published var showReadingDesk = false
     @Published var pdfSearchWorkspaceID: UUID?
+    @Published var pdfCommentOptionsWorkspaceID: UUID?
     var lastRightPanelWasSearch = false
     var lastRightPanelNoteID: UUID?
     @Published var readingImageOCRRequest: ReadingImageOCRRequest?

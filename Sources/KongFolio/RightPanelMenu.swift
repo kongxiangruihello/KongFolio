@@ -74,11 +74,13 @@ struct RightReadingPanelLayout<Content: View>: View {
         GeometryReader { geometry in
             let width = geometry.size.width
             let split = store.activeWorkspace?.splitPartner != nil && LayoutMetrics.showsSplit(width:width)
-            let docked = width >= (split ? 1080 : 560)
+            let comments = store.rightPDFCommentView != nil
+            let docked = comments || width >= (split ? 1080 : 560)
             HSplitView {
                 content().frame(minWidth:240,maxWidth:.infinity,maxHeight:.infinity)
                 if showsPanel && docked {
-                    displayedPanel.frame(minWidth:280,idealWidth:330,maxWidth:400)
+                    displayedPanel.frame(minWidth: comments ? 200 : 280,
+                                         idealWidth: comments ? 255 : 330, maxWidth: 400)
                 }
             }
             .overlay(alignment:.trailing) {
@@ -95,7 +97,10 @@ struct RightReadingPanelLayout<Content: View>: View {
     }
 
     @ViewBuilder private var displayedPanel: some View {
-        if let workspace = store.activeWorkspace, let selection = workspace.pageTextSelection,
+        if let view = store.rightPDFCommentView, let editor = view.commentEditor {
+            PDFCommentOptions(draft: editor.draft, save: { view.commitCommentEditor() },
+                              cancel: { view.dismissCommentEditor() }, close: { store.closeRightReadingPanel() })
+        } else if let workspace = store.activeWorkspace, let selection = workspace.pageTextSelection,
            let block = workspace.selectedPageText {
             VStack {
                 PDFPageTextEditor(editing: block, insert: { text, size, color in
@@ -230,10 +235,22 @@ struct RightReadingPanelLayout<Content: View>: View {
 }
 
 extension WorkspaceStore {
-    var rightReadingPanelVisible: Bool { showReadingDesk || rightPDFSearchWorkspace != nil }
+    var rightPDFCommentView: DrawingPDFView? {
+        guard let workspace = commandWorkspace, workspace.id == pdfCommentOptionsWorkspaceID,
+              let view = workspace.pdfView as? DrawingPDFView, view.commentEditor != nil else { return nil }
+        return view
+    }
+
+    var rightReadingPanelVisible: Bool { rightPDFCommentView != nil || showReadingDesk || rightPDFSearchWorkspace != nil }
 
     func toggleRightReadingPanel() {
-        if rightReadingPanelVisible { closeRightReadingPanel() }
-        else if !lastRightPanelWasSearch || !openPDFSearch() { showReadingPanel(readingDeskSection) }
+        if let workspace = commandWorkspace, let view = workspace.pdfView as? DrawingPDFView,
+           view.commentEditor != nil, rightPDFCommentView == nil {
+            pdfCommentOptionsWorkspaceID = workspace.id
+        } else if rightReadingPanelVisible {
+            closeRightReadingPanel()
+        } else if !lastRightPanelWasSearch || !openPDFSearch() {
+            showReadingPanel(readingDeskSection)
+        }
     }
 }

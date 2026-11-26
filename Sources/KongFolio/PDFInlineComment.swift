@@ -40,6 +40,15 @@ enum PDFInlineComment {
 
     static func card(for text: String, anchor: CGRect, on page: PDFPage, quote: String?,
                      style: PDFCommentStyle) -> PDFAnnotation {
+        let bounds = cardBounds(for: text, anchor: anchor, on: page, style: style)
+        let annotation = PDFAnnotation(bounds: bounds, forType: .freeText, withProperties: nil)
+        apply(style, text: text, to: annotation)
+        annotation.setValue(NSStringFromRect(anchor), forAnnotationKey: anchorKey)
+        if let quote, !quote.isEmpty { annotation.setValue(quote, forAnnotationKey: ReadingServices.quoteKey) }
+        return annotation
+    }
+
+    static func cardBounds(for text: String, anchor: CGRect, on page: PDFPage, style: PDFCommentStyle) -> CGRect {
         let box = page.bounds(for: .cropBox)
         let size = cardSize(text, style: style, in: box)
         let width = size.width
@@ -51,12 +60,7 @@ enum PDFInlineComment {
         let lowerEdge = anchor.minY - height - gap
         let y = canUseRight || canUseLeft ? anchor.maxY - height
             : lowerEdge >= box.minY + 6 ? lowerEdge : anchor.maxY + gap
-        let bounds = contained(CGRect(x: x, y: y, width: width, height: height), in: box)
-        let annotation = PDFAnnotation(bounds: bounds, forType: .freeText, withProperties: nil)
-        apply(style, text: text, to: annotation)
-        annotation.setValue(NSStringFromRect(anchor), forAnnotationKey: anchorKey)
-        if let quote, !quote.isEmpty { annotation.setValue(quote, forAnnotationKey: ReadingServices.quoteKey) }
-        return annotation
+        return contained(CGRect(x: x, y: y, width: width, height: height), in: box)
     }
 
     static func update(_ annotation: PDFAnnotation, text: String, style: PDFCommentStyle, on page: PDFPage) {

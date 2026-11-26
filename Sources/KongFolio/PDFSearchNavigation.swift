@@ -29,6 +29,10 @@ import AppKit
     }
 
     func closeRightReadingPanel() {
+        if rightPDFCommentView != nil {
+            pdfCommentOptionsWorkspaceID = nil
+            return
+        }
         rememberRightPanelNote()
         if let workspace = commandWorkspace, workspace.pdfExcerptAppendTarget != nil {
             workspace.endPDFExcerptSelection()
@@ -40,6 +44,7 @@ import AppKit
     /// The reader magnifier never opens the reading-record library or a text-file editor.
     @discardableResult func openPDFSearch()->Bool {
         guard canSearchPDF,let workspace=commandWorkspace else { return false }
+        pdfCommentOptionsWorkspaceID = nil
         if workspace.pdfExcerptAppendTarget != nil { workspace.endPDFExcerptSelection() }
         activeWorkspace?.showPenSettings = false
         workspace.showsPageThumbnails = false
