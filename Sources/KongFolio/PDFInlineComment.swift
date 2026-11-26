@@ -39,8 +39,8 @@ enum PDFInlineComment {
     }
 
     static func card(for text: String, anchor: CGRect, on page: PDFPage, quote: String?,
-                     style: PDFCommentStyle) -> PDFAnnotation {
-        let bounds = cardBounds(for: text, anchor: anchor, on: page, style: style)
+                     style: PDFCommentStyle, position: CGPoint? = nil) -> PDFAnnotation {
+        let bounds = cardBounds(for: text, anchor: anchor, on: page, style: style, position: position)
         let annotation = PDFAnnotation(bounds: bounds, forType: .freeText, withProperties: nil)
         apply(style, text: text, to: annotation)
         annotation.setValue(NSStringFromRect(anchor), forAnnotationKey: anchorKey)
@@ -48,11 +48,17 @@ enum PDFInlineComment {
         return annotation
     }
 
-    static func cardBounds(for text: String, anchor: CGRect, on page: PDFPage, style: PDFCommentStyle) -> CGRect {
+    static func cardBounds(for text: String, anchor: CGRect, on page: PDFPage, style: PDFCommentStyle,
+                           existing: PDFAnnotation? = nil, position: CGPoint? = nil) -> CGRect {
+        if let existing, !isCard(existing) { return existing.bounds }
         let box = page.bounds(for: .cropBox)
         let size = cardSize(text, style: style, in: box)
         let width = size.width
         let height = size.height
+        let origin = position ?? existing.map { CGPoint(x: $0.bounds.minX, y: $0.bounds.maxY) }
+        if let origin {
+            return contained(CGRect(x: origin.x, y: origin.y - height, width: width, height: height), in: box)
+        }
         let gap: CGFloat = 10
         let canUseRight = anchor.maxX + gap + width <= box.maxX - 6
         let canUseLeft = anchor.minX - gap - width >= box.minX + 6
@@ -63,13 +69,9 @@ enum PDFInlineComment {
         return contained(CGRect(x: x, y: y, width: width, height: height), in: box)
     }
 
-    static func update(_ annotation: PDFAnnotation, text: String, style: PDFCommentStyle, on page: PDFPage) {
+    static func update(_ annotation: PDFAnnotation, text: String, style: PDFCommentStyle, bounds: CGRect) {
         guard isCard(annotation) else { annotation.contents = text; return }
-        let box = page.bounds(for: .cropBox)
-        let old = annotation.bounds
-        let size = cardSize(text, style: style, in: box)
-        annotation.bounds = contained(CGRect(x: old.minX, y: old.maxY - size.height,
-                                              width: size.width, height: size.height), in: box)
+        annotation.bounds = bounds
         apply(style, text: text, to: annotation)
     }
 
@@ -121,23 +123,26 @@ enum PDFInlineComment {
     @discardableResult
     func saveInlineComment(_ text: String, page: PDFPage, anchor: CGRect, quote: String? = nil,
                            existing: PDFAnnotation? = nil, highlight: PDFSelection? = nil,
-                           style: PDFCommentStyle? = nil) -> Bool {
+                           style: PDFCommentStyle? = nil, position: CGPoint? = nil) -> Bool {
         let content = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty, !busy, !readingLocked, page.document === document else { return false }
         if let existing {
             guard existing.page === page else { return false }
             let unchangedStyle = PDFInlineComment.style(of: existing)
             let requested = style?.normalized ?? unchangedStyle
-            if existing.contents != content || (PDFInlineComment.isCard(existing) && requested != unchangedStyle) {
+            let bounds = PDFInlineComment.cardBounds(for: content, anchor: anchor, on: page, style: requested,
+                                                     existing: existing, position: position)
+            let geometryChanged = position != nil && bounds != existing.bounds
+            if existing.contents != content || (PDFInlineComment.isCard(existing) && (requested != unchangedStyle || geometryChanged)) {
                 let edit = beginAnnotationEdit([existing])
                 guard !edit.isEmpty else { return false }
-                PDFInlineComment.update(existing, text: content, style: requested, on: page)
+                PDFInlineComment.update(existing, text: content, style: requested, bounds: bounds)
                 commitAnnotationEdit(edit)
                 if selectedAnnotation === existing { note = content }
             }
         } else {
             let comment = PDFInlineComment.card(for: content, anchor: anchor, on: page, quote: quote,
-                                                style: (style ?? PDFCommentStyle()).normalized)
+                                                style: (style ?? PDFCommentStyle()).normalized, position: position)
             let highlights = highlight.map { addMarkup($0, style: .highlight, color: markupColor, note: "") } ?? []
             page.addAnnotation(comment)
             recordAnnotationsAdded(highlights + [comment])

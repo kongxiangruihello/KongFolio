@@ -70,13 +70,51 @@ final class PDFInlineCommentInteractionTests: XCTestCase {
         input.draft.style.textColor = 0x254E9E
         input.draft.style.alignment = .center
         XCTAssertEqual(input.textView.alignment, .center)
+
+        func drag(_ handle: PDFCommentDragHandle, x: CGFloat, y: CGFloat) throws {
+            view.layoutSubtreeIfNeeded()
+            let start = handle.convert(CGPoint(x: handle.bounds.midX, y: handle.bounds.midY), to: nil)
+            let end = CGPoint(x: start.x + x, y: start.y + y)
+            handle.mouseDown(with: try mouse(.leftMouseDown, at: start))
+            handle.mouseDragged(with: try mouse(.leftMouseDragged, at: end))
+            handle.mouseUp(with: try mouse(.leftMouseUp, at: end))
+        }
+
+        let start = input.frame
+        try drag(input.moveHandle, x: -25, y: 40)
+        let moved = input.frame
+        XCTAssertLessThan(moved.minX, start.minX)
+        XCTAssertGreaterThan(moved.maxY, start.maxY)
+        XCTAssertTrue(input.draft.style.automaticHeight)
+        try drag(input.resizeHandle, x: 40, y: -32)
+        XCTAssertGreaterThan(input.frame.width, moved.width)
+        XCTAssertGreaterThan(input.frame.height, moved.height)
+        XCTAssertFalse(input.draft.style.automaticHeight)
+        let resized = view.convert(input.frame, to: page)
+
         XCTAssertTrue(view.commitCommentEditor())
         XCTAssertNil(view.commentEditor)
         let added = try XCTUnwrap(page.annotations.first { $0 !== card })
         XCTAssertEqual(added.contents, "就地输入的评论")
         XCTAssertEqual(PDFInlineComment.style(of: added).textColor, 0x254E9E)
+        XCTAssertEqual(added.bounds.minX, resized.minX, accuracy: 1)
+        XCTAssertEqual(added.bounds.maxY, resized.maxY, accuracy: 1)
+        XCTAssertEqual(added.bounds.width, resized.width, accuracy: 1)
+        XCTAssertEqual(added.bounds.height, resized.height, accuracy: 1)
 
-        view.mouseDown(with: try mouse(.leftMouseDown, at: newPosition))
+        let savedPosition = view.convert(view.convert(CGPoint(x: added.bounds.midX, y: added.bounds.midY), from: page), to: nil)
+        view.mouseDown(with: try mouse(.leftMouseDown, at: savedPosition))
+        view.mouseUp(with: try mouse(.leftMouseUp, at: savedPosition))
+        let reopened = try XCTUnwrap(view.commentEditor)
+        let priorBounds = added.bounds
+        try drag(reopened.moveHandle, x: 26, y: -17)
+        XCTAssertTrue(view.commitCommentEditor())
+        XCTAssertNotEqual(added.bounds.origin, priorBounds.origin)
+        XCTAssertEqual(added.bounds.size, priorBounds.size)
+        XCTAssertEqual(added.contents, "就地输入的评论")
+
+        let blankPosition = view.convert(view.convert(CGPoint(x: 75, y: 360), from: page), to: nil)
+        view.mouseDown(with: try mouse(.leftMouseDown, at: blankPosition))
         XCTAssertNotNil(view.commentEditor)
         view.dismissCommentEditor()
         XCTAssertEqual(page.annotations.count, 2)
